@@ -1,0 +1,88 @@
+- name: setup_node
+  block:
+    - name: Populate service facts
+      service_facts:
+
+    - name: Download {{ app_name }} from S3
+      amazon.aws.aws_s3:
+        aws_access_key: "{{ credentials['AWS_ACCESS_KEY_ID'] }}"
+        aws_secret_key: "{{ credentials['AWS_SECRET_ACCESS_KEY'] }}"
+        bucket: learn-elixir-releases
+        mode: get
+        object: deploy_candidates/{{ app_name }}.tar.gz
+        dest: /srv/{{ app_name }}.tar.gz
+      no_log: true
+
+   - name: Create /srv/{{ app_name }} directory
+      file:
+        path: /srv/{{ app_name }}
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+
+   - name: Create /srv/unpack-directory directory
+      file:
+        path: /srv/unpack-directory
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+
+    - name: Untar {{ app_name }}.tar.gz
+      unarchive:
+        src: /srv/{{ app_name }}.tar.gz
+        dest: /srv/unpack-directory
+        remote_src: true
+
+    - name: Add erlang_systemd.service file to /etc/systemd/system/{{ app_name }}.service
+      template:
+        src: erlang_systemd.service.j2
+        dest: /etc/systemd/system/{{ app_name }}.service
+        owner: root
+        group: root
+        mode: 0644
+      when: app_name == item
+      loop: "{{ erlang_systemd }}"
+
+    - name: Enable {{ app_name }} service
+      systemd:
+        name: "{{ app_name }}"
+        enabled: true
+
+    - name: Stop {{ app_name }} service
+      systemd:
+        name: "{{ app_name }}"
+        state: stopped
+      when: ansible_facts.services[ app_name ] is not defined
+
+    - name: Delete old /srv/{{ app_name }} directory
+      file:
+        path: /srv/{{ app_name }}
+        state: absent
+
+    - name: Copy /srv/unpack-directory directory to /srv/{{ app_name }}
+      copy:
+        src: /srv/unpack-directory/
+        dest: /srv/{{ app_name }}/
+        mode: 0755
+        remote_src: true
+
+    - name: Add vm.args file to /srv/{{ app_name }}/releases/1.0.0/vm.args
+      template:
+        src: vm.args.j2
+        dest: /srv/vm.args
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Delete /srv/unpack-directory directory
+      file:
+        path: /srv/unpack-directory
+        state: absent
+
+    - name: Start {{ app_name }} service
+      systemd:
+        name: "{{ app_name }}"
+        state: started
+  become: true

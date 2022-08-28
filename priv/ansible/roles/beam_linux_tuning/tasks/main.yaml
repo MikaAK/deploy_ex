@@ -1,0 +1,37 @@
+- name: beam_linux_tuning
+  block:
+    - name: Copy limits.conf file to /etc/security/limits.conf
+      copy:
+        src: limits.conf
+        dest: /etc/security/limits.conf
+        owner: root
+        group: root
+        mode: 0644
+      register: limits_conf_file
+
+    - name: Copy sysctl.conf file to /etc/sysctl.conf
+      copy:
+        src: sysctl.conf
+        dest: /etc/sysctl.conf
+        owner: root
+        group: root
+        mode: 0644
+      register: sysctl_conf_file
+
+    - name: Copy rc.local file to /etc/rc.local
+      copy:
+        src: rc.local
+        dest: /etc/rc.local
+        owner: root
+        group: root
+        mode: 0644
+      register: rc_local_file
+
+    - name: Apply sysctl configuration
+      command: sysctl -p
+      when: sysctl_conf_file.changed
+
+    - name: Increase TCP Congestion Window
+      shell: defrt=`ip route | grep "^default" | head -1` && ip route change $defrt initcwnd 10
+      when: rc_local_file.changed
+  become: true

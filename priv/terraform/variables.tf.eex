@@ -1,0 +1,26 @@
+variable "environment" {
+  description = "Name of the project in kebab case for use in names"
+  type        = string
+  default     = "<%= @environment %>"
+}
+
+variable "project_name" {
+  description = "Name of the project in kebab case for use in names"
+  type        = string
+  default     = "<%= @app_name %>"
+}
+
+variable "instance_group" {
+  description = "Value of the Group tag for the EC2 instance"
+  type        = string
+  default     = "<%= DeployExHelpers.upper_title_case(@app_name) %> Backend"
+}
+
+variable "<%= @app_name %>_project" {
+  description = "Map of project names to configuration."
+  type        = map(any)
+
+  default = {
+<%= @terraform_release_variables %>
+  }
+}

@@ -1,0 +1,41 @@
+- name: awscli
+  block:
+    - name: Check if awscli is installed
+      stat:
+        path: /usr/local/bin/aws
+      register: awscli_exe
+
+    - name: Check if awscli is updated to {{ awscli_version }}
+      shell: aws --version | cut -d ' ' -f 1 | cut -d '/' -f 2
+      register: awscli_current_version
+      when: awscli_exe.stat.exists
+      changed_when: false
+
+    - name: Install unzip
+      apt:
+        name: unzip
+        # update_cache: true
+
+    - name: Download awscli installer
+      unarchive:
+        src: https://awscli.amazonaws.com/awscli-exe-linux-x86_64-{{ awscli_version }}.zip
+        dest: /tmp
+        remote_src: true
+      when: (not awscli_exe.stat.exists) or (awscli_current_version.stdout != awscli_version)
+
+    - name: Install awscli {{ awscli_version }}
+      command: ./aws/install --update
+      args:
+        chdir: /tmp
+      when: (not awscli_exe.stat.exists) or (awscli_current_version.stdout != awscli_version)
+
+    - name: Install boto3
+      pip:
+        name: boto3
+        executable: pip3
+
+    - name: Cleanup awscli installer
+      file:
+        path: /tmp/aws
+        state: absent
+  become: true

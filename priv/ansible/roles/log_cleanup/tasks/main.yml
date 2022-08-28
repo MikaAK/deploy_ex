@@ -1,0 +1,34 @@
+- name: log_cleanup
+  block:
+    - name: Create /etc/cron.fiveM directory
+      file:
+        path: /etc/cron.fiveM
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+
+    - name: Copy clear_drive_space file to /etc/cron.fiveM/clear_drive_space
+      copy:
+        src: clear_drive_space
+        dest: /etc/cron.fiveM/clear_drive_space
+        owner: root
+        group: root
+        mode: u+x
+
+    - name: Copy crontab file to /etc/crontab
+      copy:
+        src: crontab
+        dest: /etc/crontab
+        owner: root
+        group: root
+        mode: u+x
+
+    - name: Copy rsyslog file to /etc/logrotate.d/rsyslog
+      copy:
+        src: rsyslog
+        dest: /etc/logrotate.d/rsyslog
+        owner: root
+        group: root
+        mode: u=rw,g=r,o=r
+  become: true

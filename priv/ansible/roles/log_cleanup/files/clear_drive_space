@@ -1,0 +1,7 @@
+#!/bin/sh
+
+sudo rm /var/log/daemon.log.*
+sudo rm /var/log/syslog.*
+sudo rm /tmp/appsignal.log
+
+sudo apt-get clean

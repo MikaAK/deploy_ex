@@ -1,0 +1,21 @@
+[Unit]
+Description={{ app_name }} service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/srv/{{ app_name }}
+ExecStart=/srv/{{ app_name }}/bin/{{ app_name }} start
+ExecStop=/srv/{{ app_name }}/bin/{{ app_name }} stop
+Restart=on-failure
+RestartSec=5
+Environment=PORT=80
+Environment=RELEASE_VM_ARGS=/srv/vm.args
+SyslogIdentifier={{ app_name }}
+RemainAfterExit=no
+LimitNOFILE=infinity
+
+[Install]
+WantedBy=multi-user.target

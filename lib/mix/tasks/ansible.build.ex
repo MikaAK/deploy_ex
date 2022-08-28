@@ -7,19 +7,11 @@ defmodule Mix.Tasks.Ansible.Build do
   """
 
   def run(args) do
-    with :ok <- check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_in_umbrella(),
          :ok <- create_ansible_hosts_file(parse_args(args)) do
       :ok
     else
       {:error, e} -> Mix.shell().error(to_string(e))
-    end
-  end
-
-  defp check_in_umbrella do
-    if Mix.Project.umbrella?() do
-      :ok
-    else
-      {:error, ErrorMessage.bad_request("must be in umbrella root")}
     end
   end
 

@@ -1,0 +1,38 @@
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 3.27"
+    }
+  }
+}
+
+provider "aws" {
+  profile = "default"
+  region  = "<%= @aws_region %>"
+}
+
+data "aws_availability_zones" "available" {
+  state = "available"
+
+  filter {
+    name   = "zone-type"
+    values = ["availability-zone"]
+  }
+}
+
+module "ec2_instance" {
+  source = "./modules/aws-instance"
+
+  for_each = var.<%= @app_name %>_project
+
+  instance_group = var.instance_group
+  instance_name  = each.value.name
+  environment    = each.value.environment
+
+  security_group_id = module.app_security_group.security_group_id
+  subnet_id         = module.vpc.public_subnets[0]
+
+  key_pair_key_name = aws_key_pair.key_pair.key_name
+}
+

@@ -1,0 +1,1 @@
+app_name: "{{ hostvars[inventory_hostname].group_names[0] }}"
