@@ -1,13 +1,22 @@
 defmodule Mix.Tasks.Terraform.Build do
   use Mix.Task
 
-  @shortdoc "Deploys to terraform resources using ansible"
-  @moduledoc """
-  Deploys to ansible
-  """
-
   @terraform_default_path "./deploys/terraform"
   @default_aws_region "us-west-2"
+
+  @shortdoc "Builds/Updates terraform files or adds it to your project"
+  @moduledoc """
+  Builds or updates terraform files within the project.
+
+  ## Options
+  - `directory` - Directory for the terraform files (default: `#{@terraform_default_path}`)
+  - `aws-region` - Region for aws (default: `#{@default_aws_region}`)
+  - `env` - Environment for terraform (default: `Mix.env()`)
+  - `quiet` - Supress output
+  - `force` - Force create files without asking
+  - `verbose` - Log extra details about the process
+
+  """
 
   def run(args) do
     opts = args
@@ -25,7 +34,7 @@ defmodule Mix.Tasks.Terraform.Build do
          :ok <- ensure_terraform_directory_exists(opts[:directory]) do
       terraform_output = releases
         |> Keyword.keys
-        |> Enum.map_join(",\n\n", &(&1 |> to_string |> generate_terraform_output))
+        |> Enum.map_join(",\n\n", &(&1 |> to_string |> generate_terraform_output(opts)))
 
       write_terraform_variables(terraform_output, opts)
       write_terraform_main(opts)
@@ -46,7 +55,9 @@ defmodule Mix.Tasks.Terraform.Build do
         directory: :string,
         force: :boolean,
         quiet: :boolean,
-        verbose: :boolean
+        verbose: :boolean,
+        aws_region: :string,
+        env: :string
       ]
     )
 
@@ -67,10 +78,10 @@ defmodule Mix.Tasks.Terraform.Build do
     end
   end
 
-  defp generate_terraform_output(release_name) do
+  defp generate_terraform_output(release_name, opts) do
     String.trim_trailing("""
         #{release_name} = {
-          environment = "#{Mix.env()}"
+          environment = "#{opts[:env]}"
           name = "#{DeployExHelpers.upper_title_case(release_name)}"
         }
     """, "\n")
