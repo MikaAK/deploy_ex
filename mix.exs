@@ -22,7 +22,11 @@ defmodule DeployEx.MixProject do
   defp deps do
     [
       {:jason, "~> 1.3"},
-      {:error_message, "~> 0.2"}
+      {:error_message, "~> 0.2"},
+      {:ex_aws, "~> 2.3"},
+      {:ex_aws_s3, "~> 2.3"},
+      {:hackney, "~> 1.9"},
+      {:sweet_xml, "~> 0.7"}
     ]
   end
 end

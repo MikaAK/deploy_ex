@@ -1,8 +1,8 @@
 defmodule Mix.Tasks.Terraform.Build do
   use Mix.Task
 
-  @terraform_default_path "./deploys/terraform"
-  @default_aws_region "us-west-2"
+  @terraform_default_path DeployEx.Config.terraform_folder_path()
+  @default_aws_region DeployEx.Config.aws_region()
 
   @shortdoc "Builds/Updates terraform files or adds it to your project"
   @moduledoc """

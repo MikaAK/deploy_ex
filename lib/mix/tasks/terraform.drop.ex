@@ -1,7 +1,7 @@
 defmodule Mix.Tasks.Terraform.Drop do
   use Mix.Task
 
-  @terraform_default_path "./deploys/terraform"
+  @terraform_default_path DeployEx.Config.terraform_folder_path()
 
   @shortdoc "Destroys all resources built by terraform"
   @moduledoc """

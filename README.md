@@ -27,10 +27,33 @@ Documentation is published on [HexDocs](https://hexdocs.pm/deploy_ex)
 
 
 ## Commands
+- [ ] `mix deploy_ex.full_setup` - Runs all the commands to initialize and setup your project
 - [x] `mix terraform.build` - Add the terraform files to project, or rebuilds them
 - [x] `mix terraform.apply` - Applies terraform changes
 - [x] `mix terraform.drop` - Destroys all terraform built resources
 - [x] `mix ansible.build` - Adds ansible files to the project, or rebuilds them
 - [x] `mix ansible.ping` - Pings ansible nodes to see if they can connect
 - [ ] `mix ansible.deploy` - Deploys to your nodes via ansible
-- [ ] `mix build.deploy_ex` - Deploys your release to s3
+- [ ] `mix ansible.rollback` - Rollback to a prior release
+- [ ] `mix deploy_ex.upload` - Deploys your release to s3
+
+
+### Troubleshooting
+
+<details>
+  <summary>I'm getting `SSH Too Many Authentication Failures`</summary>
+
+  You can add `IdentitiesOnly=yes` to your `~/.ssh/config` `*` setting to clear that up.
+  See [here for more details](https://www.tecmint.com/fix-ssh-too-many-authentication-failures-error/)
+
+</details>
+
+<details>
+  <summary>I'm getting `Operation timed out` at the end of `mix deploy_ex.full_setup`</summary>
+
+  You can add `IdentitiesOnly=yes` to your `~/.ssh/config` `*` setting to clear that up.
+  See [here for more details](https://www.tecmint.com/fix-ssh-too-many-authentication-failures-error/)
+
+</details>
+
+

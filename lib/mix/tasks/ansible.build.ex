@@ -1,9 +1,9 @@
 defmodule Mix.Tasks.Ansible.Build do
   use Mix.Task
 
-  @terraform_default_path "./deploys/ansible"
+  @ansible_default_path DeployEx.Config.ansible_folder_path()
 
-  @shortdoc "Deploys to terraform resources using ansible"
+  @shortdoc "Deploys to ansible resources using ansible"
   @moduledoc """
   Deploys to ansible
   """
@@ -11,7 +11,7 @@ defmodule Mix.Tasks.Ansible.Build do
   def run(args) do
     opts = args
       |> parse_args
-      |> Keyword.put_new(:directory, @terraform_default_path)
+      |> Keyword.put_new(:directory, @ansible_default_path)
       |> Keyword.put_new(:hosts_file, "./deploys/ansible/hosts")
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
