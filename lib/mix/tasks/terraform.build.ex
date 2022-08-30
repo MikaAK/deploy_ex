@@ -38,6 +38,7 @@ defmodule Mix.Tasks.Terraform.Build do
 
       write_terraform_variables(terraform_output, opts)
       write_terraform_main(opts)
+      run_terraform_init(opts)
     end
   end
 
@@ -57,11 +58,15 @@ defmodule Mix.Tasks.Terraform.Build do
     opts
   end
 
+  defp run_terraform_init(opts) do
+    DeployExHelpers.run_command_with_input("terraform init", opts[:directory])
+  end
+
   defp ensure_terraform_directory_exists(directory) do
     if File.exists?(directory) do
       :ok
     else
-      Mix.shell().info([:green, "Copying terraform into #{directory}"])
+      Mix.shell().info([:green, "* copying terraform into ", :reset, directory])
 
       File.mkdir_p!(directory)
 

@@ -7,11 +7,24 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
   It also initializes AWS and pings the nodes to confirm they work
   """
 
-  @commands ["terraform.build", "terraform.apply", "ansible.build", "ansible.ping"]
+  alias Mix.Tasks.Ansible
+  alias Mix.Tasks.Terraform
 
-  def run(_args) do
+  @commands [
+    Terraform.Build,
+    Terraform.Apply,
+    Ansible.Build,
+    Ansible.Ping
+  ]
+
+  def run(args) do
     with :ok <- DeployExHelpers.check_in_umbrella() do
-      Enum.each(@commands, &Mix.shell().cmd(&1))
+      Enum.find_value(@commands, fn cmd_mod ->
+        case cmd_mod.run(args) do
+          :ok -> false
+          {:error, _} = e -> e
+        end
+      end)
     end
   end
 end
