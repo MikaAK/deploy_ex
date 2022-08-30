@@ -40,6 +40,8 @@ defmodule Mix.Tasks.Ansible.Build do
     if File.exists?(directory) do
       :ok
     else
+      File.mkdir_p!(directory)
+
       Mix.shell().info([:green, "* copying ansible into ", :reset, directory])
 
       "ansible"
@@ -52,8 +54,6 @@ defmodule Mix.Tasks.Ansible.Build do
 
   defp create_ansible_hosts_file(opts) do
     with {:ok, hostname_ips} <- terraform_instance_ips() do
-      DeployExHelpers.check_file_exists!(opts[:hosts_file])
-
       ansible_host_file = EEx.eval_file(DeployExHelpers.priv_file("ansible/hosts.eex"), [
         assigns: %{
           host_name_ips: hostname_ips,
@@ -68,6 +68,8 @@ defmodule Mix.Tasks.Ansible.Build do
       end
 
       DeployExHelpers.write_file(opts[:hosts_file], ansible_host_file, opts)
+
+      File.rm!("#{opts[:hosts_file]}.eex")
 
       :ok
     end

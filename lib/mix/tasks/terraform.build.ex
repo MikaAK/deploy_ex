@@ -63,6 +63,8 @@ defmodule Mix.Tasks.Terraform.Build do
     else
       Mix.shell().info([:green, "Copying terraform into #{directory}"])
 
+      File.mkdir_p!(directory)
+
       "terraform"
         |> DeployExHelpers.priv_file()
         |> File.cp_r!(directory)
