@@ -7,9 +7,11 @@ defmodule Mix.Tasks.Ansible.Ping do
   """
 
   def run(_args) do
-    DeployExHelpers.check_file_exists!("./deploys/ansible/hosts")
+    with :ok <- DeployExHelpers.check_in_umbrella() do
+      DeployExHelpers.check_file_exists!("./deploys/ansible/hosts")
 
-    DeployExHelpers.run_command_with_input("ansible -i hosts all -m ping", "./deploys/ansible")
+      DeployExHelpers.run_command_with_input("ansible -i hosts all -m ping", "./deploys/ansible")
+    end
   end
 end
 

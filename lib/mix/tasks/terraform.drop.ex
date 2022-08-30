@@ -7,6 +7,8 @@ defmodule Mix.Tasks.Terraform.Drop do
   """
 
   def run(_args) do
-    DeployExHelpers.run_command_with_input("terraform destroy", "./deploys/terraform")
+    with :ok <- DeployExHelpers.check_in_umbrella() do
+      DeployExHelpers.run_command_with_input("terraform destroy", "./deploys/terraform")
+    end
   end
 end
