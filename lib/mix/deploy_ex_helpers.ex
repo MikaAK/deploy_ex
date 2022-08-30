@@ -55,4 +55,11 @@ defmodule DeployExHelpers do
       {^port, {:exit_status, code}} -> {:error, ErrorMessage.internal_server_error("couldn't run #{command}", %{code: code})}
     end
   end
+
+  def fetch_mix_releases do
+    case Mix.Project.get() do
+      nil -> {:error, ErrorMessage.not_found("couldn't find mix project")}
+      project -> {:ok, project.releases()}
+    end
+  end
 end

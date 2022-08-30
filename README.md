@@ -30,7 +30,7 @@ Documentation is published on [HexDocs](https://hexdocs.pm/deploy_ex)
 - [x] `mix terraform.build` - Add the terraform files to project, or rebuilds them
 - [x] `mix terraform.apply` - Applies terraform changes
 - [x] `mix terraform.drop` - Destroys all terraform built resources
-- [ ] `mix ansible.build` - Adds ansible files to the project, or rebuilds them
-- [ ] `mix ansible.ping` - Pings ansible nodes to see if they can connect
+- [x] `mix ansible.build` - Adds ansible files to the project, or rebuilds them
+- [x] `mix ansible.ping` - Pings ansible nodes to see if they can connect
 - [ ] `mix ansible.deploy` - Deploys to your nodes via ansible
 - [ ] `mix build.deploy_ex` - Deploys your release to s3

@@ -30,7 +30,7 @@ defmodule Mix.Tasks.Terraform.Build do
       |> Keyword.put_new(:main_file, Path.join(opts[:directory], "main.tf"))
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
-         {:ok, releases} <- fetch_mix_releases(),
+         {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
          :ok <- ensure_terraform_directory_exists(opts[:directory]) do
       terraform_output = releases
         |> Keyword.keys
@@ -38,13 +38,6 @@ defmodule Mix.Tasks.Terraform.Build do
 
       write_terraform_variables(terraform_output, opts)
       write_terraform_main(opts)
-    end
-  end
-
-  defp fetch_mix_releases do
-    case Mix.Project.get() do
-      nil -> {:error, ErrorMessage.not_found("couldn't find mix project")}
-      project -> {:ok, project.releases()}
     end
   end
 

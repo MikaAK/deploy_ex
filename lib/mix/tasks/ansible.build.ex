@@ -1,14 +1,22 @@
 defmodule Mix.Tasks.Ansible.Build do
   use Mix.Task
 
+  @terraform_default_path "./deploys/ansible"
+
   @shortdoc "Deploys to terraform resources using ansible"
   @moduledoc """
   Deploys to ansible
   """
 
   def run(args) do
+    opts = args
+      |> parse_args
+      |> Keyword.put_new(:directory, @terraform_default_path)
+      |> Keyword.put_new(:hosts_file, "./deploys/ansible/hosts")
+
     with :ok <- DeployExHelpers.check_in_umbrella(),
-         :ok <- create_ansible_hosts_file(parse_args(args)) do
+         :ok <- ensure_ansible_directory_exists(opts[:directory]),
+         :ok <- create_ansible_hosts_file(opts) do
       :ok
     else
       {:error, e} -> Mix.shell().error(to_string(e))
@@ -20,22 +28,46 @@ defmodule Mix.Tasks.Ansible.Build do
       aliases: [f: :force, q: :quit],
       switches: [
         force: :boolean,
-        quiet: :boolean
+        quiet: :boolean,
+        directory: :string
       ]
     )
 
     opts
   end
 
+  defp ensure_ansible_directory_exists(directory) do
+    if File.exists?(directory) do
+      :ok
+    else
+      Mix.shell().info([:green, "* copying ansible into ", :reset, directory])
+
+      "ansible"
+        |> DeployExHelpers.priv_file()
+        |> File.cp_r!(directory)
+
+      :ok
+    end
+  end
+
   defp create_ansible_hosts_file(opts) do
     with {:ok, hostname_ips} <- terraform_instance_ips() do
-      ansible_host_file = EEx.eval_file("./deploys/ansible/hosts.eex", [
+      DeployExHelpers.check_file_exists!(opts[:hosts_file])
+
+      ansible_host_file = EEx.eval_file(DeployExHelpers.priv_file("ansible/hosts.eex"), [
         assigns: %{
-          host_name_ips: hostname_ips
+          host_name_ips: hostname_ips,
+          app_name: DeployExHelpers.underscored_app_name()
         }
       ])
 
-      Mix.Generator.create_file("./deploys/ansible/hosts", ansible_host_file, opts)
+      opts = if File.exists?(opts[:hosts_file]) do
+        [{:message, [:green, "* rewriting ", :reset, opts[:hosts_file]]} | opts]
+      else
+        opts
+      end
+
+      DeployExHelpers.write_file(opts[:hosts_file], ansible_host_file, opts)
 
       :ok
     end
