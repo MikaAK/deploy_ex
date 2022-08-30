@@ -1,6 +1,6 @@
 defmodule DeployExHelpers do
   def app_name, do: Mix.Project.get() |> Module.split |> hd
-  def underscored_app_name, do: Macro.underscore(app_name)
+  def underscored_app_name, do: Macro.underscore(app_name())
 
   def check_in_umbrella do
     if Mix.Project.umbrella?() do
@@ -41,5 +41,18 @@ defmodule DeployExHelpers do
 
   def upper_title_case(string) do
     string |> String.split("_") |> Enum.map_join(" ", &String.capitalize/1)
+  end
+
+  def run_command_with_input(command, directory) do
+    port = Port.open({:spawn, command}, [
+      :nouse_stdio,
+      :exit_status,
+      {:cd, directory}
+    ])
+
+    receive do
+      {^port, {:exit_status, 0}} -> :ok
+      {^port, {:exit_status, code}} -> {:error, ErrorMessage.internal_server_error("couldn't run #{command}", %{code: code})}
+    end
   end
 end

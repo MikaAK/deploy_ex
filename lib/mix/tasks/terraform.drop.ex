@@ -7,6 +7,6 @@ defmodule Mix.Tasks.Terraform.Drop do
   """
 
   def run(_args) do
-    System.shell("terraform destroy", cd: "./deploys/terraform", into: IO.stream())
+    DeployExHelpers.run_command_with_input("terraform destroy", "./deploys/terraform")
   end
 end

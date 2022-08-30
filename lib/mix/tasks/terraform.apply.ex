@@ -3,10 +3,10 @@ defmodule Mix.Tasks.Terraform.Apply do
 
   @shortdoc "Deploys to terraform resources using ansible"
   @moduledoc """
-  Deploys to ansible
+  Deploys with terraform to AWS
   """
 
   def run(_args) do
-    System.shell("terraform apply", cd: "./deploys/terraform", into: IO.stream())
+    DeployExHelpers.run_command_with_input("terraform apply", "./deploys/terraform")
   end
 end
