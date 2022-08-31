@@ -48,7 +48,7 @@ defmodule DeployEx.ReleaseUploader.State do
 
         {String.to_integer(timestamp), git_sha, base_name}
       end)
-      |> Enum.sort_by(fn {timestamp, _, _} -> timestamp end)
+      |> Enum.sort_by(fn {timestamp, _, _} -> timestamp end, :desc)
       |> List.first
 
     with {_, sha, _} <- res, do: sha

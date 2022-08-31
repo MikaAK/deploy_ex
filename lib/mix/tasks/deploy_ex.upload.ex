@@ -26,6 +26,7 @@ defmodule Mix.Tasks.DeployEx.Upload do
 
   def run(args) do
     Application.ensure_all_started(:hackney)
+    Application.ensure_all_started(:telemetry)
 
     opts = args
       |> parse_args
@@ -35,11 +36,14 @@ defmodule Mix.Tasks.DeployEx.Upload do
     with {:ok, local_releases} <- ReleaseUploader.fetch_all_local_releases(),
          {:ok, remote_releases} <- ReleaseUploader.fetch_all_remote_releases(opts),
          {:ok, git_sha} <- ReleaseUploader.get_git_sha() do
-      release_candidates = local_releases
+      {has_previous_upload_release_cand, no_prio_upload_release_cand} = local_releases
         |> ReleaseUploader.build_state(remote_releases, git_sha)
         |> Enum.reject(&already_uploaded?/1)
+        |> Enum.split_with(&(&1.last_sha))
 
-      upload_changed_releases(release_candidates, opts)
+      with {:ok, _} <- upload_releases(no_prio_upload_release_cand, opts) do
+        upload_changed_releases(has_previous_upload_release_cand, opts)
+      end
     else
       {:error, e} -> Mix.shell().error(to_string(e))
     end
@@ -74,8 +78,13 @@ defmodule Mix.Tasks.DeployEx.Upload do
 
   defp upload_changed_releases(release_candidates, opts) do
     case ReleaseUploader.reject_unchanged_releases(release_candidates) do
-      {:ok, final_release_candidates} ->
-        Enum.map(final_release_candidates, &upload_release(&1, opts))
+      {:ok, []} ->
+        Enum.each(release_candidates, &Mix.shell().info([
+          :yellow, "* skipping unchanged release ",
+          :reset, &1.local_file
+        ]))
+
+      {:ok, final_release_candidates} -> upload_releases(final_release_candidates, opts)
 
       {:error, %ErrorMessage{code: :not_found}} ->
         Enum.each(release_candidates, &Mix.shell().info([
@@ -85,6 +94,12 @@ defmodule Mix.Tasks.DeployEx.Upload do
 
       {:error, e} -> Mix.shell().error(to_string(e))
     end
+  end
+
+  defp upload_releases(release_candidates, opts) do
+    release_candidates
+      |> Enum.map(&upload_release(&1, opts))
+      |> DeployEx.Utils.reduce_status_tuples
   end
 
   defp upload_release(%ReleaseUploader.State{} = release_state, opts) do
@@ -100,7 +115,10 @@ defmodule Mix.Tasks.DeployEx.Upload do
 
         res
 
-      {:error, e} -> Mix.shell().error(to_string(e))
+      {:error, e} ->
+        Mix.shell().error(to_string(e))
+
+        e
     end
   end
 end

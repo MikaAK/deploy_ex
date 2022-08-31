@@ -1,6 +1,6 @@
 defmodule DeployEx.ReleaseUploader.UpdateValidator.MixDepsTreeParser do
   def dep_connected?(app_dep_tree, app_name, dep_name) do
-    dep_name in Keyword.get(app_dep_tree, app_name, [])
+    dep_name in Map.get(app_dep_tree, app_name, [])
   end
 
   def load_app_dep_tree do
@@ -20,6 +20,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator.MixDepsTreeParser do
       |> String.split("==>")
       |> tl
       |> Enum.map(&(&1 |> String.split("\n") |> parse_project_deps))
+      |> Map.new
   end
 
   defp parse_project_deps(project_deps) do

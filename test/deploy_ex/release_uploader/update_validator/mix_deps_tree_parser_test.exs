@@ -9,7 +9,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator.MixDepsTreeParserTest do
     test "parses the tree correctly" do
       output = MixDepsTreeParser.parse_deps_tree(@cmd_output)
 
-      assert output === [
+      assert output === Map.new([
         {
           "shared_utils",
           [
@@ -65,7 +65,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator.MixDepsTreeParserTest do
             "thinkific_api", "thinkific_session_scraper"
           ]
         }
-      ]
+      ])
     end
   end
 end
