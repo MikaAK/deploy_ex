@@ -8,4 +8,4 @@ all:<% import Mix.Tasks.Ansible.Build %>
 
       vars:
         ansible_user: admin
-        ansible_ssh_private_key_file: "../terraform/<%= String.replace(@app_name, "_", "-") %>-key-pair.pem"
+        ansible_ssh_private_key_file: <%= @pem_file_path %>

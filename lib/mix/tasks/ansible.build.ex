@@ -54,10 +54,12 @@ defmodule Mix.Tasks.Ansible.Build do
 
   defp create_ansible_hosts_file(opts) do
     with {:ok, hostname_ips} <- terraform_instance_ips() do
+      app_name = String.replace(DeployExHelpers.underscored_app_name(), "_", "-")
+
       ansible_host_file = EEx.eval_file(DeployExHelpers.priv_file("ansible/hosts.eex"), [
         assigns: %{
           host_name_ips: hostname_ips,
-          app_name: DeployExHelpers.underscored_app_name()
+          pem_file_path: pem_file_path(app_name, opts[:directory])
         }
       ])
 
@@ -69,10 +71,26 @@ defmodule Mix.Tasks.Ansible.Build do
 
       DeployExHelpers.write_file(opts[:hosts_file], ansible_host_file, opts)
 
-      File.rm!("#{opts[:hosts_file]}.eex")
+      if File.exists?("#{opts[:hosts_file]}.eex") do
+        File.rm!("#{opts[:hosts_file]}.eex")
+      end
 
       :ok
     end
+  end
+
+  defp pem_file_path(app_name, directory) do
+    directory_path = directory
+      |> String.split("/")
+      |> Enum.drop(-1)
+      |> Enum.join("/")
+      |> Path.join("terraform/#{app_name}*pem")
+      |> Path.wildcard
+      |> List.first
+      |> String.split("/")
+      |> Enum.drop(1)
+
+    Enum.join([".." | directory_path], "/")
   end
 
   defp terraform_instance_ips do

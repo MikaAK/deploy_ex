@@ -27,6 +27,7 @@ defmodule Mix.Tasks.Terraform.Build do
 
     opts = opts
       |> Keyword.put_new(:variables_file, Path.join(opts[:directory], "variables.tf"))
+      |> Keyword.put_new(:keypair_file, Path.join(opts[:directory], "key-pair-main.tf"))
       |> Keyword.put_new(:main_file, Path.join(opts[:directory], "main.tf"))
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
@@ -38,6 +39,7 @@ defmodule Mix.Tasks.Terraform.Build do
 
       write_terraform_variables(terraform_output, opts)
       write_terraform_main(opts)
+      write_terraform_keypair(opts)
       run_terraform_init(opts)
     end
   end
@@ -183,5 +185,26 @@ defmodule Mix.Tasks.Terraform.Build do
     end
 
     File.rm!(template_file_path)
+  end
+
+  defp write_terraform_keypair(opts) do
+    if not File.exists?(opts[:keypair_file]) do
+      keypair_template_path = "terraform"
+        |> Path.join(Path.basename(opts[:keypair_file]))
+        |> DeployExHelpers.priv_file
+        |> Path.expand
+        |> Kernel.<>(".eex")
+
+      DeployExHelpers.check_file_exists!(keypair_template_path)
+
+      kebab_case_app_name = String.replace(DeployExHelpers.underscored_app_name(), "_", "-")
+      random_bytes = 6 |> :crypto.strong_rand_bytes |> Base.encode32(padding: false)
+
+      terraform_keypair = EEx.eval_file(keypair_template_path, assigns: %{
+        pem_app_name: "#{kebab_case_app_name}-#{random_bytes}"
+      })
+
+      DeployExHelpers.write_file(opts[:keypair_file], terraform_keypair, opts)
+    end
   end
 end

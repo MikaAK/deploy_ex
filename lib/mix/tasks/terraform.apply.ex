@@ -18,8 +18,6 @@ defmodule Mix.Tasks.Terraform.Apply do
       cmd = if opts[:auto_approve], do: "#{cmd} --auto-approve", else: cmd
 
       DeployExHelpers.run_command_with_input(cmd, opts[:directory])
-
-      maybe_chmod_pem_file(opts[:directory])
     end
   end
 
@@ -35,17 +33,5 @@ defmodule Mix.Tasks.Terraform.Apply do
     )
 
     opts
-  end
-
-  defp maybe_chmod_pem_file(directory) do
-    kebab_case_app_name = String.replace(DeployExHelpers.underscored_app_name(), "_", "-")
-    file_dir = Path.join(directory, "#{kebab_case_app_name}-key-pair.pem")
-
-
-    DeployExHelpers.check_file_exists!(file_dir)
-
-    if File.lstat!(file_dir).access !== :read do
-      File.chmod!(file_dir, 0o400)
-    end
   end
 end

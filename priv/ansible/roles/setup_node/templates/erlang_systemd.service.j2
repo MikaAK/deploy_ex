@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
+User=admin
 Group=root
 WorkingDirectory=/srv/{{ app_name }}
 ExecStart=/srv/{{ app_name }}/bin/{{ app_name }} start
