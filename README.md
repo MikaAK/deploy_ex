@@ -9,8 +9,14 @@ Use `mix terraform.build` from your umbrella root to add the `./deploys/terrafor
 to the project. You can regenerate the root `variables.tf` & `main.tf` files at any time by running the command again and it'll inject the updates into the file
 leaving any changes alone
 
+When using `mix deploy_ex.upload` it's important to note, it will only upload releases when it finds a difference
+in one of the following: release_app code, release_app local dependency changes or a dependency updates in the mix.lock
+
 
 ## Installation
+
+#### Pre-requisite
+You will need to make sure to have `ansible`, `terraform` & `git` available
 
 [Available in Hex](https://hex.pm/deploy_ex), the package can be installed
 by adding `deploy_ex` to your list of dependencies in `mix.exs`:
@@ -35,7 +41,7 @@ Documentation is published on [HexDocs](https://hexdocs.pm/deploy_ex)
 - [x] `mix ansible.ping` - Pings ansible nodes to see if they can connect
 - [ ] `mix ansible.deploy` - Deploys to your nodes via ansible
 - [ ] `mix ansible.rollback` - Rollback to a prior release
-- [ ] `mix deploy_ex.upload` - Deploys your release to s3
+- [x] `mix deploy_ex.upload` - Deploys your release to s3
 
 
 ### Troubleshooting
