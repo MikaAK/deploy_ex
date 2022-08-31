@@ -1,10 +1,18 @@
 defmodule DeployEx.ReleaseUploader do
-  alias DeployEx.ReleaseUploader.{State, AwsManager}
+  alias DeployEx.ReleaseUploader.{State, AwsManager, UpdateValidator}
 
   @type opts :: [
     aws_bucket: String.t,
     aws_region: String.t
   ]
+
+  defdelegate build_state(local_releases, remote_release, git_sha),
+    to: State,
+    as: :build
+
+  defdelegate reject_unchanged_releases(release_uploader_states),
+    to: UpdateValidator,
+    as: :reject_unchanged
 
   def fetch_all_remote_releases(opts) do
     AwsManager.get_releases(opts[:aws_region], opts[:aws_bucket])

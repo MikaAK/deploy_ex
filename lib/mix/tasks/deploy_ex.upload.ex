@@ -35,10 +35,11 @@ defmodule Mix.Tasks.DeployEx.Upload do
     with {:ok, local_releases} <- ReleaseUploader.fetch_all_local_releases(),
          {:ok, remote_releases} <- ReleaseUploader.fetch_all_remote_releases(opts),
          {:ok, git_sha} <- ReleaseUploader.get_git_sha() do
-      local_releases
-        |> ReleaseUploader.State.build(remote_releases, git_sha)
+      release_candidates = local_releases
+        |> ReleaseUploader.build_state(remote_releases, git_sha)
         |> Enum.reject(&already_uploaded?/1)
-        |> Enum.map(&upload_release(&1, opts))
+
+      upload_changed_releases(release_candidates, opts)
     else
       {:error, e} -> Mix.shell().error(to_string(e))
     end
@@ -58,25 +59,48 @@ defmodule Mix.Tasks.DeployEx.Upload do
     opts
   end
 
-  defp already_uploaded?(%ReleaseUploader.State{remote_file: remote_file, local_file: local_file}) do
-    if not is_nil(remote_file) do
-      Mix.shell.info([:yellow, "* skipping already uploaded file ", :reset, local_file])
+  defp already_uploaded?(%ReleaseUploader.State{
+    remote_file: remote_file,
+    local_file: local_file
+  }) do
+    if is_nil(remote_file) do
+      false
+    else
+      Mix.shell.info([:yellow, "* skipping already uploaded release ", :reset, local_file])
 
       true
+    end
+  end
+
+  defp upload_changed_releases(release_candidates, opts) do
+    case ReleaseUploader.reject_unchanged_releases(release_candidates) do
+      {:ok, final_release_candidates} ->
+        Enum.map(final_release_candidates, &upload_release(&1, opts))
+
+      {:error, %ErrorMessage{code: :not_found}} ->
+        Enum.each(release_candidates, &Mix.shell().info([
+          :yellow, "* skipping unchanged release ",
+          :reset, &1.local_file
+        ]))
+
+      {:error, e} -> Mix.shell().error(to_string(e))
     end
   end
 
   defp upload_release(%ReleaseUploader.State{} = release_state, opts) do
     Mix.shell.info([:green, "* uploading to S3 ", :reset, release_state.local_file])
 
-    with {:ok, _} = res <- ReleaseUploader.upload_release(release_state, opts) do
-      Mix.shell.info([
-        :green, "* uploaded to S3 ", :reset,
-        release_state.local_file, :green, " as ", :reset,
-        release_state.name
-      ])
+    case ReleaseUploader.upload_release(release_state, opts) do
+      {:ok, _} = res ->
+        Mix.shell.info([
+          :green, "* uploaded to S3 ", :reset,
+          release_state.local_file, :green, " as ", :reset,
+          release_state.name
+        ])
 
-      res
+        res
+
+      {:error, e} -> Mix.shell().error(to_string(e))
     end
   end
 end

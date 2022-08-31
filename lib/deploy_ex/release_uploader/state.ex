@@ -1,5 +1,5 @@
 defmodule DeployEx.ReleaseUploader.State do
-  @enforce_keys [:local_file, :sha]
+  @enforce_keys [:local_file, :sha, :app_name]
   defstruct @enforce_keys ++ [:name, :last_sha, :remote_file]
 
   def build(local_releases, remote_releases, git_sha) do
@@ -8,6 +8,7 @@ defmodule DeployEx.ReleaseUploader.State do
       remote_file = find_remote_release(remote_releases, app_name, git_sha)
 
       %DeployEx.ReleaseUploader.State{
+        app_name: app_name,
         local_file: release_file_path,
         sha: git_sha,
         name: remote_file_name_for_release(release_file_path, git_sha),
