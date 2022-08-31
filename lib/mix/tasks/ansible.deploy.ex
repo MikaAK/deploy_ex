@@ -18,9 +18,9 @@ defmodule Mix.Tasks.Ansible.Deploy do
 
       opts[:directory]
         |> Path.join("playbooks/*.yaml")
-        |> Path.wildcard
+        |> Enum.map(&String.replace(&1, opts[:directory], ""))
         |> Enum.each(fn host_playbook ->
-          System.shell("ansible-playbook -i hosts all #{host_playbook}", cd: opts[:directory])
+          System.shell("ansible-playbook #{host_playbook}", cd: opts[:directory])
         end)
     end
   end

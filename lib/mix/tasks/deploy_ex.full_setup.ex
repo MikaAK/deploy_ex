@@ -26,13 +26,18 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
   def run(args) do
     with :ok <- DeployExHelpers.check_in_umbrella() do
       case run_commands(@pre_setup_commands, args) do
-        false ->
+        nil ->
           Mix.shell().info([
             :green, "* sleeping for ", :reset,
             @time_between_pre_post |> div(1000) |> to_string,
-            :green, " seconds to allow setup"])
+            :green, " seconds to allow setup"
+          ])
 
           Process.sleep(@time_between_pre_post)
+
+          Mix.shell().info([
+            :green, "* running post setup"
+          ])
 
           run_commands(@post_setup_comands, args)
         e -> e

@@ -15,12 +15,14 @@ defmodule Mix.Tasks.Ansible.Setup do
         |> Keyword.put_new(:directory, @ansible_default_path)
 
       DeployExHelpers.check_file_exists!(Path.join(opts[:directory], "hosts"))
+      relative_directory = String.replace(Path.absname(opts[:directory]), "#{File.cwd!()}/", "")
 
       opts[:directory]
         |> Path.join("setup/*.yaml")
         |> Path.wildcard
+        |> Enum.map(&Path.relative_to(&1, relative_directory))
         |> Enum.each(fn setup_file ->
-          System.shell("ansible-playbook -i hosts all #{setup_file}", cd: opts[:directory])
+          System.shell("ansible-playbook #{setup_file}" |> IO.inspect, cd: opts[:directory])
         end)
     end
   end

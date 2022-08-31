@@ -210,7 +210,6 @@ defmodule Mix.Tasks.Ansible.Build do
     if File.exists?(setup_template_file) do
       File.rm!(setup_template_file)
     end
-
   end
 end
 
