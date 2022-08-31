@@ -22,7 +22,7 @@ defmodule Mix.Tasks.Ansible.Setup do
         |> Path.wildcard
         |> Enum.map(&Path.relative_to(&1, relative_directory))
         |> Enum.each(fn setup_file ->
-          System.shell("ansible-playbook #{setup_file}" |> IO.inspect, cd: opts[:directory])
+          DeployExHelpers.run_command_with_input("ansible-playbook #{setup_file}", opts[:directory])
         end)
     end
   end

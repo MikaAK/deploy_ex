@@ -3,7 +3,7 @@
     aws_file_name: "<%= @aws_release_file %>"
     app_name: "<%= @app_name %>"
     bucket_name: "<%= @aws_release_bucket %>"
-    <%= if @port do %>port: <%= @port %><% end %>
+    <%= if @port do %>app_port: <%= @port %><% end %>
   roles:
     - beam_linux_tuning
     - log_cleanup
