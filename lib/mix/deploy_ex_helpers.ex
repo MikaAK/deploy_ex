@@ -19,6 +19,10 @@ defmodule DeployExHelpers do
   def write_file(file_path, contents, opts) do
     if opts[:message] do
       if opts[:force] || Mix.Generator.overwrite?(file_path, contents) do
+        if not File.exists?(Path.dirname(file_path)) do
+          File.mkdir_p!(Path.dirname(file_path))
+        end
+
         File.write!(file_path, contents)
 
         if !opts[:quiet] do

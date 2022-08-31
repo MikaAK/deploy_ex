@@ -1,7 +1,7 @@
 /var/log/syslog
 {
         rotate 7
-        daily
+        weekly
         maxsize 1G
         missingok
         notifempty
@@ -19,7 +19,7 @@
 /var/log/daemon.log
 {
         rotate 4
-        daily
+        weekly
         maxsize 1G
         missingok
         notifempty

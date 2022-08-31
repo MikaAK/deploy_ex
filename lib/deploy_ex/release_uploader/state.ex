@@ -39,8 +39,8 @@ defmodule DeployEx.ReleaseUploader.State do
     app_name
   end
 
-  defp last_sha_from_remote_file(remote_releases, app_name) do
-    res = remote_releases
+  def lastest_remote_app_release(remote_releases, app_name) do
+    remote_releases
       |> Enum.filter(&(&1 =~ ~r/^#{app_name}\//))
       |> Enum.map(fn release_path ->
         base_name = Path.basename(release_path)
@@ -50,7 +50,12 @@ defmodule DeployEx.ReleaseUploader.State do
       end)
       |> Enum.sort_by(fn {timestamp, _, _} -> timestamp end, :desc)
       |> List.first
+  end
 
-    with {_, sha, _} <- res, do: sha
+  def last_sha_from_remote_file(remote_releases, app_name) do
+    case lastest_remote_app_release(remote_releases, app_name) do
+      {_, sha, _} -> sha
+      nil -> nil
+    end
   end
 end

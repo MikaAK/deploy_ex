@@ -1,17 +1,17 @@
 - name: log_cleanup
   block:
-    - name: Create /etc/cron.fiveM directory
+    - name: Create /etc/cron.weekly directory
       file:
-        path: /etc/cron.fiveM
+        path: /etc/cron.weekly
         state: directory
         owner: root
         group: root
         mode: 0755
 
-    - name: Copy clear_drive_space file to /etc/cron.fiveM/clear_drive_space
+    - name: Copy clear_drive_space file to /etc/cron.weekly/clear_drive_space
       copy:
         src: clear_drive_space
-        dest: /etc/cron.fiveM/clear_drive_space
+        dest: /etc/cron.weekly/clear_drive_space
         owner: root
         group: root
         mode: u+x

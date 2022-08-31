@@ -6,6 +6,31 @@ defmodule DeployEx.ReleaseUploader do
     aws_region: String.t
   ]
 
+  def lastest_app_release(remote_releases, app_names) when is_list(app_names) do
+    app_names
+      |> Enum.map(fn app_name ->
+        with {:ok, release_name} <- lastest_app_release(remote_releases, app_name) do
+          {:ok, {app_name, release_name}}
+        end
+      end)
+      |> DeployEx.Utils.reduce_status_tuples
+      |> then(fn
+        {:ok, app_releases} -> {:ok, Map.new(app_releases)}
+        e -> e
+      end)
+  end
+
+  def lastest_app_release(remote_releases, app_name) do
+    case State.lastest_remote_app_release(remote_releases, app_name) do
+      {timestamp, sha, name} -> {:ok, "#{timestamp}-#{sha}-#{name}"}
+      nil ->
+        {:error, ErrorMessage.not_found(
+          "no release found for #{app_name}",
+          %{releases: remote_releases}
+        )}
+    end
+  end
+
   defdelegate build_state(local_releases, remote_release, git_sha),
     to: State,
     as: :build

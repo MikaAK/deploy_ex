@@ -7,13 +7,13 @@
       amazon.aws.aws_s3:
         aws_access_key: "{{ credentials['AWS_ACCESS_KEY_ID'] }}"
         aws_secret_key: "{{ credentials['AWS_SECRET_ACCESS_KEY'] }}"
-        bucket: learn-elixir-releases
+        bucket: "{{ bucket_name }}"
         mode: get
-        object: deploy_candidates/{{ app_name }}.tar.gz
-        dest: /srv/{{ app_name }}.tar.gz
+        object: "{{ app_name }}/{{ aws_file_name }}"
+        dest: /srv/{{ app_name }}/{{ aws_file_name }}
       no_log: true
 
-   - name: Create /srv/{{ app_name }} directory
+    - name: Create /srv/{{ app_name }} directory
       file:
         path: /srv/{{ app_name }}
         state: directory
@@ -21,7 +21,7 @@
         group: root
         mode: 0755
 
-   - name: Create /srv/unpack-directory directory
+    - name: Create /srv/unpack-directory directory
       file:
         path: /srv/unpack-directory
         state: directory
@@ -29,9 +29,9 @@
         group: root
         mode: 0755
 
-    - name: Untar {{ app_name }}.tar.gz
+    - name: Untar {{ aws_file_name }}
       unarchive:
-        src: /srv/{{ app_name }}.tar.gz
+        src: /srv/{{ app_name }}/{{ aws_file_name }}
         dest: /srv/unpack-directory
         remote_src: true
 
@@ -68,7 +68,7 @@
         mode: 0755
         remote_src: true
 
-    - name: Add vm.args file to /srv/{{ app_name }}/releases/1.0.0/vm.args
+    - name: Add vm.args file to /srv/{{ app_name }}
       template:
         src: vm.args.j2
         dest: /srv/vm.args

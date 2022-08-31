@@ -14,7 +14,7 @@
     - name: Install unzip
       apt:
         name: unzip
-        # update_cache: true
+        update_cache: true
 
     - name: Download awscli installer
       unarchive:

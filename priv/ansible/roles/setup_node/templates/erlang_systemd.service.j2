@@ -11,7 +11,7 @@ ExecStart=/srv/{{ app_name }}/bin/{{ app_name }} start
 ExecStop=/srv/{{ app_name }}/bin/{{ app_name }} stop
 Restart=on-failure
 RestartSec=5
-Environment=PORT=80
+Environment=PORT={{ app_port }}
 Environment=RELEASE_VM_ARGS=/srv/vm.args
 SyslogIdentifier={{ app_name }}
 RemainAfterExit=no
