@@ -6,6 +6,13 @@ defmodule Mix.Tasks.Ansible.Setup do
   @shortdoc "Setups ansible hosts called once upon node creation"
   @moduledoc """
   Setups ansible hosts called once upon node creation
+
+  This will Load awscli, python, pip and more onto your node, do
+  a bunch of VM tuning to support BEAM and better TCP traffic as well
+  as setup log rotation and s3 crash_dump upload & server removal
+
+  Finally it'll load your release onto each node and sets it up
+  in a SystemD task
   """
 
   def run(args) do

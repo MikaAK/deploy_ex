@@ -1,4 +1,6 @@
 # DeployEx (WIP THIS IS NOT AVAILABLE IN HEX)
+*Important: This requires Terraform and Ansible to be installed to use the commands*
+
 This library allows you to add deployment to your umbrella application using AWS EC2, Ansible and Terraform
 
 
@@ -39,7 +41,7 @@ Documentation is published on [HexDocs](https://hexdocs.pm/deploy_ex)
 - [x] `mix terraform.drop` - Destroys all terraform built resources
 - [x] `mix ansible.build` - Adds ansible files to the project, or rebuilds them
 - [x] `mix ansible.ping` - Pings ansible nodes to see if they can connect
-- [x] `mix ansible.setup` - Runs basic setup on the ansible nodes
+- [ ] `mix ansible.setup` - Runs basic setup on the ansible nodes
 - [ ] `mix ansible.deploy` - Deploys to your nodes via ansible from uploaded S3 releases
 - [ ] `mix ansible.rollback` - Rollback to a prior release
 - [x] `mix deploy_ex.upload` - Deploys your `mix release` to s3

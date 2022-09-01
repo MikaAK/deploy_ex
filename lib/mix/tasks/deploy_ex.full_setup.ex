@@ -4,7 +4,9 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
   @shortdoc "Runs all the commands to setup terraform and ansible"
   @moduledoc """
   Runs all the commands to setup terraform and ansible.
-  It also initializes AWS and pings the nodes to confirm they work
+  It also initializes AWS and pings the nodes to confirm they work. Finally
+  it will attempt to run `mix ansible.setup` as well to setup
+  the nodes post successful ping
   """
 
   alias Mix.Tasks.Ansible
