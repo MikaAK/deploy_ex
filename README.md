@@ -47,6 +47,11 @@ Documentation is published on [HexDocs](https://hexdocs.pm/deploy_ex)
 - [x] `mix deploy_ex.upload` - Deploys your `mix release` to s3
 
 
+### Credits
+Big thanks to @alevan for helping to figure out all the Ansible side of things and
+providing a solid foundation for all the ansible files. This project wouldn't of been
+possible without his help!!
+
 ### Troubleshooting
 
 <details>
