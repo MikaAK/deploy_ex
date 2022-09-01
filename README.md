@@ -1,4 +1,4 @@
-# DeployEx
+# DeployEx (WIP THIS IS NOT AVAILABLE IN HEX)
 This library allows you to add deployment to your umbrella application using AWS EC2, Ansible and Terraform
 
 
