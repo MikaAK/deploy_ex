@@ -33,6 +33,27 @@ end
 
 Documentation is published on [HexDocs](https://hexdocs.pm/deploy_ex)
 
+#### Usage with Github Actions (WIP)
+You can use this library with github actions to make for an easy deploy
+pipeline, this way you can easily deploy to your nodes when you push
+and is good for a quick setup
+
+To set up this way you would run
+- `mix deploy_ex.full_setup -y -k` - Sets up `./deploy` folder and terraform & ansible resources and skips running deployment
+- `mix deploy_ex.install_github_action` - Adds a github action to your folder that will maintain terraform & ansible on push
+
+#### Usage with Deploy Node
+- `mix deploy_ex.full_setup -y` - Sets up `./deploy` folder and terraform & ansible resources & commit this
+- Set up a deploy node and load elixir & this reposity onto the repo
+- When you want to do a deploy trigger this node to run `mix deploy_ex.upload` to load releases
+- After releases are uploaded use `mix ansible.deploy` to re-deploy all releases
+
+
+#### Changes over time
+Because the terraform and ansible files are generated directly into your application, you own these files.
+You can make changes to ansible and terraform files as you see fit. In the case of terraform, it will automatically
+inject the apps into your variables file despite changes to the file. If you change terraform, make sure to run `mix terraform.apply`
+
 
 ## Commands
 - [x] `mix deploy_ex.full_setup` - Runs all the commands to initialize and setup your project
@@ -48,9 +69,10 @@ Documentation is published on [HexDocs](https://hexdocs.pm/deploy_ex)
 - [x] `mix ansible.deploy` - Deploys to your nodes via ansible from uploaded S3 releases
 - [ ] `mix ansible.rollback` - Rollback to a prior release
 
-## WIP
-- Easy Distribution
-- Github Actions as Terraform Remote Server
+## Extra Utilities
+- [ ] - Volumes
+- [ ] - Easy Distribution
+- [ ] - Github Actions as Terraform Remote Server
 
 
 ### Credits

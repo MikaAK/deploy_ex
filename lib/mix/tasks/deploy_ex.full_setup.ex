@@ -7,6 +7,10 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
   It also initializes AWS and pings the nodes to confirm they work. Finally
   it will attempt to run `mix ansible.setup` as well to setup
   the nodes post successful ping
+
+  ## Options
+  - `auto-approve` - Skip asking for verification with terraform (alias: `y`)
+  - `skip-deploy` - Skips deploy commands after pinging & setting up nodes with ansible (alias: `k`)
   """
 
   alias Mix.Tasks.Ansible
@@ -19,8 +23,8 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
   ]
 
   @post_setup_comands [
-    Ansible.Ping,
-    Ansible.Setup
+    Ansible.Setup,
+    Ansible.Deploy
   ]
 
   @time_between_pre_post :timer.seconds(10)
@@ -37,14 +41,22 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
 
           Process.sleep(@time_between_pre_post)
 
-          Mix.shell().info([
-            :green, "* running post setup"
-          ])
+          ping_and_run_post_setup(args)
 
-          run_commands(@post_setup_comands, args)
         e -> e
       end
     end
+  end
+
+  defp parse_args(args) do
+    {opts, _extra_args} = OptionParser.parse!(args,
+      aliases: [k: :skip_setup],
+      switches: [
+        skip_deploy: :boolean
+      ]
+    )
+
+    opts
   end
 
   defp run_commands(commands, args) do
@@ -54,6 +66,29 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
         {:error, _} = e -> e
       end
     end)
+  end
+
+  defp ping_and_run_post_setup(args) do
+    with :ok <- Ansible.Ping.run(args),
+         :ok <- run_setup(args) do
+      opts = parse_args(args)
+
+      if not opts[:skip_deploy] do
+        Mix.shell().info([
+          :green, "* running post setup"
+        ])
+
+        run_commands(@post_setup_comands, args)
+      end
+    end
+  end
+
+  defp run_setup(args) do
+    Mix.shell().info([
+      :green, "* running instance setup"
+    ])
+
+    Ansible.Setup.run(args)
   end
 end
 

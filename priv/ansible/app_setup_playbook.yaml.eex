@@ -10,4 +10,3 @@
     <%# - erl_crash_dump_cleanup %>
     - pip3
     - awscli
-    - setup_node
