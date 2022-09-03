@@ -48,6 +48,10 @@ Documentation is published on [HexDocs](https://hexdocs.pm/deploy_ex)
 - [x] `mix ansible.deploy` - Deploys to your nodes via ansible from uploaded S3 releases
 - [ ] `mix ansible.rollback` - Rollback to a prior release
 
+## WIP
+- Easy Distribution
+- Github Actions as Terraform Remote Server
+
 
 ### Credits
 Big thanks to @alevan for helping to figure out all the Ansible side of things and
@@ -67,8 +71,7 @@ possible without his help!!
 <details>
   <summary>I'm getting `Operation timed out` at the end of `mix deploy_ex.full_setup`</summary>
 
-  You can add `IdentitiesOnly=yes` to your `~/.ssh/config` `*` setting to clear that up.
-  See [here for more details](https://www.tecmint.com/fix-ssh-too-many-authentication-failures-error/)
+  Sometimes it takes longer to setup the nodes, please just retry `mix ansible.ping` in a few minutes
 
 </details>
 
