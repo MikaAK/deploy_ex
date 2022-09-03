@@ -1,3 +1,12 @@
+data "aws_availability_zones" "available" {
+  state = "available"
+
+  filter {
+    name   = "zone-type"
+    values = ["availability-zone"]
+  }
+}
+
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "3.14.2"
@@ -10,6 +19,8 @@ module "vpc" {
   public_subnets  = ["10.0.1.0/24"]
 
   map_public_ip_on_launch = false
+  enable_dns_hostnames = true
+  enable_dns_support   = true
 }
 
 module "app_security_group" {

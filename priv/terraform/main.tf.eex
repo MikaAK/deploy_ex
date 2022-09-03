@@ -12,15 +12,6 @@ provider "aws" {
   region  = "<%= @aws_region %>"
 }
 
-data "aws_availability_zones" "available" {
-  state = "available"
-
-  filter {
-    name   = "zone-type"
-    values = ["availability-zone"]
-  }
-}
-
 module "ec2_instance" {
   source = "./modules/aws-instance"
 

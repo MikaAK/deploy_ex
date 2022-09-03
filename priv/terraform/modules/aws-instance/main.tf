@@ -22,10 +22,12 @@ resource "aws_instance" "ec2_instance" {
 
   key_name = var.key_pair_key_name
 
-  private_dns_name_options = {
+  private_dns_name_options {
     hostname_type = "resource-name"
     enable_resource_name_dns_a_record = true
   }
+
+  # user_data = templatefile("${path.module}/user_data_init_script.sh.tpl", {instance_name = var.instance_name})
 
   tags = {
     Name  = var.instance_name

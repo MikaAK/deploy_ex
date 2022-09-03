@@ -88,7 +88,6 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
     code_change? = Enum.any?(file_diffs) and Enum.any?(file_diffs, &file_part_of_app(&1, app_name))
 
     if code_change? do
-      IO.inspect file_diffs
       IO.puts(to_string(IO.ANSI.format([
         :green, "* #{app_name} has code changes"
       ])))

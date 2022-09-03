@@ -30,6 +30,7 @@ defmodule Mix.Tasks.Ansible.Build do
          :ok <- create_ansible_playbooks(Map.keys(hostname_ips), opts) do
       :ok
     else
+      {:error, e} when is_list(e) -> Enum.each(e, &Mix.shell().error(to_string(&1)))
       {:error, e} -> Mix.shell().error(to_string(e))
     end
   end
@@ -147,6 +148,7 @@ defmodule Mix.Tasks.Ansible.Build do
         build_host_setup_playbook(app_name, aws_release_file_map, opts)
       end)
     else
+      {:error, e} when is_list(e) -> Enum.each(e, &Mix.shell().error(to_string(&1)))
       {:error, e} -> Mix.shell().error(to_string(e))
     end
 
