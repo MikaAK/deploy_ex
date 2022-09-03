@@ -16,6 +16,18 @@ defmodule DeployExHelpers do
       |> Path.join(priv_subdirectory)
   end
 
+  def write_template(template_path, output_path, variables, opts) do
+    output_file = EEx.eval_file(template_path, assigns: variables)
+
+    opts = if File.exists?(output_path) do
+      [{:message, [:green, "* rewriting ", :reset, output_path]} | opts]
+    else
+      opts
+    end
+
+    DeployExHelpers.write_file(output_path, output_file, opts)
+  end
+
   def write_file(file_path, contents, opts) do
     if opts[:message] do
       if opts[:force] || Mix.Generator.overwrite?(file_path, contents) do

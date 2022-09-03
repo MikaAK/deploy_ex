@@ -5,7 +5,3 @@ all:<% import Mix.Tasks.Ansible.Build %>
       hosts:
         <%= for host_ip <- host_ips do %><%= host_ip %>:
       <% end %><% end %>
-
-      vars:
-        ansible_user: admin
-        ansible_ssh_private_key_file: <%= @pem_file_path %>

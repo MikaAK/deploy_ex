@@ -22,7 +22,7 @@ defmodule DeployEx.ReleaseUploader do
 
   def lastest_app_release(remote_releases, app_name) do
     case State.lastest_remote_app_release(remote_releases, app_name) do
-      {timestamp, sha, name} -> {:ok, "#{timestamp}-#{sha}-#{name}"}
+      {_timestamp, _sha, file_name} -> {:ok, file_name}
       nil ->
         {:error, ErrorMessage.not_found(
           "no release found for #{app_name}",

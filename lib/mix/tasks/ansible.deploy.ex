@@ -28,12 +28,21 @@ defmodule Mix.Tasks.Ansible.Deploy do
 
       opts[:directory]
         |> Path.join("playbooks/*.yaml")
-        |> Enum.map(&String.replace(&1, opts[:directory], ""))
+        |> Path.wildcard
+        |> Enum.map(&strip_directory(&1, opts[:directory]))
         |> Enum.reject(&filtered_with_only_or_except?(&1, opts[:only], opts[:except]))
         |> Enum.each(fn host_playbook ->
-          System.shell("ansible-playbook #{host_playbook}", cd: opts[:directory])
+          DeployExHelpers.run_command_with_input("ansible-playbook #{host_playbook}", opts[:directory])
         end)
     end
+  end
+
+  defp strip_directory(wildcard_result, directory) do
+    String.replace(wildcard_result, String.trim_leading(directory, "./") <> "/", "")
+  end
+
+  defp filtered_with_only_or_except?(_playbook, nil, nil) do
+    false
   end
 
   defp filtered_with_only_or_except?(_playbook, [], []) do

@@ -36,15 +36,17 @@ Documentation is published on [HexDocs](https://hexdocs.pm/deploy_ex)
 
 ## Commands
 - [x] `mix deploy_ex.full_setup` - Runs all the commands to initialize and setup your project
+- [x] `mix deploy_ex.full_drop` - Runs all the commands to drop and remove the `./deploy` folder
+- [x] `mix deploy_ex.upload` - Deploys your `mix release` to s3
+- [x] `mix deploy_ex.ssh` - Gets the ssh command for a specific node
 - [x] `mix terraform.build` - Add the terraform files to project, or rebuilds them
 - [x] `mix terraform.apply` - Applies terraform changes
 - [x] `mix terraform.drop` - Destroys all terraform built resources
 - [x] `mix ansible.build` - Adds ansible files to the project, or rebuilds them
 - [x] `mix ansible.ping` - Pings ansible nodes to see if they can connect
-- [ ] `mix ansible.setup` - Runs basic setup on the ansible nodes
-- [ ] `mix ansible.deploy` - Deploys to your nodes via ansible from uploaded S3 releases
+- [x] `mix ansible.setup` - Runs basic setup on the ansible nodes
+- [x] `mix ansible.deploy` - Deploys to your nodes via ansible from uploaded S3 releases
 - [ ] `mix ansible.rollback` - Rollback to a prior release
-- [x] `mix deploy_ex.upload` - Deploys your `mix release` to s3
 
 
 ### Credits

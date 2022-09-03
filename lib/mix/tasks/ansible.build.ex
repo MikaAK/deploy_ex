@@ -20,6 +20,7 @@ defmodule Mix.Tasks.Ansible.Build do
       |> Keyword.put_new(:directory, @ansible_default_path)
       |> Keyword.put_new(:terraform_directory, @terraform_default_path)
       |> Keyword.put_new(:hosts_file, "./deploys/ansible/hosts")
+      |> Keyword.put_new(:config_file, "./deploys/ansible/ansible.cfg")
       |> Keyword.put_new(:aws_bucket, Config.aws_release_bucket())
       |> Keyword.put_new(:aws_region, Config.aws_release_region())
 
@@ -27,6 +28,7 @@ defmodule Mix.Tasks.Ansible.Build do
          :ok <- ensure_ansible_directory_exists(opts[:directory]),
          {:ok, hostname_ips} <- terraform_instance_ips(opts[:terraform_directory]),
          :ok <- create_ansible_hosts_file(hostname_ips, opts),
+         :ok <- create_ansible_config_file(opts),
          :ok <- create_ansible_playbooks(Map.keys(hostname_ips), opts) do
       :ok
     else
@@ -66,23 +68,38 @@ defmodule Mix.Tasks.Ansible.Build do
     end
   end
 
-  defp create_ansible_hosts_file(hostname_ips, opts) do
+  defp create_ansible_config_file(opts) do
     app_name = String.replace(DeployExHelpers.underscored_app_name(), "_", "-")
 
-    ansible_host_file = EEx.eval_file(DeployExHelpers.priv_file("ansible/hosts.eex"), [
-      assigns: %{
-        host_name_ips: hostname_ips,
-        pem_file_path: pem_file_path(app_name, opts[:directory])
-      }
-    ])
+    variables = %{
+      pem_file_path: pem_file_path(app_name, opts[:directory])
+    }
 
-    opts = if File.exists?(opts[:hosts_file]) do
-      [{:message, [:green, "* rewriting ", :reset, opts[:hosts_file]]} | opts]
-    else
+    DeployExHelpers.write_template(
+      DeployExHelpers.priv_file("ansible/ansible.cfg.eex"),
+      opts[:config_file],
+      variables,
       opts
+    )
+
+    if File.exists?("#{opts[:config_file]}.eex") do
+      File.rm!("#{opts[:config_file]}.eex")
     end
 
-    DeployExHelpers.write_file(opts[:hosts_file], ansible_host_file, opts)
+    :ok
+  end
+
+  defp create_ansible_hosts_file(hostname_ips, opts) do
+    variables = %{
+      host_name_ips: hostname_ips
+    }
+
+    DeployExHelpers.write_template(
+      DeployExHelpers.priv_file("ansible/hosts.eex"),
+      opts[:hosts_file],
+      variables,
+      opts
+    )
 
     if File.exists?("#{opts[:hosts_file]}.eex") do
       File.rm!("#{opts[:hosts_file]}.eex")
@@ -105,7 +122,7 @@ defmodule Mix.Tasks.Ansible.Build do
     Enum.join([".." | directory_path], "/")
   end
 
-  defp terraform_instance_ips(terraform_directory) do
+  def terraform_instance_ips(terraform_directory) do
     case System.shell("terraform output --json", cd: Path.expand(terraform_directory)) do
       {output, 0} ->
         {:ok, parse_terraform_output_to_ips(output)}
@@ -158,47 +175,41 @@ defmodule Mix.Tasks.Ansible.Build do
   end
 
   defp build_host_playbook(app_name, aws_release_file_map, opts) do
-    playbook_path = DeployExHelpers.priv_file("ansible/app_setup_playbook.yaml.eex")
-    host_playbook = Path.join(opts[:directory], "playbooks/#{app_name}.yaml")
+    host_playbook_template_path = DeployExHelpers.priv_file("ansible/app_playbook.yaml.eex")
+    host_playbook_path = Path.join(opts[:directory], "playbooks/#{app_name}.yaml")
 
-    ansible_playbook = EEx.eval_file(playbook_path,
-      assigns: %{
-        app_name: app_name,
-        aws_release_file: aws_release_file_map[app_name],
-        aws_release_bucket: opts[:aws_bucket],
-        port: 80
-      }
-    )
+    variables = %{
+      app_name: app_name,
+      aws_release_file: aws_release_file_map[app_name],
+      aws_release_bucket: opts[:aws_bucket],
+      port: 80
+    }
 
-    opts = if File.exists?(host_playbook) do
-      [{:message, [:green, "* rewriting ", :reset, host_playbook]} | opts]
-    else
+    DeployExHelpers.write_template(
+      host_playbook_template_path,
+      host_playbook_path,
+      variables,
       opts
-    end
-
-    DeployExHelpers.write_file(host_playbook, ansible_playbook, opts)
+    )
   end
 
   defp build_host_setup_playbook(app_name, aws_release_file_map, opts) do
     setup_playbook_path = DeployExHelpers.priv_file("ansible/app_setup_playbook.yaml.eex")
     setup_host_playbook = Path.join(opts[:directory], "setup/#{app_name}.yaml")
 
-    ansible_playbook = EEx.eval_file(setup_playbook_path,
-      assigns: %{
-        app_name: app_name,
-        aws_release_file: aws_release_file_map[app_name],
-        aws_release_bucket: opts[:aws_bucket],
-        port: 80
-      }
-    )
+    variables = %{
+      app_name: app_name,
+      aws_release_file: aws_release_file_map[app_name],
+      aws_release_bucket: opts[:aws_bucket],
+      port: 80
+    }
 
-    opts = if File.exists?(setup_host_playbook) do
-      [{:message, [:green, "* rewriting ", :reset, setup_host_playbook]} | opts]
-    else
+    DeployExHelpers.write_template(
+      setup_playbook_path,
+      setup_host_playbook,
+      variables,
       opts
-    end
-
-    DeployExHelpers.write_file(setup_host_playbook, ansible_playbook, opts)
+    )
   end
 
   defp remove_usless_copied_template_folder(opts) do

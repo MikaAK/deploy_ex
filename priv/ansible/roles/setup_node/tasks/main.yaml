@@ -3,6 +3,11 @@
     - name: Populate service facts
       service_facts:
 
+    - name: Create {{ app_name }} srv directory
+      file:
+        path: /srv/{{ app_name }}
+        state: directory
+
     - name: Download {{ app_name }} from S3
       amazon.aws.aws_s3:
         aws_access_key: "{{ credentials['AWS_ACCESS_KEY_ID'] }}"
@@ -11,7 +16,7 @@
         mode: get
         object: "{{ app_name }}/{{ aws_file_name }}"
         dest: /srv/{{ app_name }}/{{ aws_file_name }}
-      no_log: true
+      # no_log: true
 
     - name: Create /srv/{{ app_name }} directory
       file:
@@ -42,8 +47,8 @@
         owner: root
         group: root
         mode: 0644
-      when: app_name == item
-      loop: "{{ erlang_systemd }}"
+      # when: app_name == item
+      # loop: "{{ erlang_systemd }}"
 
     - name: Enable {{ app_name }} service
       systemd:
