@@ -50,7 +50,7 @@ resource "aws_ebs_volume" "ec2_ebs" {
 
 # Attach EBS Volume
 resource "aws_volume_attachment" "ec2_ebs_association" {
-  device_name = "/mnt/persisted_disk"
+  device_name = "/dev/sdh"
   volume_id   = aws_ebs_volume.ec2_ebs.id
   instance_id = aws_instance.ec2_instance.id
 }

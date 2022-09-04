@@ -16,6 +16,18 @@ variable "instance_group" {
   default     = "<%= DeployExHelpers.upper_title_case(@app_name) %> Backend"
 }
 
+variable "release_bucket_name" {
+  description = "Release bucket name to use for storing built releases"
+  type        = string
+  default     = "<%= @release_bucket_name %>"
+}
+
+variable "release_bucket_title_name" {
+  description = "Ditto as above but as title case"
+  type        = string
+  default     = "<%= DeployExHelpers.upper_title_case(@release_bucket_name) %>"
+}
+
 variable "<%= @app_name %>_project" {
   description = "Map of project names to configuration."
   type        = map(any)

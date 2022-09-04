@@ -23,6 +23,7 @@ defmodule Mix.Tasks.Terraform.Build do
       |> parse_args
       |> Keyword.put_new(:directory, @terraform_default_path)
       |> Keyword.put_new(:aws_region, @default_aws_region)
+      |> Keyword.put_new(:aws_bucket, DeployEx.Config.aws_release_bucket())
       |> Keyword.put_new(:env, Mix.env())
 
     opts = opts
@@ -129,6 +130,7 @@ defmodule Mix.Tasks.Terraform.Build do
     variables_files = EEx.eval_file(template_file, assigns: %{
       environment: opts[:env],
       terraform_release_variables: terraform_output,
+      release_bucket_name: opts[:aws_bucket],
       app_name: DeployExHelpers.underscored_app_name()
     })
 
@@ -175,6 +177,7 @@ defmodule Mix.Tasks.Terraform.Build do
 
     main_file = EEx.eval_file(template_file_path, assigns: %{
       aws_region: opts[:aws_region],
+      aws_bucket: opts[:aws_bucket],
       app_name: DeployExHelpers.underscored_app_name()
     })
 

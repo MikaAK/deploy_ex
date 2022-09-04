@@ -56,7 +56,7 @@ defmodule DeployExHelpers do
   end
 
   def upper_title_case(string) do
-    string |> String.split("_") |> Enum.map_join(" ", &String.capitalize/1)
+    string |> String.split(~r/_|-/) |> Enum.map_join(" ", &String.capitalize/1)
   end
 
   def run_command_with_input(command, directory) do
