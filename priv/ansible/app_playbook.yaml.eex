@@ -4,4 +4,4 @@
     bucket_name: "<%= @aws_release_bucket %>"
     <%= if @port do %>app_port: <%= @port %><% end %>
   roles:
-    - setup_node
+    - deploy_node

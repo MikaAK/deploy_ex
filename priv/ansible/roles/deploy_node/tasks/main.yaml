@@ -4,7 +4,8 @@
       service_facts:
 
     - name: Find latest AWS file for {{ app_name }} in S3 and set it into variable
-      ansible.builtin.script: ./latest_aws_release.sh {{ bucket_name }} {{ app_name }}
+      ansible.builtin.script:
+        cmd: latest_aws_release.sh {{ bucket_name }} {{ app_name }}
       register: aws_file_name
 
     - name: Create {{ app_name }} srv directory
@@ -16,9 +17,8 @@
       amazon.aws.aws_s3:
         bucket: "{{ bucket_name }}"
         mode: get
-        object: "{{ app_name }}/{{ aws_file_name }}"
-        dest: /srv/{{ app_name }}/{{ aws_file_name }}
-      # no_log: true
+        object: "{{ aws_file_name.stdout_lines[0] }}"
+        dest: /srv/{{ aws_file_name.stdout_lines[0] }}
 
     - name: Create /srv/{{ app_name }} directory
       file:
@@ -36,9 +36,9 @@
         group: root
         mode: 0755
 
-    - name: Untar {{ aws_file_name }}
+    - name: Untar {{ aws_file_name.stdout_lines[0] }}
       unarchive:
-        src: /srv/{{ app_name }}/{{ aws_file_name }}
+        src: /srv/{{ aws_file_name.stdout_lines[0] }}
         dest: /srv/unpack-directory
         remote_src: true
 

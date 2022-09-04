@@ -49,7 +49,7 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
 
   defp parse_args(args) do
     {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [k: :skip_setup],
+      aliases: [k: :skip_deploy],
       switches: [
         skip_deploy: :boolean
       ]
