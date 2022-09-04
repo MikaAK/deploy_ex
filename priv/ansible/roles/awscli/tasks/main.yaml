@@ -46,4 +46,8 @@
 
     - name: Set AWS CLI Credentials
       shell: echo "[default]\naws_access_key_id = {{ credentials['AWS_ACCESS_KEY_ID'] }}\naws_secret_access_key = {{ credentials['AWS_SECRET_ACCESS_KEY'] }}" >  /home/admin/.aws/credentials
+
+    - name: Set AWS CLI Config File Path
+      shell: echo "AWS_CONFIG_FILE=/home/admin/.aws/config" >  /home/admin/.bashrc
+
   become: true
