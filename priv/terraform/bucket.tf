@@ -1,5 +1,6 @@
 resource "aws_s3_bucket" "release_bucket" {
   bucket = var.release_bucket_name
+  force_destroy = true
 
   tags = {
     Name        = var.release_bucket_title_name

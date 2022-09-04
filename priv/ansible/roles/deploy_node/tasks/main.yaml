@@ -1,4 +1,6 @@
 - name: setup_node
+  environment:
+    AWS_CONFIG_FILE: /home/admin/.aws/credentials
   block:
     - name: Populate service facts
       service_facts:
@@ -75,7 +77,7 @@
         mode: 0755
         remote_src: true
 
-    - name: Add vm.args file to /srv/{{ app_name }}
+    - name: Add vm.args file to /srv/vm.args
       template:
         src: vm.args.j2
         dest: /srv/vm.args
