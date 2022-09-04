@@ -36,6 +36,25 @@ resource "aws_instance" "ec2_instance" {
   }
 }
 
+# Create EBS Volume
+resource "aws_ebs_volume" "ec2_ebs" {
+  availability_zone = "us-west-2a"
+  size              = var.instance_ebs_secondary_size
+
+  tags = {
+    Name  = format("%s-%s", var.instance_name, "ebs") # instance-name-ebs
+    Group = var.instance_group
+    Environment = var.environment
+  }
+}
+
+# Attach EBS Volume
+resource "aws_volume_attachment" "ec2_ebs_association" {
+  device_name = "/mnt/persisted_disk"
+  volume_id   = aws_ebs_volume.ec2_ebs.id
+  instance_id = aws_instance.ec2_instance.id
+}
+
 # Create Elastic IP
 resource "aws_eip" "ec2_eip" {
   vpc  = true

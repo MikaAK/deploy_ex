@@ -23,7 +23,6 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
   ]
 
   @post_setup_comands [
-    Ansible.Setup,
     Ansible.Deploy
   ]
 
@@ -73,7 +72,7 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
          :ok <- run_setup(args) do
       opts = parse_args(args)
 
-      if not opts[:skip_deploy] do
+      if !opts[:skip_deploy] do
         Mix.shell().info([
           :green, "* running post setup"
         ])

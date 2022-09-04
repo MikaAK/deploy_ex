@@ -28,9 +28,12 @@ defmodule Mix.Tasks.Ansible.Setup do
         |> Path.join("setup/*.yaml")
         |> Path.wildcard
         |> Enum.map(&Path.relative_to(&1, relative_directory))
-        |> Enum.each(fn setup_file ->
+        |> Task.async_stream(fn setup_file ->
           DeployExHelpers.run_command_with_input("ansible-playbook #{setup_file}", opts[:directory])
-        end)
+        end, max_concurrency: 4, timeout: :timer.minutes(30))
+        |> Stream.run
+
+      Mix.shell().info([:green, "Finished setting up nodes"])
     end
   end
 

@@ -52,13 +52,25 @@ defmodule Mix.Tasks.Ansible.Deploy do
   defp filtered_with_only_or_except?(playbook, only, []) do
     app_name = Path.basename(playbook)
 
-    app_name in only
+    Enum.any?(only, &(&1 =~ app_name))
   end
 
   defp filtered_with_only_or_except?(playbook, [], except) do
     app_name = Path.basename(playbook)
 
     app_name not in except
+  end
+
+  defp filtered_with_only_or_except?(playbook, nil, except) when is_binary(except)  do
+    app_name = Path.basename(playbook)
+
+    not Enum.any?(except, &(&1 =~ app_name))
+  end
+
+  defp filtered_with_only_or_except?(playbook, only, nil) when is_binary(only)  do
+    app_name = Path.basename(playbook)
+
+    not (app_name =~ only)
   end
 
   defp filtered_with_only_or_except?(_, _, _)  do
@@ -73,7 +85,9 @@ defmodule Mix.Tasks.Ansible.Deploy do
       aliases: [f: :force, q: :quit, d: :directory],
       switches: [
         directory: :string,
-        quiet: :boolean
+        quiet: :boolean,
+        only: :keep,
+        except: :keep
       ]
     )
 

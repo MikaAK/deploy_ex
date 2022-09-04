@@ -1,3 +1,9 @@
+variable "instance_ebs_secondary_size" {
+  description = "Instance count, default 1"
+  type        = number
+  default = 16
+}
+
 variable "instance_count" {
   description = "Instance count, default 1"
   type        = number

@@ -1,7 +1,7 @@
 defmodule Mix.Tasks.Ansible.Build do
   use Mix.Task
 
-  alias DeployEx.{ReleaseUploader, Config}
+  alias DeployEx.Config
 
   @ansible_default_path Config.ansible_folder_path()
   @terraform_default_path Config.terraform_folder_path()
@@ -155,32 +155,22 @@ defmodule Mix.Tasks.Ansible.Build do
       File.mkdir_p!(project_setup_playbooks_path)
     end
 
-    with {:ok, remote_releases} <- ReleaseUploader.fetch_all_remote_releases(opts),
-         {:ok, aws_release_file_map} <- ReleaseUploader.lastest_app_release(
-           remote_releases,
-           app_names
-         ) do
-      Enum.each(app_names, fn app_name ->
-        build_host_playbook(app_name, aws_release_file_map, opts)
-        build_host_setup_playbook(app_name, aws_release_file_map, opts)
-      end)
-    else
-      {:error, e} when is_list(e) -> Enum.each(e, &Mix.shell().error(to_string(&1)))
-      {:error, e} -> Mix.shell().error(to_string(e))
-    end
+    Enum.each(app_names, fn app_name ->
+      build_host_setup_playbook(app_name, opts)
+      build_host_playbook(app_name, opts)
+    end)
 
     remove_usless_copied_template_folder(opts)
 
     :ok
   end
 
-  defp build_host_playbook(app_name, aws_release_file_map, opts) do
+  defp build_host_playbook(app_name, opts) do
     host_playbook_template_path = DeployExHelpers.priv_file("ansible/app_playbook.yaml.eex")
     host_playbook_path = Path.join(opts[:directory], "playbooks/#{app_name}.yaml")
 
     variables = %{
       app_name: app_name,
-      aws_release_file: aws_release_file_map[app_name],
       aws_release_bucket: opts[:aws_bucket],
       port: 80
     }
@@ -193,14 +183,12 @@ defmodule Mix.Tasks.Ansible.Build do
     )
   end
 
-  defp build_host_setup_playbook(app_name, aws_release_file_map, opts) do
+  defp build_host_setup_playbook(app_name, opts) do
     setup_playbook_path = DeployExHelpers.priv_file("ansible/app_setup_playbook.yaml.eex")
     setup_host_playbook = Path.join(opts[:directory], "setup/#{app_name}.yaml")
 
     variables = %{
       app_name: app_name,
-      aws_release_file: aws_release_file_map[app_name],
-      aws_release_bucket: opts[:aws_bucket],
       port: 80
     }
 
@@ -225,4 +213,16 @@ defmodule Mix.Tasks.Ansible.Build do
     end
   end
 end
+
+    # with {:ok, remote_releases} <- ReleaseUploader.fetch_all_remote_releases(opts),
+    #      {:ok, aws_release_file_map} <- ReleaseUploader.lastest_app_release(
+    #        remote_releases,
+    #        app_names
+    #      ) do
+    #   Enum.each(app_names, fn app_name ->
+    #   end)
+    # else
+    #   {:error, e} when is_list(e) -> Enum.each(e, &Mix.shell().error(to_string(&1)))
+    #   {:error, e} -> Mix.shell().error(to_string(e))
+    # end
 

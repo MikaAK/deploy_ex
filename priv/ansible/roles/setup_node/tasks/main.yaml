@@ -3,6 +3,10 @@
     - name: Populate service facts
       service_facts:
 
+    - name: Find latest AWS file for {{ app_name }} in S3 and set it into variable
+      ansible.builtin.script: ./latest_aws_release.sh {{ bucket_name }} {{ app_name }}
+      register: aws_file_name
+
     - name: Create {{ app_name }} srv directory
       file:
         path: /srv/{{ app_name }}
@@ -10,8 +14,6 @@
 
     - name: Download {{ app_name }} from S3
       amazon.aws.aws_s3:
-        aws_access_key: "{{ credentials['AWS_ACCESS_KEY_ID'] }}"
-        aws_secret_key: "{{ credentials['AWS_SECRET_ACCESS_KEY'] }}"
         bucket: "{{ bucket_name }}"
         mode: get
         object: "{{ app_name }}/{{ aws_file_name }}"
