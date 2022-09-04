@@ -5,6 +5,7 @@ defmodule Mix.Tasks.Ansible.Build do
 
   @ansible_default_path Config.ansible_folder_path()
   @terraform_default_path Config.terraform_folder_path()
+  @aws_credentials_regex ~r/aws_access_key_id = (?<access_key>[A-Z0-9]+)\naws_secret_access_key = (?<secret_key>[a-z-A-Z0-9\/\+]+)\n/
 
   @shortdoc "Deploys to ansible resources using ansible"
   @moduledoc """
@@ -25,7 +26,7 @@ defmodule Mix.Tasks.Ansible.Build do
       |> Keyword.put_new(:aws_region, Config.aws_release_region())
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
-         :ok <- ensure_ansible_directory_exists(opts[:directory]),
+         :ok <- ensure_ansible_directory_exists(opts[:directory], opts),
          {:ok, hostname_ips} <- terraform_instance_ips(opts[:terraform_directory]),
          :ok <- create_ansible_hosts_file(hostname_ips, opts),
          :ok <- create_ansible_config_file(opts),
@@ -39,12 +40,13 @@ defmodule Mix.Tasks.Ansible.Build do
 
   defp parse_args(args) do
     {opts, _} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quit, d: :directory],
+      aliases: [f: :force, q: :quit, d: :directory, a: :auto_pull_aws],
       switches: [
         force: :boolean,
         quiet: :boolean,
         directory: :string,
         terraform_directory: :string,
+        auto_pull_aws: :boolean,
         aws_bucket: :string
       ]
     )
@@ -52,7 +54,7 @@ defmodule Mix.Tasks.Ansible.Build do
     opts
   end
 
-  defp ensure_ansible_directory_exists(directory) do
+  defp ensure_ansible_directory_exists(directory, opts) do
     if File.exists?(directory) do
       :ok
     else
@@ -64,7 +66,55 @@ defmodule Mix.Tasks.Ansible.Build do
         |> DeployExHelpers.priv_file()
         |> File.cp_r!(directory)
 
+      if opts[:auto_pull_aws] do
+        pull_aws_credentials_into_awscli_variables(directory, opts)
+      end
+
       :ok
+    end
+  end
+
+  defp pull_aws_credentials_into_awscli_variables(ansible_directory, opts) do
+    main_yaml_path = Path.join(ansible_directory, "roles/awscli/defaults/main.yaml")
+    case search_for_aws_credentials() do
+      {:ok, {aws_access_key, aws_secret_access_key}} ->
+        new_contents = main_yaml_path
+          |> File.read!
+          |> String.replace(
+            "AWS_ACCESS_KEY_ID: \"<INSERT_SECRET_OR_PRELOAD_ON_MACHINE>\"",
+            "AWS_ACCESS_KEY_ID: \"#{aws_access_key}\""
+          )
+          |> String.replace(
+            "AWS_SECRET_ACCESS_KEY: \"<INSERT_SECRET_OR_PRELOAD_ON_MACHINE>\"",
+            "AWS_SECRET_ACCESS_KEY: \"#{aws_secret_access_key}\""
+          )
+
+        opts = opts
+          |> Keyword.put_new(:force, true)
+          |> Keyword.put(:message, [:green, "* injecting aws credentials into ", :reset, main_yaml_path])
+
+        DeployExHelpers.write_file(main_yaml_path, new_contents, opts)
+
+      {:error, e} ->
+        Mix.shell().error(to_string(e))
+    end
+  end
+
+  defp search_for_aws_credentials do
+    credentials_file = Path.expand("~/.aws/credentials")
+
+    if File.exists?(credentials_file) do
+      credentials_content = File.read!(credentials_file)
+
+      case Regex.named_captures(@aws_credentials_regex, credentials_content) do
+        nil -> {:error, ErrorMessage.not_found("couldn't parse credentials in file at ~/.aws/credentials")}
+        %{
+          "access_key" => access_key,
+          "secret_key" => secret_access_key
+        } -> {:ok, {access_key, secret_access_key}}
+      end
+    else
+      {:error, ErrorMessage.not_found("couldn't find credentials file at ~/.aws/credentials")}
     end
   end
 

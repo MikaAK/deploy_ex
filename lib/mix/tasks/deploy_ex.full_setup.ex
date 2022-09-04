@@ -13,8 +13,7 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
   - `skip-deploy` - Skips deploy commands after pinging & setting up nodes with ansible (alias: `k`)
   """
 
-  alias Mix.Tasks.Ansible
-  alias Mix.Tasks.Terraform
+  alias Mix.Tasks.{Ansible, Terraform}
 
   @pre_setup_commands [
     Terraform.Build,
@@ -23,6 +22,7 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
   ]
 
   @post_setup_comands [
+    Mix.Tasks.DeployEx.Upload,
     Ansible.Deploy
   ]
 

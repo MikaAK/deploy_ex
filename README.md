@@ -33,6 +33,10 @@ end
 
 Documentation is published on [HexDocs](https://hexdocs.pm/deploy_ex)
 
+If you want to use aws-cli credentials from the machine you're running initial setup on,
+you can use the `--auto_pull_aws` of `-a` flag to pull the aws credentials into the
+remote machines
+
 #### Usage with Github Actions (WIP)
 You can use this library with github actions to make for an easy deploy
 pipeline, this way you can easily deploy to your nodes when you push
