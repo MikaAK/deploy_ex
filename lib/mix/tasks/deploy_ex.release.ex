@@ -58,6 +58,8 @@ defmodule Mix.Tasks.DeployEx.Release do
           Mix.shell().error("Error with releasing #{inspect(e, pretty: true)}")
         end
       end)
+    else
+      {:error, e} -> Mix.shell().error(to_string(e))
     end
   end
 

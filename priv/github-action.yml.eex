@@ -41,17 +41,16 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Install Rebar & Hex
-        run: mix local.hex --force && mix local.rebar --force
-
       - name: Cache Deps & Build
         uses: actions/cache@v2
         with:
           key: ${{github.ref}}-deps-build-cache
           path: |
-            ./deploy/terraform/.terraform
             ./_build/
             ./deps/
+
+      - name: Install Rebar & Hex
+        run: mix local.hex --force && mix local.rebar --force
 
       - name: Install Dependencies
         run: mix deps.get
@@ -60,7 +59,7 @@ jobs:
         run: mix compile
 
       - name: Build Releases
-        run: mix deploy_ex.release
+        run: mix deploy_ex.release --force
 
       - name: Upload S3 Releases
         run: mix deploy_ex.upload
