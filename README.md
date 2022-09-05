@@ -63,6 +63,7 @@ inject the apps into your variables file despite changes to the file. If you cha
 - [x] `mix deploy_ex.full_setup` - Runs all the commands to initialize and setup your project
 - [x] `mix deploy_ex.full_drop` - Runs all the commands to drop and remove the `./deploy` folder
 - [x] `mix deploy_ex.upload` - Deploys your `mix release` to s3
+- [x] `mix deploy_ex.install_github_action` - Deploys your `mix release` to s3
 - [x] `mix deploy_ex.ssh` - Gets the ssh command for a specific node
 - [x] `mix terraform.build` - Add the terraform files to project, or rebuilds them
 - [x] `mix terraform.apply` - Applies terraform changes

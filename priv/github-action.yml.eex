@@ -1,0 +1,77 @@
+name: Apply Terraform, Build & Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  <%# Apply: %>
+  <%#   runs-on: ubuntu-latest %>
+
+  <%#   container: %>
+  <%#     image: mikaak/elixir-terraform-ansible-builder:1.13-otp-25-debian %>
+  <%#     env: %>
+  <%#       MIX_ENV: prod %>
+
+  <%#   steps: %>
+  <%#     - name: Run Terraform Apply %>
+  <%#       run: mix terraform.apply -y %>
+
+  <%#     - name: Run Ansible Build %>
+  <%#       run: mix ansible.build %>
+
+  <%#     - name: Maybe Github Update %>
+  <%#       run: ./.github/github-action-maybe-commit-terraform-changes.sh %>
+
+  Release:
+    name: Release
+
+    runs-on: ubuntu-latest
+
+    container:
+      image: mikaak/elixir-terraform-ansible-builder:1.13-otp-25-debian
+      env:
+        MIX_ENV: prod
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install Rebar & Hex
+        run: mix local.hex --force && mix local.rebar --force
+
+      - name: Cache Deps & Build
+        uses: actions/cache@v2
+        with:
+          key: ${{github.ref}}-deps-build-cache
+          path: |
+            ./deploy/terraform/.terraform
+            ./_build/
+            ./deps/
+
+      - name: Install Dependencies
+        run: mix deps.get
+
+      - name: Compile Project
+        run: mix compile
+
+      - name: Build Releases
+        run: mix deploy_ex.release
+
+      - name: Upload S3 Releases
+        run: mix deploy_ex.upload
+
+<%#   Deploy: %>
+<%#     needs: [Release] %>
+
+<%#     runs-on: ubuntu-latest %>
+
+<%#     container: %>
+<%#       image: mikaak/elixir-terraform-ansible-builder:1.13-otp-25-debian %>
+<%#       env: %>
+<%#         MIX_ENV: prod %>
+
+<%#     steps: %>
+<%#       - name: Run Ansible Deploy %>
+<%#         run: mix ansible.deploy %>
+

@@ -33,16 +33,17 @@ defmodule Mix.Tasks.DeployEx.Upload do
       |> Keyword.put(:aws_bucket, Config.aws_release_bucket())
       |> Keyword.put(:aws_region, Config.aws_release_region())
 
-    with {:ok, local_releases} <- ReleaseUploader.fetch_all_local_releases(),
+    with :ok <- DeployExHelpers.check_in_umbrella(),
+         {:ok, local_releases} <- ReleaseUploader.fetch_all_local_releases(),
          {:ok, remote_releases} <- ReleaseUploader.fetch_all_remote_releases(opts),
          {:ok, git_sha} <- ReleaseUploader.get_git_sha() do
-      {has_previous_upload_release_cand, no_prio_upload_release_cand} = local_releases
+      {has_previous_upload_release_cands, no_prio_upload_release_cands} = local_releases
         |> ReleaseUploader.build_state(remote_releases, git_sha)
         |> Enum.reject(&already_uploaded?/1)
         |> Enum.split_with(&(&1.last_sha))
 
-      with {:ok, _} <- upload_releases(no_prio_upload_release_cand, opts) do
-        upload_changed_releases(has_previous_upload_release_cand, opts)
+      with {:ok, _} <- upload_releases(no_prio_upload_release_cands, opts) do
+        upload_changed_releases(has_previous_upload_release_cands, opts)
       end
     else
       {:error, e} -> Mix.shell().error(to_string(e))
@@ -63,7 +64,7 @@ defmodule Mix.Tasks.DeployEx.Upload do
     opts
   end
 
-  defp already_uploaded?(%ReleaseUploader.State{
+  def already_uploaded?(%ReleaseUploader.State{
     remote_file: remote_file,
     local_file: local_file
   }) do
