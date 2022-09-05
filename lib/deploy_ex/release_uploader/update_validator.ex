@@ -5,14 +5,33 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
 
   def reject_unchanged(release_states) do
     with {:ok, file_diffs_by_sha_tuple} <- load_file_diffs(release_states),
+         {:ok, {
+           {invalid_release_states, release_states},
+           file_diffs_by_sha_tuple
+         }} <- split_invalid_releases(release_states, file_diffs_by_sha_tuple),
          {:ok, dep_changes_by_sha_tuple} <- load_dep_changes(file_diffs_by_sha_tuple),
          {:ok, app_dep_tree} <- MixDepsTreeParser.load_app_dep_tree() do
-      {:ok, Enum.filter(release_states, fn release_state ->
+      IO.inspect invalid_release_states
+      {:ok, invalid_release_states ++ Enum.filter(release_states, fn release_state ->
         release_has_code_changes?(release_state, file_diffs_by_sha_tuple) or
         release_has_local_dep_changes?(release_state, file_diffs_by_sha_tuple, app_dep_tree) or
         release_has_dep_changes?(release_state, dep_changes_by_sha_tuple, app_dep_tree)
       end)}
     end
+  end
+
+  defp split_invalid_releases(release_states, file_diffs_by_sha_tuple) do
+    split_release_states = Enum.split_with(
+      release_states,
+      &uploaded_release_invalid?(&1, file_diffs_by_sha_tuple)
+    )
+
+    file_diffs_by_sha_tuple = Enum.reject(file_diffs_by_sha_tuple, fn
+      {_, [:invalid]} -> true
+      _ -> false
+    end)
+
+    {:ok, {split_release_states, file_diffs_by_sha_tuple}}
   end
 
   defp load_file_diffs(states) do
@@ -52,8 +71,8 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
   end
 
   defp filter_file_diffs_for_deps_update(file_diffs_by_sha_tuple) do
-    Enum.filter(file_diffs_by_sha_tuple, fn {_sha_tuple, file_diffs} ->
-      Enum.any?(file_diffs, &(&1 =~ "mix.lock"))
+    Enum.filter(file_diffs_by_sha_tuple, fn
+      {_sha_tuple, file_diffs} -> Enum.any?(file_diffs, &(&1 =~ "mix.lock"))
     end)
   end
 
@@ -70,12 +89,21 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
   defp git_diff_files_between(current_sha, last_sha) do
     case System.shell("git diff --name-only #{current_sha}..#{last_sha}") do
       {output, 0} -> {:ok, output |> String.trim_trailing("\n") |> String.split("\n")}
+      {"", 128} -> {:ok, [:invalid]}
 
       {output, code} -> {:error, ErrorMessage.failed_dependency(
         "couldn't run git diff --name-only",
         %{output: output, code: code}
       )}
     end
+  end
+
+  defp uploaded_release_invalid?(%DeployEx.ReleaseUploader.State{
+    sha: current_sha,
+    last_sha: last_sha
+  }, file_diffs_by_sha_tuple) do
+    IO.inspect file_diffs_by_sha_tuple
+    Map.get(file_diffs_by_sha_tuple, {current_sha, last_sha}) === [:invalid]
   end
 
   defp release_has_code_changes?(%DeployEx.ReleaseUploader.State{
