@@ -73,5 +73,14 @@ jobs:
           echo "${{ secrets.EC2_PEM_FILE }}" > <%= @pem_file_path %> &&
           chmod 0400 <%= @pem_file_path %>
 
+      - name: create-json
+        id: create-json
+        uses: jsdaniell/create-json@1.1.2
+        with:
+          name: "env.json"
+          json: ${{ toJson(secrets) }}
+
       - name: Run Ansible Deploy
-        run: mix ansible.deploy
+        run: |
+          bash ./.github/github-actions-secrets-to-json-file.sh env-file.json "$(cat env.json)" &&
+          mix ansible.deploy --copy-json-env-file env-file.json

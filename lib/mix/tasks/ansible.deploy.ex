@@ -16,6 +16,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
   - `unchanged` - Only deploy unchanged releases (NOT SETUP)
   - `only` -  Specify specific apps to deploy too
   - `except` - Specify apps to not deploy to
+  - `copy-json-env-file` - Copy env file and load into host environments
   """
 
   def run(args) do
@@ -32,7 +33,9 @@ defmodule Mix.Tasks.Ansible.Deploy do
         |> Enum.map(&strip_directory(&1, opts[:directory]))
         |> Enum.reject(&filtered_with_only_or_except?(&1, opts[:only], opts[:except]))
         |> Enum.map(fn host_playbook ->
-          DeployExHelpers.run_command_with_input("ansible-playbook #{host_playbook}", opts[:directory])
+          host_playbook
+            |> run_ansible_playbook_command(opts)
+            |> DeployExHelpers.run_command_with_input(opts[:directory])
         end)
         |> DeployEx.Utils.reduce_status_tuples
 
@@ -41,6 +44,22 @@ defmodule Mix.Tasks.Ansible.Deploy do
 
         Mix.raise(to_string(h))
       end
+    end
+  end
+
+  def run_ansible_playbook_command(host_playbook, opts) do
+    if opts[:copy_json_env_file] do
+      json_file_path = case Path.type(opts[:copy_json_env_file]) do
+        :absolute -> opts[:copy_json_env_file]
+        :relative -> Path.join(File.cwd!(), opts[:copy_json_env_file])
+      end
+
+      DeployExHelpers.check_file_exists!(json_file_path)
+
+
+      "ansible-playbook #{host_playbook} --extra-vars @#{json_file_path}"
+    else
+      "ansible-playbook #{host_playbook}"
     end
   end
 
@@ -94,7 +113,8 @@ defmodule Mix.Tasks.Ansible.Deploy do
         directory: :string,
         quiet: :boolean,
         only: :keep,
-        except: :keep
+        except: :keep,
+        copy_json_env_file: :string
       ]
     )
 

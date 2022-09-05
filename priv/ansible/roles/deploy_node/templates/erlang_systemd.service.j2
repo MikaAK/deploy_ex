@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=admin
+User=root
 Group=root
 WorkingDirectory=/srv/{{ app_name }}
 ExecStart=/srv/{{ app_name }}/bin/{{ app_name }} start
@@ -13,6 +13,7 @@ Restart=on-failure
 RestartSec=5
 Environment=PORT={{ app_port }}
 Environment=RELEASE_VM_ARGS=/srv/vm.args
+{{ secrets }}
 SyslogIdentifier={{ app_name }}
 RemainAfterExit=no
 LimitNOFILE=infinity

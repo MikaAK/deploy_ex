@@ -6,8 +6,16 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
   @github_action_path "./.github/workflows/deploy-ex-release.yml"
   @github_action_template_path DeployExHelpers.priv_file("github-action.yml.eex")
 
-  @github_action_script_output_path "./.github/github-action-maybe-commit-terraform-changes.sh"
-  @github_action_script_path DeployExHelpers.priv_file("github-action-maybe-commit-terraform-changes.sh")
+  @github_action_scripts_paths [
+    {
+      DeployExHelpers.priv_file("github-action-maybe-commit-terraform-changes.sh"),
+      "./.github/github-action-maybe-commit-terraform-changes.sh"
+    },
+    {
+      DeployExHelpers.priv_file("github-actions-secrets-to-json-file.sh"),
+      "./.github/github-actions-secrets-to-json-file.sh"
+    }
+  ]
 
   @shortdoc "Installs a github action to manage terraform & ansible from within it"
   @moduledoc """
@@ -39,11 +47,15 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
         opts
       )
 
-      DeployExHelpers.write_file(
-        @github_action_script_output_path,
-        File.read!(@github_action_script_path),
-        opts
-      )
+      Enum.each(@github_action_scripts_paths, fn {input_path, output_path} ->
+        DeployExHelpers.check_file_exists!(input_path)
+
+        DeployExHelpers.write_file(
+          output_path,
+          File.read!(input_path),
+          opts
+        )
+      end)
     end
   end
 

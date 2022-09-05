@@ -92,6 +92,7 @@
 
     - name: Start {{ app_name }} service
       systemd:
+        daemon_reload: true
         name: "{{ app_name }}"
         state: started
   become: true

@@ -10,6 +10,11 @@ defmodule Mix.Tasks.DeployEx.Ssh do
   $ mix deploy_ex.ssh my_app
   $ mix deploy_ex.ssh my_app 2 # with a specific node
   ```
+
+  ### Options
+  - `short` - get short form command
+  - `log` - get command to remotely monitor logs
+  - `iex` - get command to remotley connect to running node via IEx
   """
 
   def run(args) do
@@ -33,7 +38,9 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         directory: :string,
         force: :boolean,
         quiet: :boolean,
-        short: :boolean
+        short: :boolean,
+        log: :boolean,
+        iex: :boolean
       ]
     )
 
@@ -48,15 +55,15 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
       {app_name, ip_addresses} ->
         ip = Enum.random(ip_addresses)
-
+        command = build_command(opts)
 
         if opts[:short] do
-          Mix.shell().info("ssh -i #{pem_file_path} admin@#{ip}")
+          Mix.shell().info("ssh -i #{pem_file_path} admin@#{ip} #{command}")
         else
           Mix.shell().info([
             :green, "Use the follwing comand to connect to ",
             :reset, app_name, :green, " \"",
-            :reset, "ssh -i #{pem_file_path} admin@#{ip}",
+            :reset, "ssh -i #{pem_file_path} admin@#{ip}", command,
             :green, "\""
           ])
         end
@@ -72,6 +79,14 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         # with {:error, e} <- DeployExHelpers.run_command_with_input("ssh -i #{pem_file_path} admin@#{ip}", "") do
         #   Mix.shell().error(to_string(e))
         # end
+    end
+  end
+
+  def build_command(opts) do
+    cond do
+      opts[:log] -> "'sudo -u root journalctl -f -u learn_elixir_lander -u systemd'"
+      opts[:iex] -> "'sudo -u root /srv/*/bin/* remote'"
+      true -> ""
     end
   end
 end

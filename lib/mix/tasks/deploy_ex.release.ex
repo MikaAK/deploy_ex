@@ -16,6 +16,9 @@ defmodule Mix.Tasks.DeployEx.Release do
   that are connected to your app, the release will run, otherwise it will
   ignore it
 
+  This command also correctly detects phoenix applications, and if found will
+  run `mix assets.deploy` in those apps
+
   ## Options
 
   - `force` - Force overwrite (alias: `f`)

@@ -37,7 +37,7 @@ If you want to use aws-cli credentials from the machine you're running initial s
 you can use the `--auto_pull_aws` of `-a` flag to pull the aws credentials into the
 remote machines
 
-#### Usage with Github Actions (WIP)
+#### Usage with Github Actions
 You can use this library with github actions to make for an easy deploy
 pipeline, this way you can easily deploy to your nodes when you push
 and is good for a quick setup
@@ -75,7 +75,6 @@ inject the apps into your variables file despite changes to the file. If you cha
 - [ ] `mix ansible.rollback` - Rollback to a prior release
 
 ## Extra Utilities
-- [ ] - Volumes
 - [ ] - Easy Distribution
 - [ ] - Github Actions as Terraform Remote Server
 
@@ -94,6 +93,10 @@ or any form of `mix terraform.apply`
 
 Once installed this github action will build releases, upload them to s3 and trigger
 Ansible to run and deploy each node with the release
+
+To load ENV Variables into the Remote Environment from Github Actions Secrets, name the secret
+in accordance to this pattern `__DEPLOY_EX__MY_ENV_VARIABLE` doing this will load `MY_ENV_VARIABLE`
+as a environment variable on all the release machines before running your release
 
 ### Credits
 Big thanks to @alevan for helping to figure out all the Ansible side of things and
