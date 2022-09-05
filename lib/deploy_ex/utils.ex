@@ -54,8 +54,9 @@ defmodule DeployEx.Utils do
   def reduce_status_tuples(status_tuples) do
     {status, res} =
       Enum.reduce(status_tuples, {:ok, []}, fn
-        {:ok, _}, {:error, _} = e -> e
+        :ok, {:error, _} = e -> e
         {:ok, record}, {:ok, acc} -> {:ok, [record | acc]}
+        :ok, {:ok, acc} -> {:ok, acc}
         {:error, error}, {:ok, _} -> {:error, [error]}
         {:error, e}, {:error, error_acc} -> {:error, [e | error_acc]}
         {:exit, error}, {:ok, _} -> {:error, [error]}

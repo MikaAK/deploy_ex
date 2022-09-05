@@ -46,7 +46,7 @@ jobs:
         with:
           key: ${{github.ref}}-deps-build-cache-${{ hashFiles('./mix.lock') }}
 
-          restore_keys: |
+          restore-keys: |
             ${{github.ref}}-deps-build-cache-
 
           path: |

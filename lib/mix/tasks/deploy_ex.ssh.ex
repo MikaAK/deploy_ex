@@ -17,7 +17,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
-         {:ok, pem_file_path} <- find_pem_file(opts[:directory]),
+         {:ok, pem_file_path} <- DeployExHelpers.find_pem_file(opts[:directory]),
          {:ok, hostname_ips} <- Mix.Tasks.Ansible.Build.terraform_instance_ips(opts[:directory]) do
       case app_params do
         [app_name] -> connect_to_host(hostname_ips, app_name, pem_file_path, opts)
@@ -72,19 +72,6 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         # with {:error, e} <- DeployExHelpers.run_command_with_input("ssh -i #{pem_file_path} admin@#{ip}", "") do
         #   Mix.shell().error(to_string(e))
         # end
-    end
-  end
-
-  defp find_pem_file(terraform_directory) do
-    res = terraform_directory
-      |> Path.join("*.pem")
-      |> Path.wildcard()
-      |> List.first
-
-    if is_nil(res) do
-      {:error, ErrorMessage.not_found("couldn't find pem file in #{terraform_directory}")}
-    else
-      {:ok, res}
     end
   end
 end

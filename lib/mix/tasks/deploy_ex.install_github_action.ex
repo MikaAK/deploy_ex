@@ -1,6 +1,8 @@
 defmodule Mix.Tasks.DeployEx.InstallGithubAction do
   use Mix.Task
 
+  @terraform_default_path DeployEx.Config.terraform_folder_path()
+
   @github_action_path "./.github/workflows/deploy-ex-release.yml"
   @github_action_template_path DeployExHelpers.priv_file("github-action.yml.eex")
 
@@ -18,17 +20,21 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
   """
 
   def run(args) do
-    opts = parse_args(args)
+    opts = args
+      |> parse_args
+      |> Keyword.put_new(:pem_directory, @terraform_default_path)
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
-         {:ok, releases} <- DeployExHelpers.fetch_mix_releases() do
+         {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
+         {:ok, pem_file_path} <- DeployExHelpers.find_pem_file(opts[:pem_directory]) do
       @github_action_path |> Path.dirname |> File.mkdir_p!
 
       DeployExHelpers.write_template(
         @github_action_template_path,
         @github_action_path,
         %{
-          app_names: releases |> Keyword.keys |> Enum.map(&to_string/1)
+          app_names: releases |> Keyword.keys |> Enum.map(&to_string/1),
+          pem_file_path: pem_file_path
         },
         opts
       )
@@ -43,10 +49,11 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
 
   defp parse_args(args) do
     {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quit],
+      aliases: [f: :force, q: :quit, d: :pem_directory],
       switches: [
         force: :boolean,
         quiet: :boolean,
+        pem_directory: :boolean
       ]
     )
 

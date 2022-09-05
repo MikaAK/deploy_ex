@@ -78,4 +78,17 @@ defmodule DeployExHelpers do
       project -> {:ok, project.releases()}
     end
   end
+
+  def find_pem_file(terraform_directory) do
+    res = terraform_directory
+      |> Path.join("*.pem")
+      |> Path.wildcard()
+      |> List.first
+
+    if is_nil(res) do
+      {:error, ErrorMessage.not_found("couldn't find pem file in #{terraform_directory}")}
+    else
+      {:ok, res}
+    end
+  end
 end
