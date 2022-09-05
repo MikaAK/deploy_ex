@@ -42,11 +42,12 @@ defmodule Mix.Tasks.DeployEx.Upload do
         |> Enum.reject(&already_uploaded?/1)
         |> Enum.split_with(&(&1.last_sha))
 
-      with {:ok, _} <- upload_releases(no_prio_upload_release_cands, opts) do
-        upload_changed_releases(has_previous_upload_release_cands, opts)
+      case upload_releases(no_prio_upload_release_cands, opts) do
+        {:ok, _} -> upload_changed_releases(has_previous_upload_release_cands, opts)
+        {:error, e} -> Mix.raise(to_string(e))
       end
     else
-      {:error, e} -> Mix.shell().error(to_string(e))
+      {:error, e} -> Mix.raise(to_string(e))
     end
   end
 
@@ -93,7 +94,7 @@ defmodule Mix.Tasks.DeployEx.Upload do
           :reset, &1.local_file
         ]))
 
-      {:error, e} -> Mix.shell().error(to_string(e))
+      {:error, e} -> Mix.raise(to_string(e))
     end
   end
 

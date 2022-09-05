@@ -59,7 +59,7 @@ defmodule Mix.Tasks.DeployEx.Release do
         end
       end)
     else
-      {:error, e} -> Mix.shell().error(to_string(e))
+      {:error, e} -> Mix.raise(to_string(e))
     end
   end
 

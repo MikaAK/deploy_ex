@@ -33,8 +33,11 @@ defmodule Mix.Tasks.Ansible.Build do
          :ok <- create_ansible_playbooks(Map.keys(hostname_ips), opts) do
       :ok
     else
-      {:error, e} when is_list(e) -> Enum.each(e, &Mix.shell().error(to_string(&1)))
-      {:error, e} -> Mix.shell().error(to_string(e))
+      {:error, [h | tail]} ->
+        Enum.each(tail, &Mix.shell().error(to_string(&1)))
+        Mix.raise(to_string(h))
+
+      {:error, e} -> Mix.raise(to_string(e))
     end
   end
 

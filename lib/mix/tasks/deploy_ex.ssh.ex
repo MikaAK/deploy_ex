@@ -44,7 +44,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
     case Enum.find(hostname_ips, fn {key, _} -> key =~ app_name end) do
       nil ->
         host_name_ips = inspect(hostname_ips, pretty: true)
-        Mix.shell().error("Couldn't find any app with the name of #{app_name}\n#{host_name_ips}")
+        Mix.raise("Couldn't find any app with the name of #{app_name}\n#{host_name_ips}")
 
       {app_name, ip_addresses} ->
         ip = Enum.random(ip_addresses)
