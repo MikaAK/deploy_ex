@@ -44,7 +44,7 @@ jobs:
       - name: Cache Deps & Build
         uses: actions/cache@v2
         with:
-          key: ${{github.ref}}-deps-build-cache-${{ hashFiles("./mix.lock") }}
+          key: ${{github.ref}}-deps-build-cache-${{ hashFiles('./mix.lock') }}
 
           restore_keys: |
             ${{github.ref}}-deps-build-cache-

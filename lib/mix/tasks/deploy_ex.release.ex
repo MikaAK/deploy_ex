@@ -38,11 +38,12 @@ defmodule Mix.Tasks.DeployEx.Release do
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
          {:ok, remote_releases} <- ReleaseUploader.fetch_all_remote_releases(opts),
          {:ok, git_sha} <- ReleaseUploader.get_git_sha() do
+      releases = Keyword.keys(releases)
+
       {
         has_previous_upload_release_cands,
         no_prio_upload_release_cands
       } = releases
-        |> Keyword.keys
         |> Enum.map(&to_string/1)
         |> ReleaseUploader.build_state(remote_releases, git_sha)
         |> Enum.reject(&Mix.Tasks.DeployEx.Upload.already_uploaded?/1)
@@ -53,11 +54,19 @@ defmodule Mix.Tasks.DeployEx.Release do
         Task.async(fn -> run_update_releases(has_previous_upload_release_cands, opts) end)
       ]
 
-      Enum.each(tasks, fn task ->
-        with {:error, e} <- Task.await(task, :timer.seconds(60)) do
-          Mix.shell().error("Error with releasing #{inspect(e, pretty: true)}")
-        end
-      end)
+      res = tasks
+        |> Enum.map(&Task.await(&1, :timer.seconds(60)))
+        |> DeployEx.Utils.reduce_status_tuples
+
+      case res do
+        {:error, [h | tail]} ->
+          Enum.each(tail, &Mix.shell().error("Error with releasing #{inspect(&1, pretty: true)}"))
+
+          Mix.raise(inspect(h, pretty: true))
+
+        {:ok, _} ->
+          Mix.shell().info([:green, "Successfuly built ", :reset, Enum.join(releases, ", ")])
+      end
     else
       {:error, e} -> Mix.raise(to_string(e))
     end
