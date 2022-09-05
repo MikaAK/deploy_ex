@@ -79,6 +79,21 @@ inject the apps into your variables file despite changes to the file. If you cha
 - [ ] - Easy Distribution
 - [ ] - Github Actions as Terraform Remote Server
 
+### Github Action
+To install the github action run `mix deploy_ex.install_github_action`
+This action requires a few variables to be set into the Secrets section in the repo settings
+
+```
+DEPLOY_EX_AWS_ACCESS_KEY_ID
+DEPLOY_EX_AWS_SECRET_ACCESS_KEY
+EC2_PEM_FILE
+```
+
+The EC2 PEM file will have been created initially when running `mix deploy_ex.full_setup`
+or any form of `mix terraform.apply`
+
+Once installed this github action will build releases, upload them to s3 and trigger
+Ansible to run and deploy each node with the release
 
 ### Credits
 Big thanks to @alevan for helping to figure out all the Ansible side of things and

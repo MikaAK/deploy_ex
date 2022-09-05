@@ -11,7 +11,6 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
          }} <- split_invalid_releases(release_states, file_diffs_by_sha_tuple),
          {:ok, dep_changes_by_sha_tuple} <- load_dep_changes(file_diffs_by_sha_tuple),
          {:ok, app_dep_tree} <- MixDepsTreeParser.load_app_dep_tree() do
-      IO.inspect invalid_release_states
       {:ok, invalid_release_states ++ Enum.filter(release_states, fn release_state ->
         release_has_code_changes?(release_state, file_diffs_by_sha_tuple) or
         release_has_local_dep_changes?(release_state, file_diffs_by_sha_tuple, app_dep_tree) or
@@ -102,7 +101,6 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
     sha: current_sha,
     last_sha: last_sha
   }, file_diffs_by_sha_tuple) do
-    IO.inspect file_diffs_by_sha_tuple
     Map.get(file_diffs_by_sha_tuple, {current_sha, last_sha}) === [:invalid]
   end
 

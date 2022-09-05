@@ -68,19 +68,10 @@ jobs:
       - name: Upload S3 Releases
         run: mix deploy_ex.upload
 
-<%#   Deploy: %>
-<%#     needs: [Release] %>
+      - name: Add PEM File From Secrets
+        run: |
+          echo "${{ secrets.EC2_PEM_FILE }}" > <%= @pem_file_path %> &&
+          chmod 0400 <%= @pem_file_path %>
 
-<%#     runs-on: ubuntu-latest %>
-
-<%#     container: %>
-<%#       image: mikaak/elixir-terraform-ansible-builder:1.13-otp-25-debian %>
-<%#       env: %>
-<%#         MIX_ENV: prod %>
-        <%# AWS_ACCESS_KEY_ID: ${{ secrets.DEPLOY_EX_AWS_ACCESS_KEY_ID }} %>
-        <%# AWS_SECRET_ACCESS_KEY: ${{ secrets.DEPLOY_EX_AWS_SECRET_ACCESS_KEY }} %>
-
-<%#     steps: %>
-<%#       - name: Run Ansible Deploy %>
-<%#         run: mix ansible.deploy %>
-
+      - name: Run Ansible Deploy
+        run: mix ansible.deploy

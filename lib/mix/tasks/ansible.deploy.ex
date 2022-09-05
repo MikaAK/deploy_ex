@@ -26,14 +26,21 @@ defmodule Mix.Tasks.Ansible.Deploy do
 
       DeployExHelpers.check_file_exists!(Path.join(opts[:directory], "hosts"))
 
-      opts[:directory]
+      res = opts[:directory]
         |> Path.join("playbooks/*.yaml")
         |> Path.wildcard
         |> Enum.map(&strip_directory(&1, opts[:directory]))
         |> Enum.reject(&filtered_with_only_or_except?(&1, opts[:only], opts[:except]))
-        |> Enum.each(fn host_playbook ->
+        |> Enum.map(fn host_playbook ->
           DeployExHelpers.run_command_with_input("ansible-playbook #{host_playbook}", opts[:directory])
         end)
+        |> DeployEx.Utils.reduce_status_tuples
+
+      with {:error, [h | tail]} <- res do
+        Enum.each(tail, &Mix.shell().error(to_string(&1)))
+
+        Mix.raise(to_string(h))
+      end
     end
   end
 
