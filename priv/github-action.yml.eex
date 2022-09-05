@@ -13,6 +13,8 @@ jobs:
   <%#     image: mikaak/elixir-terraform-ansible-builder:1.13-otp-25-debian %>
   <%#     env: %>
   <%#       MIX_ENV: prod %>
+        <%# AWS_ACCESS_KEY_ID: ${{ secrets.DEPLOY_EX_AWS_ACCESS_KEY_ID }} %>
+        <%# AWS_SECRET_ACCESS_KEY: ${{ secrets.DEPLOY_EX_AWS_SECRET_ACCESS_KEY }} %>
 
   <%#   steps: %>
   <%#     - name: Run Terraform Apply %>
@@ -33,6 +35,8 @@ jobs:
       image: mikaak/elixir-terraform-ansible-builder:1.13-otp-25-debian
       env:
         MIX_ENV: prod
+        AWS_ACCESS_KEY_ID: ${{ secrets.DEPLOY_EX_AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.DEPLOY_EX_AWS_SECRET_ACCESS_KEY }}
 
     steps:
       - uses: actions/checkout@v2
@@ -70,6 +74,8 @@ jobs:
 <%#       image: mikaak/elixir-terraform-ansible-builder:1.13-otp-25-debian %>
 <%#       env: %>
 <%#         MIX_ENV: prod %>
+        <%# AWS_ACCESS_KEY_ID: ${{ secrets.DEPLOY_EX_AWS_ACCESS_KEY_ID }} %>
+        <%# AWS_SECRET_ACCESS_KEY: ${{ secrets.DEPLOY_EX_AWS_SECRET_ACCESS_KEY }} %>
 
 <%#     steps: %>
 <%#       - name: Run Ansible Deploy %>
