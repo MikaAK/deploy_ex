@@ -134,7 +134,10 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
   }, file_diffs_by_sha_tuple) do
     file_diffs = Map.get(file_diffs_by_sha_tuple, {current_sha, last_sha}) || []
 
-    code_change? = Enum.any?(file_diffs) and Enum.any?(file_diffs, &file_part_of_app(&1, app_name))
+    code_change? = Enum.any?(file_diffs) and Enum.any?(
+      file_diffs,
+      &(file_part_of_app(&1, app_name) or config_file?(&1))
+    )
 
     if code_change? do
       IO.puts(to_string(IO.ANSI.format([
@@ -147,6 +150,10 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
 
   defp file_part_of_app(diff, app_name) do
     diff =~ ~r/^apps\/#{app_name}\//
+  end
+
+  defp config_file?(diff) do
+    diff =~ ~r/config\/[a-z0-9A-Z\.-_]+.exs/
   end
 
   defp release_has_dep_changes?(%DeployEx.ReleaseUploader.State{
