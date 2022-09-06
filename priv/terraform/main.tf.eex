@@ -8,7 +8,6 @@ terraform {
 }
 
 provider "aws" {
-  profile = "default"
   region  = "<%= @aws_region %>"
 }
 
