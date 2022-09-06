@@ -31,8 +31,9 @@ defmodule Mix.Tasks.DeployEx.Upload do
 
     opts = args
       |> parse_args
-      |> Keyword.put(:aws_bucket, Config.aws_release_bucket())
-      |> Keyword.put(:aws_region, Config.aws_release_region())
+      |> Keyword.put_new(:aws_bucket, Config.aws_release_bucket())
+      |> Keyword.put_new(:aws_region, Config.aws_release_region())
+      |> Keyword.put_new(:parallel, @max_upload_concurrency)
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, local_releases} <- ReleaseUploader.fetch_all_local_releases(),
@@ -59,7 +60,8 @@ defmodule Mix.Tasks.DeployEx.Upload do
         force: :boolean,
         quiet: :boolean,
         aws_region: :string,
-        aws_bucket: :string
+        aws_bucket: :string,
+        parallel: :integer
       ]
     )
 
@@ -106,7 +108,7 @@ defmodule Mix.Tasks.DeployEx.Upload do
   defp upload_releases(release_candidates, opts) do
     release_candidates
       |> Task.async_stream(&upload_release(&1, opts),
-        max_concurrency: @max_upload_concurrency,
+        max_concurrency: opts[:parallel],
         timeout: :timer.seconds(60)
       )
       |> DeployEx.Utils.reduce_task_status_tuples

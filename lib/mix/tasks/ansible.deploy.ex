@@ -2,6 +2,8 @@ defmodule Mix.Tasks.Ansible.Deploy do
   use Mix.Task
 
   @ansible_default_path DeployEx.Config.ansible_folder_path()
+  @playbook_timeout :timer.minutes(30)
+  @playbook_max_concurrency 4
 
   @shortdoc "Deploys to ansible hosts"
   @moduledoc """
@@ -17,6 +19,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
   - `only` -  Specify specific apps to deploy too
   - `except` - Specify apps to not deploy to
   - `copy-json-env-file` - Copy env file and load into host environments
+  - `parallel` - Set max amount of ansible deploys running at once
   """
 
   def run(args) do
@@ -24,6 +27,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
       opts = args
         |> parse_args
         |> Keyword.put_new(:directory, @ansible_default_path)
+        |> Keyword.put_new(:parallel, @playbook_max_concurrency)
 
       DeployExHelpers.check_file_exists!(Path.join(opts[:directory], "hosts"))
 
@@ -32,11 +36,11 @@ defmodule Mix.Tasks.Ansible.Deploy do
         |> Path.wildcard
         |> Enum.map(&strip_directory(&1, opts[:directory]))
         |> Enum.reject(&filtered_with_only_or_except?(&1, opts[:only], opts[:except]))
-        |> Enum.map(fn host_playbook ->
+        |> Task.async_stream(fn host_playbook ->
           host_playbook
             |> run_ansible_playbook_command(opts)
             |> DeployExHelpers.run_command_with_input(opts[:directory])
-        end)
+        end, max_concurrency: opts[:parallel], timeout: @playbook_timeout)
         |> DeployEx.Utils.reduce_status_tuples
 
       with {:error, [h | tail]} <- res do
@@ -114,7 +118,8 @@ defmodule Mix.Tasks.Ansible.Deploy do
         quiet: :boolean,
         only: :keep,
         except: :keep,
-        copy_json_env_file: :string
+        copy_json_env_file: :string,
+        parallel: :integer
       ]
     )
 

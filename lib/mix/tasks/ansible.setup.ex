@@ -2,6 +2,7 @@ defmodule Mix.Tasks.Ansible.Setup do
   use Mix.Task
 
   @ansible_default_path DeployEx.Config.ansible_folder_path()
+  @default_setup_max_concurrency 4
 
   @shortdoc "Setups ansible hosts called once upon node creation"
   @moduledoc """
@@ -13,6 +14,10 @@ defmodule Mix.Tasks.Ansible.Setup do
 
   Finally it'll load your release onto each node and sets it up
   in a SystemD task
+
+  ## Options
+  - `directory` - Set ansible directory
+  - `parallel` - Sets amount of parallel setups to do at once
   """
 
   def run(args) do
@@ -20,6 +25,7 @@ defmodule Mix.Tasks.Ansible.Setup do
       opts = args
         |> parse_args
         |> Keyword.put_new(:directory, @ansible_default_path)
+        |> Keyword.put_new(:parallel, @default_setup_max_concurrency)
 
       DeployExHelpers.check_file_exists!(Path.join(opts[:directory], "hosts"))
       relative_directory = String.replace(Path.absname(opts[:directory]), "#{File.cwd!()}/", "")
@@ -30,7 +36,7 @@ defmodule Mix.Tasks.Ansible.Setup do
         |> Enum.map(&Path.relative_to(&1, relative_directory))
         |> Task.async_stream(fn setup_file ->
           DeployExHelpers.run_command_with_input("ansible-playbook #{setup_file}", opts[:directory])
-        end, max_concurrency: 4, timeout: :timer.minutes(30))
+        end, max_concurrency: opts[:parallel], timeout: :timer.minutes(30))
         |> Stream.run
 
       Mix.shell().info([:green, "Finished setting up nodes"])

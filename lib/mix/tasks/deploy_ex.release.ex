@@ -27,6 +27,7 @@ defmodule Mix.Tasks.DeployEx.Release do
   - `recompile` - Force recompile (alias: `r`)
   - `aws-region` - Region for aws (default: `#{@default_aws_region}`)
   - `aws-bucket` - Region for aws (default: `#{@default_aws_bucket}`)
+  - `parallel` - Set max amount of releases running at once
   """
 
   def run(args) do
@@ -35,8 +36,9 @@ defmodule Mix.Tasks.DeployEx.Release do
 
     opts = args
       |> parse_args
-      |> Keyword.put(:aws_bucket, Config.aws_release_bucket())
-      |> Keyword.put(:aws_region, Config.aws_release_region())
+      |> Keyword.put_new(:aws_bucket, Config.aws_release_bucket())
+      |> Keyword.put_new(:aws_region, Config.aws_release_region())
+      |> Keyword.put_new(:parallel, @max_build_concurrency)
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
@@ -69,7 +71,8 @@ defmodule Mix.Tasks.DeployEx.Release do
         quiet: :boolean,
         recompile: :boolean,
         aws_region: :string,
-        aws_bucket: :string
+        aws_bucket: :string,
+        parallel: :integer
       ]
     )
 
@@ -150,7 +153,7 @@ defmodule Mix.Tasks.DeployEx.Release do
 
         run_app_type_pre_release(app_type, candidate)
         run_mix_release(candidate, opts)
-      end, timeout: @release_timeout, max_concurrency: div(@max_build_concurrency, 2))
+      end, timeout: @release_timeout, max_concurrency: div(opts[:parallel], 2))
       |> DeployEx.Utils.reduce_task_status_tuples
   end
 
@@ -164,7 +167,7 @@ defmodule Mix.Tasks.DeployEx.Release do
 
         run_app_type_pre_release(app_type, candidate)
         run_mix_release(candidate, opts)
-      end, timeout: @release_timeout, max_concurrency: div(@max_build_concurrency, 2))
+      end, timeout: @release_timeout, max_concurrency: div(opts[:parallel], 2))
       |> DeployEx.Utils.reduce_task_status_tuples
   end
 
