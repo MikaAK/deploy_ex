@@ -11,6 +11,7 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
   ## Options
   - `auto-approve` - Skip asking for verification with terraform (alias: `y`)
   - `skip-deploy` - Skips deploy commands after pinging & setting up nodes with ansible (alias: `k`)
+  - `auto_pull_aws` - Automatically pull aws key from host machine and loads it into remote machines (alias: `a`)
   """
 
   alias Mix.Tasks.{Ansible, Terraform}
@@ -49,8 +50,9 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
 
   defp parse_args(args) do
     {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [k: :skip_deploy],
+      aliases: [k: :skip_deploy, p: :skip_setup],
       switches: [
+        skip_setup: :boolean,
         skip_deploy: :boolean
       ]
     )
@@ -68,9 +70,10 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
   end
 
   defp ping_and_run_post_setup(args) do
+    opts = parse_args(args)
+
     with :ok <- Ansible.Ping.run(args),
-         :ok <- run_setup(args) do
-      opts = parse_args(args)
+         :ok <- run_setup(opts, args) do
 
       if !opts[:skip_deploy] do
         Mix.shell().info([
@@ -82,12 +85,14 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
     end
   end
 
-  defp run_setup(args) do
-    Mix.shell().info([
-      :green, "* running instance setup"
-    ])
+  defp run_setup(opts, args) do
+    if !opts[:skip_setup] do
+      Mix.shell().info([
+        :green, "* running instance setup"
+      ])
 
-    Ansible.Setup.run(args)
+      Ansible.Setup.run(args)
+    end
   end
 end
 

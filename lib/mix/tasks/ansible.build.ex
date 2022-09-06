@@ -7,9 +7,10 @@ defmodule Mix.Tasks.Ansible.Build do
   @terraform_default_path Config.terraform_folder_path()
   @aws_credentials_regex ~r/aws_access_key_id = (?<access_key>[A-Z0-9]+)\naws_secret_access_key = (?<secret_key>[a-z-A-Z0-9\/\+]+)\n/
 
-  @shortdoc "Deploys to ansible resources using ansible"
+  @shortdoc "Builds ansible files into your repository"
   @moduledoc """
-  Deploys to ansible
+  Builds ansible files into the respository, this can be used if you
+  change terraform settings and want to regenerate any ansible files
   """
 
   def run(args) do
