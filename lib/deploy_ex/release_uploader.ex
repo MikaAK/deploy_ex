@@ -39,6 +39,10 @@ defmodule DeployEx.ReleaseUploader do
     to: UpdateValidator,
     as: :reject_unchanged
 
+  defdelegate app_dep_tree,
+    to: UpdateValidator.MixDepsTreeParser,
+    as: :load_app_dep_tree
+
   def fetch_all_remote_releases(opts) do
     AwsManager.get_releases(opts[:aws_region], opts[:aws_bucket])
   end

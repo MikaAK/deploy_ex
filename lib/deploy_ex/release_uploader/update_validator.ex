@@ -11,29 +11,52 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
          }} <- split_invalid_releases(release_states, file_diffs_by_sha_tuple),
          {:ok, dep_changes_by_sha_tuple} <- load_dep_changes(file_diffs_by_sha_tuple),
          {:ok, app_dep_tree} <- MixDepsTreeParser.load_app_dep_tree() do
-      {:ok, invalid_release_states ++ Enum.filter(release_states, fn release_state ->
-        release_has_code_changes?(release_state, file_diffs_by_sha_tuple) or
-        release_has_local_dep_changes?(release_state, file_diffs_by_sha_tuple, app_dep_tree) or
-        release_has_dep_changes?(release_state, dep_changes_by_sha_tuple, app_dep_tree)
-      end)}
+      reject_unchanged(
+        invalid_release_states,
+        release_states,
+        file_diffs_by_sha_tuple,
+        dep_changes_by_sha_tuple,
+        app_dep_tree
+      )
     end
   end
 
-  defp split_invalid_releases(release_states, file_diffs_by_sha_tuple) do
+  def reject_unchanged(
+    invalid_release_states,
+    release_states,
+    file_diffs_by_sha_tuple,
+    dep_changes_by_sha_tuple,
+    app_dep_tree
+  ) do
+    {never_uploaded_releases, release_states} = Enum.split_with(
+      release_states,
+      &is_nil(&1.last_sha)
+    )
+
+    {:ok, never_uploaded_releases ++ invalid_release_states ++ Enum.filter(release_states, fn release_state ->
+      release_has_code_changes?(release_state, file_diffs_by_sha_tuple) or
+      release_has_local_dep_changes?(release_state, file_diffs_by_sha_tuple, app_dep_tree) or
+      release_has_dep_changes?(release_state, dep_changes_by_sha_tuple, app_dep_tree)
+    end)}
+  end
+
+  def split_invalid_releases(release_states, file_diffs_by_sha_tuple) do
     split_release_states = Enum.split_with(
       release_states,
       &uploaded_release_invalid?(&1, file_diffs_by_sha_tuple)
     )
 
-    file_diffs_by_sha_tuple = Enum.reject(file_diffs_by_sha_tuple, fn
-      {_, [:invalid]} -> true
-      _ -> false
-    end)
+    file_diffs_by_sha_tuple = file_diffs_by_sha_tuple
+      |> Enum.reject(fn
+        {_, [:invalid]} -> true
+        _ -> false
+      end)
+      |> Map.new
 
     {:ok, {split_release_states, file_diffs_by_sha_tuple}}
   end
 
-  defp load_file_diffs(states) do
+  def load_file_diffs(states) do
     from_to_shas = states |> Enum.map(&{&1.sha, &1.last_sha}) |> Enum.uniq
 
     with {:ok, file_diffs} <- file_diffs_between(from_to_shas) do
@@ -48,7 +71,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
     end
   end
 
-  defp load_dep_changes(file_diffs_by_sha_tuple) do
+  def load_dep_changes(file_diffs_by_sha_tuple) do
     res = file_diffs_by_sha_tuple
       |> filter_file_diffs_for_deps_update
       |> Task.async_stream(

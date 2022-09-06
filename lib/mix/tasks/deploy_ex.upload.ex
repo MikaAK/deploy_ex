@@ -39,9 +39,10 @@ defmodule Mix.Tasks.DeployEx.Upload do
          {:ok, git_sha} <- ReleaseUploader.get_git_sha() do
       {has_previous_upload_release_cands, no_prio_upload_release_cands} = local_releases
         |> ReleaseUploader.build_state(remote_releases, git_sha)
-        |> Enum.reject(&already_uploaded?/1)
-        |> Enum.split_with(&(&1.last_sha))
         |> IO.inspect
+        |> Enum.reject(&already_uploaded?/1)
+        |> IO.inspect
+        |> Enum.split_with(&(&1.last_sha))
 
       case upload_releases(no_prio_upload_release_cands, opts) do
         {:ok, _} -> upload_changed_releases(has_previous_upload_release_cands, opts)
@@ -82,21 +83,25 @@ defmodule Mix.Tasks.DeployEx.Upload do
   defp upload_changed_releases(release_candidates, opts) do
     case ReleaseUploader.reject_unchanged_releases(release_candidates) do
       {:ok, []} ->
-        Enum.each(release_candidates, &Mix.shell().info([
-          :yellow, "* skipping unchanged release ",
-          :reset, &1.local_file
-        ]))
+        log_unchanged_releases(release_candidates)
 
-      {:ok, final_release_candidates} -> upload_releases(final_release_candidates, opts)
+      {:ok, final_release_candidates} ->
+        log_unchanged_releases(release_candidates -- final_release_candidates)
+
+        upload_releases(final_release_candidates, opts)
 
       {:error, %ErrorMessage{code: :not_found}} ->
-        Enum.each(release_candidates, &Mix.shell().info([
-          :yellow, "* skipping unchanged release ",
-          :reset, &1.local_file
-        ]))
+        log_unchanged_releases(release_candidates)
 
       {:error, e} -> Mix.raise(to_string(e))
     end
+  end
+
+  defp log_unchanged_releases(release_candidates) do
+    Enum.each(release_candidates, &Mix.shell().info([
+      :yellow, "* skipping unchanged release ",
+      :reset, &1.local_file
+    ]))
   end
 
   defp upload_releases(release_candidates, opts) do
