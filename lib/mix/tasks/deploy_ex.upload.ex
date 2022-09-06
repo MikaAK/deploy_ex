@@ -5,6 +5,7 @@ defmodule Mix.Tasks.DeployEx.Upload do
 
   @default_aws_region Config.aws_release_region()
   @default_aws_bucket Config.aws_release_bucket()
+  @max_upload_concurrency 4
 
   @shortdoc "Uploads your release folder to Amazon S3"
   @moduledoc """
@@ -104,8 +105,11 @@ defmodule Mix.Tasks.DeployEx.Upload do
 
   defp upload_releases(release_candidates, opts) do
     release_candidates
-      |> Enum.map(&upload_release(&1, opts))
-      |> DeployEx.Utils.reduce_status_tuples
+      |> Task.async_stream(&upload_release(&1, opts),
+        max_concurrency: @max_upload_concurrency,
+        timeout: :timer.seconds(60)
+      )
+      |> DeployEx.Utils.reduce_task_status_tuples
   end
 
   defp upload_release(%ReleaseUploader.State{} = release_state, opts) do

@@ -64,7 +64,9 @@ jobs:
         run: mix ansible.build
 
       - name: Maybe Github Update
-        run: ./.github/github-action-maybe-commit-terraform-changes.sh ${{ secrets.TOKEN_GITHUB }}
+        run: |
+          chmod +x ./.github/github-action-maybe-commit-terraform-changes.sh &&
+          ./.github/github-action-maybe-commit-terraform-changes.sh ${{ secrets.TOKEN_GITHUB }}
 
   Release:
     name: Release
@@ -122,5 +124,6 @@ jobs:
 
       - name: Run Ansible Deploy
         run: |
-          bash ./.github/github-actions-secrets-to-json-file.sh env-file.json "$(cat env.json)" &&
+          chmod +x ./.github/github-actions-secrets-to-json-file.sh &&
+          ./.github/github-actions-secrets-to-json-file.sh env-file.json "$(cat env.json)" &&
           mix ansible.deploy --copy-json-env-file env-file.json

@@ -5,7 +5,7 @@ defmodule Mix.Tasks.DeployEx.Release do
 
   @default_aws_region Config.aws_release_region()
   @default_aws_bucket Config.aws_release_bucket()
-  @max_build_concurrency 2
+  @max_build_concurrency 6
   @release_timeout :timer.minutes(10)
 
   @shortdoc "Runs mix.release for apps that have changed"

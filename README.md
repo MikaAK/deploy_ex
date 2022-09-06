@@ -44,6 +44,7 @@ Once you do this, go to Github and set a few Secrets:
 - `DEPLOY_EX_AWS_ACCESS_KEY_ID`
 - `DEPLOY_EX_AWS_SECRET_ACCESS_KEY`
 - `EC2_PEM_FILE` - You can get this by copying the pem file produced by `deploy_ex.full_setup`
+- `TOKEN_GITHUB` - Github token to use to keep terraform files updated, can generate this in profile developer settings
 
 
 Then we can start pushing to GitHub, every merge to `main` will trigger this
