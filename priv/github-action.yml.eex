@@ -5,26 +5,66 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
 jobs:
-  <%# Apply: %>
-  <%#   runs-on: ubuntu-latest %>
+  Apply:
+    name: Apply Terraform Changes
 
-  <%#   container: %>
-  <%#     image: mikaak/elixir-terraform-ansible-builder:1.13-otp-25-debian %>
-  <%#     env: %>
-  <%#       MIX_ENV: prod %>
-        <%# AWS_ACCESS_KEY_ID: ${{ secrets.DEPLOY_EX_AWS_ACCESS_KEY_ID }} %>
-        <%# AWS_SECRET_ACCESS_KEY: ${{ secrets.DEPLOY_EX_AWS_SECRET_ACCESS_KEY }} %>
+    runs-on: ubuntu-latest
 
-  <%#   steps: %>
-  <%#     - name: Run Terraform Apply %>
-  <%#       run: mix terraform.apply -y %>
+    container:
+      image: mikaak/elixir-terraform-ansible-builder:1.13-otp-25-debian
+      env:
+        MIX_ENV: prod
+        AWS_ACCESS_KEY_ID: ${{ secrets.DEPLOY_EX_AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.DEPLOY_EX_AWS_SECRET_ACCESS_KEY }}
 
-  <%#     - name: Run Ansible Build %>
-  <%#       run: mix ansible.build %>
+    steps:
+      - uses: actions/checkout@v2
 
-  <%#     - name: Maybe Github Update %>
-  <%#       run: ./.github/github-action-maybe-commit-terraform-changes.sh %>
+      - name: Cache Deps & Build
+        uses: actions/cache@v2
+        with:
+          key: ${{github.ref}}-terraform-${{ hashFiles('./mix.lock') }}
+
+          restore-keys: |
+            ${{github.ref}}-terraform-${{ hashFiles('./mix.lock') }}
+            ${{github.ref}}-deps-build-cache-${{ hashFiles('./mix.lock') }}
+            ${{github.ref}}-deps-build-cache-
+            ${{github.ref}}-terraform-
+
+          path: |
+            ./deploy/terraform/.terraform/
+            ./_build/
+            ./deps/
+
+      - name: Install Rebar & Hex
+        run: mix local.hex --force --if-missing && mix local.rebar --force --if-missing
+
+      - name: Install Dependencies
+        run: mix deps.get
+
+      - name: Compile Project
+        run: mix compile
+
+      - name: Run Terraform Init
+        run: mix terraform.init -y
+
+      - name: Add PEM File From Secrets
+        run: |
+          echo "${{ secrets.EC2_PEM_FILE }}" > deploys/terraform/learn-elixir-M4Q3XWZP6M-key-pair.pem &&
+          chmod 0400 deploys/terraform/learn-elixir-M4Q3XWZP6M-key-pair.pem
+
+      - name: Run Terraform Apply
+        run: mix terraform.apply -y
+
+      - name: Run Ansible Build
+        run: mix ansible.build
+
+      - name: Maybe Github Update
+        run: ./.github/github-action-maybe-commit-terraform-changes.sh ${{ secrets.TOKEN_GITHUB }}
 
   Release:
     name: Release
@@ -54,7 +94,7 @@ jobs:
             ./deps/
 
       - name: Install Rebar & Hex
-        run: mix local.hex --force && mix local.rebar --force
+        run: mix local.hex --force --if-missing && mix local.rebar --force --if-missing
 
       - name: Install Dependencies
         run: mix deps.get

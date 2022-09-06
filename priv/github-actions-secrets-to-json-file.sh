@@ -1,4 +1,5 @@
-#! /usr/env/bin bash
+#! /usr/bin/env bash
+
 echo "{\"secrets\": \"" > $1
 
 for s in $(echo "$2" | jq -r "to_entries|map(\"\(.key)=\(.value|tostring)\")|.[]" ); do
