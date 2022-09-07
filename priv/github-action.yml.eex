@@ -61,15 +61,18 @@ jobs:
         run: mix terraform.apply -y
 
       - name: Run Ansible Build
-        run: mix ansible.build
+        run: mix ansible.build -f
 
       - name: Maybe Github Update
         run: |
           chmod +x ./.github/github-action-maybe-commit-terraform-changes.sh &&
-          ./.github/github-action-maybe-commit-terraform-changes.sh ${{ secrets.TOKEN_GITHUB }}
+          ./.github/github-action-maybe-commit-terraform-changes.sh
+
 
   Release:
     name: Release
+
+    needs: [Apply]
 
     runs-on: ubuntu-latest
 

@@ -11,10 +11,6 @@ else
 
   git config user.name "Github Actions Bot"
   git config user.email mika@kalathil.me
-  git config credential.helper store
-
-  echo "Adding github credentials"
-  cat $0 > ~/.github-credentials
 
   git add . &&
   git commit -m ":robot: Terraform updates from Github Actions" &&

@@ -44,8 +44,6 @@ Once you do this, go to Github and set a few Secrets:
 - `DEPLOY_EX_AWS_ACCESS_KEY_ID`
 - `DEPLOY_EX_AWS_SECRET_ACCESS_KEY`
 - `EC2_PEM_FILE` - You can get this by copying the pem file produced by `deploy_ex.full_setup`
-- `TOKEN_GITHUB` - Github token to use to keep terraform files updated, can generate this in profile developer settings
-
 
 Then we can start pushing to GitHub, every merge to `main` will trigger this
 (set the branch in the `.github/workflows` if neededd)
@@ -55,6 +53,9 @@ node to the passed string and give you a command to connect to it, if you pass `
 to monitor it's logs remotely, and `--iex` will give you a command to connect to it using a iex shell
 
 ### Usage with Github Actions
+***Note: This doesn't work properly with branch protections, to do
+so you'll need to modify the GH action to bypass branch protections***
+
 You can use this library with github actions to make for an easy deploy
 pipeline, this way you can easily deploy to your nodes when you push
 and is good for a quick setup
@@ -93,9 +94,12 @@ inject the apps into your variables file despite changes to the file. If you cha
 
 ## Extra Utilities
 - [ ] - Easy Distribution
-- [ ] - Github Actions as Terraform Remote Server
+- [ ] - Runs ansible setup on nodes created via github actions
 
 ### Github Action
+***Note: This doesn't work properly with branch protections, to do
+so you'll need to modify the GH action to bypass branch protections***
+
 To install the github action run `mix deploy_ex.install_github_action`
 This action requires a few variables to be set into the Secrets section in the repo settings
 
