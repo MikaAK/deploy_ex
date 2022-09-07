@@ -1,8 +1,16 @@
 #!/bin/bash
 
-instance_name=$(echo ${instance_name} | tr -d ' ' | sed 's/[[:upper:]]/-&/g;s/^-//' | tr '[:upper:]' '[:lower:]')
+echo "Mounting EBS Volume..."
 
-echo "Setting preserve hostname to true..." &&
-sudo sed -i 's/preserve_hostname: false/preserve_hostname: true/' /etc/cloud/cloud.cfg &&
-echo "Setting hostname to $instance_name" &&
-sudo hostnamectl set-hostname $instance_name
+sudo file -s /dev/sdh &&
+sudo apt-get install xfsprogs &&
+sudo mkfs -t xfs /dev/sdh &&
+sudo mkdir /data &&
+sudo mount /dev/sdh /data &&
+echo "EBS Volume Mounted to /data, ensuring it attaches at restart..." &&
+DATA_DEVICE_UUID=$(sudo lsblk -o +UUID | grep /data |  awk '{print $8}')
+sudo echo "UUID=$DATA_DEVICE_UUID /data  xfs  defaults,nofail  0  2" >> /etc/fstab
+
+echo "EBS volume setup for restart, ensuring it survives..."
+
+sudo umount /data && sudo mount -a && echo "EBS volume restartability validated"

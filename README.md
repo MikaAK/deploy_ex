@@ -7,6 +7,8 @@ By default it uses `t3.nano` nodes but this can be changed in `./deploys/terrafo
 Once the files are generated, you can manage all files yourself, and we'll attempt to inject the variables in upon
 reruns of the build commands.
 
+There is also a default volume of 16gb created and mounted at the /data directory, you can change this in each specific app type if desired
+
 ## Installation
 
 #### Pre-requisite

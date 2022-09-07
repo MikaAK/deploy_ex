@@ -201,6 +201,16 @@ defmodule Mix.Tasks.Ansible.Build do
     project_playbooks_path = Path.join(opts[:directory], "playbooks")
     project_setup_playbooks_path = Path.join(opts[:directory], "setup")
 
+    if opts[:rewrite_playbooks] do
+      Mix.shell().info([
+        :red, "* deleting previous playbooks from ",
+        :reset, "#{project_playbooks_path}, #{project_setup_playbooks_path}")
+      ])
+
+      File.rm_rf!(project_playbooks_path)
+      File.rm_rf!(project_setup_playbooks_path)
+    end
+
     if not File.exists?(project_playbooks_path) do
       File.mkdir_p!(project_playbooks_path)
     end
