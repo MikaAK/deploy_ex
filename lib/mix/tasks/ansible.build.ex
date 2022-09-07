@@ -204,7 +204,7 @@ defmodule Mix.Tasks.Ansible.Build do
     if opts[:rewrite_playbooks] do
       Mix.shell().info([
         :red, "* deleting previous playbooks from ",
-        :reset, "#{project_playbooks_path}, #{project_setup_playbooks_path}")
+        :reset, "#{project_playbooks_path}, #{project_setup_playbooks_path}"
       ])
 
       File.rm_rf!(project_playbooks_path)

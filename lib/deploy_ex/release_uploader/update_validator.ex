@@ -109,7 +109,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
   end
 
   defp git_diff_files_between(current_sha, last_sha) do
-    case System.shell("git diff --name-only #{current_sha}..#{last_sha}") do
+    case System.shell("git diff --name-only #{current_sha}..#{last_sha} --") do
       {output, 0} -> {:ok, output |> String.trim_trailing("\n") |> String.split("\n")}
       {"", 128} -> {:ok, [:invalid]}
 
