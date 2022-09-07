@@ -122,6 +122,26 @@ as a environment variable on all the release machines before running your releas
 ## Universial Options
 Most of these are available on any command in DeployEx
 - `aws-bucket` - Bucket to use for aws deploys
+- `aws-region` - Bucket to use for aws deploys
+
+## Connecting to your nodes
+You can use `mix deploy_ex.ssh <app_name>` to connect to your nodes. By itself it will return the command, but can be
+combined with eval using the `-s` flag
+
+App name can be a partially complete form of app_name, so you can shorten it, and it will use a regex to find the match
+
+#### Connection to Node
+This command will connect to the node, you can use `--log` to view the logs, or `--iex` to connect to a remote iex shell
+
+```bash
+$ eval "$(mix deploy_ex.ssh -s app)"
+```
+
+#### Connecting to App Logs
+```bash
+$ eval "$(mix deploy_ex.ssh -s --logs app)"
+```
+
 
 ## Credits
 Big thanks to @alevan for helping to figure out all the Ansible side of things and
