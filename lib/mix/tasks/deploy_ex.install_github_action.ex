@@ -53,6 +53,8 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
           opts
         )
       end)
+    else
+      {:error, e} -> Mix.raise(to_string(e))
     end
   end
 

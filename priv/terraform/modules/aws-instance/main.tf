@@ -27,7 +27,7 @@ resource "aws_instance" "ec2_instance" {
     enable_resource_name_dns_a_record = true
   }
 
-  user_data = templatefile("${path.module}/user_data_init_script.sh.tpl", {instance_name = var.instance_name})
+  user_data = "${file("${path.module}/user_data_init_script.sh")}"
 
   tags = {
     Name  = var.instance_name

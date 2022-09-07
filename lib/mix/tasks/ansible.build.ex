@@ -44,11 +44,12 @@ defmodule Mix.Tasks.Ansible.Build do
 
   defp parse_args(args) do
     {opts, _} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quit, d: :directory, a: :auto_pull_aws],
+      aliases: [f: :force, q: :quit, d: :directory, a: :auto_pull_aws, r: :rewrite_playbooks],
       switches: [
         force: :boolean,
         quiet: :boolean,
         directory: :string,
+        rewrite_playbooks: :string,
         terraform_directory: :string,
         auto_pull_aws: :boolean,
         aws_bucket: :string

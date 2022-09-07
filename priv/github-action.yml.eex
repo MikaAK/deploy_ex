@@ -54,8 +54,8 @@ jobs:
 
       - name: Add PEM File From Secrets
         run: |
-          echo "${{ secrets.EC2_PEM_FILE }}" > deploys/terraform/learn-elixir-M4Q3XWZP6M-key-pair.pem &&
-          chmod 0400 deploys/terraform/learn-elixir-M4Q3XWZP6M-key-pair.pem
+          echo "${{ secrets.EC2_PEM_FILE }}" > <%= @pem_file_path %> &&
+          chmod 0400 <%= @pem_file_path %>
 
       - name: Run Terraform Apply
         run: mix terraform.apply -y
