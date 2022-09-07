@@ -18,6 +18,8 @@ defmodule Mix.Tasks.Ansible.Setup do
   ## Options
   - `directory` - Set ansible directory
   - `parallel` - Sets amount of parallel setups to do at once
+  - `only` -  Specify specific apps to setup
+  - `except` - Specify apps to not setup
   """
 
   def run(args) do
@@ -34,6 +36,7 @@ defmodule Mix.Tasks.Ansible.Setup do
         |> Path.join("setup/*.yaml")
         |> Path.wildcard
         |> Enum.map(&Path.relative_to(&1, relative_directory))
+        |> Enum.reject(&filtered_with_only_or_except?(&1, opts[:only], opts[:except]))
         |> Task.async_stream(fn setup_file ->
           DeployExHelpers.run_command_with_input("ansible-playbook #{setup_file}", opts[:directory])
         end, max_concurrency: opts[:parallel], timeout: :timer.minutes(30))
@@ -48,12 +51,53 @@ defmodule Mix.Tasks.Ansible.Setup do
       aliases: [f: :force, q: :quit, d: :directory],
       switches: [
         directory: :string,
+        only: :keep,
+        except: :keep,
         force: :boolean,
         quiet: :boolean
       ]
     )
 
     opts
+  end
+
+  defp filtered_with_only_or_except?(_playbook, nil, nil) do
+    false
+  end
+
+  defp filtered_with_only_or_except?(_playbook, [], []) do
+    false
+  end
+
+  defp filtered_with_only_or_except?(playbook, only, []) do
+    app_name = Path.basename(playbook)
+
+    Enum.any?(only, &(&1 =~ app_name))
+  end
+
+  defp filtered_with_only_or_except?(playbook, [], except) do
+    app_name = Path.basename(playbook)
+
+    app_name not in except
+  end
+
+  defp filtered_with_only_or_except?(playbook, nil, except) when is_binary(except)  do
+    app_name = Path.basename(playbook)
+
+    not Enum.any?(except, &(&1 =~ app_name))
+  end
+
+  defp filtered_with_only_or_except?(playbook, only, nil) when is_binary(only)  do
+    app_name = Path.basename(playbook)
+
+    not (app_name =~ only)
+  end
+
+  defp filtered_with_only_or_except?(_, _, _)  do
+    raise to_string(IO.ANSI.format([
+      :red,
+      "Cannot specify both only and except arguments"
+    ]))
   end
 end
 

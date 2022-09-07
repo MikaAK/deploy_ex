@@ -6,16 +6,13 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
   @github_action_path "./.github/workflows/deploy-ex-release.yml"
   @github_action_template_path DeployExHelpers.priv_file("github-action.yml.eex")
 
-  @github_action_scripts_paths [
-    {
-      DeployExHelpers.priv_file("github-action-maybe-commit-terraform-changes.sh"),
-      "./.github/github-action-maybe-commit-terraform-changes.sh"
-    },
-    {
-      DeployExHelpers.priv_file("github-actions-secrets-to-json-file.sh"),
-      "./.github/github-actions-secrets-to-json-file.sh"
-    }
-  ]
+  @github_action_scripts_paths [{
+    DeployExHelpers.priv_file("github-action-maybe-commit-terraform-changes.sh"),
+    "./.github/github-action-maybe-commit-terraform-changes.sh"
+  }, {
+    DeployExHelpers.priv_file("github-actions-secrets-to-json-file.sh"),
+    "./.github/github-actions-secrets-to-json-file.sh"
+  }]
 
   @shortdoc "Installs a github action to manage terraform & ansible from within it"
   @moduledoc """
