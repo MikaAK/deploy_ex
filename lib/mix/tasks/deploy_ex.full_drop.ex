@@ -9,9 +9,6 @@ defmodule Mix.Tasks.DeployEx.FullDrop do
 
   def run(args) do
     with :ok <- DeployExHelpers.check_in_umbrella() do
-      DeployExHelpers.check_file_exists!("./deploys/ansible")
-      DeployExHelpers.check_file_exists!("./deploys/terraform")
-
       with :ok <- Mix.Tasks.Terraform.Drop.run(args) do
         File.rm_rf!("./deploys")
 
@@ -19,6 +16,20 @@ defmodule Mix.Tasks.DeployEx.FullDrop do
           :red, "* removing ", :reset, "./deploys"
         ])
       end
+
+      remove_if_exists(".github/workflows/deploy-ex-release.yml")
+      remove_if_exists(".github/github-action-maybe-commit-terraform-changes.sh")
+      remove_if_exists(".github/github-actions-secrets-to-json-file.sh")
+    end
+  end
+
+  defp remove_if_exists(file_path) do
+    if File.exists?(file_path) do
+      File.rm!(file_path)
+
+      Mix.shell().info([
+        :red, "* removing ", :reset, file_path
+      ])
     end
   end
 end
