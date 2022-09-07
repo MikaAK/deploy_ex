@@ -61,7 +61,7 @@ jobs:
         run: mix terraform.apply -y
 
       - name: Run Ansible Build
-        run: mix ansible.build -f
+        run: mix ansible.build -f && mix deploy_ex.install_github_action -f
 
       - name: Maybe Github Update
         run: |
