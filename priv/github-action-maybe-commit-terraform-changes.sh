@@ -12,7 +12,7 @@ else
   git config user.name "Github Actions Bot"
   git config user.email mika@kalathil.me
 
-  git add ./deploys .github/workflows &&
+  git add ./deploys &&
   git commit -m ":robot: Terraform updates from Github Actions" &&
   git push origin $current_branch
 fi

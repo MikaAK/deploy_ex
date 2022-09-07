@@ -57,10 +57,10 @@ jobs:
           echo "${{ secrets.EC2_PEM_FILE }}" > <%= @pem_file_path %> &&
           chmod 0400 <%= @pem_file_path %>
 
-      - name: Run Terraform Apply
-        run: mix terraform.apply -y
+      - name: Run Terraform Build & Apply
+        run: mix terraform.build -f && mix terraform.apply -y
 
-      - name: Run Ansible Build
+      - name: Run Ansible Build & Install GitHub Action
         run: mix ansible.build -f && mix deploy_ex.install_github_action -f
 
       - name: Maybe Github Update
