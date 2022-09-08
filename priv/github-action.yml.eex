@@ -60,8 +60,8 @@ jobs:
       - name: Run Terraform Build & Apply
         run: mix terraform.build -f && mix terraform.apply -y
 
-      - name: Run Ansible Build & Install GitHub Action
-        run: mix ansible.build -f && mix deploy_ex.install_github_action -f
+      - name: Run Ansible Build
+        run: mix ansible.build -f
 
       - name: Maybe Github Update
         run: |
