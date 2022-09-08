@@ -110,7 +110,7 @@ jobs:
         run: mix compile
 
       - name: Build Releases
-        run: mix deploy_ex.release --force
+        run: rm -rf _build/**/*-*.tar.gz && mix deploy_ex.release --force
 
       - name: Upload S3 Releases
         run: mix deploy_ex.upload
