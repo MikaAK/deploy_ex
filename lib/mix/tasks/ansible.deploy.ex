@@ -1,6 +1,8 @@
 defmodule Mix.Tasks.Ansible.Deploy do
   use Mix.Task
 
+  alias DeployEx.ReleaseUploader
+
   @ansible_default_path DeployEx.Config.ansible_folder_path()
   @playbook_timeout :timer.minutes(30)
   @playbook_max_concurrency 4
@@ -15,10 +17,10 @@ defmodule Mix.Tasks.Ansible.Deploy do
 
   ### Options
   - `directory` - Directory for the playbooks
-  - `unchanged` - Only deploy unchanged releases (NOT SETUP)
   - `only` -  Specify specific apps to deploy too
   - `except` - Specify apps to not deploy to
   - `copy-json-env-file` - Copy env file and load into host environments
+  - `only-local-release` - Only deploy if there's a local release
   - `parallel` - Set max amount of ansible deploys running at once
   """
 
@@ -36,6 +38,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
         |> Path.wildcard
         |> Enum.map(&strip_directory(&1, opts[:directory]))
         |> Enum.reject(&filtered_with_only_or_except?(&1, opts[:only], opts[:except]))
+        |> reject_playbook_without_local_release(opts[:only_local_release])
         |> Task.async_stream(fn host_playbook ->
           host_playbook
             |> run_ansible_playbook_command(opts)
@@ -49,6 +52,23 @@ defmodule Mix.Tasks.Ansible.Deploy do
         Mix.raise(to_string(h))
       end
     end
+  end
+
+  defp parse_args(args) do
+    {opts, _extra_args} = OptionParser.parse!(args,
+      aliases: [f: :force, q: :quit, d: :directory, l: :only_local_release],
+      switches: [
+        directory: :string,
+        quiet: :boolean,
+        only: :keep,
+        except: :keep,
+        copy_json_env_file: :string,
+        parallel: :integer,
+        only_local_release: :boolean
+      ]
+    )
+
+    opts
   end
 
   def run_ansible_playbook_command(host_playbook, opts) do
@@ -110,21 +130,34 @@ defmodule Mix.Tasks.Ansible.Deploy do
     ]))
   end
 
-  defp parse_args(args) do
-    {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quit, d: :directory],
-      switches: [
-        directory: :string,
-        quiet: :boolean,
-        only: :keep,
-        except: :keep,
-        copy_json_env_file: :string,
-        parallel: :integer
-      ]
-    )
+  defp reject_playbook_without_local_release(host_playbook_paths, true) do
+    case ReleaseUploader.fetch_all_local_releases() do
+      {:ok, local_releases} ->
+        releases = local_release_app_names(local_releases)
 
-    opts
+        Enum.reject(host_playbook_paths, &has_local_release?(&1, releases))
+
+      _ -> host_playbook_paths
+    end
+  end
+
+  defp reject_playbook_without_local_release(host_playbook_paths, false) do
+    host_playbook_paths
+  end
+
+  defp local_release_app_names(local_releases) do
+    Enum.map(local_releases, fn local_release ->
+      case local_release |> Path.basename |> String.split("-") do
+        [_timestamp, _sha, app_name, _version] -> app_name
+
+        _ ->
+          Mix.shell().error("Couldn't find app name from local release #{local_release}")
+          []
+      end
+    end)
+  end
+
+  defp has_local_release?(host_playbook, releases) do
+    Enum.any?(releases, &(Path.basename(host_playbook) =~ ~r/^#{&1}\.yml/))
   end
 end
-
-

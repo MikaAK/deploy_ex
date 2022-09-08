@@ -85,6 +85,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
+        with:
+          fetch-depth: 25
 
       - name: Cache Deps & Build
         uses: actions/cache@v2
@@ -129,4 +131,4 @@ jobs:
         run: |
           chmod +x ./.github/github-actions-secrets-to-json-file.sh &&
           ./.github/github-actions-secrets-to-json-file.sh env-file.json "$(cat env.json)" &&
-          mix ansible.deploy --copy-json-env-file env-file.json
+          mix ansible.deploy -l --copy-json-env-file env-file.json
