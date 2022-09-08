@@ -1,7 +1,7 @@
 #! /usr/bin/env bash
 
 current_branch=$(git symbolic-ref --short -q HEAD)
-git_file_diffs=$(git diff --name-only $current_branch)
+git_file_diffs=$(git diff --name-only $current_branch | grep deploys/)
 
 if [[ -z $git_file_diffs ]]; then
   echo "No files changed"
