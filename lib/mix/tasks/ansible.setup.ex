@@ -78,13 +78,13 @@ defmodule Mix.Tasks.Ansible.Setup do
   defp filtered_with_only_or_except?(playbook, [], except) do
     app_name = Path.basename(playbook)
 
-    app_name not in except
+    not Enum.any?(except, &(&1 =~ app_name))
   end
 
   defp filtered_with_only_or_except?(playbook, nil, except) when is_binary(except)  do
     app_name = Path.basename(playbook)
 
-    not Enum.any?(except, &(&1 =~ app_name))
+    not (except =~ app_name)
   end
 
   defp filtered_with_only_or_except?(playbook, only, nil) when is_binary(only)  do

@@ -49,6 +49,9 @@ defmodule Mix.Tasks.DeployEx.Upload do
         {:error, e} -> Mix.raise(to_string(e))
       end
     else
+      {:error, %ErrorMessage{code: :not_found} = e} ->
+        Mix.shell().error(to_string(e))
+
       {:error, e} -> Mix.raise(to_string(e))
     end
   end
