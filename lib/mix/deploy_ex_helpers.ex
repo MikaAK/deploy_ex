@@ -112,6 +112,10 @@ defmodule DeployExHelpers do
     filtered_with_only_or_except?(playbook, [only], except)
   end
 
+  defp filtered_with_only_or_except?(_playbook, [], []) do
+    true
+  end
+
   defp filtered_with_only_or_except?(playbook, only, except) do
     only_given? = Enum.any?(only)
     except_given? = Enum.any?(except)

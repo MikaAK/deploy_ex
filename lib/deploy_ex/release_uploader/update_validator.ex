@@ -141,7 +141,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
 
     if code_change? do
       IO.puts(to_string(IO.ANSI.format([
-        :green, "* #{app_name} has code changes"
+        :green, "* code changes detected ", :reset, app_name
       ])))
     end
 

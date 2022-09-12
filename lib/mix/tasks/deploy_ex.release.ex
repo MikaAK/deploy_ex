@@ -5,8 +5,6 @@ defmodule Mix.Tasks.DeployEx.Release do
 
   @default_aws_region Config.aws_release_region()
   @default_aws_bucket Config.aws_release_bucket()
-  @max_build_concurrency 6
-  @release_timeout :timer.minutes(10)
 
   @shortdoc "Runs mix.release for apps that have changed"
   @moduledoc """
@@ -24,10 +22,11 @@ defmodule Mix.Tasks.DeployEx.Release do
 
   - `force` - Force overwrite (alias: `f`)
   - `quiet` - Force overwrite (alias: `q`)
+  - `only` - Only build release apps
+  - `except` - Build release for apps except
   - `recompile` - Force recompile (alias: `r`)
   - `aws-region` - Region for aws (default: `#{@default_aws_region}`)
   - `aws-bucket` - Region for aws (default: `#{@default_aws_bucket}`)
-  - `parallel` - Set max amount of releases running at once
   """
 
   def run(args) do
@@ -38,7 +37,6 @@ defmodule Mix.Tasks.DeployEx.Release do
       |> parse_args
       |> Keyword.put_new(:aws_bucket, Config.aws_release_bucket())
       |> Keyword.put_new(:aws_region, Config.aws_release_region())
-      |> Keyword.put_new(:parallel, @max_build_concurrency)
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
@@ -58,6 +56,7 @@ defmodule Mix.Tasks.DeployEx.Release do
     releases
       |> Keyword.keys
       |> Enum.map(&to_string/1)
+      |> DeployExHelpers.filter_only_or_except(opts[:only], opts[:except])
       |> ReleaseUploader.build_state(remote_releases, git_sha)
       |> Enum.reject(&Mix.Tasks.DeployEx.Upload.already_uploaded?/1)
       |> split_releases_and_run_release_commands(opts)
@@ -72,7 +71,8 @@ defmodule Mix.Tasks.DeployEx.Release do
         recompile: :boolean,
         aws_region: :string,
         aws_bucket: :string,
-        parallel: :integer,
+        only: :keep,
+        except: :keep,
         all: :boolean
       ]
     )
@@ -93,15 +93,11 @@ defmodule Mix.Tasks.DeployEx.Release do
 
       if Enum.any?(has_previous_upload_release_cands) or Enum.any?(no_prio_upload_release_cands)  do
         tasks = [
-          Task.async(fn -> run_initial_release(no_prio_upload_release_cands, opts) end),
-          Task.async(fn -> run_update_releases(has_previous_upload_release_cands, opts) end)
+          run_initial_release(no_prio_upload_release_cands, opts),
+          run_update_releases(has_previous_upload_release_cands, opts)
         ]
 
-        res = tasks
-          |> Enum.map(&Task.await(&1, :timer.seconds(60)))
-          |> DeployEx.Utils.reduce_status_tuples
-
-        case res do
+        case DeployEx.Utils.reduce_status_tuples(tasks) do
           {:error, [h | tail]} ->
             Enum.each(tail, &Mix.shell().error("Error with releasing #{inspect(&1, pretty: true)}"))
 
@@ -150,7 +146,7 @@ defmodule Mix.Tasks.DeployEx.Release do
 
   defp run_initial_release(release_candidates, opts) do
     release_candidates
-      |> Task.async_stream(fn {app_type, %ReleaseUploader.State{} = candidate} ->
+      |> Enum.map(fn {app_type, %ReleaseUploader.State{} = candidate} ->
         Mix.shell().info([
           :green, "* running initial release for ",
           :reset, candidate.local_file
@@ -158,13 +154,13 @@ defmodule Mix.Tasks.DeployEx.Release do
 
         run_app_type_pre_release(app_type, candidate)
         run_mix_release(candidate, opts)
-      end, timeout: @release_timeout, max_concurrency: div(opts[:parallel], 2))
-      |> DeployEx.Utils.reduce_task_status_tuples
+      end)
+      |> DeployEx.Utils.reduce_status_tuples
   end
 
   defp run_update_releases(release_candidates, opts) do
     release_candidates
-      |> Task.async_stream(fn {app_type, %ReleaseUploader.State{} = candidate} ->
+      |> Enum.map(fn {app_type, %ReleaseUploader.State{} = candidate} ->
         Mix.shell().info([
           :green, "* running release to update ",
           :reset, candidate.local_file
@@ -172,8 +168,8 @@ defmodule Mix.Tasks.DeployEx.Release do
 
         run_app_type_pre_release(app_type, candidate)
         run_mix_release(candidate, opts)
-      end, timeout: @release_timeout, max_concurrency: div(opts[:parallel], 2))
-      |> DeployEx.Utils.reduce_task_status_tuples
+      end)
+      |> DeployEx.Utils.reduce_status_tuples
   end
 
   defp run_app_type_pre_release(:phoenix, candidate) do
@@ -185,12 +181,15 @@ defmodule Mix.Tasks.DeployEx.Release do
 
     cond do
       has_package_lock? ->
+        assets_path = Path.dirname(package_json_path)
         Mix.shell().info([
-          :green, "* running ", :reset, "npm install",
-          :green, " for ", :reset, candidate.app_name
+          :green, "* running ",
+          :reset, "npm install", :green, "for ",
+          :reset, candidate.app_name, :green, " in ",
+          :reset, assets_path
         ])
 
-        case System.shell("npm i", cd: Path.dirname(package_json_path), into: IO.stream()) do
+        case System.shell("npm i", cd: assets_path, into: IO.stream()) do
           {_, 0} ->  :ok
           {output, code} -> Mix.raise("Error running npm i #{code}\n#{inspect(output, pretty: true)}")
         end
@@ -246,8 +245,10 @@ defmodule Mix.Tasks.DeployEx.Release do
       _, acc -> acc
     end)
 
-    case Mix.Tasks.Release.run([app_name | args]) do
+    Mix.Task.clear()
+    case Mix.Task.run("release", [app_name | args]) do
       :ok -> {:ok, candidate}
+      :noop -> {:ok, candidate}
       {:error, reason} -> {:ok, ErrorMessage.failed_dependency("mix release failed", %{reason: reason})}
     end
   end
