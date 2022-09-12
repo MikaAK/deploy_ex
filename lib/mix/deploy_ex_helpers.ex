@@ -91,4 +91,47 @@ defmodule DeployExHelpers do
       {:ok, res}
     end
   end
+
+  def filter_only_or_except(playbooks, only, except) do
+    Enum.filter(playbooks, &filtered_with_only_or_except?(&1, only, except))
+  end
+
+  defp filtered_with_only_or_except?(playbook, only, nil) do
+    filtered_with_only_or_except?(playbook, only, [])
+  end
+
+  defp filtered_with_only_or_except?(playbook, nil, except) do
+    filtered_with_only_or_except?(playbook, [], except)
+  end
+
+  defp filtered_with_only_or_except?(playbook, only, except) when is_binary(except) do
+    filtered_with_only_or_except?(playbook, only, [except])
+  end
+
+  defp filtered_with_only_or_except?(playbook, only, except) when is_binary(only) do
+    filtered_with_only_or_except?(playbook, [only], except)
+  end
+
+  defp filtered_with_only_or_except?(playbook, only, except) do
+    only_given? = Enum.any?(only)
+    except_given? = Enum.any?(except)
+
+    cond do
+      except_given? and only_given? ->
+        raise to_string(IO.ANSI.format([
+          :red,
+          "Cannot specify both only and except arguments"
+        ]))
+
+      only_given? ->
+        app_name = Path.basename(playbook)
+
+        Enum.any?(only, &(app_name =~ &1))
+
+      except_given? ->
+        app_name = Path.basename(playbook)
+
+        not Enum.any?(except, &(app_name =~ &1))
+    end
+  end
 end

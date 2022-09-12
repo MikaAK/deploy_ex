@@ -37,7 +37,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
         |> Path.join("playbooks/*.yaml")
         |> Path.wildcard
         |> Enum.map(&strip_directory(&1, opts[:directory]))
-        |> Enum.reject(&filtered_with_only_or_except?(&1, opts[:only], opts[:except]))
+        |> DeployExHelpers.filter_only_or_except(opts[:only], opts[:except])
         |> reject_playbook_without_local_release(opts[:only_local_release])
         |> Task.async_stream(fn host_playbook ->
           host_playbook
@@ -89,45 +89,6 @@ defmodule Mix.Tasks.Ansible.Deploy do
 
   defp strip_directory(wildcard_result, directory) do
     String.replace(wildcard_result, String.trim_leading(directory, "./") <> "/", "")
-  end
-
-  defp filtered_with_only_or_except?(_playbook, nil, nil) do
-    false
-  end
-
-  defp filtered_with_only_or_except?(_playbook, [], []) do
-    false
-  end
-
-  defp filtered_with_only_or_except?(playbook, only, []) do
-    app_name = Path.basename(playbook)
-
-    Enum.any?(only, &(&1 =~ app_name))
-  end
-
-  defp filtered_with_only_or_except?(playbook, [], except) do
-    app_name = Path.basename(playbook)
-
-    app_name not in except
-  end
-
-  defp filtered_with_only_or_except?(playbook, nil, except) when is_binary(except)  do
-    app_name = Path.basename(playbook)
-
-    not Enum.any?(except, &(&1 =~ app_name))
-  end
-
-  defp filtered_with_only_or_except?(playbook, only, nil) when is_binary(only)  do
-    app_name = Path.basename(playbook)
-
-    not (app_name =~ only)
-  end
-
-  defp filtered_with_only_or_except?(_, _, _)  do
-    raise to_string(IO.ANSI.format([
-      :red,
-      "Cannot specify both only and except arguments"
-    ]))
   end
 
   defp reject_playbook_without_local_release(host_playbook_paths, true) do

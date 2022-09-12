@@ -44,12 +44,13 @@ defmodule Mix.Tasks.Ansible.Build do
 
   defp parse_args(args) do
     {opts, _} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quit, d: :directory, a: :auto_pull_aws, r: :rewrite_playbooks],
+      aliases: [f: :force, q: :quit, d: :directory, a: :auto_pull_aws, h: :host_only, n: :new_only],
       switches: [
+        new_only: :boolean,
         force: :boolean,
+        host_only: :boolean,
         quiet: :boolean,
         directory: :string,
-        rewrite_playbooks: :string,
         terraform_directory: :string,
         auto_pull_aws: :boolean,
         aws_bucket: :string
@@ -124,25 +125,29 @@ defmodule Mix.Tasks.Ansible.Build do
   end
 
   defp create_ansible_config_file(opts) do
-    app_name = String.replace(DeployExHelpers.underscored_app_name(), "_", "-")
+    if opts[:host_only] do
+      :ok
+    else
+      app_name = String.replace(DeployExHelpers.underscored_app_name(), "_", "-")
 
-    variables = %{
-      pem_file_path: pem_file_path(app_name, opts[:directory])
-    }
+      variables = %{
+        pem_file_path: pem_file_path(app_name, opts[:directory])
+      }
 
-    DeployExHelpers.write_template(
-      DeployExHelpers.priv_file("ansible/ansible.cfg.eex"),
-      opts[:config_file],
-      variables,
-      opts
-    )
+      DeployExHelpers.write_template(
+        DeployExHelpers.priv_file("ansible/ansible.cfg.eex"),
+        opts[:config_file],
+        variables,
+        opts
+      )
 
-    if File.exists?("#{opts[:config_file]}.eex") do
-      File.rm!("#{opts[:config_file]}.eex")
+      if File.exists?("#{opts[:config_file]}.eex") do
+        File.rm!("#{opts[:config_file]}.eex")
+      end
+
+      :ok
     end
-
-    :ok
-  end
+    end
 
   defp create_ansible_hosts_file(hostname_ips, opts) do
     variables = %{
@@ -199,35 +204,52 @@ defmodule Mix.Tasks.Ansible.Build do
   end
 
   defp create_ansible_playbooks(app_names, opts) do
-    project_playbooks_path = Path.join(opts[:directory], "playbooks")
-    project_setup_playbooks_path = Path.join(opts[:directory], "setup")
+    if opts[:host_only] do
+      :ok
+    else
+      project_playbooks_path = Path.join(opts[:directory], "playbooks")
+      project_setup_playbooks_path = Path.join(opts[:directory], "setup")
 
-    if opts[:rewrite_playbooks] do
-      Mix.shell().info([
-        :red, "* deleting previous playbooks from ",
-        :reset, "#{project_playbooks_path}, #{project_setup_playbooks_path}"
-      ])
+      if not File.exists?(project_playbooks_path) do
+        File.mkdir_p!(project_playbooks_path)
+      end
 
-      File.rm_rf!(project_playbooks_path)
-      File.rm_rf!(project_setup_playbooks_path)
+      if not File.exists?(project_setup_playbooks_path) do
+        File.mkdir_p!(project_setup_playbooks_path)
+      end
+
+      if opts[:new_only] do
+        deploy_new_playbooks(app_names, project_playbooks_path, project_setup_playbooks_path, opts)
+      else
+        deploy_all_playbooks(app_names, opts)
+      end
+
+      remove_usless_copied_template_folder(opts)
+
+      :ok
     end
+  end
 
-    if not File.exists?(project_playbooks_path) do
-      File.mkdir_p!(project_playbooks_path)
-    end
-
-    if not File.exists?(project_setup_playbooks_path) do
-      File.mkdir_p!(project_setup_playbooks_path)
-    end
-
+  defp deploy_all_playbooks(app_names, opts) do
     Enum.each(app_names, fn app_name ->
       build_host_setup_playbook(app_name, opts)
       build_host_playbook(app_name, opts)
     end)
+  end
 
-    remove_usless_copied_template_folder(opts)
+  defp deploy_new_playbooks(app_names, project_playbooks_path, project_setup_playbooks_path, opts) do
+    project_deploy_files = File.ls!(project_playbooks_path)
+    project_setup_files = File.ls!(project_setup_playbooks_path)
 
-    :ok
+    Enum.each(app_names, fn app_name ->
+      if not Enum.any?(project_setup_files, &(&1 =~ app_name)) do
+        build_host_setup_playbook(app_name, opts)
+      end
+
+      if not Enum.any?(project_deploy_files, &(&1 =~ app_name)) do
+        build_host_playbook(app_name, opts)
+      end
+    end)
   end
 
   defp build_host_playbook(app_name, opts) do

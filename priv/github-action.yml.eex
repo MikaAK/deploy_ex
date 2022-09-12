@@ -58,10 +58,10 @@ jobs:
           chmod 0400 <%= @pem_file_path %>
 
       - name: Run Terraform Build & Apply
-        run: mix terraform.build -f && mix terraform.apply -y
+        run: mix terraform.build --force && mix terraform.apply --auto-approve
 
       - name: Run Ansible Build
-        run: mix ansible.build -f
+        run: mix ansible.build --force --new-only
 
       - name: Maybe Github Update
         run: |
