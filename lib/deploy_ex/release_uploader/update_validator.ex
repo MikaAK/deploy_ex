@@ -134,36 +134,47 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
   }, file_diffs_by_sha_tuple) do
     file_diffs = Map.get(file_diffs_by_sha_tuple, {current_sha, last_sha}) || []
 
-    code_change? = Enum.any?(file_diffs) and Enum.any?(
-      file_diffs,
-      &(file_part_of_app(&1, app_name))
-    )
+    if Enum.any?(file_diffs) do
+      root_mix_exs_change? = Enum.any?(file_diffs, &(&1 === "mix.exs"))
+      code_change? = Enum.any?(file_diffs, &file_part_of_app(&1, app_name))
+      config_change? = Enum.any?(file_diffs, &config_file?(&1))
 
-    config_change? = Enum.any?(file_diffs) and Enum.any?(
-      file_diffs,
-      &(config_file?(&1))
-    )
+      changes = if config_change?, do: ["config"], else: []
+      changes = if root_mix_exs_change?, do: ["root mix.exs" | changes], else: []
+      changes = if code_change?, do: ["code" | changes], else: []
 
-    cond do
-      config_change? and code_change? ->
-        IO.puts(to_string(IO.ANSI.format([
-          :green, "* config & code changes detected ", :reset, app_name
-        ])))
+      changes? = Enum.any?(changes)
 
-      config_change? ->
-        IO.puts(to_string(IO.ANSI.format([
-          :green, "* config changes detected ", :reset, app_name
-        ])))
+      if changes? do
+        log_app_change(changes, app_name)
+      end
 
-      code_change? ->
-        IO.puts(to_string(IO.ANSI.format([
-          :green, "* code changes detected ", :reset, app_name
-        ])))
-
-      true -> :ok
+      changes?
+    else
+      false
     end
+  end
 
-    config_change? or code_change?
+  def log_app_change([], _) do
+    :ok
+  end
+
+  def log_app_change([change], app_name) do
+    IO.puts(to_string(IO.ANSI.format([
+      :green, "* #{change} changes detected ", :reset, app_name
+    ])))
+  end
+
+  def log_app_change([change_a, change_b], app_name) do
+    IO.puts(to_string(IO.ANSI.format([
+      :green, "* #{change_a} & #{change_b} changes detected ", :reset, app_name
+    ])))
+  end
+
+  def log_app_change([change_a | changes], app_name) do
+    IO.puts(to_string(IO.ANSI.format([
+      :green, "* #{Enum.join(changes, ", ")} & #{change_a} changes detected ", :reset, app_name
+    ])))
   end
 
   defp file_part_of_app(diff, app_name) do
