@@ -133,6 +133,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
     last_sha: last_sha
   }, file_diffs_by_sha_tuple) do
     file_diffs = Map.get(file_diffs_by_sha_tuple, {current_sha, last_sha}) || []
+    IO.inspect {{current_sha, last_sha}, file_diffs}
 
     if Enum.any?(file_diffs) do
       root_mix_exs_change? = Enum.any?(file_diffs, &(&1 === "mix.exs"))
