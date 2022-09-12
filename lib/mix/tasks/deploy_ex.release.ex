@@ -72,7 +72,8 @@ defmodule Mix.Tasks.DeployEx.Release do
         recompile: :boolean,
         aws_region: :string,
         aws_bucket: :string,
-        parallel: :integer
+        parallel: :integer,
+        all: :boolean
       ]
     )
 
@@ -84,7 +85,7 @@ defmodule Mix.Tasks.DeployEx.Release do
     with {
       :ok,
       app_type_release_state_tuples
-    } <- reject_unchanged_releases_and_mark_release_type(release_states) do
+    } <- reject_unchanged_releases_and_mark_release_type(release_states, opts) do
       {has_previous_upload_release_cands, no_prio_upload_release_cands} = Enum.split_with(
         app_type_release_state_tuples,
         fn {_app_type, %ReleaseUploader.State{last_sha: last_sha}} -> last_sha end
@@ -123,15 +124,19 @@ defmodule Mix.Tasks.DeployEx.Release do
     end
   end
 
-  defp reject_unchanged_releases_and_mark_release_type(release_states) do
-    with {:ok, release_states} <- ReleaseUploader.reject_unchanged_releases(release_states),
-         {:ok, app_dep_tree} <- ReleaseUploader.app_dep_tree() do
-      {:ok, Enum.map(release_states, &create_app_type_release_state_tuple(&1, app_dep_tree))}
+  defp reject_unchanged_releases_and_mark_release_type(release_states, opts) do
+    if opts[:all] do
+      {:ok, release_states}
     else
-      {:error, e} ->
-        Mix.shell().error(to_string(e))
+      with {:ok, release_states} <- ReleaseUploader.reject_unchanged_releases(release_states),
+           {:ok, app_dep_tree} <- ReleaseUploader.app_dep_tree() do
+        {:ok, Enum.map(release_states, &create_app_type_release_state_tuple(&1, app_dep_tree))}
+      else
+        {:error, e} ->
+          Mix.shell().error(to_string(e))
 
-        {:ok, []}
+          {:ok, []}
+      end
     end
   end
 

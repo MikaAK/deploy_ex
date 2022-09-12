@@ -92,7 +92,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
   end
 
   defp reject_playbook_without_local_release(host_playbook_paths, true) do
-    case ReleaseUploader.fetch_all_local_releases() |> IO.inspect  do
+    case ReleaseUploader.fetch_all_local_releases() do
       {:error, %ErrorMessage{code: :not_found}} -> []
       {:ok, local_releases} ->
         releases = local_release_app_names(local_releases)
