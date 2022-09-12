@@ -22,12 +22,13 @@ defmodule Mix.Tasks.DeployEx.Ssh do
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
+         {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
+         {:ok, app_name} <- find_app_name(releases, app_params),
          {:ok, pem_file_path} <- DeployExHelpers.find_pem_file(opts[:directory]),
          {:ok, hostname_ips} <- Mix.Tasks.Ansible.Build.terraform_instance_ips(opts[:directory]) do
-      case app_params do
-        [app_name] -> connect_to_host(hostname_ips, app_name, pem_file_path, opts)
-        [_, _] -> Mix.shell().error("Specifying a node isn't setup yet")
-      end
+      connect_to_host(hostname_ips, app_name, pem_file_path, opts)
+    else
+      {:error, e} -> Mix.shell().raise(to_string(e))
     end
   end
 
@@ -47,15 +48,26 @@ defmodule Mix.Tasks.DeployEx.Ssh do
     {opts, extra_args}
   end
 
+  defp find_app_name(_releases, [_, _]) do
+    {:error, ErrorMessage.bad_request("only one node is supported")}
+  end
+
+  defp find_app_name(releases, [app_name]) do
+    case releases |> Keyword.keys |> Enum.find(&(to_string(&1) =~ app_name)) do
+      nil -> {:error, ErrorMessage.not_found("Couldn't find release with name: #{app_name}")}
+      app_name -> {:ok, to_string(app_name)}
+    end
+  end
+
   defp connect_to_host(hostname_ips, app_name, pem_file_path, opts) do
-    case Enum.find(hostname_ips, fn {key, _} -> key =~ app_name end) do
+    case Enum.find(hostname_ips, fn {key, _} -> to_string(key) =~ app_name end) do
       nil ->
         host_name_ips = inspect(hostname_ips, pretty: true)
         Mix.raise("Couldn't find any app with the name of #{app_name}\n#{host_name_ips}")
 
       {app_name, ip_addresses} ->
         ip = Enum.random(ip_addresses)
-        command = build_command(opts)
+        command = build_command(app_name, opts)
 
         if opts[:short] do
           Mix.shell().info("ssh -i #{pem_file_path} admin@#{ip} #{command}")
@@ -82,11 +94,16 @@ defmodule Mix.Tasks.DeployEx.Ssh do
     end
   end
 
-  def build_command(opts) do
+  def build_command(app_name, opts) do
     cond do
-      opts[:log] -> "'sudo -u root journalctl -f -u learn_elixir_lander -u systemd'"
-      opts[:iex] -> "'sudo -u root /srv/*/bin/* remote'"
-      true -> ""
+      opts[:log] ->
+        "'sudo -u root journalctl -f -u #{app_name} -u systemd'"
+
+      opts[:iex] ->
+        "'sudo -u root /srv/*/bin/* remote'"
+
+      true ->
+        ""
     end
   end
 end

@@ -159,6 +159,8 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
         IO.puts(to_string(IO.ANSI.format([
           :green, "* code changes detected ", :reset, app_name
         ])))
+
+      true -> :ok
     end
 
     config_change? or code_change?
