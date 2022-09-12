@@ -1,25 +1,27 @@
 variable "instance_ebs_secondary_size" {
-  description = "Instance count, default 1"
+  description = "EBS size, default 16GB"
   type        = number
-  default = 16
+  default     = 16
+  nullable    = false
 }
 
 variable "instance_count" {
   description = "Instance count, default 1"
   type        = number
-  default = 1
+  default     = 1
+  nullable    = false
 }
 
 variable "instance_type" {
   description = "Instance type, t3.nano for example"
   type        = string
-  default = "t3.nano"
+  default     = "t3.nano"
+  nullable    = false
 }
 
 variable "instance_group" {
   description = "Instance Group tag"
   type        = string
-
 }
 
 variable "instance_name" {
@@ -31,6 +33,12 @@ variable "environment" {
   description = "Environment Group tag"
   type        = string
 }
+
+# variable "enable_elastic_ip" {
+#   description = "Enables instance to generate an elastic ip for itself"
+#   type        = string
+#   default     = true
+# }
 
 variable "security_group_id" {
   description = "Security group IDs for EC2 instances"
@@ -44,5 +52,5 @@ variable "subnet_id" {
 
 variable "key_pair_key_name" {
   description = "PEM file name to use for the ec2 instances"
-  type = string
+  type        = string
 }

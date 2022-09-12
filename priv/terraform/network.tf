@@ -19,8 +19,8 @@ module "vpc" {
   public_subnets  = ["10.0.1.0/24"]
 
   map_public_ip_on_launch = false
-  enable_dns_hostnames = true
-  enable_dns_support   = true
+  enable_dns_hostnames    = true
+  enable_dns_support      = true
 }
 
 module "app_security_group" {

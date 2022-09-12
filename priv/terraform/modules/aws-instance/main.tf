@@ -23,15 +23,15 @@ resource "aws_instance" "ec2_instance" {
   key_name = var.key_pair_key_name
 
   private_dns_name_options {
-    hostname_type = "resource-name"
+    hostname_type                     = "resource-name"
     enable_resource_name_dns_a_record = true
   }
 
-  user_data = "${file("${path.module}/user_data_init_script.sh")}"
+  user_data = file("${path.module}/user_data_init_script.sh")
 
   tags = {
-    Name  = var.instance_name
-    Group = var.instance_group
+    Name        = var.instance_name
+    Group       = var.instance_group
     Environment = var.environment
   }
 }
@@ -42,8 +42,8 @@ resource "aws_ebs_volume" "ec2_ebs" {
   size              = var.instance_ebs_secondary_size
 
   tags = {
-    Name  = format("%s-%s", var.instance_name, "ebs") # instance-name-ebs
-    Group = var.instance_group
+    Name        = format("%s-%s", var.instance_name, "ebs") # instance-name-ebs
+    Group       = var.instance_group
     Environment = var.environment
   }
 }
@@ -57,10 +57,10 @@ resource "aws_volume_attachment" "ec2_ebs_association" {
 
 # Create Elastic IP
 resource "aws_eip" "ec2_eip" {
-  vpc  = true
+  vpc = true
   tags = {
-    Name  = format("%s-%s", var.instance_name, "eip") # instance-name-eip
-    Group = var.instance_group
+    Name        = format("%s-%s", var.instance_name, "eip") # instance-name-eip
+    Group       = var.instance_group
     Environment = var.environment
   }
 }

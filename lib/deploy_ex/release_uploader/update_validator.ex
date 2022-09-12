@@ -136,16 +136,32 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
 
     code_change? = Enum.any?(file_diffs) and Enum.any?(
       file_diffs,
-      &(file_part_of_app(&1, app_name) or config_file?(&1))
+      &(file_part_of_app(&1, app_name))
     )
 
-    if code_change? do
-      IO.puts(to_string(IO.ANSI.format([
-        :green, "* code changes detected ", :reset, app_name
-      ])))
+    config_change? = Enum.any?(file_diffs) and Enum.any?(
+      file_diffs,
+      &(config_file?(&1))
+    )
+
+    cond do
+      config_change? and code_change? ->
+        IO.puts(to_string(IO.ANSI.format([
+          :green, "* config & code changes detected ", :reset, app_name
+        ])))
+
+      config_change? ->
+        IO.puts(to_string(IO.ANSI.format([
+          :green, "* config changes detected ", :reset, app_name
+        ])))
+
+      code_change? ->
+        IO.puts(to_string(IO.ANSI.format([
+          :green, "* code changes detected ", :reset, app_name
+        ])))
     end
 
-    code_change?
+    config_change? or code_change?
   end
 
   defp file_part_of_app(diff, app_name) do
