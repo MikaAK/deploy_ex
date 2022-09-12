@@ -103,7 +103,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
     end
   end
 
-  defp reject_playbook_without_local_release(host_playbook_paths, false) do
+  defp reject_playbook_without_local_release(host_playbook_paths, _) do
     host_playbook_paths
   end
 
