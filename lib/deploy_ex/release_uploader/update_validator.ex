@@ -133,7 +133,6 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
     last_sha: last_sha
   }, file_diffs_by_sha_tuple) do
     file_diffs = Map.get(file_diffs_by_sha_tuple, {current_sha, last_sha}) || []
-    IO.inspect {{current_sha, last_sha}, file_diffs}
 
     if Enum.any?(file_diffs) do
       root_mix_exs_change? = Enum.any?(file_diffs, &(&1 === "mix.exs"))
@@ -141,8 +140,8 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
       config_change? = Enum.any?(file_diffs, &config_file?(&1))
 
       changes = if config_change?, do: ["config"], else: []
-      changes = if root_mix_exs_change?, do: ["root mix.exs" | changes], else: []
-      changes = if code_change?, do: ["code" | changes], else: []
+      changes = if root_mix_exs_change?, do: ["root mix.exs" | changes], else: changes
+      changes = if code_change?, do: ["code" | changes], else: changes
 
       changes? = Enum.any?(changes)
 

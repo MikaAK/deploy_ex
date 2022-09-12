@@ -121,17 +121,13 @@ defmodule Mix.Tasks.DeployEx.Release do
   end
 
   defp reject_unchanged_releases_and_mark_release_type(release_states, opts) do
-    if opts[:all] do
-      {:ok, release_states}
-    else
-      with {:ok, release_states} <- ReleaseUploader.reject_unchanged_releases(release_states),
-           {:ok, app_dep_tree} <- ReleaseUploader.app_dep_tree() do
+    with {:ok, app_dep_tree} <- ReleaseUploader.app_dep_tree() do
+      if opts[:all] do
         {:ok, Enum.map(release_states, &create_app_type_release_state_tuple(&1, app_dep_tree))}
       else
-        {:error, e} ->
-          Mix.shell().error(to_string(e))
-
-          {:ok, []}
+        with {:ok, release_states} <- ReleaseUploader.reject_unchanged_releases(release_states) do
+          {:ok, Enum.map(release_states, &create_app_type_release_state_tuple(&1, app_dep_tree))}
+        end
       end
     end
   end
