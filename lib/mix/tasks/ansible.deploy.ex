@@ -112,6 +112,8 @@ defmodule Mix.Tasks.Ansible.Deploy do
       case local_release |> Path.basename |> String.split("-") do
         [_timestamp, _sha, app_name, _version] -> app_name
 
+        [app_name, _version] -> app_name
+
         _ ->
           Mix.shell().error("Couldn't find app name from local release #{local_release}")
           []
