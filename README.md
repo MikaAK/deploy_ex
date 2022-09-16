@@ -9,6 +9,22 @@ reruns of the build commands.
 
 There is also a default volume of 16gb created and mounted at the /data directory, you can change this in each specific app type if desired
 
+## Legend
+- [Package Installation](https://github.com/MikaAK/deploy_ex#installation)
+- [Basic TL;DR Installation](https://github.com/MikaAK/deploy_ex#tldr-installation)
+  - [Usage with Github Actions](https://github.com/MikaAK/deploy_ex#usage-with-github-actions)
+  - [Usage with Deploy Node](https://github.com/MikaAK/deploy_ex#usage-with-deploy-node)
+  - [Changes Over Time](https://github.com/MikaAK/deploy_ex#changes-over-time)
+- [Commands](https://github.com/MikaAK/deploy_ex#changes-over-time)
+- [Extra Utilities](https://github.com/MikaAK/deploy_ex#extra-utilities)
+  - [Github Action](https://github.com/MikaAK/deploy_ex#github-action)
+- [Univiersal Options](https://github.com/MikaAK/deploy_ex#universial-options)
+- [Connecting to Your Nodes](https://github.com/MikaAK/deploy_ex#connecting-to-your-nodes)
+  - [Connecting to App Logs](https://github.com/MikaAK/deploy_ex#connecting-to-app-logs)
+- [Clustering](https://github.com/MikaAK/deploy_ex#clustering)
+- [Credits](https://github.com/MikaAK/deploy_ex#credits)
+- [Troubleshooting](https://github.com/MikaAK/deploy_ex#troubleshooting)
+
 ## Installation
 
 #### Pre-requisite
@@ -77,7 +93,6 @@ To set up this way you would run
 Because the terraform and ansible files are generated directly into your application, you own these files.
 You can make changes to ansible and terraform files as you see fit. In the case of terraform, it will automatically
 inject the apps into your variables file despite changes to the file. If you change terraform, make sure to run `mix terraform.apply`
-
 
 ## Commands
 - [x] `mix deploy_ex.full_setup` - Runs all the commands to initialize and setup your project
