@@ -92,24 +92,19 @@ defmodule Mix.Tasks.DeployEx.Release do
       )
 
       if Enum.any?(has_previous_upload_release_cands) or Enum.any?(no_prio_upload_release_cands)  do
-        tasks = [
-          run_initial_release(no_prio_upload_release_cands, opts),
-          run_update_releases(has_previous_upload_release_cands, opts)
-        ]
+        with {:ok, initial_releases} <- run_initial_release(no_prio_upload_release_cands, opts),
+             {:ok, update_releases} <- run_update_releases(has_previous_upload_release_cands, opts) do
+          Mix.shell().info([
+            :green, "Successfuly built ",
+            :reset, Enum.map_join(initial_releases ++ update_releases, ", ", &(&1.app_name))
+          ])
 
-        case DeployEx.Utils.reduce_status_tuples(tasks) do
+          :ok
+        else
           {:error, [h | tail]} ->
             Enum.each(tail, &Mix.shell().error("Error with releasing #{inspect(&1, pretty: true)}"))
 
             Mix.raise(inspect(h, pretty: true))
-
-          {:ok, release_candidates} ->
-            Mix.shell().info([
-              :green, "Successfuly built ",
-              :reset, Enum.map_join(release_candidates, ", ", &(&1.app_name))
-            ])
-
-            :ok
         end
       else
         if Enum.empty?(release_states) do
