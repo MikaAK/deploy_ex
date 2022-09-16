@@ -26,11 +26,14 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator.MixDepsTreeParser do
   defp parse_project_deps(project_deps) do
     project_name = project_deps |> hd |> String.trim
     project_deps = project_deps
-      |> Enum.filter(&(&1 =~ ~r/^(\||`)--/))
+      |> Enum.filter(&(&1 =~ ~r/^(\||`)/))
       |> Enum.flat_map(fn x ->
-        (Regex.run(~r/^(\||`)-- (?<dep_name>[a-z0-9_]+) /, x, capture: [:dep_name])) || []
+        Enum.map(
+          Regex.named_captures(~r/-- (?<dep_name>[a-z0-9_]+) (~|>|<)?/, x) || [],
+          fn {"dep_name", name} -> name end
+        )
       end)
-
+      |> Enum.uniq
 
     {project_name, project_deps}
   end
