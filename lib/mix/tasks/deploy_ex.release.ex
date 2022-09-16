@@ -103,19 +103,23 @@ defmodule Mix.Tasks.DeployEx.Release do
 
             Mix.raise(inspect(h, pretty: true))
 
-          {:ok, _} ->
+          {:ok, release_candidates} ->
             Mix.shell().info([
               :green, "Successfuly built ",
-              :reset, Enum.map_join(app_type_release_state_tuples, ", ", &elem(&1, 1).app_name)
+              :reset, Enum.map_join(release_candidates, ", ", &(&1.app_name))
             ])
 
             :ok
         end
       else
-        Mix.shell().info([
-          :yellow, "No new changes found for ",
-          :reset, Enum.map_join(release_states, ", ", &(&1.app_name))
-        ])
+        if Enum.empty?(release_states) do
+          Mix.shell().info([:yellow, "No new changes found for releases"])
+        else
+          Mix.shell().info([
+            :yellow, "No new changes found for ",
+            :reset, Enum.map_join(release_states, ", ", &(&1.app_name))
+          ])
+        end
       end
     end
   end
@@ -180,7 +184,7 @@ defmodule Mix.Tasks.DeployEx.Release do
         assets_path = Path.dirname(package_json_path)
         Mix.shell().info([
           :green, "* running ",
-          :reset, "npm install", :green, "for ",
+          :reset, "npm install ", :green, "for ",
           :reset, candidate.app_name, :green, " in ",
           :reset, assets_path
         ])
