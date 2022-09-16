@@ -144,6 +144,32 @@ $ eval "$(mix deploy_ex.ssh -s app)"
 $ eval "$(mix deploy_ex.ssh -s --logs app)"
 ```
 
+## Clustering
+You can easily cluster your app with [this LibCluster Strategy](https://github.com/MikaAK/libcluster_ec2_tag_strategy) which
+will read the EC2 tags from all instances and attempt to connect them. Because this library will tag resources with
+`<APP_NAME> Backend`, so `learn_elixir` becomes `Learn Elixir Backend`, you can use a config similar to the following to
+connect your nodes together with the strategy mentioned above:
+
+```elixir
+topologies = [
+  my_app_background: [
+    strategy: Cluster.Strategy.EC2Tag,
+    config: [
+      tag_name: "Group",
+      tag_value: "<MY APP> Backend"
+    ]
+  ],
+
+  my_app_second: [
+    strategy: Cluster.Strategy.EC2Tag,
+    config: [
+      tag_name: "Group",
+      tag_value: "<MY APP> Backend Secondary"
+    ]
+  ]
+]
+
+```
 
 ## Credits
 Big thanks to @alevan for helping to figure out all the Ansible side of things and
