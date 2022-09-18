@@ -138,10 +138,12 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
       root_mix_exs_change? = Enum.any?(file_diffs, &(&1 === "mix.exs"))
       code_change? = Enum.any?(file_diffs, &file_part_of_app(&1, app_name))
       config_change? = Enum.any?(file_diffs, &config_file?(&1))
+      rel_file_change? = Enum.any?(file_diffs, &rel_file?(&1))
 
       changes = if config_change?, do: ["config"], else: []
       changes = if root_mix_exs_change?, do: ["root mix.exs" | changes], else: changes
       changes = if code_change?, do: ["code" | changes], else: changes
+      changes = if rel_file_change?, do: ["release file" | changes], else: changes
 
       changes? = Enum.any?(changes)
 
@@ -179,6 +181,10 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
 
   defp file_part_of_app(diff, app_name) do
     diff =~ ~r/^apps\/#{app_name}\//
+  end
+
+  defp rel_file?(diff) do
+    diff =~ ~r/rel\/.*/
   end
 
   defp config_file?(diff) do
