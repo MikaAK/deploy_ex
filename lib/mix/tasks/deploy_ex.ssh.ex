@@ -54,7 +54,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
   defp find_app_name(releases, [app_name]) do
     case releases |> Keyword.keys |> Enum.find(&(to_string(&1) =~ app_name)) do
-      nil -> {:error, ErrorMessage.not_found("Couldn't find release with name: #{app_name}")}
+      nil -> {:ok, app_name}
       app_name -> {:ok, to_string(app_name)}
     end
   end
@@ -74,7 +74,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         else
           Mix.shell().info([
             :green, "Use the follwing comand to connect to ",
-            :reset, app_name, :green, " \"",
+            :reset, app_name || "Unknown", :green, " \"",
             :reset, "ssh -i #{pem_file_path} admin@#{ip}", command,
             :green, "\""
           ])
