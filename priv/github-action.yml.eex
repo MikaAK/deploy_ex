@@ -131,4 +131,5 @@ jobs:
         run: |
           chmod +x ./.github/github-actions-secrets-to-json-file.sh &&
           ./.github/github-actions-secrets-to-json-file.sh env-file.json "$(cat env.json)" &&
+          mix ansible.build --force --host-only &&
           mix ansible.deploy -l --copy-json-env-file env-file.json
