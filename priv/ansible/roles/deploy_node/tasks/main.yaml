@@ -77,14 +77,6 @@
         mode: 0755
         remote_src: true
 
-    - name: Add vm.args file to /srv/vm.args
-      template:
-        src: vm.args.j2
-        dest: /srv/vm.args
-        owner: root
-        group: root
-        mode: 0644
-
     - name: Delete /srv/unpack-directory directory
       file:
         path: /srv/unpack-directory
