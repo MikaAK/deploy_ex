@@ -1,0 +1,107 @@
+- name: elixir_runner
+  block:
+    - name: Check if ASDF installed
+      stat:
+        path: /root/.asdf/
+      register: asdf
+
+    - name: Create ASDF directory
+      file:
+        path: /root/.asdf/
+        state: directory
+      when: not asdf.stat.exists
+
+    - name: Check if automake is installed
+      stat:
+        path: /usr/bin/automake
+      register: automake
+
+    - name: Install Erlang build deps
+      apt:
+        name: [libssl-dev, automake, autoconf, libncurses5-dev, git]
+        update_cache: true
+      when: not automake.stat.exists
+
+    - name: Git Install ASDF
+      git:
+        repo: https://github.com/asdf-vm/asdf.git
+        dest: /root/.asdf
+        version: "{{ asdf_version }}"
+      when: not asdf.stat.exists
+
+    - name: Install ASDF
+      blockinfile:
+        path: ~/.bashrc
+        block: |
+          . /root/.asdf/asdf.sh
+          . elixirroot/.asdf/completions/asdf.bash
+      when: not asdf.stat.exists
+
+    - name: Check Erlang Plugin installed
+      shell: . ~/.bashrc && asdf list erlang || echo ""
+      args:
+        executable: /bin/bash
+      register: erlang_plugin
+      changed_when: false
+
+    - name: Check Elixir Plugin installed
+      shell: . ~/.bashrc && asdf list elixir || echo ""
+      ignore_errors: yes
+      args:
+        executable: /bin/bash
+      register: elixir_plugin
+      changed_when: false
+
+    - name: Install Erlang Plugin
+      shell: . ~/.bashrc && asdf plugin add erlang || echo ""
+      args:
+        executable: /bin/bash
+      when: not "No such plugin:" in erlang_plugin.stdout
+
+    - name: Install Elixir Plugin
+      shell: . ~/.bashrc && asdf plugin add elixir || echo ""
+      args:
+        executable: /bin/bash
+      when: not "No such plugin:" in elixir_plugin.stdout
+
+    - name: Check Erlang Version Exists
+      shell: . ~/.bashrc && asdf list erlang | grep -x "  {{ erlang_version }}" || echo ""
+      args:
+        executable: /bin/bash
+      register: asdf_erlang_version
+      changed_when: false
+
+    - name: Check Elixir Version Exists
+      shell: . ~/.bashrc && asdf list elixir | grep -x "  {{ elixir_version }}" || echo ""
+      args:
+        executable: /bin/bash
+      register: asdf_elixir_version
+      changed_when: false
+
+    - name: Update ASDF
+      shell: . ~/.bashrc && asdf update
+      args:
+        executable: /bin/bash
+      when: asdf_erlang_version.stdout == "" or asdf_elixir_version.stdout == ""
+
+    - name: Install Erlang Version {{ erlang_version }}
+      shell: . ~/.bashrc && asdf install erlang {{ erlang_version }}
+      args:
+        executable: /bin/bash
+      when: asdf_erlang_version.stdout == ""
+
+    - name: Install Elixir Version {{ elixir_version }}
+      shell: . ~/.bashrc && asdf install elixir {{ elixir_version }}
+      args:
+        executable: /bin/bash
+      when: asdf_elixir_version.stdout == ""
+
+    - name: Set global Elixir & Erlang Version
+      shell: |
+        . ~/.bashrc &&
+        asdf global erlang {{erlang_version}}
+        asdf global elixir {{elixir_version}}
+      args:
+        executable: /bin/bash
+
+  become: true

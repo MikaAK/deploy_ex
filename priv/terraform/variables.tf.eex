@@ -10,10 +10,22 @@ variable "project_name" {
   default     = "<%= @app_name %>"
 }
 
-variable "instance_group" {
-  description = "Value of the Group tag for the EC2 instance"
+variable "resource_group" {
+  description = "Value of the Group tag for all resources"
   type        = string
   default     = "<%= DeployExHelpers.upper_title_case(@app_name) %> Backend"
+}
+
+variable "logging_bucket_name" {
+  description = "Logging bucket name to use for storing built loggings"
+  type        = string
+  default     = "<%= @logging_bucket_name %>"
+}
+
+variable "logging_bucket_title_name" {
+  description = "Ditto as above but as title case"
+  type        = string
+  default     = "<%= DeployExHelpers.upper_title_case(@logging_bucket_name) %>"
 }
 
 variable "release_bucket_name" {
@@ -33,6 +45,8 @@ variable "<%= @app_name %>_project" {
   type        = map(any)
 
   default = {
+<%= @terraform_loki_variables %>
+<%= @terraform_prometheus_variables %>
 <%= @terraform_release_variables %>
   }
 }

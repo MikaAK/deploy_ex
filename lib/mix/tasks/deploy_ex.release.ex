@@ -3,8 +3,8 @@ defmodule Mix.Tasks.DeployEx.Release do
 
   alias DeployEx.{ReleaseUploader, Config}
 
-  @default_aws_region Config.aws_release_region()
-  @default_aws_bucket Config.aws_release_bucket()
+  @default_aws_region Config.aws_region()
+  @default_aws_release_bucket Config.aws_release_bucket()
 
   @shortdoc "Runs mix.release for apps that have changed"
   @moduledoc """
@@ -26,7 +26,7 @@ defmodule Mix.Tasks.DeployEx.Release do
   - `except` - Build release for apps except
   - `recompile` - Force recompile (alias: `r`)
   - `aws-region` - Region for aws (default: `#{@default_aws_region}`)
-  - `aws-bucket` - Region for aws (default: `#{@default_aws_bucket}`)
+  - `aws-bucket` - Region for aws (default: `#{@default_aws_release_bucket}`)
   """
 
   def run(args) do
@@ -35,8 +35,8 @@ defmodule Mix.Tasks.DeployEx.Release do
 
     opts = args
       |> parse_args
-      |> Keyword.put_new(:aws_bucket, Config.aws_release_bucket())
-      |> Keyword.put_new(:aws_region, Config.aws_release_region())
+      |> Keyword.put_new(:aws_release_bucket, @default_aws_release_bucket)
+      |> Keyword.put_new(:aws_region, @default_aws_region)
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
@@ -70,7 +70,7 @@ defmodule Mix.Tasks.DeployEx.Release do
         quiet: :boolean,
         recompile: :boolean,
         aws_region: :string,
-        aws_bucket: :string,
+        aws_release_bucket: :string,
         only: :keep,
         except: :keep,
         all: :boolean

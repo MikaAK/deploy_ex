@@ -1,0 +1,45 @@
+- name: grafana_loki
+  block:
+    - name: Check for Loki {{ loki_architecture }}/{{ loki_version }}
+      stat:
+        path: ~/loki-{{ loki_architecture }}
+      register: loki
+
+    - name: Download Loki {{ loki_architecture }}/{{ loki_version }}
+      unarchive:
+        src: https://github.com/grafana/loki/releases/download/{{ loki_version }}/loki-{{ loki_architecture }}.zip
+        dest: /root
+        remote_src: true
+      when: not loki.stat.exists
+
+    - name: Download Loki config
+      get_url:
+        url: https://raw.githubusercontent.com/grafana/loki/{{ loki_version }}/cmd/loki/loki-local-config.yaml
+        dest: /root/config.yaml
+
+    - name: Add loki_systemd.service file to /etc/systemd/system/loki_systemd.service
+      template:
+        src: loki_systemd.service.j2
+        dest: /etc/systemd/system/loki_systemd.service
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Enable loki_systemd service
+      systemd:
+        name: loki_systemd
+        enabled: true
+
+    - name: Stop loki_systemd service
+      systemd:
+        name: loki_systemd
+        state: stopped
+      when: ansible_facts.services[loki_systemd] is not defined
+
+    - name: Start loki_systemd service
+      systemd:
+        daemon_reload: true
+        name: loki_systemd
+        state: started
+
+  become: true

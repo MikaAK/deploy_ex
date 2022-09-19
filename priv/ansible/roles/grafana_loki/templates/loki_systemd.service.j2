@@ -1,0 +1,22 @@
+[Unit]
+Description=Loki Aggregator Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/root/
+ExecStart=/root/loki-{{ promtail_architecture }} -config.file=/root/ec2-promtail.yaml
+Restart=on-failure
+RestartSec=5
+{% for env in extra_loki_env %}
+Environment={{ env }}
+{% endfor %}
+SyslogIdentifier=loki_aggregator
+RemainAfterExit=no
+LimitNOFILE=infinity
+
+[Install]
+WantedBy=multi-user.target
+

@@ -4,6 +4,9 @@ defmodule Mix.Tasks.Terraform.Build do
   @terraform_default_path DeployEx.Config.terraform_folder_path()
   @default_aws_region DeployEx.Config.aws_region()
 
+  @default_aws_release_bucket DeployEx.Config.aws_release_bucket()
+  @default_aws_log_bucket DeployEx.Config.aws_log_bucket()
+
   @shortdoc "Builds/Updates terraform files or adds it to your project"
   @moduledoc """
   Builds or updates terraform files within the project.
@@ -11,6 +14,8 @@ defmodule Mix.Tasks.Terraform.Build do
   ## Options
   - `directory` - Directory for the terraform files (default: `#{@terraform_default_path}`)
   - `aws-region` - Region for aws (default: `#{@default_aws_region}`)
+  - `aws-bucket` - Region for aws (default: `#{@default_aws_release_bucket}`)
+  - `aws-log-bucket` - Region for aws (default: `#{@default_aws_log_bucket}`)
   - `env` - Environment for terraform (default: `Mix.env()`)
   - `quiet` - Supress output
   - `force` - Force create files without asking
@@ -23,7 +28,8 @@ defmodule Mix.Tasks.Terraform.Build do
       |> parse_args
       |> Keyword.put_new(:directory, @terraform_default_path)
       |> Keyword.put_new(:aws_region, @default_aws_region)
-      |> Keyword.put_new(:aws_bucket, DeployEx.Config.aws_release_bucket())
+      |> Keyword.put_new(:aws_release_bucket, @default_aws_release_bucket)
+      |> Keyword.put_new(:aws_log_bucket, DeployEx.Config.aws_log_bucket())
       |> Keyword.put_new(:env, Mix.env())
 
     opts = opts
@@ -54,7 +60,9 @@ defmodule Mix.Tasks.Terraform.Build do
         quiet: :boolean,
         verbose: :boolean,
         aws_region: :string,
-        env: :string
+        env: :string,
+        no_loki: :boolean,
+        no_prometheus: :boolean
       ]
     )
 
@@ -85,7 +93,9 @@ defmodule Mix.Tasks.Terraform.Build do
     String.trim_trailing("""
         #{release_name} = {
           environment = "#{opts[:env]}"
-          name = "#{DeployExHelpers.upper_title_case(release_name)}"
+          name        = "#{DeployExHelpers.upper_title_case(release_name)}"
+          vendor      = "Self"
+          type        = "Self Made"
         }
     """, "\n")
   end
@@ -130,7 +140,11 @@ defmodule Mix.Tasks.Terraform.Build do
     variables_files = EEx.eval_file(template_file, assigns: %{
       environment: opts[:env],
       terraform_release_variables: terraform_output,
-      release_bucket_name: opts[:aws_bucket],
+      release_bucket_name: opts[:aws_release_bucket],
+      logging_bucket_name: opts[:aws_log_bucket],
+      terraform_loki_variables: terraform_loki_variables(opts),
+      terraform_prometheus_variables: terraform_prometheus_variables(opts),
+      terraform_release_variables: opts[:terraform_release_variables],
       app_name: DeployExHelpers.underscored_app_name()
     })
 
@@ -141,6 +155,66 @@ defmodule Mix.Tasks.Terraform.Build do
     end
 
     File.rm!(template_file)
+  end
+
+  defp terraform_sentry_variables(opts) do
+    if opts[:no_sentry] do
+      ""
+    else
+      """
+          sentry = {
+            environment = "#{opts[:env]}"
+            name = "Sentry Monitoring"
+            vendor = "Sentry"
+            type   = "Monitoring"
+          },
+      """
+    end
+  end
+
+  defp terraform_loki_variables(opts) do
+    if opts[:no_loki] do
+      ""
+    else
+      """
+          loki_aggreagtor = {
+            environment = "#{opts[:env]}"
+            name = "Grafana Loki Logs"
+            vendor = "Grafana"
+            type   = "Monitoring"
+          },
+      """
+    end
+  end
+
+  defp terraform_grafana_variables(opts) do
+    if opts[:no_grafana] do
+      ""
+    else
+      """
+          grafana_ui = {
+            environment = "#{opts[:env]}"
+            name = "Grafana UI"
+            vendor = "Grafana"
+            type   = "Monitoring"
+          },
+      """
+    end
+  end
+
+  defp terraform_prometheus_variables(opts) do
+    if opts[:no_prometheus] do
+      ""
+    else
+      """
+          prometheus_db = {
+            environment = "#{opts[:env]}"
+            name = "Prometheus Metrics Database"
+            vendor = "Grafana"
+            type   = "Monitoring"
+          },
+      """
+    end
   end
 
   defp write_terraform_main(opts) do
@@ -177,7 +251,7 @@ defmodule Mix.Tasks.Terraform.Build do
 
     main_file = EEx.eval_file(template_file_path, assigns: %{
       aws_region: opts[:aws_region],
-      aws_bucket: opts[:aws_bucket],
+      aws_release_bucket: opts[:aws_release_bucket],
       app_name: DeployExHelpers.underscored_app_name()
     })
 

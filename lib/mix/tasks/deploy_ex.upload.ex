@@ -3,8 +3,8 @@ defmodule Mix.Tasks.DeployEx.Upload do
 
   alias DeployEx.{ReleaseUploader, Config}
 
-  @default_aws_region Config.aws_release_region()
-  @default_aws_bucket Config.aws_release_bucket()
+  @default_aws_region Config.aws_region()
+  @default_aws_release_bucket Config.aws_release_bucket()
   @max_upload_concurrency 4
 
   @shortdoc "Uploads your release folder to Amazon S3"
@@ -22,7 +22,7 @@ defmodule Mix.Tasks.DeployEx.Upload do
   ## Options
 
   - `aws-region` - Region for aws (default: `#{@default_aws_region}`)
-  - `aws-bucket` - Region for aws (default: `#{@default_aws_bucket}`)
+  - `aws-bucket` - Region for aws (default: `#{@default_aws_release_bucket}`)
   """
 
   def run(args) do
@@ -31,8 +31,8 @@ defmodule Mix.Tasks.DeployEx.Upload do
 
     opts = args
       |> parse_args
-      |> Keyword.put_new(:aws_bucket, Config.aws_release_bucket())
-      |> Keyword.put_new(:aws_region, Config.aws_release_region())
+      |> Keyword.put_new(:aws_release_bucket, @default_aws_release_bucket)
+      |> Keyword.put_new(:aws_region, @default_aws_region)
       |> Keyword.put_new(:parallel, @max_upload_concurrency)
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
@@ -63,7 +63,7 @@ defmodule Mix.Tasks.DeployEx.Upload do
         force: :boolean,
         quiet: :boolean,
         aws_region: :string,
-        aws_bucket: :string,
+        aws_release_bucket: :string,
         parallel: :integer
       ]
     )

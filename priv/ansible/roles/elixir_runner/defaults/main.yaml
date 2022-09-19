@@ -1,0 +1,5 @@
+# This needs to match the elixir versions used in the Build Env
+# https://github.com/MikaAK/docker-files/blob/master/elixir-debian.Dockerfile
+elixir_version: 1.13.4-otp-25
+erlang_version: 25.0.4
+asdf_version: v0.10.2

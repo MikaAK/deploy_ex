@@ -16,7 +16,7 @@ module "ec2_instance" {
 
   for_each = var.<%= @app_name %>_project
 
-  instance_group = var.instance_group
+  resource_group = var.resource_group
   instance_name  = each.value.name
   environment    = each.value.environment
 

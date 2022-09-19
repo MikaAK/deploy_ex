@@ -23,8 +23,8 @@ defmodule Mix.Tasks.Ansible.Build do
       |> Keyword.put_new(:terraform_directory, @terraform_default_path)
       |> Keyword.put_new(:hosts_file, "./deploys/ansible/hosts")
       |> Keyword.put_new(:config_file, "./deploys/ansible/ansible.cfg")
-      |> Keyword.put_new(:aws_bucket, Config.aws_release_bucket())
-      |> Keyword.put_new(:aws_region, Config.aws_release_region())
+      |> Keyword.put_new(:aws_release_bucket, Config.aws_release_bucket())
+      |> Keyword.put_new(:aws_region, Config.aws_region())
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          :ok <- ensure_ansible_directory_exists(opts[:directory], opts),
@@ -53,7 +53,7 @@ defmodule Mix.Tasks.Ansible.Build do
         directory: :string,
         terraform_directory: :string,
         auto_pull_aws: :boolean,
-        aws_bucket: :string
+        aws_release_bucket: :string
       ]
     )
 
@@ -258,7 +258,7 @@ defmodule Mix.Tasks.Ansible.Build do
 
     variables = %{
       app_name: app_name,
-      aws_release_bucket: opts[:aws_bucket],
+      aws_release_bucket: opts[:aws_release_bucket],
       port: 80
     }
 

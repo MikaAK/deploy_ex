@@ -1,0 +1,26 @@
+[Unit]
+Description=Loki Promtail Log Exporter
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/root/
+ExecStartPre=/bin/sleep 30
+ExecStart=/root/promtail-{{ promtail_architecture }} -config.file /root/ec2-promtail.yaml
+
+Restart=on-failure
+RestartSec=5
+SuccessExitStatus=143
+TimeoutStopSec=10
+{% for env in extra_loki_promtail_env %}
+Environment={{ env }}
+{% endfor %}
+SyslogIdentifier=promtail_exporter
+RemainAfterExit=no
+LimitNOFILE=infinity
+
+[Install]
+WantedBy=multi-user.target
+
+

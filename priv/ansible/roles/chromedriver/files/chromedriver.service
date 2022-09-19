@@ -1,0 +1,15 @@
+[Unit]
+Description=Chromedriver service
+
+[Service]
+Type=simple
+User=chrome
+Group=chrome
+WorkingDirectory=/home/chrome
+ExecStart=/usr/bin/chromedriver --log-path=/home/chrome/chromedriver.log --disable-extensions --no-proxy-server --disable-software-rasterizer --disable-gpu --headless --no-sandbox --whitelisted-ips
+Restart=on-failure
+RestartSec=5
+SyslogIdentifier=chromedriver
+
+[Install]
+WantedBy=multi-user.target

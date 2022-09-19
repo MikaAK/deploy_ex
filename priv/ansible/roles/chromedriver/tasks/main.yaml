@@ -1,0 +1,66 @@
+- name: chromedriver
+  block:
+    - name: Install prerequisites
+      apt:
+        pkg:
+          - curl
+          - unzip
+          - xvfb
+          - libxi6
+          - libgconf-2-4
+          - default-jdk
+
+    - name: Add Google Chrome apt signing key
+      apt_key:
+        url: https://dl-ssl.google.com/linux/linux_signing_key.pub
+
+    - name: Add Google Chrome repository to sources
+      apt_repository:
+        repo: deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main
+
+    - name: Install google-chrome-stable
+      apt:
+        name: google-chrome-stable
+        update_cache: true
+
+    - name: Get Chrome Version
+      shell: curl https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$(dpkg -s google-chrome-stable | grep Version | cut -d' ' -f 2 | cut -d'-' -f 1 | cut -d'.' -f 1)
+      register: chromedriver_version
+      changed_when: false
+
+    - name: Download chromedriver {{ chromedriver_version.stdout }}
+      unarchive:
+        src: https://chromedriver.storage.googleapis.com/{{ chromedriver_version.stdout }}/chromedriver_linux64.zip
+        dest: /usr/bin
+        group: root
+        owner: root
+        remote_src: true
+        mode: u+x,g+x,o+x
+
+    - name: Create chrome user account
+      user:
+        name: chrome
+
+    - name: Add chromedriver.service to /etc/systemd/system/chromedriver.service
+      copy:
+        src: chromedriver.service
+        dest: /etc/systemd/system/chromedriver.service
+        group: root
+        owner: root
+        mode: 0644
+
+    - name: Stop chromedriver service
+      systemd:
+        name: chromedriver
+        state: stopped
+
+    - name: Enable chromedriver service
+      systemd:
+        name: chromedriver
+        enabled: true
+
+    - name: Start chromedriver service
+      systemd:
+        name: chromedriver
+        state: started
+  become: true
