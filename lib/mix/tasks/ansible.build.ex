@@ -21,16 +21,16 @@ defmodule Mix.Tasks.Ansible.Build do
       |> parse_args
       |> Keyword.put_new(:directory, @ansible_default_path)
       |> Keyword.put_new(:terraform_directory, @terraform_default_path)
-      |> Keyword.put_new(:hosts_file, "./deploys/ansible/hosts")
+      |> Keyword.put_new(:hosts_file, "./deploys/ansible/aws_ec2.yaml")
       |> Keyword.put_new(:config_file, "./deploys/ansible/ansible.cfg")
       |> Keyword.put_new(:aws_release_bucket, Config.aws_release_bucket())
       |> Keyword.put_new(:aws_region, Config.aws_region())
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          :ok <- ensure_ansible_directory_exists(opts[:directory], opts),
-         {:ok, hostname_ips} <- terraform_instance_ips(opts[:terraform_directory]),
-         :ok <- create_ansible_hosts_file(hostname_ips, opts),
+         :ok <- create_ansible_hosts_file(opts),
          :ok <- create_ansible_config_file(opts),
+         {:ok, hostname_ips} <- terraform_instance_ips(opts[:terraform_directory]),
          :ok <- create_ansible_playbooks(Map.keys(hostname_ips), opts) do
       :ok
     else
@@ -149,13 +149,13 @@ defmodule Mix.Tasks.Ansible.Build do
     end
     end
 
-  defp create_ansible_hosts_file(hostname_ips, opts) do
+  defp create_ansible_hosts_file(opts) do
     variables = %{
-      host_name_ips: hostname_ips
+      app_name: DeployExHelpers.underscored_app_name()
     }
 
     DeployExHelpers.write_template(
-      DeployExHelpers.priv_file("ansible/hosts.eex"),
+      DeployExHelpers.priv_file("ansible/aws_ec2.yaml.eex"),
       opts[:hosts_file],
       variables,
       opts
@@ -169,15 +169,21 @@ defmodule Mix.Tasks.Ansible.Build do
   end
 
   defp pem_file_path(app_name, directory) do
-    directory_path = directory
+    pem_file_path = directory
       |> String.split("/")
       |> Enum.drop(-1)
       |> Enum.join("/")
       |> Path.join("terraform/#{app_name}*pem")
+
+    directory_path = pem_file_path
       |> Path.wildcard
-      |> List.first
+      |> then(&(List.first(&1) || ""))
       |> String.split("/")
       |> Enum.drop(1)
+
+    if directory_path === [] do
+      Mix.raise("No PEM file found matching glob #{pem_file_path}, have you run mix terraform.apply yet?")
+    end
 
     Enum.join([".." | directory_path], "/")
   end

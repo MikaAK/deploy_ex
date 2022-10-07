@@ -1,6 +1,6 @@
 [defaults]
 remote_user = admin
-inventory = ./hosts
+inventory = ./aws_ec2.yaml
 roles_path = ./roles
 deprecation_warnings = False
 private_key_file: <%= @pem_file_path %>
@@ -8,7 +8,7 @@ host_key_checking = False
 # log_path = /var/log/syslog
 
 [inventory]
-enable_plugins = yaml
+enable_plugins = aws_ec2
 
 [ssh_connection]
 ssh_args = -o StrictHostKeyChecking=accept-new

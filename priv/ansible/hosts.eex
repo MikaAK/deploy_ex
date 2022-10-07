@@ -1,7 +1,0 @@
-all:<% import Mix.Tasks.Ansible.Build %>
-  children:
-  <%= for {host_name, host_ips} <- @host_name_ips do %>
-    <%= host_name %>:
-      hosts:
-        <%= for host_ip <- host_ips do %><%= host_ip %>:
-      <% end %><% end %>

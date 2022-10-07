@@ -1,3 +1,6 @@
+### EC2 Start ###
+#################
+
 # Pulls debian image from AWS AMI
 data "aws_ami" "debian-11" {
   most_recent = true
@@ -12,7 +15,7 @@ data "aws_ami" "debian-11" {
 # Create EC2 Instance
 resource "aws_instance" "ec2_instance" {
   # Enable when multi-instancing
-  count = var.instance_count || 1
+  count = var.instance_count
 
   ami           = data.aws_ami.debian-11.id
   instance_type = var.instance_type
@@ -29,11 +32,13 @@ resource "aws_instance" "ec2_instance" {
 
   user_data = var.disable_ebs ? "" : file("${path.module}/user_data_init_script.sh")
 
-  tags = {
-    Name        = format("%s-%s", var.instance_name, count.index)
-    Group       = var.resource_group
-    Environment = var.environment
-  }
+  tags = merge({
+    Name          = format("%s-%s", var.instance_name, count.index)
+    Group         = var.resource_group
+    InstanceGroup = lower(replace(var.instance_name, " ", "_"))
+    Environment   = var.environment
+    Type          = "Self Made"
+  }, var.tags)
 }
 
 ### EBS Start ###
@@ -46,22 +51,23 @@ resource "aws_ebs_volume" "ec2_ebs" {
   availability_zone = "us-west-2a"
   size              = var.instance_ebs_secondary_size
 
-  tags = {
-    Name        = format("%s-%s-%s", var.instance_name, "ebs", count.index) # instance-name-ebs
-    Group       = var.resource_group
-    Environment = var.environment
-  }
+  tags = merge({
+    Name          = format("%s-%s-%s", var.instance_name, "ebs", count.index) # instance-name-ebs
+    InstanceGroup = lower(replace(var.instance_name, " ", "_"))
+    Group         = var.resource_group
+    Environment   = var.environment
+    Vendor        = "Self"
+    Type          = "Self Made"
+  }, var.tags)
 }
 
 # Attach EBS Volume
 resource "aws_volume_attachment" "ec2_ebs_association" {
-  count       = var.disable_ebs ? 0 : 1
-
-  for_each    = aws_instance.ec2_instance
+  count       = var.disable_ebs ? 0 : var.instance_count
 
   device_name = "/dev/sdh"
-  volume_id   = aws_ebs_volume.ec2_ebs[count.index].id
-  instance_id = each.value.id
+  volume_id   = aws_ebs_volume.ec2_ebs[0].id
+  instance_id = element(aws_instance.ec2_instance, count.index).id
 }
 
 ### Elastic IP Start ###
@@ -69,20 +75,23 @@ resource "aws_volume_attachment" "ec2_ebs_association" {
 
 # Create Elastic IP
 resource "aws_eip" "ec2_eip" {
-  count = var.instance_count || 1
+  count = var.disable_eip ? 0 : var.instance_count
 
   vpc = true
-  tags = {
-    Name        = format("%s-%s-%s", var.instance_name, "eip", count.index) # instance-name-eip
-    Group       = var.resource_group
-    Environment = var.environment
-  }
+  tags = merge({
+    Name          = format("%s-%s-%s", var.instance_name, "eip", count.index) # instance-name-eip
+    InstanceGroup = lower(replace(var.instance_name, " ", "_"))
+    Group         = var.resource_group
+    Environment   = var.environment
+    Vendor        = "Self"
+    Type          = "Self Made"
+  }, var.tags)
 }
 
 # Associate Elastic IP to Linux Server
 resource "aws_eip_association" "ec2_eip_association" {
-  count = var.instance_count || 1
+  count = var.disable_eip ? 0 : var.instance_count
 
-  instance_id   = aws_instance.ec2_instance[count.index].id
+  instance_id   = element(aws_instance.ec2_instance, count.index).id
   allocation_id = aws_eip.ec2_eip[count.index].id
 }

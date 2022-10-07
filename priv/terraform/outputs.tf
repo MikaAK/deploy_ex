@@ -1,6 +1,6 @@
-output "release_bucket_name" {
+output "bucket_name" {
   description = "Name of the s3 bucket releases will be stored in"
-  value       = aws_s3_bucket.release_bucket.id
+  value       = { for p in sort(keys(var.resource_buckets)) : p => aws_s3_bucket.bucket[p].id }
 }
 
 output "instance_id" {

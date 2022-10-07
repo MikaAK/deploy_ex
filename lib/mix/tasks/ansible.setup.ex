@@ -29,7 +29,7 @@ defmodule Mix.Tasks.Ansible.Setup do
         |> Keyword.put_new(:directory, @ansible_default_path)
         |> Keyword.put_new(:parallel, @default_setup_max_concurrency)
 
-      DeployExHelpers.check_file_exists!(Path.join(opts[:directory], "hosts"))
+      DeployExHelpers.check_file_exists!(Path.join(opts[:directory], "aws_ec2.yaml"))
       relative_directory = String.replace(Path.absname(opts[:directory]), "#{File.cwd!()}/", "")
 
       opts[:directory]
@@ -38,7 +38,7 @@ defmodule Mix.Tasks.Ansible.Setup do
         |> Enum.map(&Path.relative_to(&1, relative_directory))
         |> DeployExHelpers.filter_only_or_except(opts[:only], opts[:except])
         |> Task.async_stream(fn setup_file ->
-          DeployExHelpers.run_command_with_input("ansible-playbook #{setup_file}", opts[:directory])
+          DeployExHelpers.run_command_with_input("ansible-playbook  #{setup_file}", opts[:directory])
         end, max_concurrency: opts[:parallel], timeout: :timer.minutes(30))
         |> Stream.run
 

@@ -1,4 +1,4 @@
-- hosts: <%= @app_name %>
+- hosts: group_<%= @app_name %>
   vars:
     app_name: "<%= @app_name %>"
     bucket_name: "<%= @aws_release_bucket %>"

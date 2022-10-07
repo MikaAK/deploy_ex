@@ -3,26 +3,45 @@
 variable "resource_group" {
   description = "Instance Group tag"
   type        = string
+  nullable    = false
 }
 
 variable "environment" {
   description = "Environment Group tag"
   type        = string
+  nullable    = false
 }
 
 variable "security_group_id" {
   description = "Security group IDs for EC2 instances"
   type        = string
+  nullable    = false
 }
 
 variable "subnet_id" {
   description = "Subnet IDs for EC2 instances"
   type        = string
+  nullable    = false
 }
 
 variable "key_pair_key_name" {
   description = "PEM file name to use for the ec2 instances"
   type        = string
+  nullable    = false
+}
+
+variable "disable_eip" {
+  description = "Enables instance to generate an elastic ip for itself"
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "tags" {
+  description = "Tags to add to the various resources"
+  type        = map(any)
+  default     = {}
+  nullable    = false
 }
 
 ### EBS ###
@@ -36,9 +55,10 @@ variable "instance_ebs_secondary_size" {
 }
 
 variable "disable_ebs" {
-  description = "Enables instance to generate an elastic ip for itself"
-  type        = string
-  default     = true
+  description = "Enables instance to generate an elastic bean stalk volume for itself"
+  type        = bool
+  default     = false
+  nullable    = false
 }
 
 ### Instances ###
@@ -61,4 +81,5 @@ variable "instance_type" {
 variable "instance_name" {
   description = "Instance name itself"
   type        = string
+  nullable    = false
 }

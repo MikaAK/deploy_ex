@@ -6,11 +6,14 @@ defmodule Mix.Tasks.Ansible.Ping do
   Pings ansible hosts define in hosts file
   """
 
-  def run(_args) do
-    with :ok <- DeployExHelpers.check_in_umbrella() do
-      DeployExHelpers.check_file_exists!("./deploys/ansible/hosts")
+  def run(args) do
+    group_name = args |> Enum.reject(&(&1 =~ ~r/^--?/)) |> List.first
+    group_name = (group_name && "group_#{group_name}") || "all"
 
-      DeployExHelpers.run_command_with_input("ansible -i hosts all -m ping", "./deploys/ansible")
+    with :ok <- DeployExHelpers.check_in_umbrella() do
+      DeployExHelpers.check_file_exists!("./deploys/ansible/aws_ec2.yaml")
+
+      DeployExHelpers.run_command_with_input("ansible -i aws_ec2.yaml #{group_name} -m ping", "./deploys/ansible")
     end
   end
 end

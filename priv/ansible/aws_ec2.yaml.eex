@@ -1,0 +1,17 @@
+plugin: aws_ec2
+
+compose:
+  ansible_host: public_ip_address
+
+regions:
+  - us-west-2
+
+hostnames:
+  - tag:Name
+
+filters:
+  tag:Group: '<%= DeployExHelpers.upper_title_case(@app_name) %> Backend'
+
+keyed_groups:
+  - key: tags['InstanceGroup']
+    prefix: "group"

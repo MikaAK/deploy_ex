@@ -18,11 +18,15 @@ module "ec2_instance" {
 
   resource_group = var.resource_group
   instance_name  = each.value.name
-  environment    = each.value.environment
+  environment    = var.environment
 
+  tags                        = try(each.value.tags, null)
   instance_type               = try(each.value.instance_type, null)
   instance_count              = try(each.value.instance_count, null)
   instance_ebs_secondary_size = try(each.value.instance_ebs_secondary_size, null)
+
+  disable_eip = try(each.value.disable_eip, null)
+  disable_ebs = try(each.value.disable_ebs, null)
 
   security_group_id = module.app_security_group.security_group_id
   subnet_id         = module.vpc.public_subnets[0]

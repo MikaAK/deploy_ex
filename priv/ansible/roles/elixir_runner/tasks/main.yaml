@@ -34,7 +34,7 @@
         path: ~/.bashrc
         block: |
           . /root/.asdf/asdf.sh
-          . elixirroot/.asdf/completions/asdf.bash
+          . /root/.asdf/completions/asdf.bash
       when: not asdf.stat.exists
 
     - name: Check Erlang Plugin installed

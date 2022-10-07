@@ -42,7 +42,7 @@ defmodule Mix.Tasks.Terraform.Build do
          :ok <- ensure_terraform_directory_exists(opts[:directory]) do
       terraform_output = releases
         |> Keyword.keys
-        |> Enum.map_join(",\n\n", &(&1 |> to_string |> generate_terraform_output(opts)))
+        |> Enum.map_join(",\n\n", &(&1 |> to_string |> generate_terraform_output))
 
       write_terraform_variables(terraform_output, opts)
       write_terraform_main(opts)
@@ -62,6 +62,8 @@ defmodule Mix.Tasks.Terraform.Build do
         aws_region: :string,
         env: :string,
         no_loki: :boolean,
+        no_sentry: :boolean,
+        no_grafana: :boolean,
         no_prometheus: :boolean
       ]
     )
@@ -89,13 +91,14 @@ defmodule Mix.Tasks.Terraform.Build do
     end
   end
 
-  defp generate_terraform_output(release_name, opts) do
+  defp generate_terraform_output(release_name) do
     String.trim_trailing("""
         #{release_name} = {
-          environment = "#{opts[:env]}"
-          name        = "#{DeployExHelpers.upper_title_case(release_name)}"
-          vendor      = "Self"
-          type        = "Self Made"
+          name = "#{DeployExHelpers.upper_title_case(release_name)}"
+          tags = {
+            Vendor = "Self"
+            Type   = "Self Made"
+          }
         }
     """, "\n")
   end
@@ -142,9 +145,10 @@ defmodule Mix.Tasks.Terraform.Build do
       terraform_release_variables: terraform_output,
       release_bucket_name: opts[:aws_release_bucket],
       logging_bucket_name: opts[:aws_log_bucket],
+      terraform_sentry_variables: terraform_sentry_variables(opts),
+      terraform_grafana_variables: terraform_grafana_variables(opts),
       terraform_loki_variables: terraform_loki_variables(opts),
       terraform_prometheus_variables: terraform_prometheus_variables(opts),
-      terraform_release_variables: opts[:terraform_release_variables],
       app_name: DeployExHelpers.underscored_app_name()
     })
 
@@ -163,10 +167,11 @@ defmodule Mix.Tasks.Terraform.Build do
     else
       """
           sentry = {
-            environment = "#{opts[:env]}"
             name = "Sentry Monitoring"
-            vendor = "Sentry"
-            type   = "Monitoring"
+            tags = {
+              Vendor = "Sentry"
+              Type   = "Monitoring"
+            }
           },
       """
     end
@@ -178,10 +183,11 @@ defmodule Mix.Tasks.Terraform.Build do
     else
       """
           loki_aggreagtor = {
-            environment = "#{opts[:env]}"
             name = "Grafana Loki Logs"
-            vendor = "Grafana"
-            type   = "Monitoring"
+            tags = {
+              Vendor = "Grafana"
+              Type   = "Monitoring"
+            }
           },
       """
     end
@@ -193,10 +199,11 @@ defmodule Mix.Tasks.Terraform.Build do
     else
       """
           grafana_ui = {
-            environment = "#{opts[:env]}"
             name = "Grafana UI"
-            vendor = "Grafana"
-            type   = "Monitoring"
+            tags = {
+              Vendor = "Grafana"
+              Type   = "Monitoring"
+            }
           },
       """
     end
@@ -208,10 +215,11 @@ defmodule Mix.Tasks.Terraform.Build do
     else
       """
           prometheus_db = {
-            environment = "#{opts[:env]}"
             name = "Prometheus Metrics Database"
-            vendor = "Grafana"
-            type   = "Monitoring"
+            tags = {
+              Vendor = "Grafana"
+              Type   = "Monitoring"
+            }
           },
       """
     end
