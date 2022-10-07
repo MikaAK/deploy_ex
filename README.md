@@ -110,7 +110,7 @@ inject the apps into your variables file despite changes to the file. If you cha
 - [ ] `mix ansible.rollback` - Rollback to a prior release
 
 ## Extra Utilities
-- [ ] - Easy Distribution
+- [x] - Easy Distribution (https://github.com/MikaAK/libcluster_ec2_tag_strategy)
 - [ ] - Runs ansible setup on nodes created via github actions
 
 ### Github Action
