@@ -2,7 +2,7 @@ defmodule DeployEx.ReleaseUploader do
   alias DeployEx.ReleaseUploader.{State, AwsManager, UpdateValidator}
 
   @type opts :: [
-    aws_bucket: String.t,
+    aws_release_bucket: String.t,
     aws_region: String.t
   ]
 
@@ -44,7 +44,7 @@ defmodule DeployEx.ReleaseUploader do
     as: :load_app_dep_tree
 
   def fetch_all_remote_releases(opts) do
-    AwsManager.get_releases(opts[:aws_region], opts[:aws_bucket])
+    AwsManager.get_releases(opts[:aws_region], opts[:aws_release_bucket])
   end
 
   def fetch_all_local_releases do
@@ -67,6 +67,6 @@ defmodule DeployEx.ReleaseUploader do
   end
 
   def upload_release(%State{local_file: local_file, name: remote_file_path}, opts) do
-    AwsManager.upload(local_file, opts[:aws_region], opts[:aws_bucket], remote_file_path)
+    AwsManager.upload(local_file, opts[:aws_region], opts[:aws_release_bucket], remote_file_path)
   end
 end
