@@ -46,6 +46,7 @@ defmodule Mix.Tasks.Terraform.Build do
 
       write_terraform_variables(terraform_output, opts)
       write_terraform_main(opts)
+      # write_terraform_output(opts) # NEED TO DO THIS
       write_terraform_keypair(opts)
       run_terraform_init(opts)
     end
@@ -273,7 +274,9 @@ defmodule Mix.Tasks.Terraform.Build do
   end
 
   defp write_terraform_keypair(opts) do
-    if not File.exists?(opts[:keypair_file]) do
+    if File.exists?(opts[:keypair_file]) do
+
+    else
       keypair_template_path = "terraform"
         |> Path.join(Path.basename(opts[:keypair_file]))
         |> DeployExHelpers.priv_file
@@ -290,6 +293,12 @@ defmodule Mix.Tasks.Terraform.Build do
       })
 
       DeployExHelpers.write_file(opts[:keypair_file], terraform_keypair, opts)
+
+      if opts[:verbose] do
+        Mix.shell().info([:green, "* removing ", :reset, keypair_template_path])
+      end
+
+      File.rm!(keypair_template_path)
     end
   end
 end

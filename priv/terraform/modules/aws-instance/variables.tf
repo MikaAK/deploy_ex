@@ -18,9 +18,9 @@ variable "security_group_id" {
   nullable    = false
 }
 
-variable "subnet_id" {
+variable "subnet_ids" {
   description = "Subnet IDs for EC2 instances"
-  type        = string
+  type        = list(string)
   nullable    = false
 }
 
@@ -32,6 +32,13 @@ variable "key_pair_key_name" {
 
 variable "disable_eip" {
   description = "Enables instance to generate an elastic ip for itself"
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "enable_lb" {
+  description = "Enables load balancer for instances generated"
   type        = bool
   default     = false
   nullable    = false

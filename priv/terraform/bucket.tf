@@ -1,5 +1,5 @@
 resource "aws_s3_bucket" "bucket" {
-  for_each      = var.resource_buckets
+  for_each = var.resource_buckets
 
   bucket        = each.value.bucket_name
   force_destroy = true
@@ -14,7 +14,7 @@ resource "aws_s3_bucket" "bucket" {
 }
 
 resource "aws_s3_bucket_acl" "bucket_acl" {
-  for_each      = var.resource_buckets
+  for_each = var.resource_buckets
 
   bucket = aws_s3_bucket.bucket[each.key].id
   acl    = "private"

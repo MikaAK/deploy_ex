@@ -27,9 +27,10 @@ module "ec2_instance" {
 
   disable_eip = try(each.value.disable_eip, null)
   disable_ebs = try(each.value.disable_ebs, null)
+  enable_lb   = try(each.value.enable_lb, null)
 
   security_group_id = module.app_security_group.security_group_id
-  subnet_id         = module.vpc.public_subnets[0]
+  subnet_ids        = module.vpc.public_subnets
 
   key_pair_key_name = aws_key_pair.key_pair.key_name
 }

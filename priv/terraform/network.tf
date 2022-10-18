@@ -15,10 +15,10 @@ module "vpc" {
 
   azs = data.aws_availability_zones.available.names
 
-  private_subnets = ["10.0.101.0/24"]
-  public_subnets  = ["10.0.1.0/24"]
+  private_subnets = ["10.0.101.0/24", "10.0.100.0/24"]
+  public_subnets  = ["10.0.1.0/24", "10.0.10.0/24"]
 
-  map_public_ip_on_launch = false
+  map_public_ip_on_launch = true # We want to be able to connect to any node
   enable_dns_hostnames    = true
   enable_dns_support      = true
 }
@@ -34,6 +34,6 @@ module "app_security_group" {
   auto_ingress_rules = []
   ingress_rules      = ["http-80-tcp", "https-443-tcp", "ssh-tcp"]
 
-  ingress_cidr_blocks = ["0.0.0.0/0"] # concat(module.vpc.public_subnets_cidr_blocks, ["0.0.0.0/0"])
+  ingress_cidr_blocks = concat(module.vpc.public_subnets_cidr_blocks, ["0.0.0.0/0"])
 }
 
