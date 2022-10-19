@@ -46,10 +46,15 @@ defmodule Mix.Tasks.Ansible.Deploy do
         end, max_concurrency: opts[:parallel], timeout: @playbook_timeout)
         |> DeployEx.Utils.reduce_status_tuples
 
-      with {:error, [h | tail]} <- res do
-        Enum.each(tail, &Mix.shell().error(to_string(&1)))
+      case res do
+        {:ok, []} -> Mix.shell().info([:yellow, "Nothing to deploy"])
 
-        Mix.raise(to_string(h))
+        {:error, [h | tail]} ->
+          Enum.each(tail, &Mix.shell().error(to_string(&1)))
+
+          Mix.raise(to_string(h))
+
+        _ -> nil
       end
     end
   end
@@ -122,6 +127,6 @@ defmodule Mix.Tasks.Ansible.Deploy do
   end
 
   defp has_local_release?(host_playbook, releases) do
-    Enum.any?(releases, &(Path.basename(host_playbook) =~ ~r/^#{&1}\.yml/))
+    Enum.any?(releases, &(Path.basename(host_playbook) =~ ~r/^#{&1}\.ya?ml/))
   end
 end
