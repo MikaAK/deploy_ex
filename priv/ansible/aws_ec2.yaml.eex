@@ -1,10 +1,7 @@
 plugin: aws_ec2
 
-compose:
-  ansible_host: public_ip_address
-
 regions:
-  - us-west-2
+  - <%= DeployEx.Config.aws_region() %>
 
 hostnames:
   - tag:Name
@@ -15,3 +12,7 @@ filters:
 keyed_groups:
   - key: tags['InstanceGroup']
     prefix: "group"
+
+compose:
+  ansible_host: public_ip_address
+

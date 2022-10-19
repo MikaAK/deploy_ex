@@ -48,7 +48,8 @@ defmodule DeployEx.ReleaseUploader do
   end
 
   def fetch_all_local_releases do
-    case Path.wildcard("./_build/**/*-*.tar.gz") do
+    IO.inspect File.cwd!()
+    case Path.wildcard("./_build/**/*-*.tar.gz") |> IO.inspect do
       [] -> {:error, ErrorMessage.not_found("no releases found")}
       releases -> {:ok, releases}
     end
