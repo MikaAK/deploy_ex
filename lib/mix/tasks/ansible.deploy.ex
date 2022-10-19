@@ -39,6 +39,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
         |> Enum.map(&strip_directory(&1, opts[:directory]))
         |> DeployExHelpers.filter_only_or_except(opts[:only], opts[:except])
         |> reject_playbook_without_local_release(opts[:only_local_release])
+        |> reject_playbook_without_mix_exs_release
         |> Task.async_stream(fn host_playbook ->
           host_playbook
             |> run_ansible_playbook_command(opts)
@@ -128,5 +129,22 @@ defmodule Mix.Tasks.Ansible.Deploy do
 
   defp has_local_release?(host_playbook, releases) do
     Enum.any?(releases, &(Path.basename(host_playbook) =~ ~r/^#{&1}\.ya?ml/))
+  end
+
+  defp reject_playbook_without_mix_exs_release(host_playbooks) do
+    case DeployExHelpers.fetch_mix_releases() do
+      {:error, e} -> Mix.raise(e)
+
+      {:ok, releases} ->
+        release_names = releases |> Keyword.keys |> Enum.map(&to_string/1)
+
+        Enum.filter(host_playbooks, fn playbook ->
+          Enum.any?(release_names, &(playbook_release_name(playbook) =~ &1))
+        end)
+    end
+  end
+
+  defp playbook_release_name(playbook) do
+    playbook |> Path.basename |> String.replace(~r/\.[^\.]*$/, "")
   end
 end

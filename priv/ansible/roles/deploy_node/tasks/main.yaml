@@ -44,6 +44,11 @@
         dest: /srv/unpack-directory
         remote_src: true
 
+    - name: Write current release file
+      ansible.builtin.copy:
+        content: "{{ aws_file_name.stdout_lines[0] }}"
+        dest: "/srv/current_release.txt"
+
     - name: Add erlang_systemd.service file to /etc/systemd/system/{{ app_name }}.service
       template:
         src: erlang_systemd.service.j2
