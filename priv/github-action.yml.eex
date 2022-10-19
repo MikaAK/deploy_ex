@@ -40,6 +40,18 @@ jobs:
             ./_build/
             ./deps/
 
+      - name: create-json
+        id: create-json
+        uses: jsdaniell/create-json@1.1.2
+        with:
+          name: "env.json"
+          json: ${{ toJson(secrets) }}
+
+      - name: Add env variables
+        run: |
+          chmod +x ./.github/github-action-secrets-to-env.sh  &&
+          echo $(./.github/github-action-secrets-to-env.sh env.json)
+
       - name: Install Rebar & Hex
         run: mix local.hex --force --if-missing && mix local.rebar --force --if-missing
 
@@ -51,11 +63,6 @@ jobs:
 
       - name: Run Terraform Init
         run: mix terraform.init -y
-
-      - name: Add PEM File From Secrets
-        run: |
-          echo "${{ secrets.EC2_PEM_FILE }}" > <%= @pem_file_path %> &&
-          chmod 0400 <%= @pem_file_path %>
 
       - name: Run Terraform Build & Apply
         run: mix terraform.build --force && mix terraform.apply --auto-approve
@@ -100,6 +107,18 @@ jobs:
             ./_build/
             ./deps/
 
+      - name: create-json
+        id: create-json
+        uses: jsdaniell/create-json@1.1.2
+        with:
+          name: "env.json"
+          json: ${{ toJson(secrets) }}
+
+      - name: Add env variables
+        run: |
+          chmod +x ./.github/github-action-secrets-to-env.sh  &&
+          echo $(./.github/github-action-secrets-to-env.sh env.json)
+
       - name: Install Rebar & Hex
         run: mix local.hex --force --if-missing && mix local.rebar --force --if-missing
 
@@ -120,17 +139,8 @@ jobs:
           echo "${{ secrets.EC2_PEM_FILE }}" > <%= @pem_file_path %> &&
           chmod 0400 <%= @pem_file_path %>
 
-      - name: create-json
-        id: create-json
-        uses: jsdaniell/create-json@1.1.2
-        with:
-          name: "env.json"
-          json: ${{ toJson(secrets) }}
-
       - name: Run Ansible Deploy
         run: |
-          chmod +x ./.github/github-actions-secrets-to-json-file.sh &&
-          ./.github/github-actions-secrets-to-json-file.sh env-file.json "$(cat env.json)" &&
           mix terraform.init -y &&
           mix ansible.build --force --host-only &&
-          mix ansible.deploy -l --copy-json-env-file env-file.json
+          mix ansible.deploy -l

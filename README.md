@@ -132,9 +132,9 @@ or any form of `mix terraform.apply`
 Once installed this github action will build releases, upload them to s3 and trigger
 Ansible to run and deploy each node with the release
 
-To load ENV Variables into the Remote Environment from Github Actions Secrets, name the secret
+To load ENV Variables into the Build Environment from Github Actions Secrets, name the secret
 in accordance to this pattern `__DEPLOY_EX__MY_ENV_VARIABLE` doing this will load `MY_ENV_VARIABLE`
-as a environment variable on all the release machines before running your release
+as a environment variable in the build machine so it's available during compile
 
 ## Universial Options
 Most of these are available on any command in DeployEx
