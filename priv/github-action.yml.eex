@@ -125,7 +125,4 @@ jobs:
           chmod 0400 <%= @pem_file_path %>
 
       - name: Run Ansible Deploy
-        run: |
-          mix terraform.init -y &&
-          mix ansible.build --force --host-only &&
-          mix ansible.deploy -l
+        run: mix ansible.deploy -l
