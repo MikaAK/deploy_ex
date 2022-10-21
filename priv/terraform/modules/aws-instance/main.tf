@@ -85,7 +85,7 @@ resource "aws_volume_attachment" "ec2_ebs_association" {
 
 # Create Elastic IP
 resource "aws_eip" "ec2_eip" {
-  count = (var.enable_elb || !var.enable_eip) ? 0 : var.instance_count
+  count = var.enable_eip ? var.instance_count : 0
 
   vpc = true
   tags = merge({
@@ -100,7 +100,7 @@ resource "aws_eip" "ec2_eip" {
 
 # Associate Elastic IP to Linux Server
 resource "aws_eip_association" "ec2_eip_association" {
-  count = (var.enable_elb || !var.enable_eip) ? 0 : var.instance_count
+  count = var.enable_eip ? var.instance_count : 0
 
   instance_id   = element(aws_instance.ec2_instance, count.index).id
   allocation_id = aws_eip.ec2_eip[count.index].id
