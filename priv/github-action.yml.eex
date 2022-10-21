@@ -40,18 +40,6 @@ jobs:
             ./_build/
             ./deps/
 
-      - name: create-json
-        id: create-json
-        uses: jsdaniell/create-json@1.1.2
-        with:
-          name: "env.json"
-          json: ${{ toJson(secrets) }}
-
-      - name: Add env variables
-        run: |
-          chmod +x ./.github/github-action-secrets-to-env.sh  &&
-          echo $(./.github/github-action-secrets-to-env.sh env.json)
-
       - name: Install Rebar & Hex
         run: mix local.hex --force --if-missing && mix local.rebar --force --if-missing
 
@@ -114,11 +102,6 @@ jobs:
           name: "env.json"
           json: ${{ toJson(secrets) }}
 
-      - name: Add env variables
-        run: |
-          chmod +x ./.github/github-action-secrets-to-env.sh  &&
-          echo $(./.github/github-action-secrets-to-env.sh env.json)
-
       - name: Install Rebar & Hex
         run: mix local.hex --force --if-missing && mix local.rebar --force --if-missing
 
@@ -126,10 +109,12 @@ jobs:
         run: mix deps.get
 
       - name: Compile Project
-        run: mix compile
+        run: env RELEASE_BUILD=true $(./.github/github-action-secrets-to-env.sh env.json) mix compile
 
       - name: Build Releases
-        run: rm -rf _build/**/*-*.tar.gz _build/**/rel/ && mix deploy_ex.release --force --recompile
+        run: |
+          rm -rf _build/**/*-*.tar.gz _build/**/rel/ &&
+          env RELEASE_BUILD=true $(./.github/github-action-secrets-to-env.sh env.json) mix deploy_ex.release --force --recompile --all
 
       - name: Upload S3 Releases
         run: mix deploy_ex.upload

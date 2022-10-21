@@ -56,7 +56,7 @@ resource "aws_instance" "ec2_instance" {
 
 # Create EBS Volume
 resource "aws_ebs_volume" "ec2_ebs" {
-  count             = var.disable_ebs ? 0 : var.instance_count
+  count = var.disable_ebs ? 0 : var.instance_count
 
   availability_zone = data.aws_subnet.random_subnet.availability_zone
   size              = var.instance_ebs_secondary_size
@@ -73,7 +73,7 @@ resource "aws_ebs_volume" "ec2_ebs" {
 
 # Attach EBS Volume
 resource "aws_volume_attachment" "ec2_ebs_association" {
-  count       = var.disable_ebs ? 0 : var.instance_count
+  count = var.disable_ebs ? 0 : var.instance_count
 
   device_name = "/dev/sdh"
   volume_id   = aws_ebs_volume.ec2_ebs[count.index].id
@@ -115,7 +115,8 @@ resource "aws_lb" "ec2_lb" {
   name               = format("%s-%s", (lower(replace(var.instance_name, " ", "-"))), "lb")
   load_balancer_type = "application"
 
-  subnets = var.subnet_ids
+  subnets         = var.subnet_ids
+  security_groups = [var.security_group_id]
 
   tags = merge({
     Name          = format("%s-%s", var.instance_name, "lb")
@@ -129,12 +130,12 @@ resource "aws_lb" "ec2_lb" {
 
 # Create HTTP target group
 resource "aws_lb_target_group" "ec2_lb_target_group" {
-  count              = (var.enable_lb && var.instance_count > 1) ? 1 : 0
-  name               = format("%s-%s", (lower(replace(var.instance_name, " ", "-"))), "lb-tg")
+  count = (var.enable_lb && var.instance_count > 1) ? 1 : 0
+  name  = format("%s-%s", (lower(replace(var.instance_name, " ", "-"))), "lb-tg")
 
-  vpc_id             = data.aws_subnet.random_subnet.vpc_id
-  protocol           = "HTTP"
-  port               = 80
+  vpc_id   = data.aws_subnet.random_subnet.vpc_id
+  protocol = "HTTP"
+  port     = 80
 
   tags = merge({
     Name          = format("%s-%s", var.instance_name, "lb-sg")
@@ -150,9 +151,9 @@ resource "aws_lb_target_group" "ec2_lb_target_group" {
 resource "aws_lb_target_group_attachment" "ec2_lb_target_group_attachment" {
   count = (var.enable_lb && var.instance_count > 1) ? var.instance_count : 0
 
-  target_group_arn  = aws_lb_target_group.ec2_lb_target_group[0].arn
-  target_id         = aws_instance.ec2_instance[count.index].id
-  port              = 80
+  target_group_arn = aws_lb_target_group.ec2_lb_target_group[0].arn
+  target_id        = aws_instance.ec2_instance[count.index].id
+  port             = 80
 }
 
 # Create Listener
