@@ -200,7 +200,7 @@ defmodule Mix.Tasks.Ansible.Build do
 
   defp parse_terraform_output_to_ips(output) do
     case Jason.decode!(output) do
-      %{"public_ip" => %{"value" => values}} -> values
+      %{"public_ips" => %{"value" => values}} -> values
       _ -> []
     end
   end

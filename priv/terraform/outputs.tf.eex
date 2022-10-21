@@ -8,7 +8,12 @@ output "instance_id" {
   value       = { for p in sort(keys(var.<%= @app_name %>_project)) : p => module.ec2_instance[p].instance_ids }
 }
 
-output "public_ip" {
+output "elastic_ips" {
+  description = "Elastic (Static) IP address of the EC2 instance"
+  value       = { for p in sort(keys(var.<%= @app_name %>_project)) : p => module.ec2_instance[p].elastic_ips }
+}
+
+output "public_ips" {
   description = "Public IP address of the EC2 instance"
   value       = { for p in sort(keys(var.<%= @app_name %>_project)) : p => module.ec2_instance[p].public_ips }
 }

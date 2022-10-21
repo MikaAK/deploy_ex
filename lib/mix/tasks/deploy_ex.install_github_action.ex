@@ -10,8 +10,8 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
     DeployExHelpers.priv_file("github-action-maybe-commit-terraform-changes.sh"),
     "./.github/github-action-maybe-commit-terraform-changes.sh"
   }, {
-    DeployExHelpers.priv_file("github-actions-secrets-to-env.sh"),
-    "./.github/github-actions-secrets-to-env.sh"
+    DeployExHelpers.priv_file("github-action-secrets-to-env.sh"),
+    "./.github/github-action-secrets-to-env.sh"
   }]
 
   @shortdoc "Installs a github action to manage terraform & ansible from within it"
