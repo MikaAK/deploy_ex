@@ -135,7 +135,7 @@ resource "aws_lb_target_group" "ec2_lb_target_group" {
 
   vpc_id   = data.aws_subnet.random_subnet.vpc_id
   protocol = "HTTP"
-  port     = 80
+  port     = var.load_balancer_instance_port
 
   tags = merge({
     Name          = format("%s-%s", var.instance_name, "lb-sg")
@@ -153,13 +153,13 @@ resource "aws_lb_target_group_attachment" "ec2_lb_target_group_attachment" {
 
   target_group_arn = aws_lb_target_group.ec2_lb_target_group[0].arn
   target_id        = aws_instance.ec2_instance[count.index].id
-  port             = 80
+  port             = var.load_balancer_instance_port
 }
 
 # Create Listener
 resource "aws_lb_listener" "ec2_lb_listener" {
   load_balancer_arn = aws_lb.ec2_lb[0].arn
-  port              = 80
+  port              = var.load_balancer_port
   protocol          = aws_lb_target_group.ec2_lb_target_group[0].protocol
 
   default_action {

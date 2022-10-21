@@ -37,13 +37,6 @@ variable "disable_eip" {
   nullable    = false
 }
 
-variable "enable_lb" {
-  description = "Enables load balancer for instances generated"
-  type        = bool
-  default     = false
-  nullable    = false
-}
-
 variable "tags" {
   description = "Tags to add to the various resources"
   type        = map(any)
@@ -88,5 +81,28 @@ variable "instance_type" {
 variable "instance_name" {
   description = "Instance name itself"
   type        = string
+  nullable    = false
+}
+
+### Load Balancer ###
+#####################
+variable "enable_lb" {
+  description = "Enables load balancer for instances generated"
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "load_balancer_port" {
+  description = "Changes the load balancer port used in the loadbalancer url"
+  type        = number
+  default     = 80
+  nullable    = false
+}
+
+variable "load_balancer_instance_port" {
+  description = "Changes the application port targeted by the load balancer"
+  type        = number
+  default     = 80
   nullable    = false
 }
