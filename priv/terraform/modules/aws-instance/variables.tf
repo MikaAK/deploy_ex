@@ -30,7 +30,7 @@ variable "key_pair_key_name" {
   nullable    = false
 }
 
-variable "disable_eip" {
+variable "enable_eip" {
   description = "Enables instance to generate an elastic ip for itself"
   type        = bool
   default     = false
@@ -54,7 +54,7 @@ variable "instance_ebs_secondary_size" {
   nullable    = false
 }
 
-variable "disable_ebs" {
+variable "enable_ebs" {
   description = "Enables instance to generate an elastic bean stalk volume for itself"
   type        = bool
   default     = false
@@ -86,21 +86,21 @@ variable "instance_name" {
 
 ### Load Balancer ###
 #####################
-variable "enable_lb" {
-  description = "Enables load balancer for instances generated"
+variable "enable_elb" {
+  description = "Enables instance to generate an elastic load balancer for itself"
   type        = bool
   default     = false
   nullable    = false
 }
 
-variable "load_balancer_port" {
+variable "elb_port" {
   description = "Changes the load balancer port used in the loadbalancer url"
   type        = number
   default     = 80
   nullable    = false
 }
 
-variable "load_balancer_instance_port" {
+variable "elb_instance_port" {
   description = "Changes the application port targeted by the load balancer"
   type        = number
   default     = 80

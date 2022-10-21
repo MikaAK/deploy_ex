@@ -40,7 +40,7 @@ resource "aws_instance" "ec2_instance" {
     enable_resource_name_dns_a_record = true
   }
 
-  user_data = var.disable_ebs ? "" : file("${path.module}/user_data_init_script.sh")
+  user_data = var.enable_ebs ? file("${path.module}/user_data_init_script.sh") : ""
 
   tags = merge({
     Name          = format("%s-%s", var.instance_name, count.index)
@@ -56,7 +56,7 @@ resource "aws_instance" "ec2_instance" {
 
 # Create EBS Volume
 resource "aws_ebs_volume" "ec2_ebs" {
-  count = var.disable_ebs ? 0 : var.instance_count
+  count = var.enable_ebs ? var.instance_count : 0
 
   availability_zone = data.aws_subnet.random_subnet.availability_zone
   size              = var.instance_ebs_secondary_size
@@ -73,7 +73,7 @@ resource "aws_ebs_volume" "ec2_ebs" {
 
 # Attach EBS Volume
 resource "aws_volume_attachment" "ec2_ebs_association" {
-  count = var.disable_ebs ? 0 : var.instance_count
+  count = var.enable_ebs ? var.instance_count : 0
 
   device_name = "/dev/sdh"
   volume_id   = aws_ebs_volume.ec2_ebs[count.index].id
@@ -85,7 +85,7 @@ resource "aws_volume_attachment" "ec2_ebs_association" {
 
 # Create Elastic IP
 resource "aws_eip" "ec2_eip" {
-  count = (var.enable_lb || var.disable_eip) ? 0 : var.instance_count
+  count = (var.enable_elb || !var.enable_eip) ? 0 : var.instance_count
 
   vpc = true
   tags = merge({
@@ -100,7 +100,7 @@ resource "aws_eip" "ec2_eip" {
 
 # Associate Elastic IP to Linux Server
 resource "aws_eip_association" "ec2_eip_association" {
-  count = (var.enable_lb || var.disable_eip) ? 0 : var.instance_count
+  count = (var.enable_elb || !var.enable_eip) ? 0 : var.instance_count
 
   instance_id   = element(aws_instance.ec2_instance, count.index).id
   allocation_id = aws_eip.ec2_eip[count.index].id
@@ -111,7 +111,7 @@ resource "aws_eip_association" "ec2_eip_association" {
 
 # Add Load Balancing if needed and enabled
 resource "aws_lb" "ec2_lb" {
-  count              = (var.enable_lb && var.instance_count > 1) ? 1 : 0
+  count              = (var.enable_elb && var.instance_count > 1) ? 1 : 0
   name               = format("%s-%s", (lower(replace(var.instance_name, " ", "-"))), "lb")
   load_balancer_type = "application"
 
@@ -130,12 +130,12 @@ resource "aws_lb" "ec2_lb" {
 
 # Create HTTP target group
 resource "aws_lb_target_group" "ec2_lb_target_group" {
-  count = (var.enable_lb && var.instance_count > 1) ? 1 : 0
+  count = (var.enable_elb && var.instance_count > 1) ? 1 : 0
   name  = format("%s-%s", (lower(replace(var.instance_name, " ", "-"))), "lb-tg")
 
   vpc_id   = data.aws_subnet.random_subnet.vpc_id
   protocol = "HTTP"
-  port     = var.load_balancer_instance_port
+  port     = var.elb_instance_port
 
   tags = merge({
     Name          = format("%s-%s", var.instance_name, "lb-sg")
@@ -149,17 +149,19 @@ resource "aws_lb_target_group" "ec2_lb_target_group" {
 
 # Attach instances to target group
 resource "aws_lb_target_group_attachment" "ec2_lb_target_group_attachment" {
-  count = (var.enable_lb && var.instance_count > 1) ? var.instance_count : 0
+  count = (var.enable_elb && var.instance_count > 1) ? var.instance_count : 0
 
   target_group_arn = aws_lb_target_group.ec2_lb_target_group[0].arn
   target_id        = aws_instance.ec2_instance[count.index].id
-  port             = var.load_balancer_instance_port
+  port             = var.elb_instance_port
 }
 
 # Create Listener
 resource "aws_lb_listener" "ec2_lb_listener" {
+  count = (var.enable_elb && var.instance_count > 1) ? var.instance_count : 0
+
   load_balancer_arn = aws_lb.ec2_lb[0].arn
-  port              = var.load_balancer_port
+  port              = var.elb_port
   protocol          = aws_lb_target_group.ec2_lb_target_group[0].protocol
 
   default_action {

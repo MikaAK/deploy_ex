@@ -25,12 +25,12 @@ module "ec2_instance" {
   instance_count              = try(each.value.instance_count, null)
   instance_ebs_secondary_size = try(each.value.instance_ebs_secondary_size, null)
 
-  disable_eip = try(each.value.disable_eip, null)
-  disable_ebs = try(each.value.disable_ebs, null)
+  enable_eip = try(each.value.enable_eip, null)
+  enable_ebs = try(each.value.enable_ebs, null)
+  enable_elb = try(each.value.enable_lb, null)
 
-  enable_lb                   = try(each.value.enable_lb, null)
-  load_balancer_port          = try(each.value.load_balancer_port, null)
-  load_balancer_instance_port = try(each.value.load_balancer_instance_port, null)
+  elb_port          = try(each.value.elb_port, null)
+  elb_instance_port = try(each.value.elb_instance_port, null)
 
   security_group_id = module.app_security_group.security_group_id
   subnet_ids        = module.vpc.public_subnets

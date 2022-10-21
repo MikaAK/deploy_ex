@@ -35,6 +35,7 @@ defmodule Mix.Tasks.Terraform.Build do
     opts = opts
       |> Keyword.put_new(:variables_file, Path.join(opts[:directory], "variables.tf"))
       |> Keyword.put_new(:keypair_file, Path.join(opts[:directory], "key-pair-main.tf"))
+      |> Keyword.put_new(:outputs_file, Path.join(opts[:directory], "outputs.tf"))
       |> Keyword.put_new(:main_file, Path.join(opts[:directory], "main.tf"))
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
@@ -46,7 +47,7 @@ defmodule Mix.Tasks.Terraform.Build do
 
       write_terraform_variables(terraform_output, opts)
       write_terraform_main(opts)
-      # write_terraform_output(opts) # NEED TO DO THIS
+      write_terraform_output(opts)
       write_terraform_keypair(opts)
       run_terraform_init(opts)
     end
@@ -87,6 +88,11 @@ defmodule Mix.Tasks.Terraform.Build do
       "terraform"
         |> DeployExHelpers.priv_file()
         |> File.cp_r!(directory)
+
+      directory
+        |> Path.join("**/*.eex")
+        |> Path.wildcard
+        |> Enum.map(&File.rm!/1)
 
       :ok
     end
@@ -137,7 +143,9 @@ defmodule Mix.Tasks.Terraform.Build do
   end
 
   defp generate_and_delete_variables_template(terraform_output, opts) do
-    template_file = "#{opts[:variables_file]}.eex"
+    template_file = :deploy_ex
+      |> :code.priv_dir
+      |> Path.join("terraform/variables.tf.eex")
 
     DeployExHelpers.check_file_exists!(template_file)
 
@@ -154,12 +162,6 @@ defmodule Mix.Tasks.Terraform.Build do
     })
 
     DeployExHelpers.write_file(opts[:variables_file], variables_files, opts)
-
-    if opts[:verbose] do
-      Mix.shell().info([:green, "* removing ", :reset, template_file])
-    end
-
-    File.rm!(template_file)
   end
 
   defp terraform_sentry_variables(opts) do
@@ -235,26 +237,15 @@ defmodule Mix.Tasks.Terraform.Build do
   end
 
   defp rewrite_terraform_main_contents(opts) do
-    main_file_path = "terraform"
-      |> Path.join(Path.basename(opts[:main_file]))
-      |> DeployExHelpers.priv_file
-      |> Path.expand
-      |> Kernel.<>(".eex")
-
-    DeployExHelpers.check_file_exists!(main_file_path)
-
-    File.cp!(main_file_path, "#{opts[:main_file]}.eex")
-
     opts
       |> Keyword.put(:message, [
-        :green, "* copying template to ", :reset, "#{opts[:main_file]}.eex\n",
         :green, "* rewriting ", :reset, opts[:main_file]
       ])
       |> generate_and_delete_main_template
   end
 
   defp generate_and_delete_main_template(opts) do
-    template_file_path = "#{opts[:main_file]}.eex"
+    template_file_path = DeployExHelpers.priv_file("terraform/main.tf.eex")
 
     DeployExHelpers.check_file_exists!(template_file_path)
 
@@ -265,40 +256,32 @@ defmodule Mix.Tasks.Terraform.Build do
     })
 
     DeployExHelpers.write_file(opts[:main_file], main_file, opts)
+  end
 
-    if opts[:verbose] do
-      Mix.shell().info([:green, "* removing ", :reset, template_file_path])
-    end
+  defp write_terraform_output(opts) do
+    keypair_template_path = DeployExHelpers.priv_file("terraform/outputs.tf.eex")
 
-    File.rm!(template_file_path)
+    DeployExHelpers.check_file_exists!(keypair_template_path)
+
+    terraform_keypair = EEx.eval_file(keypair_template_path, assigns: %{
+      app_name: DeployExHelpers.underscored_app_name()
+    })
+
+    DeployExHelpers.write_file(opts[:outputs_file], terraform_keypair, opts)
   end
 
   defp write_terraform_keypair(opts) do
-    if File.exists?(opts[:keypair_file]) do
+    keypair_template_path = DeployExHelpers.priv_file("terraform/key-pair-main.tf.eex")
 
-    else
-      keypair_template_path = "terraform"
-        |> Path.join(Path.basename(opts[:keypair_file]))
-        |> DeployExHelpers.priv_file
-        |> Path.expand
-        |> Kernel.<>(".eex")
+    DeployExHelpers.check_file_exists!(keypair_template_path)
 
-      DeployExHelpers.check_file_exists!(keypair_template_path)
+    kebab_case_app_name = String.replace(DeployExHelpers.underscored_app_name(), "_", "-")
+    random_bytes = 6 |> :crypto.strong_rand_bytes |> Base.encode32(padding: false)
 
-      kebab_case_app_name = String.replace(DeployExHelpers.underscored_app_name(), "_", "-")
-      random_bytes = 6 |> :crypto.strong_rand_bytes |> Base.encode32(padding: false)
+    terraform_keypair = EEx.eval_file(keypair_template_path, assigns: %{
+      pem_app_name: "#{kebab_case_app_name}-#{random_bytes}"
+    })
 
-      terraform_keypair = EEx.eval_file(keypair_template_path, assigns: %{
-        pem_app_name: "#{kebab_case_app_name}-#{random_bytes}"
-      })
-
-      DeployExHelpers.write_file(opts[:keypair_file], terraform_keypair, opts)
-
-      if opts[:verbose] do
-        Mix.shell().info([:green, "* removing ", :reset, keypair_template_path])
-      end
-
-      File.rm!(keypair_template_path)
-    end
+    DeployExHelpers.write_file(opts[:keypair_file], terraform_keypair, opts)
   end
 end
