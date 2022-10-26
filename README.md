@@ -225,6 +225,14 @@ possible without his help!!
 </details>
 
 <details>
+  <summary>How do I redeploy a node?</summary>
+
+  All you need to do is run `mix ansible.deploy --only <app_name>` this will find all nodes
+  that match the input and run a redeploy using the last release found in S3
+
+</details>
+
+<details>
   <summary>How can I uninstall??</summary>
 
   It's pretty easy, just run `mix deploy_ex.full_drop`, you can even add a `-y` to auto confirm
