@@ -3,7 +3,7 @@ remote_user = admin
 inventory = ./aws_ec2.yaml
 roles_path = ./roles
 deprecation_warnings = False
-private_key_file: <%= @pem_file_path %>
+private_key_file = <%= @pem_file_path %>
 host_key_checking = False
 # log_path = /var/log/syslog
 

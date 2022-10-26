@@ -27,7 +27,7 @@ module "app_security_group" {
   source  = "terraform-aws-modules/security-group/aws//modules/web"
   version = "4.9.0"
 
-  name        = "LE-sg-${var.project_name}-${var.environment}"
+  name        = "${var.project_name}-${var.environment}-sg"
   description = "Security group for web-servers with HTTP ports open within VPC"
   vpc_id      = module.vpc.vpc_id
 

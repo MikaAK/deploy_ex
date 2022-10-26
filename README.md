@@ -186,6 +186,22 @@ topologies = [
 
 ```
 
+## Using `include_erts: false` with deploys and installing erlang on machine
+To do this you must use at least a `t3.small` node, you may have luck with smaller nodes or it may run out of memory. It's possible for the ansible task to also run out of memory (in which case it will complain the install Erlang step is non blocking) in which case you must ssh onto the node manually and run `asdf install erlang <version specified in ansible step>`
+
+In our `deploys/ansible/setup/<app_name>.yaml` we set a new role of `elixir-runner`
+
+In our `deploys/ansible/playbook/<app_name>.yaml` we modify it and add `extra_env`:
+```
+- hosts: group_<app_name>
+  vars:
+    extra_env:
+      - PATH=/root/.asdf/shims:/root/.asdf/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+```
+
+Once this is done we can run `mix ansible.setup --only <app_name> && mix ansible.deploy --only <app_name>` to setup and deploy our code on the node
+
+
 ## Credits
 Big thanks to @alevan for helping to figure out all the Ansible side of things and
 providing a solid foundation for all the ansible files. This project wouldn't of been
