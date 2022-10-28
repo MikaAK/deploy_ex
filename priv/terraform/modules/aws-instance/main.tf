@@ -43,7 +43,7 @@ resource "aws_instance" "ec2_instance" {
   user_data = var.enable_ebs ? file("${path.module}/user_data_init_script.sh") : ""
 
   tags = merge({
-    Name          = format("%s-%s", var.instance_name, count.index)
+    Name          = "${var.instance_name}-${var.environment}-${count.index}"
     Group         = var.resource_group
     InstanceGroup = lower(replace(var.instance_name, " ", "_"))
     Environment   = var.environment
@@ -62,7 +62,7 @@ resource "aws_ebs_volume" "ec2_ebs" {
   size              = var.instance_ebs_secondary_size
 
   tags = merge({
-    Name          = format("%s-%s-%s", var.instance_name, "ebs", count.index) # instance-name-ebs
+    Name          = "${var.instance_name}-ebs-${var.environment}-${count.index}"
     InstanceGroup = lower(replace(var.instance_name, " ", "_"))
     Group         = var.resource_group
     Environment   = var.environment
@@ -89,7 +89,7 @@ resource "aws_eip" "ec2_eip" {
 
   vpc = true
   tags = merge({
-    Name          = format("%s-%s-%s", var.instance_name, "eip", count.index) # instance-name-eip
+    Name          = "${var.instance_name}-eip-${var.environment}-${count.index}"
     InstanceGroup = lower(replace(var.instance_name, " ", "_"))
     Group         = var.resource_group
     Environment   = var.environment
@@ -112,15 +112,15 @@ resource "aws_eip_association" "ec2_eip_association" {
 # Add Load Balancing if needed and enabled
 resource "aws_lb" "ec2_lb" {
   count              = (var.enable_elb && var.instance_count > 1) ? 1 : 0
-  name               = format("%s-%s", (lower(replace(var.instance_name, " ", "-"))), "lb")
+  name               = "${lower(replace(var.instance_name, " ", "-"))}-lb-${var.environment}"
   load_balancer_type = "application"
 
   subnets         = var.subnet_ids
   security_groups = [var.security_group_id]
 
   tags = merge({
-    Name          = format("%s-%s", var.instance_name, "lb")
-    InstanceGroup = lower(replace(var.instance_name, " ", "_"))
+    Name          = "${lower(replace(var.instance_name, " ", "-"))}-lb-${var.environment}"
+    InstanceGroup = "${lower(replace(var.instance_name, " ", "_"))}_${var.environment}"
     Group         = var.resource_group
     Environment   = var.environment
     Vendor        = "Self"
@@ -131,15 +131,15 @@ resource "aws_lb" "ec2_lb" {
 # Create HTTP target group
 resource "aws_lb_target_group" "ec2_lb_target_group" {
   count = (var.enable_elb && var.instance_count > 1) ? 1 : 0
-  name  = format("%s-%s", (lower(replace(var.instance_name, " ", "-"))), "lb-tg")
+  name  = "${lower(replace(var.instance_name, " ", "-"))}-lb-tg-${var.environment}"
 
   vpc_id   = data.aws_subnet.random_subnet.vpc_id
   protocol = "HTTP"
   port     = var.elb_instance_port
 
   tags = merge({
-    Name          = format("%s-%s", var.instance_name, "lb-sg")
-    InstanceGroup = lower(replace(var.instance_name, " ", "_"))
+    Name          = "${lower(replace(var.instance_name, " ", "-"))}-lb-tg-${var.environment}"
+    InstanceGroup = "${lower(replace(var.instance_name, " ", "_"))}_${var.environment}"
     Group         = var.resource_group
     Environment   = var.environment
     Vendor        = "Self"

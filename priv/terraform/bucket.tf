@@ -1,7 +1,7 @@
 resource "aws_s3_bucket" "bucket" {
   for_each = var.resource_buckets
 
-  bucket        = each.value.bucket_name
+  bucket        = "${each.value.bucket_name}-${var.environment}"
   force_destroy = true
 
   tags = {

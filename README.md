@@ -102,6 +102,7 @@ inject the apps into your variables file despite changes to the file. If you cha
 - [x] `mix deploy_ex.ssh` - Gets the ssh command for a specific node
 - [x] `mix terraform.build` - Add the terraform files to project, or rebuilds them
 - [x] `mix terraform.apply` - Applies terraform changes
+- [x] `mix terraform.refresh` - Refreshes terraform state to pull new IPs and sync with AWS
 - [x] `mix terraform.drop` - Destroys all terraform built resources
 - [x] `mix ansible.build` - Adds ansible files to the project, or rebuilds them
 - [x] `mix ansible.ping` - Pings ansible nodes to see if they can connect
@@ -208,6 +209,12 @@ providing a solid foundation for all the ansible files. This project wouldn't of
 possible without his help!!
 
 ## Troubleshooting
+<details>
+  <summary>Ansible throwing errors about not matching host patterns or you can't connect with `deploy_ex.ssh`</summary>
+
+  Sometimes nodes change public ips, to refresh them you can run `mix terraform.refresh`
+
+</details>
 
 <details>
   <summary>I'm getting `SSH Too Many Authentication Failures`</summary>
