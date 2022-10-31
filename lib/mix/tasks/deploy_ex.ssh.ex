@@ -100,7 +100,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         "'sudo -u root journalctl -f -u #{app_name} -u systemd'"
 
       opts[:iex] ->
-        "'sudo -u root /srv/*/bin/* remote'"
+        "'sudo -u root /srv/#{app_name}*/bin/#{app_name}* remote'"
 
       true ->
         ""
