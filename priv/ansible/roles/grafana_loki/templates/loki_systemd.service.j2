@@ -7,13 +7,13 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/root/
-ExecStart=/root/loki-{{ promtail_architecture }} -config.file=/root/ec2-promtail.yaml
+ExecStart=/root/loki-{{ loki_architecture }} -config.file=/root/loki-config.yaml
 Restart=on-failure
 RestartSec=5
 {% for env in extra_loki_env %}
 Environment={{ env }}
 {% endfor %}
-SyslogIdentifier=loki_aggregator
+SyslogIdentifier=loki_log_aggregator
 RemainAfterExit=no
 LimitNOFILE=infinity
 

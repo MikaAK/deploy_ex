@@ -7,8 +7,6 @@ By default it uses `t3.nano` nodes but this can be changed in `./deploys/terrafo
 Once the files are generated, you can manage all files yourself, and we'll attempt to inject the variables in upon
 reruns of the build commands.
 
-There is also a default volume of 16gb created and mounted at the /data directory, you can change this in each specific app type if desired
-
 ## Legend
 - [Package Installation](https://github.com/MikaAK/deploy_ex#installation)
 - [Basic TL;DR Installation](https://github.com/MikaAK/deploy_ex#tldr-installation)
@@ -21,6 +19,7 @@ There is also a default volume of 16gb created and mounted at the /data director
 - [Univiersal Options](https://github.com/MikaAK/deploy_ex#universial-options)
 - [Connecting to Your Nodes](https://github.com/MikaAK/deploy_ex#connecting-to-your-nodes)
   - [Connecting to App Logs](https://github.com/MikaAK/deploy_ex#connecting-to-app-logs)
+- [Terraform Variables](https://github.com/MikaAK/deploy_ex#terraform-variables)
 - [Clustering](https://github.com/MikaAK/deploy_ex#clustering)
 - [Credits](https://github.com/MikaAK/deploy_ex#credits)
 - [Troubleshooting](https://github.com/MikaAK/deploy_ex#troubleshooting)
@@ -50,6 +49,8 @@ remote machines
 ## TL;DR Installation
 Make sure you have your `releases` configured in your root `mix.exs`. This command will only
 function in the root of an umbrella app.
+
+***Note***: It's very important to make sure you add the `:tar` step to your releases, see [here](https://hexdocs.pm/mix/Mix.Tasks.Release.html#module-steps) for info
 ```bash
 $ vi mix.exs # Add {:deploy_ex, "~> 0.1"}
 $ mix deps.get
@@ -103,6 +104,7 @@ inject the apps into your variables file despite changes to the file. If you cha
 - [x] `mix terraform.build` - Add the terraform files to project, or rebuilds them
 - [x] `mix terraform.apply` - Applies terraform changes
 - [x] `mix terraform.refresh` - Refreshes terraform state to pull new IPs and sync with AWS
+- [x] `mix terraform.replace` - Replaces a resource within terraform, has fuzzy matching nodes
 - [x] `mix terraform.drop` - Destroys all terraform built resources
 - [x] `mix ansible.build` - Adds ansible files to the project, or rebuilds them
 - [x] `mix ansible.ping` - Pings ansible nodes to see if they can connect
@@ -159,6 +161,27 @@ $ eval "$(mix deploy_ex.ssh -s app)"
 ```bash
 $ eval "$(mix deploy_ex.ssh -s --logs app)"
 ```
+
+## Terraform Variables
+The main variables you'll want to know about are the ones inside `deploys/terraform/variables.tf`
+
+Inside this file specifically the `my_app_project` variable is the most important.
+
+The following options are present:
+
+- `name` - Should aim not to touch this, it effects a lot of tags, if you do, make sure to modify the ansible files to match as the instance name itself is based on this
+- `instance_count`- Number of instances to create for this app
+- `instance_type` - The instance tier to use eg `t3.nano` or `t3.micro`
+- `enable_eip` - Enable an Elastic IP from AWS giving this a static URL
+- `enable_ebs` - Enable a secondary EBS Volume mounted on /data
+- `instance_ebs_secondary_size` - Set the EBS Volume on /data size (default: 16GB)
+- `enable_lb` - Enable a load balancer when there is more than one `instance_count`
+- `elb_port` - Port for the load balancer to serve, this is the url you will hit
+- `elb_instance_port` - Port for the load balancer to forward to, this is your application port
+- `tags` - Tags specified in `Key=Value` format to add to the EC2 instance
+
+There is also a default volume of 16gb created and mounted at the /data directory, you can change this in each specific app type if desired
+
 
 ## Clustering
 You can easily cluster your app with [this LibCluster Strategy](https://github.com/MikaAK/libcluster_ec2_tag_strategy) which
@@ -236,6 +259,42 @@ possible without his help!!
 
   All you need to do is run `mix ansible.deploy --only <app_name>` this will find all nodes
   that match the input and run a redeploy using the last release found in S3
+
+</details>
+
+<details>
+  <summary>How can I replace a broken node??</summary>
+
+  All we have to do is run `mix terraform replace <app_name>` if it's a specific services node
+  add a `--node <number>` on to it to target that node number.
+
+  We can then run `mix ansible.setup --only <app_name>` and `mix ansible.deploy --only <app_name>` to deploy these nodes
+
+</details>
+
+<details>
+  <summary>Why are there so many tags on my EC2 node?</summary>
+
+  Going to your EC2 node, you'll notice there are around 8 tags. These help you to manage costs
+  since you can filter cost based off tags. Cloud Hosting is terrible for showing you
+  cost allocation so using the tags you can roughly identify the cost of difference services
+
+  `Group` for example aids in [clustering](https://github.com/MikaAK/deploy_ex#clustering)
+  helping to register all the nodes in our application. This can be used to look at the costs
+  for all the elixir specific backend services
+
+  `InstanceGroup` on the other hand is seperated by services and will have all nodes under that
+  one service or app, this can be used for billing to show you the cost of a specific service/app. This is also used for ansible playbooks to target specific node groups
+
+  `MonitoringKey` is present on monitoring resources and helps playbooks to identify monitoring
+  services
+
+  `Vendor` is tagged between different vendor like Grafana or Sentry, internal ones will use Self to help identify vendor costs in billing
+
+  `Type` We use this to seperate what the service is for or who it's by, in the case of
+  monitoring we set this to `Monitoring` or in the case of self built apps this is set
+  to `Self Made`. This helps to organize billing between costs to run metrics and costs to run
+  the elixir apps
 
 </details>
 

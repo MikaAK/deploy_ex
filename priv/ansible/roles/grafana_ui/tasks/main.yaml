@@ -1,0 +1,56 @@
+- name: grafana_ui
+  block:
+    - name: Install Grafana Deps
+      apt:
+        name: [apt-transport-https, software-properties-common, wget]
+        update_cache: true
+
+    - name: Check for /etc/apt/sources.list.d/grafana.list
+      stat:
+        path: /etc/apt/sources.list.d/grafana.list
+      register: grafana
+
+    - name: Add /etc/apt/sources.list.d/grafana.list
+      shell: |
+        echo "deb [signed-by=/usr/share/keyrings/grafana.key] https://apt.grafana.com stable main" \
+        | sudo tee -a /etc/apt/sources.list.d/grafana.list
+      when: not grafana.stat.exists
+
+    - name: Add Grafana GPG Key
+      get_url:
+        url: https://apt.grafana.com/gpg.key
+        dest: /usr/share/keyrings/grafana.key
+        owner: root
+        group: root
+
+    - name: Install Grafana
+      apt:
+        name: grafana
+        update_cache: true
+
+    - name: Add erlang_systemd.service file to /etc/grafana/grafana.ini
+      template:
+        src: grafana.ini.j2
+        dest: /etc/grafana/grafana.ini
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Enable Grafana
+      systemd:
+        name: grafana-server
+        enabled: true
+
+    - name: Stop Grafana service
+      systemd:
+        name: grafana-server
+        state: stopped
+      when: ansible_facts.services[grafana] is not defined
+
+    - name: Start Grafana service
+      systemd:
+        daemon_reload: true
+        name: grafana-server
+        state: started
+
+  become: true

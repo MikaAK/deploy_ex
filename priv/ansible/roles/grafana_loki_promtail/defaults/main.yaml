@@ -1,3 +1,4 @@
 promtail_version: v2.0.0
 promtail_architecture: linux-amd64
+grafana_loki_url: "http://loki.logs:3100"
 extra_loki_promtail_env: []

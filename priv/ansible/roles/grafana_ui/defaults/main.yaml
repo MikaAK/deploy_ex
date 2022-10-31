@@ -1,0 +1,2 @@
+grafana_ui_port: 80
+grafana_ui_domain: localhost

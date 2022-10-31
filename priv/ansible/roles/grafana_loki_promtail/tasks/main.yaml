@@ -12,10 +12,13 @@
         remote_src: true
       when: not promtail.stat.exists
 
-    - name: Download Promtail config
-      get_url:
-        url: https://raw.githubusercontent.com/grafana/loki/master/docs/sources/clients/aws/ec2/promtail-ec2.yaml
-        dest: /root/ec2-promtail.yaml
+    - name: Add Promtail config to /root/promtail_config.yaml
+      template:
+        src: promtail_config.yaml.j2
+        dest: /root/promtail_config.yaml
+        owner: root
+        group: root
+        mode: 0644
 
     - name: Add promtail_systemd.service file to /etc/systemd/system/promtail_systemd.service
       template:
@@ -44,3 +47,4 @@
 
 
   become: true
+

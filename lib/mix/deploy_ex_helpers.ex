@@ -138,4 +138,48 @@ defmodule DeployExHelpers do
         not Enum.any?(except, &(app_name =~ &1))
     end
   end
+
+  def terraform_state(terraform_directory) do
+    case System.shell("terraform state list", cd: Path.expand(terraform_directory)) do
+      {output, 0} -> {:ok, output}
+
+      {message, _} ->
+        {:error, ErrorMessage.failed_dependency("terraform state list failed", %{message: message})}
+    end
+  end
+
+  def terraform_instances(terraform_directory) do
+    with {:ok, output} <- terraform_state(terraform_directory) do
+      a = output
+        |> String.split("\n")
+        |> Enum.filter(&(&1 =~ ~r/module.ec2_instance.*ec2_instance/))
+        |> Enum.map(fn resource ->
+          case Regex.run(
+            ~r/module\.ec2_instance\["(.*?)"\]\.aws_instance\.ec2_instance\[(.*)\]/,
+            resource
+          ) do
+            [_, node, num] -> {node, String.to_integer(num)}
+            _ -> Mix.raise("Error decoding node numbers from resource: #{resource}")
+          end
+        end)
+        |> then(&{:ok, &1})
+    end
+  end
+
+  def terraform_instance_ips(terraform_directory) do
+    case System.shell("terraform output --json", cd: Path.expand(terraform_directory)) do
+      {output, 0} ->
+        {:ok, parse_terraform_output_to_ips(output)}
+
+      {message, _} ->
+        {:error, ErrorMessage.failed_dependency("terraform output failed", %{message: message})}
+    end
+  end
+
+  defp parse_terraform_output_to_ips(output) do
+    case Jason.decode!(output) do
+      %{"public_ips" => %{"value" => values}} -> values
+      _ -> []
+    end
+  end
 end

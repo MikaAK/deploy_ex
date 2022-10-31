@@ -30,8 +30,8 @@ defmodule Mix.Tasks.Ansible.Build do
          :ok <- ensure_ansible_directory_exists(opts[:directory], opts),
          :ok <- create_ansible_hosts_file(opts),
          :ok <- create_ansible_config_file(opts),
-         {:ok, hostname_ips} <- terraform_instance_ips(opts[:terraform_directory]),
-         :ok <- create_ansible_playbooks(Map.keys(hostname_ips), opts) do
+         {:ok, app_names} <- release_app_names(),
+         :ok <- create_ansible_playbooks(app_names, opts) do
       :ok
     else
       {:error, [h | tail]} ->
@@ -53,7 +53,11 @@ defmodule Mix.Tasks.Ansible.Build do
         directory: :string,
         terraform_directory: :string,
         auto_pull_aws: :boolean,
-        aws_release_bucket: :string
+        aws_release_bucket: :string,
+        no_loki: :boolean,
+        no_sentry: :boolean,
+        no_grafana: :boolean,
+        no_prometheus: :boolean
       ]
     )
 
@@ -188,23 +192,6 @@ defmodule Mix.Tasks.Ansible.Build do
     Enum.join([".." | directory_path], "/")
   end
 
-  def terraform_instance_ips(terraform_directory) do
-    case System.shell("terraform output --json", cd: Path.expand(terraform_directory)) do
-      {output, 0} ->
-        {:ok, parse_terraform_output_to_ips(output)}
-
-      {message, _} ->
-        {:error, ErrorMessage.failed_dependency("terraform output failed", %{message: message})}
-    end
-  end
-
-  defp parse_terraform_output_to_ips(output) do
-    case Jason.decode!(output) do
-      %{"public_ips" => %{"value" => values}} -> values
-      _ -> []
-    end
-  end
-
   def host_name(host_name, index) do
     "#{host_name}_#{:io_lib.format("~3..0B", [index])}"
   end
@@ -236,6 +223,12 @@ defmodule Mix.Tasks.Ansible.Build do
     end
   end
 
+  defp release_app_names do
+    with {:ok, releases} <- DeployExHelpers.fetch_mix_releases() do
+      {:ok, Map.keys(releases)}
+    end
+  end
+
   defp deploy_all_playbooks(app_names, opts) do
     Enum.each(app_names, fn app_name ->
       build_host_setup_playbook(app_name, opts)
@@ -263,6 +256,8 @@ defmodule Mix.Tasks.Ansible.Build do
     host_playbook_path = Path.join(opts[:directory], "playbooks/#{app_name}.yaml")
 
     variables = %{
+      no_loki: opts[:no_loki],
+      no_prometheus: opts[:no_prometheus],
       app_name: app_name,
       aws_release_bucket: opts[:aws_release_bucket],
       port: 80
@@ -281,6 +276,8 @@ defmodule Mix.Tasks.Ansible.Build do
     setup_host_playbook = Path.join(opts[:directory], "setup/#{app_name}.yaml")
 
     variables = %{
+      no_loki: opts[:no_loki],
+      no_prometheus: opts[:no_prometheus],
       app_name: app_name,
       port: 80
     }

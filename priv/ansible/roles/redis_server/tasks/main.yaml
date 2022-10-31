@@ -1,0 +1,107 @@
+- name: redis
+  tags: redis
+  block:
+  - name: Populate service facts
+    service_facts:
+
+  - name: Install Redis packages
+    apt:
+      name:
+        - redis-tools={{ redis_version }}
+        - redis-server={{ redis_version }}
+        - redis={{ redis_version }}
+      state: present
+      update_cache: true
+
+  - name: Add redis.conf file to /etc/redis/redis.conf
+    template:
+      src: redis.conf
+      dest: /etc/redis/redis.conf
+      owner: root
+      group: root
+      mode: o+r
+
+  - name: Run ulimit -n 65536
+    shell: ulimit -n 65536 # noqa command-instead-of-shell
+    changed_when: false
+
+  - name: Copy limits.conf file to /etc/security/limits.conf
+    copy:
+      src: limits.conf
+      mode: 0644
+      owner: root
+      dest: /etc/security/limits.conf
+      group: root
+
+  - name: Copy security.conf file to /etc/systemd/system.conf
+    copy:
+      src: system.conf
+      mode: 0644
+      owner: root
+      dest: /etc/systemd/system.conf
+      group: root
+
+  - name: Copy user.conf file to /etc/systemd/user.conf
+    copy:
+      src: user.conf
+      mode: 0644
+      owner: root
+      dest: /etc/systemd/user.conf
+      group: root
+
+  - name: Stop redis service
+    systemd:
+      name: redis
+      state: stopped
+
+  - name: Start redis service
+    systemd:
+      name: redis
+      state: started
+
+  - name: Stop redis-exporter service
+    systemd:
+      name: redis-exporter
+      state: stopped
+    when: "'redis-exporter.service' in services"
+
+  - name: Create /opt/redis_exporter directory
+    file:
+      path: /opt/redis_exporter
+      state: directory
+      mode: 0644
+
+  - name: Install unzip
+    apt:
+      name: unzip
+      update_cache: true
+
+  - name: Download redis_exporter {{ redis_exporter_version }}
+    unarchive:
+      src: https://github.com/oliver006/redis_exporter/releases/download/{{ redis_exporter_version }}/redis_exporter-{{ redis_exporter_version }}.linux-amd64.tar.gz
+      dest: /tmp
+      remote_src: true
+
+  - name: Copy redis install from /tmp to /opt
+    copy:
+      src: /tmp/redis_exporter-{{ redis_exporter_version }}.linux-amd64/
+      dest: /opt/redis_exporter/
+      mode: 0644
+      remote_src: true
+
+  - name: Copy redis-exporter.service file to /etc/systemd/system/redis-exporter.service
+    copy:
+      src: redis-exporter.service
+      dest: /etc/systemd/system/redis-exporter.service
+      mode: 0644
+
+  - name: Enable redis-exporter service
+    systemd:
+      name: redis-exporter
+      enabled: true
+
+  - name: Start redis-exporter service
+    systemd:
+      name: redis-exporter
+      state: started
+  become: true

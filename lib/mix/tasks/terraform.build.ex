@@ -202,10 +202,14 @@ defmodule Mix.Tasks.Terraform.Build do
     else
       """
           grafana_ui = {
-            name = "Grafana UI"
+            name                        = "Grafana UI"
+            enable_ebs                  = true
+            enable_eip                  = true
+            instance_ebs_secondary_size = 8
             tags = {
               Vendor = "Grafana"
               Type   = "Monitoring"
+              MonitoringKey = "grafana_ui"
             }
           },
       """

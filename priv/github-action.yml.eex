@@ -1,5 +1,12 @@
 name: Apply Terraform, Build & Release
 
+
+# Use this when you want to deploy on success of specific workflows
+# on:
+# workflow_run:
+#   workflows: ["Test"]
+#   types: [completed]
+#   branches: [main]
 on:
   push:
     branches:
@@ -9,10 +16,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
-  Apply:
-    name: Apply Terraform Changes
+  ApplyAndrelease:
+    name: Apply Terraform Changes and Release
 
     runs-on: ubuntu-latest
+    # Use this when you want to deploy on success of specific workflows
+    # if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     container:
       image: mikaak/elixir-terraform-ansible-builder:1.13-otp-25-debian
@@ -23,22 +32,21 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
+          fetch-depth: 25
 
       - name: Cache Deps & Build
         uses: actions/cache@v2
         with:
-          key: ${{github.ref}}-terraform-${{ hashFiles('./mix.lock') }}
-
-          restore-keys: |
-            ${{github.ref}}-terraform-${{ hashFiles('./mix.lock') }}
-            ${{github.ref}}-deps-build-cache-${{ hashFiles('./mix.lock') }}
-            ${{github.ref}}-deps-build-cache-
-            ${{github.ref}}-terraform-
+          key: ${{github.ref}}-deploy-ex-${{ hashFiles('./mix.lock') }}
 
           path: |
             ./deploy/terraform/.terraform/
             ./_build/
             ./deps/
+
+          restore-keys: |
+            ${{github.ref}}-deploy-ex-${{ hashFiles('./mix.lock') }}
+            ${{github.ref}}-deploy-ex
 
       - name: Install Rebar & Hex
         run: mix local.hex --force --if-missing && mix local.rebar --force --if-missing
@@ -63,38 +71,6 @@ jobs:
           chmod +x ./.github/github-action-maybe-commit-terraform-changes.sh &&
           ./.github/github-action-maybe-commit-terraform-changes.sh
 
-
-  Release:
-    name: Release
-
-    needs: [Apply]
-
-    runs-on: ubuntu-latest
-
-    container:
-      image: mikaak/elixir-terraform-ansible-builder:1.13-otp-25-debian
-      env:
-        MIX_ENV: prod
-        AWS_ACCESS_KEY_ID: ${{ secrets.DEPLOY_EX_AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.DEPLOY_EX_AWS_SECRET_ACCESS_KEY }}
-
-    steps:
-      - uses: actions/checkout@v2
-        with:
-          fetch-depth: 25
-
-      - name: Cache Deps & Build
-        uses: actions/cache@v2
-        with:
-          key: ${{github.ref}}-deps-build-cache-${{ hashFiles('./mix.lock') }}
-
-          restore-keys: |
-            ${{github.ref}}-deps-build-cache-
-
-          path: |
-            ./_build/
-            ./deps/
-
       - name: create-json
         id: create-json
         uses: jsdaniell/create-json@1.1.2
@@ -102,13 +78,7 @@ jobs:
           name: "env.json"
           json: ${{ toJson(secrets) }}
 
-      - name: Install Rebar & Hex
-        run: mix local.hex --force --if-missing && mix local.rebar --force --if-missing
-
-      - name: Install Dependencies
-        run: mix deps.get
-
-      - name: Compile Project
+      - name: Compile Project for Release
         run: env RELEASE_BUILD=true $(./.github/github-action-secrets-to-env.sh env.json) mix compile
 
       - name: Build Releases

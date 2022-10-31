@@ -25,7 +25,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
          {:ok, app_name} <- find_app_name(releases, app_params),
          {:ok, pem_file_path} <- DeployExHelpers.find_pem_file(opts[:directory]),
-         {:ok, hostname_ips} <- Mix.Tasks.Ansible.Build.terraform_instance_ips(opts[:directory]) do
+         {:ok, hostname_ips} <- DeployExHelpers.terraform_instance_ips(opts[:directory]) do
       connect_to_host(hostname_ips, app_name, pem_file_path, opts)
     else
       {:error, e} -> Mix.shell().raise(to_string(e))
@@ -100,7 +100,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         "'sudo -u root journalctl -f -u #{app_name} -u systemd'"
 
       opts[:iex] ->
-        "'sudo -u root /srv/*/bin/* remote'"
+        "'sudo -u root /srv/#{app_name}*/bin/#{app_name}* remote'"
 
       true ->
         ""

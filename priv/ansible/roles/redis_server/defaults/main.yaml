@@ -1,0 +1,3 @@
+redis_maxmemory: 12
+redis_io_threads: 3
+redis_version: 7.0.5
