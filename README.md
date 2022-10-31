@@ -50,6 +50,8 @@ remote machines
 ## TL;DR Installation
 Make sure you have your `releases` configured in your root `mix.exs`. This command will only
 function in the root of an umbrella app.
+
+***Note***: It's very important to make sure you add the `:tar` step to your releases, see [here](https://hexdocs.pm/mix/Mix.Tasks.Release.html#module-steps) for info
 ```bash
 $ vi mix.exs # Add {:deploy_ex, "~> 0.1"}
 $ mix deps.get
