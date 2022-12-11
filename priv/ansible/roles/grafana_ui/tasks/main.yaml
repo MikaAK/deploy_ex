@@ -28,10 +28,18 @@
         name: grafana
         update_cache: true
 
-    - name: Add erlang_systemd.service file to /etc/grafana/grafana.ini
+    - name: Add grafana.ini file to /etc/grafana/grafana.ini
       template:
         src: grafana.ini.j2
         dest: /etc/grafana/grafana.ini
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Add grafana-server.service file to /etc/grafana/grafana.ini
+      template:
+        src: grafana-server.service.j2
+        dest: /lib/systemd/system/grafana-server.service
         owner: root
         group: root
         mode: 0644

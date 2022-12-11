@@ -62,7 +62,7 @@ Make sure you have your `releases` configured in your root `mix.exs`. This comma
 function in the root of an umbrella app.
 
 By default nodes will be generated for prometheus, grafana ui, grafana loki and sentry. To turn this
-off pass the options when calling `deploy_ex.full_setup` or `ansible.build`:
+off pass the options when calling `deploy_ex.full_setup`, `terraform.build` or `ansible.build`:
 
 - `no-prometheus`
 - `no-grafana`

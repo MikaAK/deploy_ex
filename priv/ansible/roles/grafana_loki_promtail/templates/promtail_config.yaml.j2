@@ -16,6 +16,39 @@ scrape_configs:
       path: /var/log/journal
       labels:
         job: systemd-journal
+
     relabel_configs:
-      - source_labels: ["__journal__systemd_unit"]
-        target_label: "service"
+      - source_labels: [__journal__systemd_unit]
+        target_label: service
+        regex: '(?P<service>[^\.]+)\.service'
+
+      - source_labels: [__journal__hostname]
+        target_label: instance_id
+
+    pipeline_stages:
+    - match:
+        selector: '{job="systemd-journal"}'
+        stages:
+        - regex:
+            expression: '^[^\[]+\[(?P<level>[^\]]+)\]'
+        - labels:
+            level:
+
+
+  # job_name: ec2-logs
+  # ec2_sd_configs:
+  #   - region: us-west-2
+  #     access_key: aws_credentials['AWS_ACCESS_KEY_ID']
+  #     secret_key: aws_credentials['AWS_SECRET_ACCESS_KEY']
+  #     filters:
+  #       - name: instance-id
+  #         values: [i-00a42712b0714bfb8]
+
+  # #  relabel_configs:
+    #    - source_labels: [__meta_ec2_tag_Environment]
+    #      target_label: environment
+    #      action: replace
+
+    #    - source_labels: [__meta_ec2_tag_Name]
+    #      target_label: name
+    #      action: replace

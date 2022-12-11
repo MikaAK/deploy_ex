@@ -42,7 +42,7 @@ http_port = {{ grafana_ui_port }}
 
 # The public facing domain name used to access grafana from a browser
 ;domain = localhost
-{% if grafana_ui_domain do %}
+{% if grafana_ui_domain %}
 domain = {{ grafana_ui_domain }}
 {% endif %}
 
