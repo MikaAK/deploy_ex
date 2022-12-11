@@ -18,7 +18,10 @@ reruns of the build commands.
   - [Github Action](https://github.com/MikaAK/deploy_ex#github-action)
 - [Univiersal Options](https://github.com/MikaAK/deploy_ex#universial-options)
 - [Connecting to Your Nodes](https://github.com/MikaAK/deploy_ex#connecting-to-your-nodes)
+  - [Connecting to Node as Root](https://github.com/MikaAK/deploy_ex#connection-to-node-as-root)
   - [Connecting to App Logs](https://github.com/MikaAK/deploy_ex#connecting-to-app-logs)
+  - [Connecting to Remote IEx](https://github.com/MikaAK/deploy_ex#connecting-to-remote-iex)
+  - [Writing a utility command](https://github.com/MikaAK/deploy_ex#writing-a-utility-command)
 - [Terraform Variables](https://github.com/MikaAK/deploy_ex#terraform-variables)
 - [Clustering](https://github.com/MikaAK/deploy_ex#clustering)
 - [Credits](https://github.com/MikaAK/deploy_ex#credits)
@@ -160,9 +163,37 @@ This command will connect to the node, you can use `--log` to view the logs, or 
 $ eval "$(mix deploy_ex.ssh -s app)"
 ```
 
+#### Connection to Node as Root
+```bash
+$ eval "$(mix deploy_ex.ssh -s --root app)"
+```
+
 #### Connecting to App Logs
 ```bash
 $ eval "$(mix deploy_ex.ssh -s --logs app)"
+```
+
+#### Connecting to Remote IEx
+```bash
+$ eval "$(mix deploy_ex.ssh -s --iex app)"
+```
+
+#### Writing a utility command
+You can use this command like `my-app-ssh ap_nm --log` or `my-app-ssh app_name --iex` to get into a remote iex shell
+
+Bash:
+```bash
+alias my-app-ssh='pushd ~/Documents/path/to/project && mix compile && eval "$(mix deploy_ex.ssh $@)" && popd'
+```
+
+Fish:
+```fish
+function my-app-ssh
+  pushd ~/Documents/path/to/project &&
+  mix compile &&
+  eval "(mix deploy_ex.ssh $@)" &&
+  popd
+end
 ```
 
 ## Terraform Variables

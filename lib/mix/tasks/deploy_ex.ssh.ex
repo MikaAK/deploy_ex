@@ -5,15 +5,38 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
   @shortdoc "Ssh into a specific apps remote node"
   @moduledoc """
+
   ### Example
   ```bash
   $ mix deploy_ex.ssh my_app
   $ mix deploy_ex.ssh my_app 2 # with a specific node
   ```
 
+  What this is really meant for is to be able to create a command that instantly
+  connects you to the app. To do this we can do the following:
+
+  Create a bash function that does the following:
+
+  ```bash
+  #! /usr/bin/env
+  pushd ~/Documents/path/to/project &&
+  mix compile &&
+  eval "$(mix deploy.ssh -s $@)" &&
+  popd
+  ```
+
+  You can then set this as an executable and call `./my-script.sh my_app` and it
+  will connect you to the node. You can use `--root` or `--log` to do various commands
+  on that node
+
+  mix compile
+
   ### Options
   - `short` - get short form command
+  - `root` - get command to connect with root access
   - `log` - get command to remotely monitor logs
+  - `log_count` - sets log count to get back
+  - `all` - gets all logs instead of just ones for the app
   - `iex` - get command to remotley connect to running node via IEx
   """
 
