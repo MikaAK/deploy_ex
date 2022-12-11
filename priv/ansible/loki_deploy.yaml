@@ -1,0 +1,6 @@
+- hosts: monitoring_loki_logger
+  roles:
+    - pip3
+    - awscli
+    - grafana_loki
+

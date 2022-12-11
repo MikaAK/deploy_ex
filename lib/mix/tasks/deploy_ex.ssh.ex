@@ -5,15 +5,38 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
   @shortdoc "Ssh into a specific apps remote node"
   @moduledoc """
+
   ### Example
   ```bash
   $ mix deploy_ex.ssh my_app
   $ mix deploy_ex.ssh my_app 2 # with a specific node
   ```
 
+  What this is really meant for is to be able to create a command that instantly
+  connects you to the app. To do this we can do the following:
+
+  Create a bash function that does the following:
+
+  ```bash
+  #! /usr/bin/env
+  pushd ~/Documents/path/to/project &&
+  mix compile &&
+  eval "$(mix deploy.ssh -s $@)" &&
+  popd
+  ```
+
+  You can then set this as an executable and call `./my-script.sh my_app` and it
+  will connect you to the node. You can use `--root` or `--log` to do various commands
+  on that node
+
+  mix compile
+
   ### Options
   - `short` - get short form command
+  - `root` - get command to connect with root access
   - `log` - get command to remotely monitor logs
+  - `log_count` - sets log count to get back
+  - `all` - gets all logs instead of just ones for the app
   - `iex` - get command to remotley connect to running node via IEx
   """
 
@@ -25,7 +48,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
          {:ok, app_name} <- find_app_name(releases, app_params),
          {:ok, pem_file_path} <- DeployExHelpers.find_pem_file(opts[:directory]),
-         {:ok, hostname_ips} <- Mix.Tasks.Ansible.Build.terraform_instance_ips(opts[:directory]) do
+         {:ok, hostname_ips} <- DeployExHelpers.terraform_instance_ips(opts[:directory]) do
       connect_to_host(hostname_ips, app_name, pem_file_path, opts)
     else
       {:error, e} -> Mix.shell().raise(to_string(e))
@@ -34,13 +57,16 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
   defp parse_args(args) do
     {opts, extra_args} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quit, d: :directory, s: :short],
+      aliases: [f: :force, q: :quit, d: :directory, s: :short, n: :log_count],
       switches: [
         directory: :string,
         force: :boolean,
         quiet: :boolean,
         short: :boolean,
+        root: :boolean,
         log: :boolean,
+        log_count: :integer,
+        all: :boolean,
         iex: :boolean
       ]
     )
@@ -73,9 +99,9 @@ defmodule Mix.Tasks.DeployEx.Ssh do
           Mix.shell().info("ssh -i #{pem_file_path} admin@#{ip} #{command}")
         else
           Mix.shell().info([
-            :green, "Use the follwing comand to connect to ",
+            :green, "Use the following comand to connect to ",
             :reset, app_name || "Unknown", :green, " \"",
-            :reset, "ssh -i #{pem_file_path} admin@#{ip}", command,
+            :reset, "ssh -i #{pem_file_path} admin@#{ip} ", command,
             :green, "\""
           ])
         end
@@ -96,11 +122,17 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
   def build_command(app_name, opts) do
     cond do
+      opts[:root] ->
+        "-t 'sudo -i'"
+
       opts[:log] ->
-        "'sudo -u root journalctl -f -u #{app_name} -u systemd'"
+        app_name_target = if opts[:all], do: "", else: "-u #{app_name} "
+        log_num_count = if opts[:log_count], do: " -n #{opts[:log_count]}", else: ""
+
+        "'sudo -u root journalctl -f #{app_name_target}'#{log_num_count}"
 
       opts[:iex] ->
-        "'sudo -u root /srv/#{app_name}*/bin/#{app_name}* remote'"
+        "-t 'sudo -u root /srv/#{app_name}*/bin/#{app_name}* remote'"
 
       true ->
         ""

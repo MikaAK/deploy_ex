@@ -29,6 +29,10 @@ defmodule Mix.Tasks.Ansible.Setup do
         |> Keyword.put_new(:directory, @ansible_default_path)
         |> Keyword.put_new(:parallel, @default_setup_max_concurrency)
 
+      opts = opts
+        |> Keyword.put(:only, Keyword.get_values(opts, :only))
+        |> Keyword.put(:except, Keyword.get_values(opts, :except))
+
       DeployExHelpers.check_file_exists!(Path.join(opts[:directory], "aws_ec2.yaml"))
       relative_directory = String.replace(Path.absname(opts[:directory]), "#{File.cwd!()}/", "")
 

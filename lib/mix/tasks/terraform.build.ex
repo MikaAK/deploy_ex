@@ -187,9 +187,13 @@ defmodule Mix.Tasks.Terraform.Build do
       """
           loki_aggreagtor = {
             name = "Grafana Loki Logs"
+            instance_type = "t3.micro"
+            enable_ebs                  = true
+            instance_ebs_secondary_size = 8
             tags = {
               Vendor = "Grafana"
               Type   = "Monitoring"
+              MonitoringKey = "loki_logger"
             }
           },
       """
@@ -202,10 +206,14 @@ defmodule Mix.Tasks.Terraform.Build do
     else
       """
           grafana_ui = {
-            name = "Grafana UI"
+            name                        = "Grafana UI"
+            enable_ebs                  = true
+            enable_eip                  = true
+            instance_ebs_secondary_size = 8
             tags = {
               Vendor = "Grafana"
               Type   = "Monitoring"
+              MonitoringKey = "grafana_ui"
             }
           },
       """

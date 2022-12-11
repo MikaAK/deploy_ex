@@ -1,0 +1,21 @@
+- name: prometheus_exporter
+  block:
+    - name: Install prometheus-node-exporter
+      apt:
+        name: prometheus-node-exporter
+        update_cache: true
+      register: prometheus_exporter
+
+    - name: Enable prom-node-exporter service
+      systemd:
+        enabled: true
+        name: prometheus-node-exporter
+      when: prometheus_exporter.changed
+
+    - name: Restart prom-node-exporter service
+      systemd:
+        state: restarted
+        name: prometheus_exporter
+      when: prometheus_exporter.changed
+  become: true
+

@@ -59,6 +59,13 @@
       # when: app_name == item
       # loop: "{{ erlang_systemd }}"
 
+    - name: Add environment varaibles to systemd.service file
+      lineinfile:
+        path: /etc/systemd/system/{{ app_name }}.service
+        insertafter: RestartSec=5
+        line: "Environment=\"{{ item }}\""
+      loop: "{{ system_env }}"
+
     - name: Enable {{ app_name }} service
       systemd:
         name: "{{ app_name }}"

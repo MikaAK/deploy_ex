@@ -12,34 +12,37 @@
         remote_src: true
       when: not loki.stat.exists
 
-    - name: Download Loki config
-      get_url:
-        url: https://raw.githubusercontent.com/grafana/loki/{{ loki_version }}/cmd/loki/loki-local-config.yaml
-        dest: /root/config.yaml
-
-    - name: Add loki_systemd.service file to /etc/systemd/system/loki_systemd.service
+    - name: Add loki-config config to /root/loki-config.yaml
       template:
-        src: loki_systemd.service.j2
-        dest: /etc/systemd/system/loki_systemd.service
+        src: loki-config.yaml.j2
+        dest: /root/loki-config.yaml
         owner: root
         group: root
         mode: 0644
 
-    - name: Enable loki_systemd service
+    - name: Add loki.service file to /etc/systemd/system/loki_systemd.service
+      template:
+        src: loki_systemd.service.j2
+        dest: /etc/systemd/system/loki.service
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Enable loki service
       systemd:
-        name: loki_systemd
+        name: loki
         enabled: true
 
-    - name: Stop loki_systemd service
+    - name: Stop loki service
       systemd:
-        name: loki_systemd
+        name: loki
         state: stopped
       when: ansible_facts.services[loki_systemd] is not defined
 
-    - name: Start loki_systemd service
+    - name: Start loki service
       systemd:
         daemon_reload: true
-        name: loki_systemd
+        name: loki
         state: started
 
   become: true
