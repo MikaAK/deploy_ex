@@ -333,6 +333,30 @@ possible without his help!!
 </details>
 
 <details>
+  <summary>What to do if monitoring is failing?</summary>
+
+  First figure out what is failing, there are several monitoring systems running in the background:
+
+  1) `promtail` - This is present on all app nodes, it tails the logs and exports them to loki
+  2) `prometheus_exporter` - This is present on all app nodes, it scrapes metrics endpoints and exports them to prometheus
+  2) `prometheus-server` - This is present on all `prometheus` nodes, it's the database for prometheus
+  3) `grafana-server` - This is present on all `grafana_ui` node, it's the service for the interface
+  4) `loki` - This is present on all `loki_log_aggregator` node, it's the service for the log aggregator
+
+  Try restarting whichever is failing, and tailing the logs using `mix deploy_ex.ssh --log --all -n 50` to see if there are any
+  errors with that service
+
+</details>
+
+<details>
+  <summary>How can I restart a service without redeploying?</summary>
+
+  Sometimes we need to restart a service but it doesn't need a full deploy, in this case we can
+  ssh onto the server using our `mix deploy_ex.ssh --root app` command, and running `systemctl restart app_name`
+
+</details>
+
+<details>
   <summary>How can I uninstall??</summary>
 
   It's pretty easy, just run `mix deploy_ex.full_drop`, you can even add a `-y` to auto confirm
