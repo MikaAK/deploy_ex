@@ -2,3 +2,6 @@ aws_credentials:
   AWS_ACCESS_KEY_ID: "<INSERT_SECRET_OR_PRELOAD_ON_MACHINE>"
   AWS_SECRET_ACCESS_KEY: "<INSERT_SECRET_OR_PRELOAD_ON_MACHINE>"
 
+loki_logger_s3_region: <INSERT_AWS_REGION>
+loki_logger_s3_bucket_name: <INSERT_AWS_LOGGING_BUCKET>
+grafana_loki_url: "http://loki.logs:3100"

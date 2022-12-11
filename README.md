@@ -26,6 +26,9 @@ reruns of the build commands.
 
 ## Installation
 
+*NOTE*: Currently this app is in development as you need to commit your AWS key into `deploys/ansible/group_vars/all.yaml`.
+There are a few variables to be set in here. Once all of these can be dealt with automatically and rollbacks are implemented we will release a 0.1.0
+
 #### Pre-requisite
 You will need to make sure to have `ansible`, `terraform` & `git` available
 
