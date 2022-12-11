@@ -30,7 +30,7 @@ scrape_configs:
         selector: '{job="systemd-journal"}'
         stages:
         - regex:
-            expression: '^[^\[]+\[(?P<level>[^\]]+)\]'
+            expression: '^[^\[]+\[(?P<level>error|warn|debug|alert|critical|warning|notice)\]'
         - labels:
             level:
 
