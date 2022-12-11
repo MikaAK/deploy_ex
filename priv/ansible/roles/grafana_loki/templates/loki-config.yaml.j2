@@ -32,7 +32,15 @@ storage_config:
    cache_location: /loki/index_cache
    shared_store: s3
   aws:
-    s3: s3://{{loki_logger_s3_region}}/{{loki_logger_s3_bucket_name}}
+    s3: s3://{{ loki_logger_s3_region }}/{{ loki_logger_s3_bucket_name }}
+
+compactor:
+  working_directory: /data/retention
+  shared_store: s3
+  compaction_interval: 10m
+  retention_enabled: true
+  retention_delete_delay: {{ loki_logger_retention }}
+  retention_delete_worker_count: 150
 
 # By default, Loki will send anonymous, but uniquely-identifiable usage and configuration
 # analytics to Grafana Labs. These statistics are sent to https://stats.grafana.org/
