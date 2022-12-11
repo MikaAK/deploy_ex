@@ -1,0 +1,5 @@
+- hosts: monitoring_prometheus_db
+  roles:
+    - pip3
+    - awscli
+    - prometheus_db

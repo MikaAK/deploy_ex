@@ -150,7 +150,7 @@ defmodule DeployExHelpers do
 
   def terraform_instances(terraform_directory) do
     with {:ok, output} <- terraform_state(terraform_directory) do
-      a = output
+      output
         |> String.split("\n")
         |> Enum.filter(&(&1 =~ ~r/module.ec2_instance.*ec2_instance/))
         |> Enum.map(fn resource ->

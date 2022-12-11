@@ -6,7 +6,6 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/root/
-ExecStartPre=/bin/sleep 30
 ExecStart=/root/promtail-{{ promtail_architecture }} -config.file /root/promtail_config.yaml
 
 Restart=on-failure

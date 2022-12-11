@@ -226,10 +226,14 @@ defmodule Mix.Tasks.Terraform.Build do
     else
       """
           prometheus_db = {
-            name = "Prometheus Metrics Database"
+            name                        = "Prometheus Metrics Database"
+            instance_type               = "t3.micro"
+            enable_ebs                  = true
+            instance_ebs_secondary_size = 16
             tags = {
               Vendor = "Grafana"
               Type   = "Monitoring"
+              MonitoringKey = "prometheus_db"
             }
           },
       """

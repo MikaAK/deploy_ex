@@ -1,0 +1,23 @@
+[Unit]
+Description=Prometheus Metrics DB
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/root/
+ExecStart=/usr/bin/prometheus -config.file /root/prometheus-config.yaml
+
+Restart=on-failure
+RestartSec=5
+SuccessExitStatus=143
+TimeoutStopSec=10
+SyslogIdentifier=prometheus_db
+RemainAfterExit=no
+LimitNOFILE=infinity
+
+[Install]
+WantedBy=multi-user.target
+
+
+
