@@ -9,13 +9,13 @@
     - name: Enable prom-node-exporter service
       systemd:
         enabled: true
-        name: prom-node-exporter
+        name: prometheus-node-exporter
       when: prometheus_exporter.changed
 
     - name: Restart prom-node-exporter service
       systemd:
         state: restarted
-        name: prom-node-exporter
+        name: prometheus_exporter
       when: prometheus_exporter.changed
   become: true
 

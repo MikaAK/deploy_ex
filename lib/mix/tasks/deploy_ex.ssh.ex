@@ -34,13 +34,16 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
   defp parse_args(args) do
     {opts, extra_args} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quit, d: :directory, s: :short],
+      aliases: [f: :force, q: :quit, d: :directory, s: :short, n: :log_count],
       switches: [
         directory: :string,
         force: :boolean,
         quiet: :boolean,
         short: :boolean,
+        root: :boolean,
         log: :boolean,
+        log_count: :integer,
+        all: :boolean,
         iex: :boolean
       ]
     )
@@ -73,9 +76,9 @@ defmodule Mix.Tasks.DeployEx.Ssh do
           Mix.shell().info("ssh -i #{pem_file_path} admin@#{ip} #{command}")
         else
           Mix.shell().info([
-            :green, "Use the follwing comand to connect to ",
+            :green, "Use the following comand to connect to ",
             :reset, app_name || "Unknown", :green, " \"",
-            :reset, "ssh -i #{pem_file_path} admin@#{ip}", command,
+            :reset, "ssh -i #{pem_file_path} admin@#{ip} ", command,
             :green, "\""
           ])
         end
@@ -96,11 +99,17 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
   def build_command(app_name, opts) do
     cond do
+      opts[:root] ->
+        "-t 'sudo -i'"
+
       opts[:log] ->
-        "'sudo -u root journalctl -f -u #{app_name} -u systemd'"
+        app_name_target = if opts[:all], do: "", else: "-u #{app_name} "
+        log_num_count = if opts[:log_count], do: " -n #{opts[:log_count]}", else: ""
+
+        "'sudo -u root journalctl -f #{app_name_target}'#{log_num_count}"
 
       opts[:iex] ->
-        "'sudo -u root /srv/#{app_name}*/bin/#{app_name}* remote'"
+        "-t 'sudo -u root /srv/#{app_name}*/bin/#{app_name}* remote'"
 
       true ->
         ""
