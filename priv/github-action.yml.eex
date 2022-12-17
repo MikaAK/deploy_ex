@@ -32,7 +32,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
+        with:
           fetch-depth: 25
+
 
       - name: Cache Deps & Build
         uses: actions/cache@v2
