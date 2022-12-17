@@ -75,7 +75,12 @@ defmodule DeployExHelpers do
   def fetch_mix_releases do
     case Mix.Project.get() do
       nil -> {:error, ErrorMessage.not_found("couldn't find mix project")}
-      project -> {:ok, project.releases()}
+      project ->
+        if function_exported?(project, :releases, 0) do
+          {:ok, project.releases()}
+        else
+          {:error, ErrorMessage.not_found("no release found for #{inspect project}")}
+        end
     end
   end
 

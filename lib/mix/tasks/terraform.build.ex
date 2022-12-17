@@ -50,6 +50,8 @@ defmodule Mix.Tasks.Terraform.Build do
       write_terraform_output(opts)
       write_terraform_keypair(opts)
       run_terraform_init(opts)
+    else
+      {:error, e} -> Mix.raise(to_string(e))
     end
   end
 

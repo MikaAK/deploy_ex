@@ -1,7 +1,7 @@
 variable "environment" {
   description = "Name of the project in kebab case for use in names"
   type        = string
-  default     = "${terraform.workspace === "default" ? "<%= @environment %>" : terraform.workspace}"
+  default     = "<%= @environment %>"
 }
 
 variable "project_name" {
