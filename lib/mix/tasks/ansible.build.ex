@@ -85,7 +85,8 @@ defmodule Mix.Tasks.Ansible.Build do
   end
 
   defp pull_aws_credentials_into_awscli_variables(ansible_directory, opts) do
-    main_yaml_path = Path.join(ansible_directory, "roles/awscli/defaults/main.yaml")
+    main_yaml_path = Path.join(ansible_directory, "group_vars/all.yaml")
+
     case search_for_aws_credentials() do
       {:ok, {aws_access_key, aws_secret_access_key}} ->
         new_contents = main_yaml_path

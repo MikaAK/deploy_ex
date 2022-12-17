@@ -6,7 +6,7 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/root/
-ExecStart=/usr/bin/prometheus -config.file /root/prometheus-config.yaml
+ExecStart=/usr/bin/prometheus --config.file /root/prometheus-config.yaml
 
 Restart=on-failure
 RestartSec=5

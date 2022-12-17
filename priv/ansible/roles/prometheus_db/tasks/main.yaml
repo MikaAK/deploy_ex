@@ -8,7 +8,7 @@
     - name: Add PrometheusDB config to /root/prometheus.yaml
       template:
         src: prometheus.yaml.j2
-        dest: /root/prometheus_config.yaml
+        dest: /root/prometheus-config.yaml
         owner: root
         group: root
         mode: 0644
