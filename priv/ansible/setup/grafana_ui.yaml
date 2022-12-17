@@ -1,0 +1,6 @@
+- hosts: monitoring_grafana_ui
+  roles:
+    - pip3
+    - awscli
+    - grafana_ui
+

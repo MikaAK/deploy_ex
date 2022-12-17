@@ -10,6 +10,9 @@ filters:
   tag:Group: '<%= DeployExHelpers.upper_title_case(@app_name) %> Backend'
 
 keyed_groups:
+  - key: tags['MonitoringKey']
+    prefix: "monitoring"
+
   - key: tags['InstanceGroup']
     prefix: "group"
 
