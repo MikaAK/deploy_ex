@@ -84,6 +84,12 @@ defmodule DeployExHelpers do
     end
   end
 
+  def fetch_mix_release_names do
+    with {:ok, releases} <- fetch_mix_releases() do
+      {:ok, Keyword.keys(releases)}
+    end
+  end
+
   def find_pem_file(terraform_directory) do
     res = terraform_directory
       |> Path.join("*.pem")

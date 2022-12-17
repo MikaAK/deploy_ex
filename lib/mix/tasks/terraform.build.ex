@@ -118,11 +118,6 @@ defmodule Mix.Tasks.Terraform.Build do
         |> File.read!
         |> inject_terraform_contents_into_variables(terraform_output, opts)
     else
-      :deploy_ex
-        |> :code.priv_dir
-        |> Path.join("terraform/variables.tf.eex")
-        |> File.cp!("#{opts[:variables_file]}.eex")
-
       generate_and_delete_variables_template(terraform_output, opts)
     end
   end

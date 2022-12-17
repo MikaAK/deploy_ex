@@ -30,7 +30,7 @@ defmodule Mix.Tasks.Ansible.Build do
          :ok <- ensure_ansible_directory_exists(opts[:directory], opts),
          :ok <- create_ansible_hosts_file(opts),
          :ok <- create_ansible_config_file(opts),
-         {:ok, app_names} <- release_app_names(),
+         {:ok, app_names} <- DeployExHelpers.fetch_mix_release_names(),
          :ok <- create_ansible_playbooks(app_names, opts) do
       :ok
     else
@@ -220,12 +220,6 @@ defmodule Mix.Tasks.Ansible.Build do
       remove_usless_copied_template_folder(opts)
 
       :ok
-    end
-  end
-
-  defp release_app_names do
-    with {:ok, releases} <- DeployExHelpers.fetch_mix_releases() do
-      {:ok, Map.keys(releases)}
     end
   end
 
