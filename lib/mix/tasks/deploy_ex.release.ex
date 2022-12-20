@@ -196,7 +196,7 @@ defmodule Mix.Tasks.DeployEx.Release do
         run_phoenix_asset_pipeline(candidate.app_name)
 
       has_static_files? ->
-        Mix.Task.run(Mix.Tasks.Phx.Digest, [])
+        Mix.Task.run("cmd", ["--app", candidate.app_name, "mix", "phx.digest"])
 
       true -> :ok
     end
