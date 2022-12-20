@@ -90,6 +90,16 @@ We can connect to these nodes by runnin `mix deploy_ex.ssh node`, this will atte
 node to the passed string and give you a command to connect to it, if you pass `--log` you'll get a command
 to monitor it's logs remotely, and `--iex` will give you a command to connect to it using a iex shell
 
+### Available Configuration
+
+```
+config :deploy_ex,
+  aws_region: "us-west-2",
+  aws_log_bucket: "#{String.replace(DeployExHelpers.underscored_app_name(), "_", "-")}-backend-logs-#{env()}",
+  aws_release_bucket: "my-app-name-elixir-deploys-env"
+  deploy_folder: "./deploys"
+```
+
 ### Usage with Github Actions
 ***Note: This doesn't work properly with branch protections, to do
 so you'll need to modify the GH action to bypass branch protections***

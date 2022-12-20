@@ -24,7 +24,7 @@ jobs:
     # if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     container:
-      image: mikaak/elixir-terraform-ansible-builder:1.13-otp-25-debian
+      image: mikaak/elixir-terraform-ansible-builder:1.14-otp-25-debian
       env:
         MIX_ENV: prod
         AWS_ACCESS_KEY_ID: ${{ secrets.DEPLOY_EX_AWS_ACCESS_KEY_ID }}

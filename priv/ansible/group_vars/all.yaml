@@ -5,7 +5,7 @@ aws_credentials:
 loki_logger_s3_region: <INSERT_AWS_REGION>
 loki_logger_s3_bucket_name: <INSERT_AWS_LOGGING_BUCKET>
 loki_logger_retention: 720h
-grafana_loki_url: "http://loki.logs:3100"
+grafana_loki_url: "http://<INSERT_LOKI_EIP>:3100"
 
 system_env:
   - PATH=/root/.asdf/shims:/root/.asdf/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
