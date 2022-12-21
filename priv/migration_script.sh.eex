@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+/srv/<%= @app_name %>/bin/<%= @app_name %> rpc "Ecto.Migrator.run(<%= @repo %>, Path.join(:code.priv_dir(:<%= @migration_app %>), <%= migration_path %>), :up, all: true)"

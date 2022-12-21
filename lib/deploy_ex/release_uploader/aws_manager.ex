@@ -8,8 +8,6 @@ defmodule DeployEx.ReleaseUploader.AwsManager do
   end
 
   def upload(file_path, region, bucket, upload_path) do
-    IO.inspect String.graphemes(region)
-    IO.inspect bucket
     file_path
       |> ExAws.S3.Upload.stream_file
       |> ExAws.S3.upload(bucket, upload_path)

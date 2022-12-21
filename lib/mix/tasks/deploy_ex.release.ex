@@ -176,30 +176,25 @@ defmodule Mix.Tasks.DeployEx.Release do
     package_json_path = Path.join(app_path, "assets/package.json")
 
     has_package_lock? = File.exists?(package_json_path)
-    has_static_files? = has_package_lock? or (app_path |> Path.join("./priv/static") |> File.exists?)
 
-    cond do
-      has_package_lock? ->
-        assets_path = Path.dirname(package_json_path)
-        Mix.shell().info([
-          :green, "* running ",
-          :reset, "npm install ", :green, "for ",
-          :reset, candidate.app_name, :green, " in ",
-          :reset, assets_path
-        ])
+    if has_package_lock? do
+      assets_path = Path.dirname(package_json_path)
+      Mix.shell().info([
+        :green, "* running ",
+        :reset, "npm install ", :green, "for ",
+        :reset, candidate.app_name, :green, " in ",
+        :reset, assets_path
+      ])
 
-        case System.shell("npm i", cd: assets_path, into: IO.stream()) do
-          {_, 0} ->  :ok
-          {output, code} -> Mix.raise("Error running npm i #{code}\n#{inspect(output, pretty: true)}")
-        end
-
-        run_phoenix_asset_pipeline(candidate.app_name)
-
-      has_static_files? ->
-        Mix.Task.run("cmd", ["--app", candidate.app_name, "mix", "phx.digest"])
-
-      true -> :ok
+      case System.shell("npm i", cd: assets_path, into: IO.stream()) do
+        {_, 0} ->  :ok
+        {output, code} -> Mix.raise("Error running npm i #{code}\n#{inspect(output, pretty: true)}")
+      end
     end
+
+    run_phoenix_asset_pipeline(candidate.app_name)
+
+    :ok
   end
 
   defp run_app_type_pre_release(:normal, _candidate) do
@@ -207,26 +202,38 @@ defmodule Mix.Tasks.DeployEx.Release do
   end
 
   defp run_phoenix_asset_pipeline(app_name) do
-    Mix.shell().info([
-      :green, "* running ", :reset, "esbuild",
-      :green, " for ", :reset, app_name
-    ])
+    app_path = Mix.Project.apps_paths()[String.to_atom(app_name)]
 
-    Mix.Task.run("cmd", ["--app", app_name, "mix", "esbuild", "default", "--minify"])
+    with {:ok, js_files} <- app_path |> Path.join("./assets/js") |> File.ls do
+      if Enum.any?(js_files) do
+        Mix.shell().info([
+          :green, "* running ", :reset, "esbuild",
+          :green, " for ", :reset, app_name
+        ])
 
-    Mix.shell().info([
-      :green, "* running ", :reset, "sass",
-      :green, " for ", :reset, app_name
-    ])
+        Mix.Task.run("cmd", ["--app", app_name, "mix", "esbuild", "default", "--minify"])
+      end
+    end
 
-    Mix.Task.run("cmd", ["--app", app_name, "mix", "sass", "default"])
+    with {:ok, css_files} <- app_path |> Path.join("./assets/css") |> File.ls do
+      if css_files |> Enum.filter(&(&1 =~ ~r/\.s(a|c)ss$/)) |> Enum.any? do
+        Mix.shell().info([
+          :green, "* running ", :reset, "sass",
+          :green, " for ", :reset, app_name
+        ])
 
-    Mix.shell().info([
-      :green, "* running ", :reset, "tailwind",
-      :green, " for ", :reset, app_name
-    ])
+        Mix.Task.run("cmd", ["--app", app_name, "mix", "sass", "default"])
+      end
+    end
 
-    Mix.Task.run("cmd", ["--app", app_name, "mix", "tailwind", "default", "--minify"])
+    if app_path |> Path.join("./assets/tailwind.config.js") |> File.exists? do
+      Mix.shell().info([
+        :green, "* running ", :reset, "tailwind",
+        :green, " for ", :reset, app_name
+      ])
+
+      Mix.Task.run("cmd", ["--app", app_name, "mix", "tailwind", "default", "--minify"])
+    end
 
     Mix.shell().info([
       :green, "* running ", :reset, "phoenix digest",

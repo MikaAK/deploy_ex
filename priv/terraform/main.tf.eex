@@ -22,6 +22,8 @@ resource "aws_db_subnet_group" "<%= @app_name %>_db_subnet" {
 
   tags = {
     Name = "<%= @app_name %>DB Subnet Group"
+    Vendor = "Postgres"
+    Type   = "Dataase"
   }
 }
 
@@ -40,6 +42,8 @@ resource "aws_db_instance" "<%= @app_name %>_database" {
 
   tags = {
     Name = "<%= @app_name %>DB"
+    Vendor = "Postgres"
+    Type   = "Dataase"
   }
 }<% end %>
 
