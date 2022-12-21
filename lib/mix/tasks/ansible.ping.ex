@@ -7,14 +7,15 @@ defmodule Mix.Tasks.Ansible.Ping do
   """
 
   def run(args) do
-    group_name = args |> Enum.reject(&(&1 =~ ~r/^--?/)) |> List.first
-    group_name = (group_name && "group_#{group_name}") || "all"
+    ansible_args = DeployExHelpers.to_ansible_args(args)
 
     with :ok <- DeployExHelpers.check_in_umbrella() do
       DeployExHelpers.check_file_exists!("./deploys/ansible/aws_ec2.yaml")
 
-      DeployExHelpers.run_command_with_input("ansible -i aws_ec2.yaml #{group_name} -m ping", "./deploys/ansible")
+      DeployExHelpers.run_command_with_input(
+        "ansible -i aws_ec2.yaml #{ansible_args} all -m ping",
+        "./deploys/ansible"
+      )
     end
   end
 end
-

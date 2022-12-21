@@ -59,6 +59,22 @@ defmodule DeployExHelpers do
     string |> String.split(~r/_|-/) |> Enum.map_join(" ", &String.capitalize/1)
   end
 
+  @ansible_flags [
+    inventory: :string,
+    limit: :string,
+    "extra-vars": :keep
+  ]
+  def to_ansible_args(args) do
+    {ansible_opts, _extra_args, _invalid_args} =
+      OptionParser.parse(args,
+        aliases: [i: :inventory, l: :limit, e: :"extra-vars"],
+        strict: @ansible_flags
+      )
+
+    ansible_opts
+    |> OptionParser.to_argv(@ansible_flags)
+    |> Enum.join(" ")
+  end
   def run_command_with_input(command, directory) do
     port = Port.open({:spawn, command}, [
       :nouse_stdio,
