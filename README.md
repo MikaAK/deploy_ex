@@ -68,6 +68,7 @@ off pass the options when calling `deploy_ex.full_setup`, `terraform.build` or `
 - `no-grafana`
 - `no-loki`
 - `no-sentry`
+- `no-database` - Disables PG database creation in AWS RDS
 
 ***Note***: It's very important to make sure you add the `:tar` step to your releases, see [here](https://hexdocs.pm/mix/Mix.Tasks.Release.html#module-steps) for info
 ```bash

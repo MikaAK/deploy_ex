@@ -12,6 +12,23 @@ provider "aws" {
   region  = "<%= @aws_region %>"
 }
 
+
+<%= if @use_db do %>
+  data "aws_rds_engine_version" "rds_postgres" {
+    engine = "postgres"
+  }
+
+  resource "aws_db_instance" "<%= @app_name %>_database" {
+    allocated_storage    = 10
+    db_name              = "<%= @app_name %>"
+    engine               = data.aws_rds_engine_version.rds_postgres.engine
+    engine_version       = data.aws_rds_engine_version.rds_postgres.version
+    instance_class       = "db.t3.micro"
+    username             = "postgres"
+    password             = "<%= @db_password %>"
+  }
+<% end %>
+
 module "ec2_instance" {
   source = "./modules/aws-instance"
 
