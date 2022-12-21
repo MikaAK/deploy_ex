@@ -46,6 +46,7 @@ defmodule Mix.Tasks.DeployEx.Upload do
 
       case upload_releases(no_prio_upload_release_cands, opts) do
         {:ok, _} -> upload_changed_releases(has_previous_upload_release_cands, opts)
+        {:error, e} when is_list(e) -> Mix.raise(Enum.map_join(e, "\n", &to_string/1))
         {:error, e} -> Mix.raise(to_string(e))
       end
     else
@@ -130,10 +131,10 @@ defmodule Mix.Tasks.DeployEx.Upload do
 
         res
 
-      {:error, e} ->
+      {:error, e} = res ->
         Mix.shell().error(to_string(e))
 
-        e
+        res
     end
   end
 end

@@ -67,6 +67,11 @@ defmodule DeployEx.ReleaseUploader do
   end
 
   def upload_release(%State{local_file: local_file, name: remote_file_path}, opts) do
-    AwsManager.upload(local_file, opts[:aws_region], opts[:aws_release_bucket], remote_file_path)
+    AwsManager.upload(
+      local_file,
+      opts[:aws_region],
+      opts[:aws_release_bucket],
+      remote_file_path
+    )
   end
 end

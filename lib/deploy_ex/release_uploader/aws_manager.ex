@@ -8,6 +8,8 @@ defmodule DeployEx.ReleaseUploader.AwsManager do
   end
 
   def upload(file_path, region, bucket, upload_path) do
+    IO.inspect String.graphemes(region)
+    IO.inspect bucket
     file_path
       |> ExAws.S3.Upload.stream_file
       |> ExAws.S3.upload(bucket, upload_path)
@@ -21,4 +23,8 @@ defmodule DeployEx.ReleaseUploader.AwsManager do
   defp handle_response({:error, {:http_error, status, reason}}) do
     {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["aws failure", %{reason: reason}])}
     end
+
+  defp handle_response({:error, error}) when is_binary(error) do
+    {:error, ErrorMessage.failed_dependency("aws failure: #{error}")}
+  end
 end
