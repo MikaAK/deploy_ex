@@ -1,0 +1,17 @@
+[Unit]
+Description=Prometheus Exporter Services
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/redis_exporter/
+ExecStart=/opt/redis_exporter/redis_exporter
+SyslogIdentifier=redis-exporter
+LimitNOFILE=infinity
+RestartSec=5
+Restart=on-failure
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

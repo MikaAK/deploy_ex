@@ -1,3 +1,4 @@
-redis_maxmemory: 12
+redis_maxmemory: 300mb
 redis_io_threads: 3
-redis_version: 7.0.5
+redis_version: 5:6.0.16-1+deb11u2
+redis_exporter_version: v1.9.0

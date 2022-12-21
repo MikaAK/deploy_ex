@@ -16,6 +16,10 @@ keyed_groups:
   - key: tags['InstanceGroup']
     prefix: "group"
 
+  - key: tags['DatabaseKey']
+    prefix: "database"
+
+
 compose:
   ansible_host: public_ip_address
 

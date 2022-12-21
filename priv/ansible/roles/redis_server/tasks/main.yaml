@@ -43,7 +43,7 @@
 
   - name: Copy user.conf file to /etc/systemd/user.conf
     copy:
-      src: user.conf
+      src: system.conf
       mode: 0644
       owner: root
       dest: /etc/systemd/user.conf

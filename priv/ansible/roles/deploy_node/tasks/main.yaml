@@ -44,9 +44,33 @@
         dest: /srv/unpack-directory
         remote_src: true
 
+    - name: Check for current release file
+      stat:
+        path: "/srv/current_release.txt"
+      register: current_release_file
+
+    - name: Check for release history
+      stat:
+        path: "/srv/release_history.txt"
+      register: release_history_file
+
+    - name: Write entry to release_history file
+      copy:
+        content: ""
+        dest: /srv/release_history.txt
+        force: no
+        group: sys
+        owner: root
+        mode: 0555
+      when: current_release_file.stat.exists and not release_history_file.stat.exists
+
+    - name: Write entry to release_history file
+      shell: cat /srv/current_release.txt >> /srv/release_history.txt
+      when: current_release_file.stat.exists
+
     - name: Write current release file
       ansible.builtin.copy:
-        content: "{{ aws_file_name.stdout_lines[0] }}"
+        content: "{{ aws_file_name.stdout_lines[0] }}\n"
         dest: "/srv/current_release.txt"
 
     - name: Add erlang_systemd.service file to /etc/systemd/system/{{ app_name }}.service

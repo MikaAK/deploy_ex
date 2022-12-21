@@ -50,6 +50,7 @@ variable "<%= @app_name %>_project" {
 
   default = {
 <%= @terraform_sentry_variables %>
+<%= @terraform_redis_variables %>
 <%= @terraform_grafana_variables %>
 <%= @terraform_prometheus_variables %>
 <%= @terraform_loki_variables %>

@@ -1,0 +1,8 @@
+- hosts: database_*_redis
+  roles:
+    - pip3
+    - awscli
+    - redis_server
+
+
+

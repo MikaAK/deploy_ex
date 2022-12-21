@@ -69,6 +69,7 @@ defmodule Mix.Tasks.Terraform.Build do
         no_loki: :boolean,
         no_sentry: :boolean,
         no_grafana: :boolean,
+        no_redis: :boolean,
         no_prometheus: :boolean
       ]
     )
@@ -152,6 +153,7 @@ defmodule Mix.Tasks.Terraform.Build do
       terraform_release_variables: terraform_output,
       release_bucket_name: opts[:aws_release_bucket],
       logging_bucket_name: opts[:aws_log_bucket],
+      terraform_redis_variables: terraform_redis_variables(opts),
       terraform_sentry_variables: terraform_sentry_variables(opts),
       terraform_grafana_variables: terraform_grafana_variables(opts),
       terraform_loki_variables: terraform_loki_variables(opts),
@@ -162,6 +164,22 @@ defmodule Mix.Tasks.Terraform.Build do
     DeployExHelpers.write_file(opts[:variables_file], variables_files, opts)
   end
 
+  defp terraform_redis_variables(opts) do
+    if opts[:no_redis] do
+      ""
+    else
+      """
+          #{DeployExHelpers.underscored_app_name()}_redis = {
+            name = "#{DeployExHelpers.app_name()} Monitoring"
+            tags = {
+              Vendor      = "Redis"
+              Type        = "Database"
+              DatabaseKey = "#{DeployExHelpers.underscored_app_name()}_redis"
+            }
+          },
+      """
+    end
+  end
   defp terraform_sentry_variables(opts) do
     if opts[:no_sentry] do
       ""

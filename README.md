@@ -1,11 +1,18 @@
 # DeployEx (WIP THIS IS NOT AVAILABLE IN HEX)
-*Important: This requires Terraform and Ansible to be installed to use the commands*
+*Important: This requires [Terraform](https://terraform.io) and [Ansible](https://www.ansible.com/) to be installed to use the commands*
 
 This library allows you to add deployment to your umbrella application using AWS EC2, Ansible and Terraform
 
 By default it uses `t3.nano` nodes but this can be changed in `./deploys/terraform/modules/aws-instance/variables.tf`
 Once the files are generated, you can manage all files yourself, and we'll attempt to inject the variables in upon
 reruns of the build commands.
+
+Under the default commands you will gain the following services (all of which can be disabled easily to opt-out):
+- [Redis](https://redis.com/)
+- [Grafana UI](https://grafana.com/)
+- [Grafana Loki](https://grafana.com/oss/loki/)
+- [Prometheus](https://prometheus.io/)
+- [Postgres](https://postgresql.org/)
 
 ## Legend
 - [Package Installation](https://github.com/MikaAK/deploy_ex#installation)
@@ -67,6 +74,7 @@ off pass the options when calling `deploy_ex.full_setup`, `terraform.build` or `
 - `no-prometheus`
 - `no-grafana`
 - `no-loki`
+- `no-redis`
 - `no-sentry`
 - `no-database` - Disables PG database creation in AWS RDS
 
@@ -112,6 +120,8 @@ and is good for a quick setup
 To set up this way you would run
 - `mix deploy_ex.full_setup -y -k` - Sets up `./deploy` folder and terraform & ansible resources and skips running deployment
 - `mix deploy_ex.install_github_action` - Adds a github action to your folder that will maintain terraform & ansible on push
+
+For more info see the [Github Actions Section](https://github.com/MikaAK/deploy_ex#github-action)
 
 ### Usage with Deploy Node
 - `mix deploy_ex.full_setup -y` - Sets up `./deploy` folder and terraform & ansible resources & commit this
@@ -198,6 +208,15 @@ $ eval "$(mix deploy_ex.ssh -s --iex app)"
 #### Writing a utility command
 You can use this command like `my-app-ssh ap_nm --log` or `my-app-ssh app_name --iex` to get into a remote iex shell
 
+###### Options
+
+- `short` - get short form command
+- `root` - get command to connect with root access
+- `log` - get command to remotely monitor logs
+- `log_count` - sets log count to get back
+- `all` - gets all logs instead of just ones for the app
+- `iex` - get command to remotley connect to running node via IEx
+
 Bash:
 ```bash
 alias my-app-ssh='pushd ~/Documents/path/to/project && mix compile && eval "$(mix deploy_ex.ssh $@)" && popd'
@@ -262,6 +281,18 @@ To load ENV Variables into the Build Environment from Github Actions Secrets, na
 in accordance to this pattern `__DEPLOY_EX__MY_ENV_VARIABLE` doing this will load `MY_ENV_VARIABLE`
 as a environment variable in the build machine so it's available during compile
 
+The github action will automatically run terraform build and anisble build to keep your releases in the mix.exs in line
+with instances and other setup. If you have a custom config for terraform or ansible you'll want to pull the build commands out
+of the github action file that gets generated.
+
+By default the github action will not redeploy unchanged applications, it will run a diff in git to determine changes and only
+change on the following conditions:
+- Code change in the app
+- Code change in a related umbrella app
+- Dependency changes in mix.lock
+- The release hasn't been uploaded to S3 already
+
+To redeploy a node you can run `mix ansible.deploy --only <app>` with ansible installed to redeploy all nodes in the app
 
 ### Clustering
 You can easily cluster your app with [this LibCluster Strategy](https://github.com/MikaAK/libcluster_ec2_tag_strategy) which
