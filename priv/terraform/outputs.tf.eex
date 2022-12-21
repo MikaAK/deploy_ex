@@ -22,3 +22,9 @@ output "load_balancer_dns_name" {
   description = "DNS Names for Load Balancers"
   value       = { for p in sort(keys(var.<%= @app_name %>_project)) : p => module.ec2_instance[p].load_balancer_dns_name }
 }
+
+<%= if @use_db do %>output "database_ips" {
+  description = "Database IPs"
+  value       = aws_db_instance.anana_database.endpoint
+}
+<% end %>

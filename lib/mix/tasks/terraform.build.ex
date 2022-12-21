@@ -65,6 +65,7 @@ defmodule Mix.Tasks.Terraform.Build do
         verbose: :boolean,
         aws_region: :string,
         env: :string,
+        no_database: :boolean,
         no_loki: :boolean,
         no_sentry: :boolean,
         no_grafana: :boolean,
@@ -263,6 +264,8 @@ defmodule Mix.Tasks.Terraform.Build do
     DeployExHelpers.check_file_exists!(template_file_path)
 
     main_file = EEx.eval_file(template_file_path, assigns: %{
+      use_db: !opts[:no_database],
+      db_password: !opts[:no_database] && generate_db_password(),
       aws_region: opts[:aws_region],
       aws_release_bucket: opts[:aws_release_bucket],
       app_name: DeployExHelpers.underscored_app_name()
@@ -271,12 +274,17 @@ defmodule Mix.Tasks.Terraform.Build do
     DeployExHelpers.write_file(opts[:main_file], main_file, opts)
   end
 
+  defp generate_db_password do
+    "SuperSecretPassword#{Enum.random(111_111..999_999)}"
+  end
+
   defp write_terraform_output(opts) do
     keypair_template_path = DeployExHelpers.priv_file("terraform/outputs.tf.eex")
 
     DeployExHelpers.check_file_exists!(keypair_template_path)
 
     terraform_keypair = EEx.eval_file(keypair_template_path, assigns: %{
+      use_db: !opts[:no_database],
       app_name: DeployExHelpers.underscored_app_name()
     })
 
