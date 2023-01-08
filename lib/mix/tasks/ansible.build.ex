@@ -142,6 +142,8 @@ defmodule Mix.Tasks.Ansible.Build do
       :ok
     else
       variables = %{
+        is_loki_enabled: !opts[:no_loki],
+        is_prometheus_enabled: !opts[:no_prometheus],
         loki_logger_s3_region: opts[:aws_logging_bucket],
         loki_logger_s3_bucket_name: opts[:aws_logging_region]
       }
