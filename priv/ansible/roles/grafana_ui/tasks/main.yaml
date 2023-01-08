@@ -36,6 +36,14 @@
         group: root
         mode: 0644
 
+    - name: Add datasource provisioning files
+      template:
+        src: grafana-datasources.yaml.j2
+        dest: /etc/grafana/provisioning/datasources/default.yaml
+        owner: root
+        group: root
+        mode: 0644
+
     - name: Add grafana-server.service file to /etc/grafana/grafana.ini
       template:
         src: grafana-server.service.j2

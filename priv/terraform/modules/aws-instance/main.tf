@@ -32,6 +32,7 @@ resource "aws_instance" "ec2_instance" {
 
   subnet_id              = data.aws_subnet.random_subnet.id
   vpc_security_group_ids = [var.security_group_id]
+  private_ip             = var.private_ip
 
   key_name = var.key_pair_key_name
 

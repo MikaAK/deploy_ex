@@ -246,7 +246,8 @@ This has a few setup requirements, we must first go into `deploys/ansible/group_
 
 - `loki_logger_s3_region` - This should be set to the same logging region as the logging bucket from `mix terraform.output`
 - `loki_logger_s3_bucket_name` - This should be set to the bucket name for logging from `mix terraform.output`
-- `grafana_loki_url` - This should be set after running `mix terraform.apply`, it will need to be swapped to the instance id like so `http://i-00d30d1957d4b4f4c:3100`. Redeploy using `mix ansible.setup --only loki` to apply changes
+
+To set this up within Grafana simply go into `Configuration` -> `Data sources` -> `Add Data source` -> `Loki` -> `Use the elastic ip in the url with port 3100`
 
 ### Setting up Prometheus for Metrics
 (WIP)

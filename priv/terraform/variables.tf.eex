@@ -45,6 +45,7 @@ variable "<%= @app_name %>_project" {
     elb_port = optional(number)
     elb_instance_port = optional(number)
     instance_ebs_secondary_size = optional(number)
+    private_ip = optional(string)
     tags = optional(map(string))
   }))
 

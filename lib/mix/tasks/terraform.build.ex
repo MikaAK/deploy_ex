@@ -170,7 +170,7 @@ defmodule Mix.Tasks.Terraform.Build do
     else
       """
           #{DeployExHelpers.underscored_app_name()}_redis = {
-            name = "#{DeployExHelpers.app_name()} Monitoring"
+            name = "#{DeployExHelpers.app_name()} Redis"
             tags = {
               Vendor      = "Redis"
               Type        = "Database"
@@ -201,13 +201,14 @@ defmodule Mix.Tasks.Terraform.Build do
       ""
     else
       """
-          loki_aggreagtor = {
+          loki_aggregator = {
             name          = "Grafana Loki Logs"
             instance_type = "t3.micro"
+            private_ip    = "10.0.1.50"
 
             enable_ebs                  = true
-            enable_eip                  = true
             instance_ebs_secondary_size = 8
+
             tags = {
               Vendor = "Grafana"
               Type   = "Monitoring"
@@ -249,6 +250,7 @@ defmodule Mix.Tasks.Terraform.Build do
             instance_type               = "t3.micro"
             enable_ebs                  = true
             instance_ebs_secondary_size = 16
+            private_ip                  = "10.0.1.40"
 
             tags = {
               Vendor = "Grafana"

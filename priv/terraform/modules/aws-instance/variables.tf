@@ -30,6 +30,12 @@ variable "key_pair_key_name" {
   nullable    = false
 }
 
+variable "private_ip" {
+  description = "Private Static IP to use for the instances"
+  type        = string
+  default     = null
+}
+
 variable "enable_eip" {
   description = "Enables instance to generate an elastic ip for itself"
   type        = bool

@@ -23,6 +23,9 @@ defmodule Mix.Tasks.Ansible.Build do
       |> Keyword.put_new(:terraform_directory, @terraform_default_path)
       |> Keyword.put_new(:hosts_file, "./deploys/ansible/aws_ec2.yaml")
       |> Keyword.put_new(:config_file, "./deploys/ansible/ansible.cfg")
+      |> Keyword.put_new(:group_vars_file, "./deploys/ansible/group_vars/all.yaml")
+      |> Keyword.put_new(:aws_logging_bucket, Config.aws_release_bucket())
+      |> Keyword.put_new(:aws_logging_region, Config.aws_region())
       |> Keyword.put_new(:aws_release_bucket, Config.aws_release_bucket())
       |> Keyword.put_new(:aws_region, Config.aws_region())
 
@@ -30,6 +33,7 @@ defmodule Mix.Tasks.Ansible.Build do
          :ok <- ensure_ansible_directory_exists(opts[:directory], opts),
          :ok <- create_ansible_hosts_file(opts),
          :ok <- create_ansible_config_file(opts),
+         :ok <- create_ansible_group_vars_file(opts),
          {:ok, app_names} <- DeployExHelpers.fetch_mix_release_names(),
          :ok <- create_ansible_playbooks(app_names, opts) do
       :ok
@@ -75,6 +79,10 @@ defmodule Mix.Tasks.Ansible.Build do
       "ansible"
         |> DeployExHelpers.priv_file()
         |> File.cp_r!(directory)
+
+      File.rm!(Path.join(directory, "group_vars/all.yaml.eex"))
+
+      create_ansible_group_vars_file(opts)
 
       if opts[:auto_pull_aws] do
         pull_aws_credentials_into_awscli_variables(directory, opts)
@@ -129,6 +137,30 @@ defmodule Mix.Tasks.Ansible.Build do
     end
   end
 
+  defp create_ansible_group_vars_file(opts) do
+    if opts[:host_only] do
+      :ok
+    else
+      variables = %{
+        loki_logger_s3_region: opts[:aws_logging_bucket],
+        loki_logger_s3_bucket_name: opts[:aws_logging_region]
+      }
+
+      DeployExHelpers.write_template(
+        DeployExHelpers.priv_file("ansible/group_vars/all.yaml.eex"),
+        opts[:group_vars_file],
+        variables,
+        opts
+      )
+
+      if File.exists?("#{opts[:group_vars_file]}.eex") do
+        File.rm!("#{opts[:group_vars_file]}.eex")
+      end
+
+      :ok
+    end
+  end
+
   defp create_ansible_config_file(opts) do
     if opts[:host_only] do
       :ok
@@ -152,7 +184,7 @@ defmodule Mix.Tasks.Ansible.Build do
 
       :ok
     end
-    end
+  end
 
   defp create_ansible_hosts_file(opts) do
     variables = %{

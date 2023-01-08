@@ -27,7 +27,7 @@ data = /data/grafana
 ;plugins = /var/lib/grafana/plugins
 
 # folder that contains provisioning config files that grafana will apply on startup and while running.
-;provisioning = conf/provisioning
+;provisioning = /root/grafana_provisioning/
 
 #################################### Server ####################################
 [server]
@@ -41,7 +41,7 @@ data = /data/grafana
 http_port = {{ grafana_ui_port }}
 
 # The public facing domain name used to access grafana from a browser
-;domain = localhost
+;domain = metrics.learn-elixir.dev
 {% if grafana_ui_domain %}
 domain = {{ grafana_ui_domain }}
 {% endif %}

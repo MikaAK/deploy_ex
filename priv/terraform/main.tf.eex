@@ -1,5 +1,4 @@
 terraform {
-  experiments = [module_variable_optional_attrs]
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -67,6 +66,8 @@ module "ec2_instance" {
 
   elb_port          = try(each.value.elb_port, null)
   elb_instance_port = try(each.value.elb_instance_port, null)
+
+  private_ip = try(each.value.private_ip, null)
 
   security_group_id = module.app_security_group.security_group_id
   subnet_ids        = module.vpc.public_subnets

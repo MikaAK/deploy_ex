@@ -1,0 +1,12 @@
+apiVersion: 1
+
+datasources:
+  - name: Loki Logs
+    type: loki
+    user: $USER
+    url: {{ grafana_loki_url }}
+
+  - name: Prometheus Metrics
+    type: prometheus
+    user: $USER
+    url: {{ grafana_prometheus_url }}
