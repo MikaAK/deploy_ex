@@ -233,24 +233,28 @@ end
 ```
 
 ## Monitoring
-Out of the box, deploy_ex will generate Prometheus (WIP), Grafana UI, Grafana Loki and Sentry (WIP) into the application
+Out of the box, deploy_ex will generate Prometheus, Grafana UI, Grafana Loki and Sentry (WIP) into the application
 
 To use these however there are a few steps to getting started currently (this will change in the future so it's painless)
 
 ### Setting up Grafana UI
 This one is pretty easy. It should just work out of the box on the `grafana_ui` app listed in `mix terraform.output`
 If it's not you can deploy it by using `mix ansible.setup --only grafana_ui`
+By default Loki & Prometheus will be configured as Data Sources within Grafana and the default username and password are both `admin`
 
 ### Setting up Loki for Logging
-This has a few setup requirements, we must first go into `deploys/ansible/group_vars/all.yaml` and change the following:
+Loki will by default come installed and setup within Grafana UI. Loki by default takes up the private IP `10.0.1.50`.
 
-- `loki_logger_s3_region` - This should be set to the same logging region as the logging bucket from `mix terraform.output`
-- `loki_logger_s3_bucket_name` - This should be set to the bucket name for logging from `mix terraform.output`
-
-To set this up within Grafana simply go into `Configuration` -> `Data sources` -> `Add Data source` -> `Loki` -> `Use the elastic ip in the url with port 3100`
+If `loki` is not deployed you can run `mix ansible.setup --only loki` to setup and start the loki log aggregator
 
 ### Setting up Prometheus for Metrics
-(WIP)
+Prometheus by default will come setup on all the nodes you create and be automatically connected in grafana. By default takes up the private IP `10.0.1.50`.
+
+If `prometheus_db` not deployed you can run `mix ansible.setup --only prometheus_db` to setup and start the database on a provisioned node.
+
+By default it will generate with an elastic IP
+that can be used to access it. To add a custom domain go to `deploys/ansible/roles/grafana_ui/defaults/main.yaml` and swap the `grafana_ui_domain` to the domain of your choosing, and point an `A` record to the Elastic IP
+
 
 ### Setting up Sentry for Error Capturing
 (WIP)
