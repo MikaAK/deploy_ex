@@ -8,15 +8,21 @@
 
     - name: Enable prom-node-exporter service
       systemd:
-        daemon_reload: true
-        state: started
-        name: prometheus_exporter
+        enabled: true
+        name: prometheus-node-exporter
       when: prometheus_exporter.changed
 
-    - name: Restart prom-node-exporter service
+    - name: Stop promtail service
       systemd:
-        state: restarted
-        name: prometheus_exporter
+        name: promtail
+        state: stopped
+      when: prometheus_exporter.changed and ansible_facts.services[promtail] is not defined
+
+    - name: Start promtail service
+      systemd:
+        daemon_reload: true
+        name: promtail
+        state: started
       when: prometheus_exporter.changed
   become: true
 
