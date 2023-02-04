@@ -170,7 +170,8 @@ defmodule Mix.Tasks.Terraform.Build do
     else
       """
           #{DeployExHelpers.underscored_app_name()}_redis = {
-            name = "#{DeployExHelpers.app_name()} Redis"
+            name        = "#{DeployExHelpers.app_name()} Redis"
+            private_ip  = "10.0.1.60"
             tags = {
               Vendor      = "Redis"
               Type        = "Database"
