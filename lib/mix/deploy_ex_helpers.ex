@@ -1,4 +1,10 @@
 defmodule DeployExHelpers do
+  @ansible_flags [
+    inventory: :string,
+    limit: :string,
+    extra_vars: :keep
+  ]
+
   def app_name, do: Mix.Project.get() |> Module.split |> hd
   def underscored_app_name, do: Macro.underscore(app_name())
 
@@ -59,6 +65,17 @@ defmodule DeployExHelpers do
     string |> String.split(~r/_|-/) |> Enum.map_join(" ", &String.capitalize/1)
   end
 
+  def to_ansible_args(args) do
+    {ansible_opts, _extra_args, _invalid_args} =
+      OptionParser.parse(args,
+        aliases: [i: :inventory, l: :limit, e: :extra_vars],
+        strict: @ansible_flags
+      )
+
+    ansible_opts
+    |> OptionParser.to_argv(@ansible_flags)
+    |> Enum.join(" ")
+  end
   def run_command_with_input(command, directory) do
     port = Port.open({:spawn, command}, [
       :nouse_stdio,
