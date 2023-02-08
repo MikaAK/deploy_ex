@@ -1,4 +1,10 @@
 defmodule DeployExHelpers do
+  @ansible_flags [
+    inventory: :string,
+    limit: :string,
+    extra_vars: :keep
+  ]
+
   def app_name, do: Mix.Project.get() |> Module.split |> hd
   def underscored_app_name, do: Macro.underscore(app_name())
 
@@ -59,11 +65,6 @@ defmodule DeployExHelpers do
     string |> String.split(~r/_|-/) |> Enum.map_join(" ", &String.capitalize/1)
   end
 
-  @ansible_flags [
-    inventory: :string,
-    limit: :string,
-    extra_vars: :keep
-  ]
   def to_ansible_args(args) do
     {ansible_opts, _extra_args, _invalid_args} =
       OptionParser.parse(args,
@@ -166,7 +167,7 @@ defmodule DeployExHelpers do
 
   def terraform_instances(terraform_directory) do
     with {:ok, output} <- terraform_state(terraform_directory) do
-      a = output
+      output
         |> String.split("\n")
         |> Enum.filter(&(&1 =~ ~r/module.ec2_instance.*ec2_instance/))
         |> Enum.map(fn resource ->
