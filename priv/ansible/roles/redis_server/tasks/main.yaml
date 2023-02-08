@@ -13,6 +13,12 @@
       state: present
       update_cache: true
 
+  - name: Install Redis Stack
+    apt:
+      name: redis-stack-server
+      state: present
+    when: redis_stack_enabled
+
   - name: Add redis.conf file to /etc/redis/redis.conf
     template:
       src: redis.conf
@@ -58,6 +64,19 @@
     systemd:
       name: redis
       state: started
+    when: not redis_stack_enabled
+
+  - name: Stop redis stack service
+    systemd:
+      name: redis-stack-server
+      state: stopped
+    when: redis_stack_enabled
+
+  - name: Start redis stack service
+    systemd:
+      name: redis-stack-server
+      state: started
+    when: redis_stack_enabled
 
   - name: Stop redis-exporter service
     systemd:
