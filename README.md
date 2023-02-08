@@ -177,6 +177,11 @@ The following options are present:
 
 There is also a default volume of 16gb created and mounted at the /data directory, you can change this in each specific app type if desired
 
+## Ansible Options
+- `inventory` (alias: `e`) - [Ansible inventories](https://docs.ansible.com/ansible/latest/inventory_guide/intro_inventory.html)
+- `limit` (alias: `i`) - [Ansible limiting/filtering](https://docs.ansible.com/ansible/latest/inventory_guide/intro_patterns.html#patterns-and-ad-hoc-commands) to target specific servers
+- `extra_vars` (alias: `e`) - Add extra variables (E.G. bucket_name="my_bucket")
+
 ## Connecting to your nodes
 You can use `mix deploy_ex.ssh <app_name>` to connect to your nodes. By itself it will return the command, but can be
 combined with eval using the `-s` flag
