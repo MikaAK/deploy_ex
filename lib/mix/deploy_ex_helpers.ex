@@ -62,12 +62,12 @@ defmodule DeployExHelpers do
   @ansible_flags [
     inventory: :string,
     limit: :string,
-    "extra-vars": :keep
+    extra_vars: :keep
   ]
   def to_ansible_args(args) do
     {ansible_opts, _extra_args, _invalid_args} =
       OptionParser.parse(args,
-        aliases: [i: :inventory, l: :limit, e: :"extra-vars"],
+        aliases: [i: :inventory, l: :limit, e: :extra_vars],
         strict: @ansible_flags
       )
 
