@@ -172,6 +172,10 @@ defmodule Mix.Tasks.Terraform.Build do
           #{DeployExHelpers.underscored_app_name()}_redis = {
             name        = "#{DeployExHelpers.app_name()} Redis"
             private_ip  = "10.0.1.60"
+            enable_ebs  = true
+
+            instance_ebs_secondary_size = 16
+
             tags = {
               Vendor      = "Redis"
               Type        = "Database"

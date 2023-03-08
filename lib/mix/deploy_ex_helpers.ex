@@ -5,6 +5,10 @@ defmodule DeployExHelpers do
     extra_vars: :keep
   ]
 
+  @terraform_flags [
+    var_file: :string
+  ]
+
   def app_name, do: Mix.Project.get() |> Module.split |> hd
   def underscored_app_name, do: Macro.underscore(app_name())
 
@@ -65,6 +69,17 @@ defmodule DeployExHelpers do
     string |> String.split(~r/_|-/) |> Enum.map_join(" ", &String.capitalize/1)
   end
 
+  def to_terraform_args(args) do
+    {ansible_opts, _extra_args, _invalid_args} =
+      OptionParser.parse(args,
+        strict: @terraform_flags
+      )
+
+    ansible_opts
+    |> OptionParser.to_argv(@terraform_flags)
+    |> Enum.join(" ")
+  end
+
   def to_ansible_args(args) do
     {ansible_opts, _extra_args, _invalid_args} =
       OptionParser.parse(args,
@@ -76,6 +91,7 @@ defmodule DeployExHelpers do
     |> OptionParser.to_argv(@ansible_flags)
     |> Enum.join(" ")
   end
+
   def run_command_with_input(command, directory) do
     port = Port.open({:spawn, command}, [
       :nouse_stdio,

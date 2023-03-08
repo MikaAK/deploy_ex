@@ -14,7 +14,7 @@ defmodule Mix.Tasks.Terraform.Output do
       |> Keyword.put_new(:directory, @terraform_default_path)
 
     with :ok <- DeployExHelpers.check_in_umbrella() do
-      cmd = "terraform output"
+      cmd = "terraform output #{DeployExHelpers.to_terraform_args(args)}"
 
       cmd = if opts[:short], do: "#{cmd} --json", else: cmd
 

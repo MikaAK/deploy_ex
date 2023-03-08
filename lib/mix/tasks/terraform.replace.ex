@@ -21,14 +21,14 @@ defmodule Mix.Tasks.Terraform.Replace do
 
     with :ok <- DeployExHelpers.check_in_umbrella() do
       if opts[:string] do
-        terraform_apply_replace(opts[:string], opts)
+        terraform_apply_replace(opts[:string], DeployExHelpers.to_terraform_args(args), opts)
       else
-        match_instance_from_terraform_and_replace(opts, extra_args)
+        match_instance_from_terraform_and_replace(opts, args, extra_args)
       end
     end
   end
 
-  defp match_instance_from_terraform_and_replace(opts, extra_args) do
+  defp match_instance_from_terraform_and_replace(opts, args, extra_args) do
     case DeployExHelpers.terraform_instances(opts[:directory]) do
       {:error, e} -> Mix.raise(to_string(e))
 
@@ -40,13 +40,13 @@ defmodule Mix.Tasks.Terraform.Replace do
 
             instance_name
               |> replace_string(node_num)
-              |> terraform_apply_replace(opts)
+              |> terraform_apply_replace(DeployExHelpers.to_terraform_args(args), opts)
           end)
     end
   end
 
-  defp terraform_apply_replace(replace_str, opts) do
-    cmd = "terraform apply --replace \"#{replace_str}\""
+  defp terraform_apply_replace(replace_str, terraform_args, opts) do
+    cmd = "terraform apply #{terraform_args} --replace \"#{replace_str}\""
     cmd = if opts[:auto_approve], do: "#{cmd} --auto-approve", else: cmd
 
     DeployExHelpers.run_command_with_input(cmd, opts[:directory])

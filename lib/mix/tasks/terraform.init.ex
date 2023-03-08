@@ -14,7 +14,7 @@ defmodule Mix.Tasks.Terraform.Init do
       |> Keyword.put_new(:directory, @terraform_default_path)
 
     with :ok <- DeployExHelpers.check_in_umbrella() do
-      cmd = "terraform init"
+      cmd = "terraform init #{DeployExHelpers.to_terraform_args(args)}"
       cmd = if opts[:upgrade], do: "#{cmd} --upgrade", else: cmd
 
       DeployExHelpers.run_command_with_input(cmd, opts[:directory])

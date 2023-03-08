@@ -14,7 +14,7 @@ defmodule Mix.Tasks.Terraform.Drop do
       |> Keyword.put_new(:directory, @terraform_default_path)
 
     with :ok <- DeployExHelpers.check_in_umbrella() do
-      cmd = "terraform destroy"
+      cmd = "terraform destroy #{DeployExHelpers.to_terraform_args(args)}"
       cmd = if opts[:auto_approve], do: "#{cmd} --auto-approve", else: cmd
 
       DeployExHelpers.run_command_with_input(cmd, opts[:directory])
