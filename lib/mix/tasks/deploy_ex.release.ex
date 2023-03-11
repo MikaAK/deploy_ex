@@ -202,7 +202,8 @@ defmodule Mix.Tasks.DeployEx.Release do
   end
 
   defp run_phoenix_asset_pipeline(app_name) do
-    app_path = Mix.Project.apps_paths()[String.to_atom(app_name)]
+    app_name_atom = String.to_atom(app_name)
+    app_path = Mix.Project.apps_paths()[app_name_atom]
 
     with {:ok, js_files} <- app_path |> Path.join("./assets/js") |> File.ls do
       if Enum.any?(js_files) do
@@ -211,7 +212,7 @@ defmodule Mix.Tasks.DeployEx.Release do
           :green, " for ", :reset, app_name
         ])
 
-        Mix.Task.run("cmd", ["--app", app_name, "mix", "esbuild", "default", "--minify"])
+        Mix.Task.run("cmd", ["--app", app_name, "mix", "esbuild", build_config_name(:esbuild, app_name_atom), "--minify"])
       end
     end
 
@@ -222,7 +223,7 @@ defmodule Mix.Tasks.DeployEx.Release do
           :green, " for ", :reset, app_name
         ])
 
-        Mix.Task.run("cmd", ["--app", app_name, "mix", "sass", "default"])
+        Mix.Task.run("cmd", ["--app", app_name, "mix", "sass", build_config_name(:dart_sass, app_name_atom)])
       end
     end
 
@@ -232,7 +233,7 @@ defmodule Mix.Tasks.DeployEx.Release do
         :green, " for ", :reset, app_name
       ])
 
-      Mix.Task.run("cmd", ["--app", app_name, "mix", "tailwind", "default", "--minify"])
+      Mix.Task.run("cmd", ["--app", app_name, "mix", "tailwind", build_config_name(:tailwind, app_name_atom), "--minify"])
     end
 
     Mix.shell().info([
@@ -241,6 +242,14 @@ defmodule Mix.Tasks.DeployEx.Release do
     ])
 
     Mix.Task.run("cmd", ["--app", app_name, "mix", "phx.digest"])
+  end
+
+  defp build_config_name(build_app, app_name) do
+    if Application.get_env(build_app, app_name) do
+      to_string(app_name)
+    else
+      "default"
+    end
   end
 
   defp run_mix_release(%ReleaseUploader.State{app_name: app_name} = candidate, opts) do

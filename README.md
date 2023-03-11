@@ -20,6 +20,7 @@ Under the default commands you will gain the following services (all of which ca
   - [Usage with Github Actions](https://github.com/MikaAK/deploy_ex#usage-with-github-actions)
   - [Usage with Deploy Node](https://github.com/MikaAK/deploy_ex#usage-with-deploy-node)
   - [Changes Over Time](https://github.com/MikaAK/deploy_ex#changes-over-time)
+  - [Multiple Phoenix Apps](https://github.com/MikaAK/deploy_ex#multiple-phoenix-apps)
 - [Commands](https://github.com/MikaAK/deploy_ex#changes-over-time)
 - [Univiersal Options](https://github.com/MikaAK/deploy_ex#universial-options)
 - [Terraform Variables](https://github.com/MikaAK/deploy_ex#terraform-variables)
@@ -134,6 +135,17 @@ For more info see the [Github Actions Section](https://github.com/MikaAK/deploy_
 Because the terraform and ansible files are generated directly into your application, you own these files.
 You can make changes to ansible and terraform files as you see fit. In the case of terraform, it will automatically
 inject the apps into your variables file despite changes to the file. If you change terraform, make sure to run `mix terraform.apply`
+
+### Multiple Phoenix Apps
+In order to have multiple phoenix apps in the umbrella supported, we need to configure our
+`:dart_sass`, `:tailwind` and `:esbuild` to support multiple apps by changing the key from default
+to the key of each app and setting the proper `cd` and `NODE_PATH`
+
+Example:
+```
+cd: Path.expand("../apps/learn_elixir_lander/assets", __DIR__),
+env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
+```
 
 ## Commands
 - [x] `mix deploy_ex.full_setup` - Runs all the commands to initialize and setup your project

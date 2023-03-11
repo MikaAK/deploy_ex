@@ -13,9 +13,37 @@
       state: present
       update_cache: true
 
+  - name: Install GPG
+    apt:
+      name: gpg
+      state: present
+      update_cache: true
+    when: redis_stack_enabled
+
+  - name: Check Redis GPG
+    stat:
+      path: /usr/share/keyrings/redis-archive-keyring.gpg
+    register: redis_gpg_key
+
+  - name: Add Redis gpg key
+    shell: curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
+    when: redis_stack_enabled and not redis_gpg_key.stat.exists
+
+  - name: Check Redis Stack Source List
+    stat:
+      path: /etc/apt/sources.list.d/redis.list
+    when: redis_stack_enabled
+    register: redis_stack_source_list
+
+  - name: Add source repository into sources list
+    shell: |
+      echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/redis.list
+    when: redis_stack_enabled and not redis_stack_source_list.stat.exists
+
   - name: Install Redis Stack
     apt:
       name: redis-stack-server
+      update_cache: true
       state: present
     when: redis_stack_enabled
 
