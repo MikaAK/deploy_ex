@@ -34,6 +34,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
   ### Options
   - `short` - get short form command
   - `root` - get command to connect with root access
+  - `log_user` - set log user
   - `log` - get command to remotely monitor logs
   - `log_count` - sets log count to get back
   - `all` - gets all logs instead of just ones for the app
@@ -66,6 +67,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         root: :boolean,
         log: :boolean,
         log_count: :integer,
+        log_user: :integer,
         all: :boolean,
         iex: :boolean
       ]
@@ -126,10 +128,9 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         "-t 'sudo -i'"
 
       opts[:log] ->
-        app_name_target = if opts[:all], do: "", else: "-u #{app_name} "
         log_num_count = if opts[:log_count], do: " -n #{opts[:log_count]}", else: ""
 
-        "'sudo -u root journalctl -f #{app_name_target}'#{log_num_count}"
+        "'sudo -u root journalctl -f #{app_name_target(app_name, opts)}'#{log_num_count}"
 
       opts[:iex] ->
         "-t 'sudo -u root /srv/#{app_name}*/bin/#{app_name}* remote'"
@@ -137,5 +138,12 @@ defmodule Mix.Tasks.DeployEx.Ssh do
       true ->
         ""
     end
+  end
+
+  defp app_name_target(app_name, opts) do
+    cond do
+      opts[:all] -> ""
+      opts[:log_user] -> "-u #{opts[:log_user]} "
+      true -> "-u #{app_name} "
   end
 end

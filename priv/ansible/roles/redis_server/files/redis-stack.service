@@ -1,0 +1,19 @@
+[Unit]
+Description=Redis stack server
+Documentation=https://redis.io/
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/opt/redis-stack/bin/redis-stack-server /etc/redis/redis.conf
+Restart=on-failure
+RestartSec=5
+WorkingDirectory=/var/lib/redis-stack
+UMask=0077
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+

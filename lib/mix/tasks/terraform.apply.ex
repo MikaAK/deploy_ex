@@ -6,6 +6,13 @@ defmodule Mix.Tasks.Terraform.Apply do
   @shortdoc "Deploys to terraform resources using ansible"
   @moduledoc """
   Deploys with terraform to AWS
+
+  ## Options
+  - `directory` - Set the directory for terraform (defaults to #{@terraform_default_path})
+  - `force` - Force create things without asking
+  - `quiet` - Don't output messages
+  - `auto_approve` - Automatically say yes when applying
+  - `var-file` - Set a specific variables file
   """
 
   def run(args) do
