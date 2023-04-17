@@ -83,12 +83,19 @@ defmodule DeployExHelpers do
   def to_ansible_args(args) do
     {ansible_opts, _extra_args, _invalid_args} =
       OptionParser.parse(args,
-        aliases: [i: :inventory, l: :limit, e: :extra_vars],
+        aliases: [i: :inventory, e: :extra_vars],
         strict: @ansible_flags
       )
 
     ansible_opts
     |> OptionParser.to_argv(@ansible_flags)
+    |> Enum.map(fn part ->
+      if part =~ " " do
+        "'#{part}'"
+      else
+        part
+      end
+    end)
     |> Enum.join(" ")
   end
 

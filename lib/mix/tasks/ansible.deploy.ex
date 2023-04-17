@@ -26,12 +26,11 @@ defmodule Mix.Tasks.Ansible.Deploy do
 
   def run(args) do
     with :ok <- DeployExHelpers.check_in_umbrella() do
-      opts = args
-        |> parse_args
-        |> Keyword.put_new(:directory, @ansible_default_path)
-        |> Keyword.put_new(:parallel, @playbook_max_concurrency)
+      opts = parse_args(args)
 
       opts = opts
+        |> Keyword.put_new(:directory, @ansible_default_path)
+        |> Keyword.put_new(:parallel, @playbook_max_concurrency)
         |> Keyword.put(:only, Keyword.get_values(opts, :only))
         |> Keyword.put(:except, Keyword.get_values(opts, :except))
 

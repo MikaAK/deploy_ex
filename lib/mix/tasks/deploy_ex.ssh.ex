@@ -145,5 +145,6 @@ defmodule Mix.Tasks.DeployEx.Ssh do
       opts[:all] -> ""
       opts[:log_user] -> "-u #{opts[:log_user]} "
       true -> "-u #{app_name} "
+    end
   end
 end
