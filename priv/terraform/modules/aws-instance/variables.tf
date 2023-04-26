@@ -36,8 +36,15 @@ variable "private_ip" {
   default     = null
 }
 
+variable "enable_public_ip" {
+  description = "Enables instance to generate an public ip for itself"
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "enable_eip" {
-  description = "Enables instance to generate an elastic ip for itself"
+  description = "Enables instance to generate an elastic ip for itself, sets enable_public_ip to true"
   type        = bool
   default     = false
   nullable    = false

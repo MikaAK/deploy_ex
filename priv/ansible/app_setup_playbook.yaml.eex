@@ -5,7 +5,6 @@
   roles:
     - beam_linux_tuning
     - log_cleanup
-    <%# - erl_crash_dump_cleanup %>
     - pip3
     - awscli
     <%= unless @no_loki do %>- grafana_loki_promtail
