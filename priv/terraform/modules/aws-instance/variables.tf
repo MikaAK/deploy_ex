@@ -36,8 +36,8 @@ variable "private_ip" {
   default     = null
 }
 
-variable "enable_public_ip" {
-  description = "Enables instance to generate an public ip for itself"
+variable "disable_public_ip" {
+  description = "Disables instance from generating a public ip for itself"
   type        = bool
   default     = false
   nullable    = false

@@ -32,6 +32,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
   mix compile
 
   ### Options
+  - `whitelist` - whitelist the current_ip first
   - `short` - get short form command
   - `root` - get command to connect with root access
   - `log_user` - set log user
@@ -58,7 +59,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
   defp parse_args(args) do
     {opts, extra_args} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quit, d: :directory, s: :short, n: :log_count],
+      aliases: [f: :force, q: :quit, d: :directory, s: :short, n: :log_count, w: :whitelist],
       switches: [
         directory: :string,
         force: :boolean,
@@ -69,7 +70,8 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         log_count: :integer,
         log_user: :integer,
         all: :boolean,
-        iex: :boolean
+        iex: :boolean,
+        whitelist: :boolean
       ]
     )
 
