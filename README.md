@@ -25,6 +25,7 @@ Under the default commands you will gain the following services (all of which ca
 - [Univiersal Options](https://github.com/MikaAK/deploy_ex#universial-options)
 - [Terraform Variables](https://github.com/MikaAK/deploy_ex#terraform-variables)
 - [Connecting to Your Nodes](https://github.com/MikaAK/deploy_ex#connecting-to-your-nodes)
+  - [Authorizing for SSH](https://github.com/MikaAK/deploy_ex#authorizing-for-ssh)
   - [Connecting to Node as Root](https://github.com/MikaAK/deploy_ex#connection-to-node-as-root)
   - [Connecting to App Logs](https://github.com/MikaAK/deploy_ex#connecting-to-app-logs)
   - [Connecting to Remote IEx](https://github.com/MikaAK/deploy_ex#connecting-to-remote-iex)
@@ -200,6 +201,13 @@ combined with eval using the `-s` flag
 
 App name can be a partially complete form of app_name, so you can shorten it, and it will use a regex to find the match
 
+#### Authorizing for SSH
+By default, all nodes are non accessable over ssh, unless you whitelist your IP using `mix deploy_ex.ssh.authorize`. Alternatively if you
+want to turn this safeguard off, you can go to `deploys/terraform/network.tf` and on line `36` add the `ssh-tcp` back to the end of that list
+
+###### Goals
+- [ ] - Add lambdas that automatically remove whitelisted IPs after 24 hours
+
 #### Connection to Node
 This command will connect to the node, you can use `--log` to view the logs, or `--iex` to connect to a remote iex shell
 
@@ -361,6 +369,15 @@ possible without his help!!
 
   You can add `IdentitiesOnly=yes` to your `~/.ssh/config` `*` setting to clear that up.
   See [here for more details](https://www.tecmint.com/fix-ssh-too-many-authentication-failures-error/)
+
+</details>
+
+<details>
+  <summary>I'm getting timeouts trying to ssh into the nodes</summary>
+
+  By default SSH access is closed and you need to run `mix deploy_ex.ssh.authorize` to whitelist your current IP.
+
+  See [Authorizing for SSH](https://github.com/MikaAK/deploy_ex#authorizing-for-ssh) for more information
 
 </details>
 
