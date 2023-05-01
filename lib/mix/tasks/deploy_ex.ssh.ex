@@ -53,13 +53,13 @@ defmodule Mix.Tasks.DeployEx.Ssh do
          {:ok, hostname_ips} <- DeployExHelpers.terraform_instance_ips(opts[:directory]) do
       connect_to_host(hostname_ips, app_name, pem_file_path, opts)
     else
-      {:error, e} -> Mix.shell().raise(to_string(e))
+      {:error, e} -> Mix.raise(to_string(e))
     end
   end
 
   defp parse_args(args) do
     {opts, extra_args} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quit, d: :directory, s: :short, n: :log_count, w: :whitelist],
+      aliases: [f: :force, q: :quiet, d: :directory, s: :short, n: :log_count],
       switches: [
         directory: :string,
         force: :boolean,
@@ -70,8 +70,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         log_count: :integer,
         log_user: :integer,
         all: :boolean,
-        iex: :boolean,
-        whitelist: :boolean
+        iex: :boolean
       ]
     )
 

@@ -33,7 +33,7 @@ module "app_security_group" {
   vpc_id      = module.vpc.vpc_id
 
   auto_ingress_rules = []
-  ingress_rules      = ["http-80-tcp", "https-443-tcp", "ssh-tcp"]
+  ingress_rules      = ["http-80-tcp", "https-443-tcp"] # , "ssh-tcp" - If you want ssh default open
 
   ingress_cidr_blocks = concat(module.vpc.public_subnets_cidr_blocks, ["0.0.0.0/0"])
 }

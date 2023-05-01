@@ -217,6 +217,15 @@ defmodule DeployExHelpers do
     end
   end
 
+  def terraform_security_group_id(terraform_directory) do
+    case System.shell("terraform state show 'module.app_security_group.module.sg.aws_security_group.this_name_prefix[0]' | grep 'id.*sg-' | awk '{print $3}'| awk '{print substr($0, 2, length($0) - 2)}'", cd: Path.expand(terraform_directory)) do
+      {output, 0} -> {:ok, String.trim(output)}
+
+      {message, _} ->
+        {:error, ErrorMessage.failed_dependency("terraform output failed", %{message: message})}
+    end
+  end
+
   def terraform_instance_ips(terraform_directory) do
     case System.shell("terraform output --json", cd: Path.expand(terraform_directory)) do
       {output, 0} ->
