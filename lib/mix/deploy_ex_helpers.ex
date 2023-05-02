@@ -70,12 +70,12 @@ defmodule DeployExHelpers do
   end
 
   def to_terraform_args(args) do
-    {ansible_opts, _extra_args, _invalid_args} =
+    {terraform_opts, _extra_args, _invalid_args} =
       OptionParser.parse(args,
         strict: @terraform_flags
       )
 
-    ansible_opts
+    terraform_opts
     |> OptionParser.to_argv(@terraform_flags)
     |> Enum.join(" ")
   end
@@ -218,7 +218,12 @@ defmodule DeployExHelpers do
   end
 
   def terraform_security_group_id(terraform_directory) do
-    case System.shell("terraform state show 'module.app_security_group.module.sg.aws_security_group.this_name_prefix[0]' | grep 'id.*sg-' | awk '{print $3}'| awk '{print substr($0, 2, length($0) - 2)}'", cd: Path.expand(terraform_directory)) do
+    terraform_state_show = "terraform state show 'module.app_security_group.module.sg.aws_security_group.this_name_prefix[0]'" <>
+                           "| grep 'id.*sg-' " <>
+                           "| awk '{print $3}' " <>
+                           "| awk '{print substr($0, 2, length($0) - 2)}'"
+
+    case System.shell(terraform_state_show, cd: Path.expand(terraform_directory)) do
       {output, 0} -> {:ok, String.trim(output)}
 
       {message, _} ->
