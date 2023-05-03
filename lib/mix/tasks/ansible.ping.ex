@@ -12,7 +12,7 @@ defmodule Mix.Tasks.Ansible.Ping do
     with :ok <- DeployExHelpers.check_in_umbrella() do
       DeployExHelpers.check_file_exists!("./deploys/ansible/aws_ec2.yaml")
 
-      DeployExHelpers.run_command_with_input(
+      DeployExHelpers.run_command(
         "ansible -i aws_ec2.yaml #{ansible_args} all -m ping",
         "./deploys/ansible"
       )

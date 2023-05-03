@@ -99,6 +99,20 @@ defmodule DeployExHelpers do
     |> Enum.join(" ")
   end
 
+  def run_command(command, directory) do
+    opts = [
+      cd: directory,
+      into: IO.binstream(:stdio, :line),
+      stderr_to_stdout: true,
+      env: %{"ANSIBLE_FORCE_COLOR" => "true"}
+    ]
+
+    case System.shell(command, opts) do
+      {_, 0} -> :ok
+      {error, code} -> {:error, ErrorMessage.internal_server_error("couldn't run #{command}", %{error: error, code: code})}
+    end
+  end
+
   def run_command_with_input(command, directory) do
     port = Port.open({:spawn, command}, [
       :nouse_stdio,

@@ -49,7 +49,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
           host_playbook
             |> run_ansible_playbook_command(opts)
             |> Kernel.<>(" #{ansible_args}")
-            |> DeployExHelpers.run_command_with_input(opts[:directory])
+            |> DeployExHelpers.run_command(opts[:directory])
         end, max_concurrency: opts[:parallel], timeout: @playbook_timeout)
         |> DeployEx.Utils.reduce_status_tuples
 
