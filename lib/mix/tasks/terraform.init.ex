@@ -23,10 +23,10 @@ defmodule Mix.Tasks.Terraform.Init do
 
   defp parse_args(args) do
     {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [d: :directory, u: :update],
+      aliases: [d: :directory, u: :upgrade],
       switches: [
         directory: :string,
-        update: :boolean
+        upgrade: :boolean
       ]
     )
 
