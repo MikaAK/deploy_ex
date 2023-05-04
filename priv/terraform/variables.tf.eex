@@ -45,6 +45,7 @@ variable "<%= @app_name %>_project" {
     enable_eip        = optional(bool)
     enable_ebs        = optional(bool)
     enable_lb         = optional(bool)
+    enable_lb_https   = optional(bool)
     disable_public_ip = optional(bool)
 
     elb_port                    = optional(number)

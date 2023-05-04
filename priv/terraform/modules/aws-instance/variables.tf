@@ -106,6 +106,13 @@ variable "enable_elb" {
   nullable    = false
 }
 
+variable "enable_elb_https" {
+  description = "Enables the load balancer to turn on http (defaults to true)"
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
 variable "elb_port" {
   description = "Changes the load balancer port used in the loadbalancer url"
   type        = number

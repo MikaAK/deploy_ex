@@ -60,10 +60,11 @@ module "ec2_instance" {
   instance_count              = try(each.value.instance_count, null)
   instance_ebs_secondary_size = try(each.value.instance_ebs_secondary_size, null)
 
-  enable_eip       = try(each.value.enable_eip, null)
-  enable_ebs       = try(each.value.enable_ebs, null)
-  enable_elb       = try(each.value.enable_lb, null)
-  enable_public_ip = try(each.value.enable_public_ip, null)
+  enable_eip        = try(each.value.enable_eip, null)
+  enable_ebs        = try(each.value.enable_ebs, null)
+  enable_elb        = try(each.value.enable_lb, null)
+  enable_elb_https  = try(each.value.enable_lb_https, null)
+  disable_public_ip = try(each.value.disable_public_ip, null)
 
   elb_port          = try(each.value.elb_port, null)
   elb_instance_port = try(each.value.elb_instance_port, null)
