@@ -66,6 +66,8 @@ If you want to use aws-cli credentials from the machine you're running initial s
 you can use the `--auto_pull_aws` of `-a` flag to pull the aws credentials into the
 remote machines
 
+All releases in the app must have a `:tar` step at the end of their `steps`
+
 ## TL;DR Installation
 Make sure you have your `releases` configured in your root `mix.exs`. This command will only
 function in the root of an umbrella app.

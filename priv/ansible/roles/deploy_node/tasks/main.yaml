@@ -44,7 +44,7 @@
         dest: /srv/unpack-directory
         remote_src: true
 
-    - name: Check for current release file
+    - name: Create release_history file
       stat:
         path: "/srv/current_release.txt"
       register: current_release_file

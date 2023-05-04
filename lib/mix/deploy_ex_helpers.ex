@@ -238,7 +238,14 @@ defmodule DeployExHelpers do
                            "| awk '{print substr($0, 2, length($0) - 2)}'"
 
     case System.shell(terraform_state_show, cd: Path.expand(terraform_directory)) do
-      {output, 0} -> {:ok, String.trim(output)}
+      {output, 0} ->
+        security_group_id = String.trim(output)
+
+        if security_group_id === "" do
+          {:error, ErrorMessage.not_found("couldn't pull out security group id from terraform")}
+        else
+          {:ok, security_group_id}
+        end
 
       {message, _} ->
         {:error, ErrorMessage.failed_dependency("terraform output failed", %{message: message})}
