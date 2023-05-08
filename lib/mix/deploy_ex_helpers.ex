@@ -114,10 +114,22 @@ defmodule DeployExHelpers do
   end
 
   def run_command_with_input(command, directory) do
+    Exexec.start_link()
+
     port = Port.open({:spawn, command}, [
       :nouse_stdio,
       :exit_status,
       {:cd, directory}
+    ])
+
+    Exexec.manage(port, [
+      monitor: true,
+      sync: true,
+      stdin: true,
+      pty: true,
+      cd: directory,
+      stderr: :stdout,
+      stdout: fn _, _, c -> Enum.into([c], IO.stream(:stdio, :line)) end
     ])
 
     receive do
@@ -266,6 +278,19 @@ defmodule DeployExHelpers do
     case Jason.decode!(output) do
       %{"public_ips" => %{"value" => values}} -> values
       _ -> []
+    end
+  end
+
+  def prompt_for_choice(choices) do
+    Enum.each(Enum.with_index(choices), fn {value, i} -> Mix.shell().info("#{i}) #{value}") end)
+
+    prompt = "Make a selection between 0 and #{length(choices) - 1}:"
+    value = String.trim(Mix.shell().prompt(prompt))
+
+    if value in Enum.map(0..(length(choices) - 1), &to_string/1) do
+      value |> String.to_integer |> then(&Enum.at(choices, &1))
+    else
+      prompt_for_choice(choices)
     end
   end
 end

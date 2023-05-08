@@ -77,6 +77,10 @@ defmodule Mix.Tasks.DeployEx.Ssh do
     {opts, extra_args}
   end
 
+  defp find_app_name(_releases, []) do
+    {:error, ErrorMessage.bad_request("must supply a app name")}
+  end
+
   defp find_app_name(_releases, [_, _]) do
     {:error, ErrorMessage.bad_request("only one node is supported")}
   end
@@ -94,20 +98,13 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         host_name_ips = inspect(hostname_ips, pretty: true)
         Mix.raise("Couldn't find any app with the name of #{app_name}\n#{host_name_ips}")
 
-      {app_name, ip_addresses} ->
-        ip = Enum.random(ip_addresses)
-        command = build_command(app_name, opts)
+      {app_name, [ip]} ->
+        log_ssh_command(app_name, pem_file_path, ip, opts)
 
-        if opts[:short] do
-          Mix.shell().info("ssh -i #{pem_file_path} admin@#{ip} #{command}")
-        else
-          Mix.shell().info([
-            :green, "Use the following comand to connect to ",
-            :reset, app_name || "Unknown", :green, " \"",
-            :reset, "ssh -i #{pem_file_path} admin@#{ip} ", command,
-            :green, "\""
-          ])
-        end
+      {app_name, ip_addresses} ->
+        ip_address = Enum.random(Enum.sort(ip_addresses)) # DeployExHelpers.prompt_for_choice
+
+        log_ssh_command(app_name, pem_file_path, ip_address, opts)
 
         # When using Rambo re-enable
         # Mix.shell().info([
@@ -120,6 +117,21 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         # with {:error, e} <- DeployExHelpers.run_command_with_input("ssh -i #{pem_file_path} admin@#{ip}", "") do
         #   Mix.shell().error(to_string(e))
         # end
+    end
+  end
+
+  defp log_ssh_command(app_name, pem_file_path, ip, opts) do
+    command = build_command(app_name, opts)
+
+    if opts[:short] do
+      Mix.shell().info("ssh -i #{pem_file_path} admin@#{ip} #{command}")
+    else
+      Mix.shell().info([
+        :green, "Use the following comand to connect to ",
+        :reset, app_name || "Unknown", :green, " \"",
+        :reset, "ssh -i #{pem_file_path} admin@#{ip} ", command,
+        :green, "\""
+      ])
     end
   end
 
