@@ -114,7 +114,16 @@ defmodule DeployExHelpers do
   end
 
   def run_command_with_input(command, directory) do
-    Exexec.start_link()
+    if root_user?() do
+      Exexec.start_link(
+        root: true,
+        user: "root",
+        limit_users: ["root"],
+        env: [{"SHELL", System.get_env("SHELL", "/bin/bash")}]
+      )
+    else
+      Exexec.start_link()
+    end
 
     port = Port.open({:spawn, command}, [
       :nouse_stdio,
@@ -122,7 +131,7 @@ defmodule DeployExHelpers do
       {:cd, directory}
     ])
 
-    Exexec.manage(port, maybe_add_root_user([
+    Exexec.manage(port, [
       monitor: true,
       sync: true,
       stdin: true,
@@ -130,7 +139,7 @@ defmodule DeployExHelpers do
       cd: directory,
       stderr: :stdout,
       stdout: fn _, _, c -> Enum.into([c], IO.stream(:stdio, :line)) end
-    ]))
+    ])
 
     receive do
       {^port, {:exit_status, 0}} -> :ok
@@ -138,21 +147,13 @@ defmodule DeployExHelpers do
     end
   end
 
-  defp maybe_add_root_user(opts) do
-    if current_os_user() === "root" do
-      Keyword.merge(opts,
-        user: "root",
-        limit_users: ["root"]
-      )
-    else
-      opts
-    end
-  end
+  def root_user?, do: current_os_user() === "root"
 
   def current_os_user do
-    'USER'
-      |> :proplists.get_value(:os.env())
-      |> to_string
+    case System.shell("whoami", []) do
+      {result, 0} -> String.trim(result)
+      {reason, _} -> raise "Couldn't determine system user:\n\n    #{reason}"
+    end
   end
 
   def fetch_mix_releases do
