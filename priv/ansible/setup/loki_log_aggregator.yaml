@@ -2,5 +2,6 @@
   roles:
     - pip3
     - awscli
+    - log_cleanup
     - grafana_loki
 

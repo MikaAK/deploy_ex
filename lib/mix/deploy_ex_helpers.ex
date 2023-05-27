@@ -122,7 +122,7 @@ defmodule DeployExHelpers do
       {:cd, directory}
     ])
 
-    Exexec.manage(port, [
+    Exexec.manage(port, maybe_add_root_user([
       monitor: true,
       sync: true,
       stdin: true,
@@ -130,12 +130,29 @@ defmodule DeployExHelpers do
       cd: directory,
       stderr: :stdout,
       stdout: fn _, _, c -> Enum.into([c], IO.stream(:stdio, :line)) end
-    ])
+    ]))
 
     receive do
       {^port, {:exit_status, 0}} -> :ok
       {^port, {:exit_status, code}} -> {:error, ErrorMessage.internal_server_error("couldn't run #{command}", %{code: code})}
     end
+  end
+
+  defp maybe_add_root_user(opts) do
+    if current_os_user() === "root" do
+      Keyword.merge(opts,
+        user: "root",
+        limit_users: ["root"]
+      )
+    else
+      opts
+    end
+  end
+
+  def current_os_user do
+    'USER'
+      |> :proplists.get_value(:os.env())
+      |> to_string
   end
 
   def fetch_mix_releases do
