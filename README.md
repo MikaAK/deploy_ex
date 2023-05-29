@@ -157,6 +157,9 @@ env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
 - [x] `mix deploy_ex.install_github_action` - Deploys your `mix release` to s3
 - [x] `mix deploy_ex.ssh` - Gets the ssh command for a specific node
 - [x] `mix deploy_ex.remake` - Replaces a node and redoes setup before deploying the latest code
+- [x] `mix deploy_ex.stop_app` - Stops the systemd service for an app, stops it without shutting down the server
+- [x] `mix deploy_ex.start_app` - Starts the systemd service for an app,
+- [x] `mix deploy_ex.restart_app` - Restarts the systemd service for an app
 - [x] `mix terraform.build` - Add the terraform files to project, or rebuilds them
 - [x] `mix terraform.apply` - Applies terraform changes
 - [x] `mix terraform.refresh` - Refreshes terraform state to pull new IPs and sync with AWS

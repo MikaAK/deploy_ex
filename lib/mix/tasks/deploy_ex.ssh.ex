@@ -47,8 +47,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
-         {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
-         {:ok, app_name} <- find_app_name(releases, app_params),
+         {:ok, app_name} <- DeployExHelpers.find_app_name(app_params),
          {:ok, pem_file_path} <- DeployExHelpers.find_pem_file(opts[:directory]),
          {:ok, hostname_ips} <- DeployExHelpers.terraform_instance_ips(opts[:directory]) do
       connect_to_host(hostname_ips, app_name, pem_file_path, opts)
@@ -58,7 +57,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
   end
 
   defp parse_args(args) do
-    {opts, extra_args} = OptionParser.parse!(args,
+    OptionParser.parse!(args,
       aliases: [f: :force, q: :quiet, d: :directory, s: :short, n: :log_count],
       switches: [
         directory: :string,
@@ -73,23 +72,6 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         iex: :boolean
       ]
     )
-
-    {opts, extra_args}
-  end
-
-  defp find_app_name(_releases, []) do
-    {:error, ErrorMessage.bad_request("must supply a app name")}
-  end
-
-  defp find_app_name(_releases, [_, _]) do
-    {:error, ErrorMessage.bad_request("only one node is supported")}
-  end
-
-  defp find_app_name(releases, [app_name]) do
-    case releases |> Keyword.keys |> Enum.find(&(to_string(&1) =~ app_name)) do
-      nil -> {:ok, app_name}
-      app_name -> {:ok, to_string(app_name)}
-    end
   end
 
   defp connect_to_host(hostname_ips, app_name, pem_file_path, opts) do

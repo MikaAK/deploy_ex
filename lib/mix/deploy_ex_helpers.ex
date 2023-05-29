@@ -1,4 +1,6 @@
 defmodule DeployExHelpers do
+  @server_ssh_pem_path "./_build/.server-ssh"
+
   @ansible_flags [
     inventory: :string,
     limit: :string,
@@ -309,6 +311,62 @@ defmodule DeployExHelpers do
       value |> String.to_integer |> then(&Enum.at(choices, &1))
     else
       prompt_for_choice(choices)
+    end
+  end
+
+  def find_app_name(app_params) do
+    with {:ok, releases} <- fetch_mix_releases() do
+      find_app_name(releases, app_params)
+    end
+  end
+
+  def find_app_name(_releases, []) do
+    {:error, ErrorMessage.bad_request("must supply a app name")}
+  end
+
+  def find_app_name(_releases, [_, _]) do
+    {:error, ErrorMessage.bad_request("only one node is supported")}
+  end
+
+  def find_app_name(releases, [app_name]) do
+    case releases |> Keyword.keys |> Enum.find(&(to_string(&1) =~ app_name)) do
+      nil -> {:ok, app_name}
+      app_name -> {:ok, to_string(app_name)}
+    end
+  end
+
+  def run_ssh_command(terraform_directory, app_name, port \\ 22, command) do
+    with {:ok, pem_file_path} <- find_pem_file(terraform_directory),
+         {:ok, instance_ips} <- find_terraform_instance_ips(terraform_directory, app_name) do
+      pem_rsa_path = Path.join(@server_ssh_pem_path, "id_rsa")
+
+      if not File.exists?(pem_rsa_path) do
+        Mix.shell().info([:yellow, "Creating pemfolder at #{@server_ssh_pem_path}"])
+
+        File.mkdir_p!(@server_ssh_pem_path)
+        File.cp!(pem_file_path, pem_rsa_path)
+      end
+
+      Enum.each(instance_ips, fn instance_ip ->
+        Mix.shell().info([:yellow, "Running #{command} on #{instance_ip}"])
+        DeployEx.SSH.run_command(instance_ip, port, @server_ssh_pem_path, command)
+      end)
+    end
+  end
+
+  def find_terraform_instance_ips(terraform_directory, app_name) do
+    with {:ok, instance_ips} <- terraform_instance_ips(terraform_directory) do
+      case Enum.find_value(instance_ips, fn {key, values} -> if key =~ app_name, do: values end) do
+        nil ->
+          {:error, ErrorMessage.not_found(
+            "no app names found with #{app_name}",
+            %{app_names: Map.keys(instance_ips)}
+          )}
+
+        [ip] -> {:ok, [ip]}
+
+        ips -> {:ok, prompt_for_choice(ips)}
+      end
     end
   end
 end
