@@ -21,7 +21,7 @@ Under the default commands you will gain the following services (all of which ca
   - [Usage with Deploy Node](https://github.com/MikaAK/deploy_ex#usage-with-deploy-node)
   - [Changes Over Time](https://github.com/MikaAK/deploy_ex#changes-over-time)
   - [Multiple Phoenix Apps](https://github.com/MikaAK/deploy_ex#multiple-phoenix-apps)
-- [Commands](https://github.com/MikaAK/deploy_ex#changes-over-time)
+- [Commands](https://github.com/MikaAK/deploy_ex#commands)
 - [Univiersal Options](https://github.com/MikaAK/deploy_ex#universial-options)
 - [Terraform Variables](https://github.com/MikaAK/deploy_ex#terraform-variables)
 - [Connecting to Your Nodes](https://github.com/MikaAK/deploy_ex#connecting-to-your-nodes)
@@ -156,6 +156,7 @@ env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
 - [x] `mix deploy_ex.upload` - Deploys your `mix release` to s3
 - [x] `mix deploy_ex.install_github_action` - Deploys your `mix release` to s3
 - [x] `mix deploy_ex.ssh` - Gets the ssh command for a specific node
+- [x] `mix deploy_ex.remake` - Replaces a node and redoes setup before deploying the latest code
 - [x] `mix terraform.build` - Add the terraform files to project, or rebuilds them
 - [x] `mix terraform.apply` - Applies terraform changes
 - [x] `mix terraform.refresh` - Refreshes terraform state to pull new IPs and sync with AWS

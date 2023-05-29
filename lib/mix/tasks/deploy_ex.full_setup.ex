@@ -47,7 +47,7 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
 
           ping_and_run_post_setup(args)
 
-        e -> e
+        e -> Mix.raise(e)
       end
     end
   end
