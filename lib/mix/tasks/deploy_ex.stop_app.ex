@@ -20,9 +20,9 @@ defmodule Mix.Tasks.DeployEx.StopApp do
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
 
     with {:ok, app_name} <- DeployExHelpers.find_app_name(node_name_args),
-         _ = Mix.shell().info([:yellow, "Restarting #{app_name} systemd service"]),
+         _ = Mix.shell().info([:yellow, "Stopping #{app_name} systemd service"]),
          :ok <- stop_service(app_name, opts) do
-      Mix.shell().info([:green, "Restarted #{app_name} systemd service successfully"])
+      Mix.shell().info([:green, "Stopped #{app_name} systemd service successfully"])
     else
       {:error, e} -> Mix.raise(to_string(e))
     end

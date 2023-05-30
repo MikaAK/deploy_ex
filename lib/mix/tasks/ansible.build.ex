@@ -24,8 +24,8 @@ defmodule Mix.Tasks.Ansible.Build do
       |> Keyword.put_new(:hosts_file, "./deploys/ansible/aws_ec2.yaml")
       |> Keyword.put_new(:config_file, "./deploys/ansible/ansible.cfg")
       |> Keyword.put_new(:group_vars_file, "./deploys/ansible/group_vars/all.yaml")
-      |> Keyword.put_new(:aws_logging_bucket, Config.aws_release_bucket())
-      |> Keyword.put_new(:aws_logging_region, Config.aws_region())
+      |> Keyword.put_new(:aws_logging_bucket, Config.aws_log_bucket())
+      |> Keyword.put_new(:aws_logging_region, Config.aws_log_region())
       |> Keyword.put_new(:aws_release_bucket, Config.aws_release_bucket())
       |> Keyword.put_new(:aws_region, Config.aws_region())
 

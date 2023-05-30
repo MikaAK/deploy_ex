@@ -301,16 +301,26 @@ defmodule DeployExHelpers do
     end
   end
 
-  def prompt_for_choice(choices) do
+  def prompt_for_choice(choices, select_all? \\ false)
+
+  def prompt_for_choice([choice], _select_all?) do
+    [choice]
+  end
+
+  def prompt_for_choice(choices, select_all?) do
     Enum.each(Enum.with_index(choices), fn {value, i} -> Mix.shell().info("#{i}) #{value}") end)
 
-    prompt = "Make a selection between 0 and #{length(choices) - 1}:"
-    value = String.trim(Mix.shell().prompt(prompt))
+    prompt = "Make a selection between 0 and #{length(choices) - 1}"
+    prompt = if select_all?, do: "#{prompt}, or type a to select all:", else: prompt
 
-    if value in Enum.map(0..(length(choices) - 1), &to_string/1) do
-      value |> String.to_integer |> then(&Enum.at(choices, &1))
-    else
-      prompt_for_choice(choices)
+    value = String.trim(Mix.shell().prompt(prompt))
+    valid_choices = Enum.map(0..(length(choices) - 1), &to_string/1)
+    valid_choices = if select_all?, do: ["a" | valid_choices], else: valid_choices
+
+    cond do
+      value in valid_choices -> value |> String.to_integer |> then(&Enum.at(choices, &1))
+      value === "a" -> choices
+      true -> prompt_for_choice(choices, select_all?)
     end
   end
 
@@ -365,7 +375,7 @@ defmodule DeployExHelpers do
 
         [ip] -> {:ok, [ip]}
 
-        ips -> {:ok, prompt_for_choice(ips)}
+        ips -> {:ok, prompt_for_choice(ips, true)}
       end
     end
   end

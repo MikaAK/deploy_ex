@@ -27,6 +27,7 @@ defmodule DeployEx.MixProject do
       {:ex_aws_s3, "~> 2.3"},
       {:ex_aws_ec2, "~> 2.0"},
       {:configparser_ex, "~> 4.0"},
+      {:elixir_xml_to_map, "~> 3.0", override: true},
       {:exexec, "~> 0.2"},
       {:erlexec, "~> 1.2", override: true},
       {:req, "~> 0.3"},
