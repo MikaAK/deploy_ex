@@ -16,6 +16,7 @@ defmodule Mix.Tasks.DeployEx.RestartMachine do
     :ssh.start()
     Application.ensure_all_started(:hackney)
     Application.ensure_all_started(:telemetry)
+    Application.ensure_all_started(:ex_aws)
 
     {_, node_name_args} = OptionParser.parse!(args, switches: [])
 

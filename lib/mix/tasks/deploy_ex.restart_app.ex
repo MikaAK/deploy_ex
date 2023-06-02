@@ -15,6 +15,9 @@ defmodule Mix.Tasks.DeployEx.RestartApp do
 
   def run(args) do
     :ssh.start()
+    Application.ensure_all_started(:hackney)
+    Application.ensure_all_started(:telemetry)
+    Application.ensure_all_started(:ex_aws)
 
     {opts, node_name_args} = parse_args(args)
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
