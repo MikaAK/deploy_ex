@@ -33,7 +33,7 @@ Under the default commands you will gain the following services (all of which ca
 - [Monitoring](https://github.com/MikaAK/deploy_ex#monitoring)
   - [Setting up Grafana UI](https://github.com/MikaAK/deploy_ex#setting-up-grafana-ui)
   - [Setting up Loki for Logging](https://github.com/MikaAK/deploy_ex#setting-up-loki-for-logging)
-  - [Setting up Prometheus for Metrics (WIP)](https://github.com/MikaAK/deploy_ex#setting-up-prometheus-for-metrics)
+  - [Setting up Prometheus for Metrics](https://github.com/MikaAK/deploy_ex#setting-up-prometheus-for-metrics)
   - [Setting up Sentry for Error Capturing (WIP)](https://github.com/MikaAK/deploy_ex#setting-up-sentry-for-error-capturing)
 - [Extra Utilities](https://github.com/MikaAK/deploy_ex#extra-utilities)
   - [Github Action](https://github.com/MikaAK/deploy_ex#github-action)
