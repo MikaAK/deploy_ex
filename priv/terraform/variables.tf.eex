@@ -16,6 +16,18 @@ variable "resource_group" {
   default     = "<%= DeployExHelpers.upper_title_case(@app_name) %> Backend"
 }
 
+variable "database" {
+  description = "database config settings, default max storage is 10TB"
+  type        = map(any)
+  default     = {
+    allocated_storage_gb                       = 10
+    max_allocated_storage_gb                   = 10000
+    backup_retention_period                    = 7
+    performance_insights_retention_period_days = 7
+    maintenance_window                         = "Mon:00:00-Mon:03:00"
+  }
+}
+
 variable "resource_buckets" {
   description = "Map of project names to buckets"
   type        = map(any)
