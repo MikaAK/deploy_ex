@@ -20,7 +20,7 @@ resource "aws_db_subnet_group" "<%= @app_name %>_db_subnet" {
   subnet_ids = module.vpc.public_subnets
 
   tags = {
-    Name = "<%= @app_name %>DB Subnet Group"
+    Name = "<%= DeployExHelpers.upper_title_case(@app_name) %> DB Subnet Group"
     Vendor = "Postgres"
     Type   = "Dataase"
   }
@@ -29,8 +29,8 @@ resource "aws_db_subnet_group" "<%= @app_name %>_db_subnet" {
 resource "aws_db_instance" "<%= @app_name %>_database" {
   allocated_storage         = 10
   db_name                   = "<%= @app_name %>"
-  identifier                = "<%= @app_name %>-db"
-  final_snapshot_identifier = "<%= @app_name %>-db-final-<%= Enum.random(1..1000) %>"
+  identifier                = "<%= @kebab_app_name %>-db"
+  final_snapshot_identifier = "<%= @kebab_app_name %>-db-final-<%= Enum.random(1..1000) %>"
   engine                    = data.aws_rds_engine_version.rds_postgres.engine
   engine_version            = data.aws_rds_engine_version.rds_postgres.version
   db_subnet_group_name      = aws_db_subnet_group.<%= @app_name %>_db_subnet.name
@@ -40,7 +40,7 @@ resource "aws_db_instance" "<%= @app_name %>_database" {
   password                  = "<%= @db_password %>"
 
   tags = {
-    Name = "<%= @app_name %>DB"
+    Name = "<%= DeployExHelpers.upper_title_case(@app_name) %>DB"
     Vendor = "Postgres"
     Type   = "Dataase"
   }

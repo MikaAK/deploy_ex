@@ -13,6 +13,7 @@ defmodule DeployExHelpers do
 
   def app_name, do: Mix.Project.get() |> Module.split |> hd
   def underscored_app_name, do: Macro.underscore(app_name())
+  def kebab_app_name, do: String.replace(underscored_app_name(), "_", "-")
 
   def check_in_umbrella do
     if Mix.Project.umbrella?() do
@@ -162,8 +163,8 @@ defmodule DeployExHelpers do
     case Mix.Project.get() do
       nil -> {:error, ErrorMessage.not_found("couldn't find mix project")}
       project ->
-        if function_exported?(project, :releases, 0) do
-          {:ok, project.releases()}
+        if project.project()[:releases] do
+          {:ok, project.project()[:releases]}
         else
           {:error, ErrorMessage.not_found("no release found for #{inspect project}")}
         end

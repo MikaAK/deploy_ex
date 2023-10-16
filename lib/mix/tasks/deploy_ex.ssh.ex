@@ -67,7 +67,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         root: :boolean,
         log: :boolean,
         log_count: :integer,
-        log_user: :integer,
+        log_user: :string,
         all: :boolean,
         iex: :boolean
       ]

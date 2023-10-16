@@ -14,7 +14,7 @@ defmodule Mix.Tasks.DeployEx.Remake do
   """
 
   def run(args) do
-    {_, node_name, _} = OptionParser.parse(args, switches: [])
+    {opts, node_name, _} = OptionParser.parse(args, switches: [no_deploy: :boolean])
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, node_name} <- check_for_node_name(node_name),
@@ -22,10 +22,18 @@ defmodule Mix.Tasks.DeployEx.Remake do
          _ <- Process.sleep(:timer.seconds(5)),
          args_without_name = node_name_as_only_arg(node_name, args),
          :ok <- run_command(Ansible.Setup, args_without_name),
-         :ok <- run_command(Ansible.Deploy, args_without_name) do
+         :ok <- maybe_redeploy(args_without_name, opts) do
       :ok
     else
       {:error, e} -> Mix.raise(e)
+    end
+  end
+
+  defp maybe_redeploy(args_without_name, opts) do
+    if opts[:no_deploy] do
+      :ok
+    else
+      run_command(Ansible.Deploy, args_without_name)
     end
   end
 

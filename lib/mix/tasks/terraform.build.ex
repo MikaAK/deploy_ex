@@ -158,7 +158,8 @@ defmodule Mix.Tasks.Terraform.Build do
       terraform_grafana_variables: terraform_grafana_variables(opts),
       terraform_loki_variables: terraform_loki_variables(opts),
       terraform_prometheus_variables: terraform_prometheus_variables(opts),
-      app_name: DeployExHelpers.underscored_app_name()
+      app_name: DeployExHelpers.underscored_app_name(),
+      kebab_app_name: DeployExHelpers.kebab_app_name()
     })
 
     DeployExHelpers.write_file(opts[:variables_file], variables_files, opts)
@@ -293,7 +294,8 @@ defmodule Mix.Tasks.Terraform.Build do
       db_password: !opts[:no_database] && generate_db_password(),
       aws_region: opts[:aws_region],
       aws_release_bucket: opts[:aws_release_bucket],
-      app_name: DeployExHelpers.underscored_app_name()
+      app_name: DeployExHelpers.underscored_app_name(),
+      kebab_app_name: DeployExHelpers.kebab_app_name()
     })
 
     DeployExHelpers.write_file(opts[:main_file], main_file, opts)
@@ -310,6 +312,7 @@ defmodule Mix.Tasks.Terraform.Build do
 
     terraform_keypair = EEx.eval_file(keypair_template_path, assigns: %{
       use_db: !opts[:no_database],
+      kebab_app_name: DeployExHelpers.kebab_app_name(),
       app_name: DeployExHelpers.underscored_app_name()
     })
 

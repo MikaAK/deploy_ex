@@ -25,6 +25,6 @@ output "load_balancer_dns_name" {
 
 <%= if @use_db do %>output "database_ips" {
   description = "Database IPs"
-  value       = aws_db_instance.anana_database.endpoint
+  value       = aws_db_instance.<%= @app_name %>_database.endpoint
 }
 <% end %>

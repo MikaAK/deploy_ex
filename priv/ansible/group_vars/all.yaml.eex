@@ -6,7 +6,10 @@ loki_logger_s3_region: <%= DeployEx.Config.aws_log_region() %>
 loki_logger_s3_bucket_name: <%= DeployEx.Config.aws_log_bucket() %>
 loki_logger_retention: 720h
 grafana_loki_url: "http://10.0.1.50:3100"<% end %>
-<%= if @is_prometheus_enabled do %>grafana_prometheus_url: "http://10.0.1.40:9090"<% end %>
+<%= if @is_prometheus_enabled do %>
+grafana_prometheus_url: "http://10.0.1.40:9090"
+grafana_prometheus_ec2_region: <%= DeployEx.Config.aws_region() %>
+<% end %>
 
 system_env:
   - PATH=/root/.asdf/shims:/root/.asdf/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
