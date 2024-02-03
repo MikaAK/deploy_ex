@@ -9,9 +9,8 @@ data "aws_availability_zones" "available" {
 
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "3.14.2"
+  version = "5.1.0"
 
-  name = "${var.project_name}-${var.environment}-vpc"
   cidr = "10.0.0.0/16"
 
   azs = data.aws_availability_zones.available.names
@@ -22,18 +21,23 @@ module "vpc" {
   map_public_ip_on_launch = true # We want to be able to connect to any node
   enable_dns_hostnames    = true
   enable_dns_support      = true
+
+  manage_default_network_acl    = false
+  manage_default_route_table    = false
+  manage_default_security_group = false
+  manage_default_vpc            = false
 }
 
 module "app_security_group" {
   source  = "terraform-aws-modules/security-group/aws//modules/web"
-  version = "4.9.0"
+  version = "5.1.0"
 
-  name        = "${var.project_name}-${var.environment}-sg"
+  name        = "LE-sg-${var.project_name}-${var.environment}"
   description = "Security group for web-servers with HTTP ports open within VPC"
   vpc_id      = module.vpc.vpc_id
 
   auto_ingress_rules = []
-  ingress_rules      = ["http-80-tcp", "https-443-tcp"] # , "ssh-tcp" - If you want ssh default open
+  ingress_rules      = ["http-80-tcp", "https-443-tcp", "ssh-tcp"]
 
   ingress_cidr_blocks = concat(module.vpc.public_subnets_cidr_blocks, ["0.0.0.0/0"])
 }

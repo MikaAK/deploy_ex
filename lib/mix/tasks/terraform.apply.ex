@@ -20,11 +20,11 @@ defmodule Mix.Tasks.Terraform.Apply do
       |> parse_args
       |> Keyword.put_new(:directory, @terraform_default_path)
 
-    with :ok <- DeployExHelpers.check_in_umbrella() do
-      cmd = "terraform apply #{DeployExHelpers.to_terraform_args(args)}"
-      cmd = if opts[:auto_approve], do: "#{cmd} --auto-approve", else: cmd
-
-      DeployExHelpers.run_command_with_input(cmd, opts[:directory])
+    with :ok <- DeployExHelpers.check_in_umbrella(),
+         :ok <- run_command(args, opts) do
+      :ok
+    else
+      {:error, e} -> Mix.raise(to_string(e))
     end
   end
 
@@ -40,5 +40,12 @@ defmodule Mix.Tasks.Terraform.Apply do
     )
 
     opts
+  end
+
+  defp run_command(args, opts) do
+    cmd = "terraform apply #{DeployExHelpers.to_terraform_args(args)}"
+    cmd = if opts[:auto_approve], do: "#{cmd} --auto-approve", else: cmd
+
+    DeployExHelpers.run_command_with_input(cmd, opts[:directory])
   end
 end

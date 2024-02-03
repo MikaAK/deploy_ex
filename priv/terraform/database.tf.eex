@@ -1,0 +1,50 @@
+data "aws_rds_engine_version" "rds_postgres" {
+  engine = "postgres"
+}
+
+resource "aws_db_subnet_group" "rds_subnet_group" {
+  name       = "<%= @app_name %>-db-subnet"
+  subnet_ids = module.vpc.public_subnets
+
+  tags = {
+    Name = "<%= DeployExHelpers.upper_title_case(@app_name) %> DB Subnet Group"
+    Vendor = "Postgres"
+    Type   = "Dataase"
+  }
+}
+
+resource "random_integer" "rds_snapshot_postfix" {
+  min = 1
+  max = 50000
+}
+
+resource "aws_db_instance" "rds_database" {
+  for_each = var.resource_databases
+
+  allocated_storage         = each.value.allocated_storage_gb
+  max_allocated_storage     = each.value.max_allocated_storage_gb
+  db_name                   = each.value.name
+  identifier                = "${each.value.kebab_name}-db"
+  final_snapshot_identifier = "${each.value.kebab_name}-db-final-${random_integer.rds_snapshot_postfix.result}"
+  engine                    = data.aws_rds_engine_version.rds_postgres.engine
+  engine_version            = data.aws_rds_engine_version.rds_postgres.version
+  db_subnet_group_name      = aws_db_subnet_group.rds_subnet_group.name
+  vpc_security_group_ids    = [module.app_security_group.security_group_id]
+  instance_class            = coalesce(lookup(each.value, "instance_type", ""), "db.t3.micro")
+  username                  = coalesce(lookup(each.value, "instance_type", ""), "postgres")
+  password                  = coalesce(lookup(each.value, "instance_type", ""), "<%= Base.encode32(:crypto.strong_rand_bytes(10)) %>")
+
+  performance_insights_enabled          = true
+  performance_insights_retention_period = try(each.value.performance_insights_retention_period_days, 7)
+  backup_retention_period               = try(each.value.backup_retention_period, 7)
+  maintenance_window                    = try(each.value.maintenance_window, "Mon:00:00-Mon:03:00")
+
+  tags = {
+    Name   = "${each.value.title_name} DB"
+    Vendor = "Postgres"
+    Type   = "Database"
+    Environment = var.environment
+    Group       = var.resource_group
+  }
+}
+

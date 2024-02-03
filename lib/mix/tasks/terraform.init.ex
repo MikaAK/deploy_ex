@@ -13,11 +13,11 @@ defmodule Mix.Tasks.Terraform.Init do
       |> parse_args
       |> Keyword.put_new(:directory, @terraform_default_path)
 
-    with :ok <- DeployExHelpers.check_in_umbrella() do
-      cmd = "terraform init #{DeployExHelpers.to_terraform_args(args)}"
-      cmd = if opts[:upgrade], do: "#{cmd} --upgrade", else: cmd
-
-      DeployExHelpers.run_command_with_input(cmd, opts[:directory])
+    with :ok <- DeployExHelpers.check_in_umbrella(),
+         :ok <- run_terraform_init(args, opts) do
+      :ok
+    else
+      {:error, e} -> Mix.raise(to_string(e))
     end
   end
 
@@ -31,5 +31,12 @@ defmodule Mix.Tasks.Terraform.Init do
     )
 
     opts
+  end
+
+  defp run_terraform_init(args, opts) do
+    cmd = "terraform init #{DeployExHelpers.to_terraform_args(args)}"
+    cmd = if opts[:upgrade], do: "#{cmd} --upgrade", else: cmd
+
+    DeployExHelpers.run_command_with_input(cmd, opts[:directory])
   end
 end

@@ -18,7 +18,17 @@
         name: prometheus
         state: stopped
 
-    - name: Add prometheus_scraper.service file to /etc/systemd/system/prometheus_scraper.service
+    - name: Disable the original prometheus service
+      systemd:
+        name: prometheus
+        enabled: no
+
+    - name: Delete prometheus original service
+      ansible.builtin.file:
+        state: absent
+        path: /lib/systemd/system/prometheus.service
+
+    - name: Add prometheus_db.service file to /etc/systemd/system/prometheus_db.service
       template:
         src: prometheus_db.service.j2
         dest: /etc/systemd/system/prometheus_db.service
@@ -44,4 +54,5 @@
         state: started
 
   become: true
+
 

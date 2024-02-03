@@ -16,16 +16,34 @@ variable "resource_group" {
   default     = "<%= DeployExHelpers.upper_title_case(@app_name) %> Backend"
 }
 
-variable "database" {
+variable "resource_databases" {
   description = "database config settings, default max storage is 10TB"
-  type        = map(any)
-  default     = {
-    allocated_storage_gb                       = 10
-    max_allocated_storage_gb                   = 10000
-    backup_retention_period                    = 7
-    performance_insights_retention_period_days = 7
-    maintenance_window                         = "Mon:00:00-Mon:03:00"
-  }
+  type        = map(object({
+    name                     = string
+    title_name               = string
+
+    kebab_name               = string
+    allocated_storage_gb     = number
+    max_allocated_storage_gb = number
+
+    instance_type            = optional(string)
+    username                 = optional(string)
+    password                 = optional(string)
+    maintenance_window       = optional(string)
+    backup_retention_period  = optional(number)
+
+    performance_insights_retention_period_days = optional(number)
+  }))
+
+  default     = {<%= if @use_db do %>
+    general = {
+      name                     = "<%= @app_name %>"
+      title_name               = "<%= DeployExHelpers.upper_title_case(@app_name) %>"
+      kebab_name               = "<%= @kebab_app_name %>"
+      allocated_storage_gb     = 100
+      max_allocated_storage_gb = 1000
+    }
+  <% end %>}
 }
 
 variable "resource_buckets" {
@@ -43,6 +61,23 @@ variable "resource_buckets" {
       bucket_title_name = "<%= DeployExHelpers.upper_title_case(@release_bucket_name) %>"
     }
   }
+}
+
+variable "upload_buckets" {
+  description = "Map of buckets to upload to"
+  type = map(object({
+    name                        = string
+    bucket_cors_allowed_origins = optional(list(string))
+    enable_cdn                  = optional(bool)
+    cdn_subdomain               = optional(string)
+    cdn_domain                  = optional(string)
+    cdn_zone_id                 = optional(string)
+    cdn_public_key_secret_name  = optional(string)
+
+    tags = optional(map(string))
+  }))
+
+  default = {}
 }
 
 variable "<%= @app_name %>_project" {

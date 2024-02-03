@@ -25,6 +25,6 @@ output "load_balancer_dns_name" {
 
 <%= if @use_db do %>output "database_ips" {
   description = "Database IPs"
-  value       = aws_db_instance.<%= @app_name %>_database.endpoint
+  value       = { for p in sort(keys(var.resource_databases)) : p => aws_db_instance.rds_database[p].endpoint }
 }
 <% end %>

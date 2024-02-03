@@ -1,7 +1,7 @@
 defmodule DeployEx.SSH do
-  def connect_to_ssh(ip, port \\ 22, key_directory) do
+  def connect_to_ssh(ip, port \\ 22, key_directory, user \\ "admin") do
     :ssh.connect(String.to_charlist(ip), port,
-      user: 'admin',
+      user: String.to_charlist(user),
       user_dir: String.to_charlist(key_directory)
     )
   end

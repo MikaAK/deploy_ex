@@ -37,7 +37,7 @@ jobs:
 
 
       - name: Cache Deps & Build
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           key: ${{github.ref}}-deploy-ex-${{ hashFiles('./mix.lock') }}
 

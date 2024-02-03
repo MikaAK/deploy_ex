@@ -32,24 +32,44 @@ defmodule Mix.Tasks.Terraform.Build do
       |> Keyword.put_new(:aws_log_bucket, DeployEx.Config.aws_log_bucket())
       |> Keyword.put_new(:env, Mix.env())
 
-    opts = opts
-      |> Keyword.put_new(:variables_file, Path.join(opts[:directory], "variables.tf"))
-      |> Keyword.put_new(:keypair_file, Path.join(opts[:directory], "key-pair-main.tf"))
-      |> Keyword.put_new(:outputs_file, Path.join(opts[:directory], "outputs.tf"))
-      |> Keyword.put_new(:main_file, Path.join(opts[:directory], "main.tf"))
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
          :ok <- ensure_terraform_directory_exists(opts[:directory]) do
-      terraform_output = releases
-        |> Keyword.keys
-        |> Enum.map_join(",\n\n", &(&1 |> to_string |> generate_terraform_output))
+      random_bytes = 6 |> :crypto.strong_rand_bytes |> Base.encode32(padding: false)
 
-      write_terraform_variables(terraform_output, opts)
-      write_terraform_main(opts)
-      write_terraform_output(opts)
-      write_terraform_keypair(opts)
-      run_terraform_init(opts)
+      terraform_app_releases_variables = releases
+        |> Keyword.keys
+        |> Enum.map_join(",\n\n", &(&1 |> to_string |> generate_terraform_release_variables()))
+
+      params = %{
+        directory: opts[:directory],
+        environment: opts[:env],
+
+        aws_region: opts[:aws_region],
+        aws_release_bucket: opts[:aws_release_bucket],
+
+        use_db: !opts[:no_database],
+        db_password: !opts[:no_database] && generate_db_password(),
+
+        release_bucket_name: opts[:aws_release_bucket],
+        logging_bucket_name: opts[:aws_log_bucket],
+
+        pem_app_name: "#{DeployExHelpers.kebab_app_name()}-#{random_bytes}",
+        app_name: DeployExHelpers.underscored_app_name(),
+        kebab_app_name: DeployExHelpers.kebab_app_name(),
+
+        terraform_app_releases_variables: terraform_app_releases_variables,
+        terraform_release_variables: terraform_app_releases_variables,
+        terraform_redis_variables: terraform_redis_variables(opts),
+        terraform_sentry_variables: terraform_sentry_variables(opts),
+        terraform_grafana_variables: terraform_grafana_variables(opts),
+        terraform_loki_variables: terraform_loki_variables(opts),
+        terraform_prometheus_variables: terraform_prometheus_variables(opts),
+      }
+
+      write_terraform_template_files(params, opts)
+      run_terraform_init(params)
     else
       {:error, e} -> Mix.raise(to_string(e))
     end
@@ -77,8 +97,8 @@ defmodule Mix.Tasks.Terraform.Build do
     opts
   end
 
-  defp run_terraform_init(opts) do
-    DeployExHelpers.run_command_with_input("terraform init", opts[:directory])
+  defp run_terraform_init(params) do
+    DeployExHelpers.run_command_with_input("terraform init", params[:directory])
   end
 
   defp ensure_terraform_directory_exists(directory) do
@@ -102,7 +122,7 @@ defmodule Mix.Tasks.Terraform.Build do
     end
   end
 
-  defp generate_terraform_output(release_name) do
+  defp generate_terraform_release_variables(release_name) do
     String.trim_trailing("""
         #{release_name} = {
           name = "#{DeployExHelpers.upper_title_case(release_name)}"
@@ -112,57 +132,6 @@ defmodule Mix.Tasks.Terraform.Build do
           }
         }
     """, "\n")
-  end
-
-  defp write_terraform_variables(terraform_output, opts) do
-    if File.exists?(opts[:variables_file]) do
-      opts[:variables_file]
-        |> File.read!
-        |> inject_terraform_contents_into_variables(terraform_output, opts)
-    else
-      generate_and_delete_variables_template(terraform_output, opts)
-    end
-  end
-
-  defp inject_terraform_contents_into_variables(current_file, terraform_output, opts) do
-    current_file = String.split(current_file, "\n")
-    project_variable_idx = Enum.find_index(
-      current_file,
-      &(&1 =~ "variable \"#{DeployExHelpers.underscored_app_name()}_project\"")
-    ) + 4 # 4 is the number of newlines till the default key
-    {start_of_file, project_variable} = Enum.split(current_file, project_variable_idx + 1)
-
-    new_file = Enum.join(start_of_file ++ String.split(terraform_output, "\n") ++ Enum.take(project_variable, -3), "\n")
-
-    if new_file !== current_file do
-      opts = [{:message, [:green, "* injecting ", :reset, opts[:variables_file]]} | opts]
-
-      DeployExHelpers.write_file(opts[:variables_file], new_file, opts)
-    end
-  end
-
-  defp generate_and_delete_variables_template(terraform_output, opts) do
-    template_file = :deploy_ex
-      |> :code.priv_dir
-      |> Path.join("terraform/variables.tf.eex")
-
-    DeployExHelpers.check_file_exists!(template_file)
-
-    variables_files = EEx.eval_file(template_file, assigns: %{
-      environment: opts[:env],
-      terraform_release_variables: terraform_output,
-      release_bucket_name: opts[:aws_release_bucket],
-      logging_bucket_name: opts[:aws_log_bucket],
-      terraform_redis_variables: terraform_redis_variables(opts),
-      terraform_sentry_variables: terraform_sentry_variables(opts),
-      terraform_grafana_variables: terraform_grafana_variables(opts),
-      terraform_loki_variables: terraform_loki_variables(opts),
-      terraform_prometheus_variables: terraform_prometheus_variables(opts),
-      app_name: DeployExHelpers.underscored_app_name(),
-      kebab_app_name: DeployExHelpers.kebab_app_name()
-    })
-
-    DeployExHelpers.write_file(opts[:variables_file], variables_files, opts)
   end
 
   defp terraform_redis_variables(opts) do
@@ -186,6 +155,7 @@ defmodule Mix.Tasks.Terraform.Build do
       """
     end
   end
+
   defp terraform_sentry_variables(opts) do
     if opts[:no_sentry] do
       ""
@@ -268,69 +238,24 @@ defmodule Mix.Tasks.Terraform.Build do
     end
   end
 
-  defp write_terraform_main(opts) do
-    if File.exists?(opts[:main_file]) do
-      rewrite_terraform_main_contents(opts)
-    else
-      generate_and_delete_main_template(opts)
-    end
-  end
-
-  defp rewrite_terraform_main_contents(opts) do
-    opts
-      |> Keyword.put(:message, [
-        :green, "* rewriting ", :reset, opts[:main_file]
-      ])
-      |> generate_and_delete_main_template
-  end
-
-  defp generate_and_delete_main_template(opts) do
-    template_file_path = DeployExHelpers.priv_file("terraform/main.tf.eex")
-
-    DeployExHelpers.check_file_exists!(template_file_path)
-
-    main_file = EEx.eval_file(template_file_path, assigns: %{
-      use_db: !opts[:no_database],
-      db_password: !opts[:no_database] && generate_db_password(),
-      aws_region: opts[:aws_region],
-      aws_release_bucket: opts[:aws_release_bucket],
-      app_name: DeployExHelpers.underscored_app_name(),
-      kebab_app_name: DeployExHelpers.kebab_app_name()
-    })
-
-    DeployExHelpers.write_file(opts[:main_file], main_file, opts)
-  end
-
   defp generate_db_password do
     "SuperSecretPassword#{Enum.random(111_111..999_999)}"
   end
 
-  defp write_terraform_output(opts) do
-    keypair_template_path = DeployExHelpers.priv_file("terraform/outputs.tf.eex")
+  defp write_terraform_template_files(params, opts) do
+    terraform_path = DeployExHelpers.priv_file("terraform")
 
-    DeployExHelpers.check_file_exists!(keypair_template_path)
+    terraform_path
+      |> Path.join("*.eex")
+      |> Path.wildcard
+      |> Enum.map(fn template_file ->
+        template = EEx.eval_file(template_file, assigns: params)
 
-    terraform_keypair = EEx.eval_file(keypair_template_path, assigns: %{
-      use_db: !opts[:no_database],
-      kebab_app_name: DeployExHelpers.kebab_app_name(),
-      app_name: DeployExHelpers.underscored_app_name()
-    })
-
-    DeployExHelpers.write_file(opts[:outputs_file], terraform_keypair, opts)
-  end
-
-  defp write_terraform_keypair(opts) do
-    keypair_template_path = DeployExHelpers.priv_file("terraform/key-pair-main.tf.eex")
-
-    DeployExHelpers.check_file_exists!(keypair_template_path)
-
-    kebab_case_app_name = String.replace(DeployExHelpers.underscored_app_name(), "_", "-")
-    random_bytes = 6 |> :crypto.strong_rand_bytes |> Base.encode32(padding: false)
-
-    terraform_keypair = EEx.eval_file(keypair_template_path, assigns: %{
-      pem_app_name: "#{kebab_case_app_name}-#{random_bytes}"
-    })
-
-    DeployExHelpers.write_file(opts[:keypair_file], terraform_keypair, opts)
+        template_file
+          |> String.replace(terraform_path, "")
+          |> String.replace(".eex", "")
+          |> then(&Path.join(params[:directory], &1))
+          |> DeployExHelpers.write_file(template, opts)
+      end)
   end
 end

@@ -146,7 +146,9 @@ defmodule DeployExHelpers do
 
     receive do
       {^port, {:exit_status, 0}} -> :ok
-      {^port, {:exit_status, code}} -> {:error, ErrorMessage.internal_server_error("couldn't run #{command}", %{code: code})}
+
+      {^port, {:exit_status, code}} ->
+        {:error, ErrorMessage.internal_server_error("couldn't run #{command}", %{code: code})}
     end
   end
 
