@@ -40,6 +40,7 @@ Under the default commands you will gain the following services (all of which ca
   - [Clustering](https://github.com/MikaAK/deploy_ex#clustering)
 - [Credits](https://github.com/MikaAK/deploy_ex#credits)
 - [Troubleshooting](https://github.com/MikaAK/deploy_ex#troubleshooting)
+- [Goals](https://github.com/MikaAK/deploy_ex#goals)
 
 ## Installation
 
@@ -211,9 +212,6 @@ App name can be a partially complete form of app_name, so you can shorten it, an
 #### Authorizing for SSH
 By default, all nodes are non accessable over ssh, unless you whitelist your IP using `mix deploy_ex.ssh.authorize`. Alternatively if you
 want to turn this safeguard off, you can go to `deploys/terraform/network.tf` and on line `36` add the `ssh-tcp` back to the end of that list
-
-###### Goals
-- [ ] - Add lambdas that automatically remove whitelisted IPs after 24 hours
 
 #### Connection to Node
 This command will connect to the node, you can use `--log` to view the logs, or `--iex` to connect to a remote iex shell
@@ -491,3 +489,13 @@ possible without his help!!
 
 </details>
 
+## Goals
+- [ ] Deploy Rollbacks
+- [ ] Canary Deploys
+- [ ] Automated IP Whitelist removal lambda (from `mix deploy_ex.ssh.authorize`)
+- [ ] Sentry Integration
+- [ ] Vault Integration
+- [ ] Static way to setup redis from apps
+- [ ] Subnet a-z dispersal in networking layer
+- [ ] S3 Backed Terraform State
+- [ ] Automated Terraform & Ansible install on command runs
