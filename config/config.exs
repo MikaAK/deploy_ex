@@ -7,3 +7,10 @@ config :ex_aws,
 config :ex_aws, :hackney_opts,
   follow_redirect: true,
   recv_timeout: 30_000
+
+if System.get_env("CI") in ["true", true] do
+  config :erlexec,
+    root: true,
+    user: "root",
+    limit_users: ["root"]
+end

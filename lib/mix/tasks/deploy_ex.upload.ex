@@ -3,8 +3,6 @@ defmodule Mix.Tasks.DeployEx.Upload do
 
   alias DeployEx.{ReleaseUploader, Config}
 
-  @default_aws_region Config.aws_region()
-  @default_aws_release_bucket Config.aws_release_bucket()
   @max_upload_concurrency 4
 
   @shortdoc "Uploads your release folder to Amazon S3"
@@ -31,8 +29,8 @@ defmodule Mix.Tasks.DeployEx.Upload do
 
     opts = args
       |> parse_args
-      |> Keyword.put_new(:aws_release_bucket, @default_aws_release_bucket)
-      |> Keyword.put_new(:aws_region, @default_aws_region)
+      |> Keyword.put_new(:aws_release_bucket, Config.aws_release_bucket())
+      |> Keyword.put_new(:aws_region, Config.aws_region())
       |> Keyword.put_new(:parallel, @max_upload_concurrency)
 
     with :ok <- DeployExHelpers.check_in_umbrella(),

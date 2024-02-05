@@ -27,7 +27,7 @@ jobs:
       image: mikaak/elixir-terraform-ansible-builder:1.14-otp-25-debian
       env:
         MIX_ENV: prod
-        TF_VAR_is_ci: true
+        CI: true
         AWS_ACCESS_KEY_ID: ${{ secrets.DEPLOY_EX_AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.DEPLOY_EX_AWS_SECRET_ACCESS_KEY }}
 
@@ -85,7 +85,7 @@ jobs:
         run: env RELEASE_BUILD=true $(./.github/github-action-secrets-to-env.sh env.json) mix compile
 
       - name: Authorize AWS SSH
-        run: env $(./.github/github-action-secrets-to-env.sh env.json) mix deploy_ex.ssh.authorize
+        run: mix deploy_ex.ssh.authorize
 
       - name: Build Releases
         run: |

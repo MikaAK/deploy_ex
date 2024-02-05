@@ -28,7 +28,7 @@ defmodule DeployEx.AwsIpWhitelister do
   end
 
   defp make_request(request, security_group_id, ip_address) do
-    case ExAws.request(request) do
+    case ExAws.request(request, region: DeployEx.Config.aws_region()) do
       {:ok, %{body: _, status_code: 200}} -> :ok
 
       {:error, {:http_error, code, %{body: body}}} ->

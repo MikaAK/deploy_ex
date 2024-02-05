@@ -1,9 +1,3 @@
-variable "is_ci" {
-  description = "Is in CI environment?"
-  type        = bool
-  default     = false
-}
-
 variable "environment" {
   description = "Name of the project in kebab case for use in names"
   type        = string
