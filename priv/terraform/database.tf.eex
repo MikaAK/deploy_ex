@@ -13,6 +13,17 @@ resource "aws_db_subnet_group" "rds_subnet_group" {
   }
 }
 
+resource "aws_db_parameter_group" "rds_database_parameter_group" {
+  name        = "<%= @kebab_app_name %>-rds-database-param-group"
+  family      = "${data.aws_rds_engine_version.rds_postgres.engine}${floor(data.aws_rds_engine_version.rds_postgres.version)}"
+  description = "Custom parameter group for my RDS instance"
+
+  parameter {
+    name  = "rds.force_ssl"
+    value = 0
+  }
+}
+
 resource "random_integer" "rds_snapshot_postfix" {
   min = 1
   max = 50000
@@ -21,6 +32,8 @@ resource "random_integer" "rds_snapshot_postfix" {
 # I don't know if it was needed to use coalesce but try wasn't pulling values correctly
 resource "aws_db_instance" "rds_database" {
   for_each = var.resource_databases
+
+  parameter_group_name = aws_db_parameter_group.rds_database_parameter_group.name
 
   allocated_storage         = each.value.allocated_storage_gb
   max_allocated_storage     = each.value.max_allocated_storage_gb

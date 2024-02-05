@@ -54,7 +54,7 @@
         path: "/srv/release_history.txt"
       register: release_history_file
 
-    - name: Write entry to release_history file
+    - name: Create release_history file
       copy:
         content: ""
         dest: /srv/release_history.txt
