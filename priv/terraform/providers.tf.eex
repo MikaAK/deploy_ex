@@ -9,5 +9,6 @@ terraform {
 
 provider "aws" {
   region = "<%= @aws_region %>"
+  profile = var.is_ci ? null : "default"
 }
 

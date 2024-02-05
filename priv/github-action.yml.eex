@@ -27,6 +27,7 @@ jobs:
       image: mikaak/elixir-terraform-ansible-builder:1.14-otp-25-debian
       env:
         MIX_ENV: prod
+        TF_VAR_is_ci: true
         AWS_ACCESS_KEY_ID: ${{ secrets.DEPLOY_EX_AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.DEPLOY_EX_AWS_SECRET_ACCESS_KEY }}
 

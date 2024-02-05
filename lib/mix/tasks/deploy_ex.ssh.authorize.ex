@@ -22,10 +22,7 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
   """
 
   def run(args) do
-    Mix.Task.run("app.config")
-    Application.ensure_all_started(:req)
-    Application.ensure_all_started(:hackney)
-    Application.ensure_all_started(:ex_aws)
+    Application.ensure_all_started(:deploy_ex)
 
     opts = parse_args(args)
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
