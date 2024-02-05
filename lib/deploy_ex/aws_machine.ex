@@ -127,8 +127,11 @@ defmodule DeployEx.AwsMachine do
       %{"StartInstancesResponse" => %{"instancesSet" => %{"item" => item}}} ->
         {:ok, item}
 
-      %{"DescribeInstancesResponse" => %{"reservationSet" => %{"item" => items}}} ->
+      %{"DescribeInstancesResponse" => %{"reservationSet" => %{"item" => items}}} when is_list(items) ->
         {:ok, Enum.map(items, fn %{"instancesSet" => %{"item" => item}} -> item end)}
+
+      %{"DescribeInstancesResponse" => %{"reservationSet" => %{"item" => item}}} ->
+        {:ok, [item["instancesSet"]["item"]]}
 
       structure ->
         {:error, ErrorMessage.bad_request(

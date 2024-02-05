@@ -43,13 +43,15 @@ defmodule Mix.Tasks.DeployEx.Ssh do
   """
 
   def run(args) do
+    Enum.each([:req, :hackney, :ex_aws], &Application.ensure_all_started/1)
+
     {opts, app_params} = parse_args(args)
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, app_name} <- DeployExHelpers.find_app_name(app_params),
          {:ok, pem_file_path} <- DeployExHelpers.find_pem_file(opts[:directory]),
-         {:ok, hostname_ips} <- DeployExHelpers.terraform_instance_ips(opts[:directory]) do
+         {:ok, hostname_ips} <- DeployExHelpers.aws_instance_groups() do
       connect_to_host(hostname_ips, app_name, pem_file_path, opts)
     else
       {:error, e} -> Mix.raise(to_string(e))
@@ -80,13 +82,13 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         host_name_ips = inspect(hostname_ips, pretty: true)
         Mix.raise("Couldn't find any app with the name of #{app_name}\n#{host_name_ips}")
 
-      {app_name, [ip]} ->
+      {app_name, [%{ip: ip}]} ->
         log_ssh_command(app_name, pem_file_path, ip, opts)
 
-      {app_name, ip_addresses} ->
-        ip_address = Enum.random(Enum.sort(ip_addresses)) # DeployExHelpers.prompt_for_choice
+      {app_name, instances} ->
+        instance = Enum.random(Enum.sort(instances)) # DeployExHelpers.prompt_for_choice
 
-        log_ssh_command(app_name, pem_file_path, ip_address, opts)
+        log_ssh_command(app_name, pem_file_path, instance.ip, opts)
 
         # When using Rambo re-enable
         # Mix.shell().info([
