@@ -333,15 +333,3 @@ defmodule Mix.Tasks.Ansible.Build do
   end
 end
 
-    # with {:ok, remote_releases} <- ReleaseUploader.fetch_all_remote_releases(opts),
-    #      {:ok, aws_release_file_map} <- ReleaseUploader.lastest_app_release(
-    #        remote_releases,
-    #        app_names
-    #      ) do
-    #   Enum.each(app_names, fn app_name ->
-    #   end)
-    # else
-    #   {:error, e} when is_list(e) -> Enum.each(e, &Mix.shell().error(to_string(&1)))
-    #   {:error, e} -> Mix.shell().error(to_string(e))
-    # end
-

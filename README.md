@@ -491,6 +491,7 @@ possible without his help!!
 
 ## Goals
 - [ ] Deploy Rollbacks
+- [ ] Environment seperation (staging/prod)
 - [ ] Canary Deploys
 - [ ] Automated IP Whitelist removal lambda (from `mix deploy_ex.ssh.authorize`)
 - [ ] Sentry Integration

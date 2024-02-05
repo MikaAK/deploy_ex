@@ -30,7 +30,9 @@ variable "resource_databases" {
     username                 = optional(string)
     password                 = optional(string)
     maintenance_window       = optional(string)
+    backup_window            = optional(string)
     backup_retention_period  = optional(number)
+    multi_az                 = optional(bool)
 
     performance_insights_retention_period_days = optional(number)
   }))

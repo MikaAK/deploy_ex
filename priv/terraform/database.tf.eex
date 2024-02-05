@@ -18,6 +18,7 @@ resource "random_integer" "rds_snapshot_postfix" {
   max = 50000
 }
 
+# I don't know if it was needed to use coalesce but try wasn't pulling values correctly
 resource "aws_db_instance" "rds_database" {
   for_each = var.resource_databases
 
@@ -31,13 +32,15 @@ resource "aws_db_instance" "rds_database" {
   db_subnet_group_name      = aws_db_subnet_group.rds_subnet_group.name
   vpc_security_group_ids    = [module.app_security_group.security_group_id]
   instance_class            = coalesce(lookup(each.value, "instance_type", ""), "db.t3.micro")
-  username                  = coalesce(lookup(each.value, "instance_type", ""), "postgres")
-  password                  = coalesce(lookup(each.value, "instance_type", ""), "<%= Base.encode32(:crypto.strong_rand_bytes(10)) %>")
+  username                  = coalesce(lookup(each.value, "username", ""), "postgres")
+  password                  = coalesce(lookup(each.value, "password", ""), "<%= Base.encode32(:crypto.strong_rand_bytes(10)) %>")
+  multi_az                  = coalesce(lookup(each.value, "multi_az", ""), false)
 
   performance_insights_enabled          = true
-  performance_insights_retention_period = try(each.value.performance_insights_retention_period_days, 7)
-  backup_retention_period               = try(each.value.backup_retention_period, 7)
-  maintenance_window                    = try(each.value.maintenance_window, "Mon:00:00-Mon:03:00")
+  performance_insights_retention_period = coalesce(lookup(each.value, "performance_insights_retention_period_days", ""), 7)
+  backup_retention_period               = coalesce(lookup(each.value, "backup_retention_period", ""), 7)
+  backup_window                         = coalesce(lookup(each.value, "backup_window", ""), "03:00-08:00")
+  maintenance_window                    = coalesce(lookup(each.value, "maintenance_window", ""), "Mon:00:00-Mon:03:00")
 
   tags = {
     Name   = "${each.value.title_name} DB"

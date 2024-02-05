@@ -14,6 +14,7 @@ defmodule DeployExHelpers do
   def app_name, do: Mix.Project.get() |> Module.split |> hd
   def underscored_app_name, do: Macro.underscore(app_name())
   def kebab_app_name, do: String.replace(underscored_app_name(), "_", "-")
+  def title_case_app_name, do: upper_title_case(underscored_app_name())
 
   def check_in_umbrella do
     if Mix.Project.umbrella?() do
@@ -287,6 +288,26 @@ defmodule DeployExHelpers do
     end
   end
 
+  def aws_instance_groups do
+    with {:ok, instances} <- DeployEx.AwsMachine.fetch_aws_instances_by_tag("Group", "#{title_case_app_name()} Backend") do
+      {:ok, instances
+        |> Stream.map(fn instance_data ->
+          instance_data
+            |> Map.put("InstanceGroupTag", Enum.find_value(instance_data["tagSet"]["item"], fn
+              %{"key" => "InstanceGroup", "value" => value} -> value
+              _ -> false
+            end))
+            |> Map.put("NameTag", Enum.find_value(instance_data["tagSet"]["item"], fn
+              %{"key" => "Name", "value" => value} -> value
+              _ -> false
+            end))
+        end)
+        |> Stream.reject(&is_nil(&1["InstanceGroupTag"]))
+        |> Stream.filter(&(&1["instanceState"]["name"] === "running"))
+        |> Enum.group_by(&(&1["InstanceGroupTag"]), &%{name: &1["NameTag"], ip: &1["ipAddress"]})}
+    end
+  end
+
   def terraform_instance_ips(terraform_directory) do
     case System.shell("terraform output --json", cd: Path.expand(terraform_directory)) do
       {output, 0} ->
@@ -350,7 +371,7 @@ defmodule DeployExHelpers do
 
   def run_ssh_command(terraform_directory, app_name, port \\ 22, command) do
     with {:ok, pem_file_path} <- find_pem_file(terraform_directory),
-         {:ok, instance_ips} <- find_terraform_instance_ips(terraform_directory, app_name) do
+         {:ok, instance_ips} <- find_aws_instance_ips(app_name) do
       pem_rsa_path = Path.join(@server_ssh_pem_path, "id_rsa")
 
       if not File.exists?(pem_rsa_path) do
@@ -367,18 +388,18 @@ defmodule DeployExHelpers do
     end
   end
 
-  def find_terraform_instance_ips(terraform_directory, app_name) do
-    with {:ok, instance_ips} <- terraform_instance_ips(terraform_directory) do
-      case Enum.find_value(instance_ips, fn {key, values} -> if key =~ app_name, do: values end) do
+  def find_aws_instance_ips(app_name) do
+    with {:ok, instance_groups} <- aws_instance_groups() do
+      case Enum.find_value(instance_groups, fn {group, values} -> if group =~ app_name, do: values end) do
         nil ->
           {:error, ErrorMessage.not_found(
             "no app names found with #{app_name}",
-            %{app_names: Map.keys(instance_ips)}
+            %{app_names: Map.keys(instance_groups)}
           )}
 
-        [ip] -> {:ok, [ip]}
+        [%{ip: ip}] -> {:ok, [ip]}
 
-        ips -> {:ok, prompt_for_choice(ips, true)}
+        instances -> {:ok, prompt_for_choice(Enum.map(instances, &(&1.ip)), true)}
       end
     end
   end
