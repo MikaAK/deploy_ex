@@ -11,7 +11,7 @@ defmodule DeployEx.ReleaseUploader.AwsManager do
     file_path
       |> ExAws.S3.Upload.stream_file
       |> ExAws.S3.upload(bucket, upload_path)
-      |> ExAws.request(reigon: IO.inspect(region))
+      |> ExAws.request(region: region)
       |> handle_response
   end
 

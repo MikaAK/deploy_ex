@@ -104,4 +104,4 @@ jobs:
         run: mix ansible.deploy -l
 
       - name: Deauthorize AWS SSH
-        run: env $(./.github/github-action-secrets-to-env.sh env.json) mix deploy_ex.ssh.authorize -r
+        run: mix deploy_ex.ssh.authorize -r

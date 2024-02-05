@@ -19,13 +19,14 @@ defmodule Mix.Tasks.DeployEx.Upload do
 
   ## Options
 
-  - `aws-region` - Region for aws (default: `#{@default_aws_region}`)
-  - `aws-bucket` - Region for aws (default: `#{@default_aws_release_bucket}`)
+  - `aws-region` - Region for aws (default: `#{Config.aws_region()}`)
+  - `aws-bucket` - Region for aws (default: `#{Config.aws_release_bucket()}`)
   """
 
   def run(args) do
     Application.ensure_all_started(:hackney)
     Application.ensure_all_started(:telemetry)
+    Application.ensure_all_started(:ex_aws)
 
     opts = args
       |> parse_args

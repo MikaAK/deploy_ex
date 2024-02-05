@@ -22,13 +22,7 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
   """
 
   def run(args) do
-    if System.get_env("CI") in ["true", true] do
-      Application.put_env(:erlexec, :root, true)
-      Application.put_env(:erlexec, :user, "root")
-      Application.put_env(:erlexec, :limit_users, ["root"])
-    end
-
-    Enum.each([:req, :hackney, :ex_aws, :deploy_ex], &Application.ensure_all_started/1)
+    Enum.each([:req, :hackney, :ex_aws], &Application.ensure_all_started/1)
 
     opts = parse_args(args)
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)

@@ -7,7 +7,7 @@ hostnames:
   - tag:Name
 
 filters:
-  tag:Group: '<%= DeployExHelpers.upper_title_case(@app_name) %> Backend'
+  tag:Group: "<%= DeployExHelpers.upper_title_case(@app_name) %> Backend"
 
 keyed_groups:
   - key: tags['MonitoringKey']
