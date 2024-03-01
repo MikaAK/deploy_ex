@@ -257,8 +257,9 @@ defmodule DeployExHelpers do
   def terraform_state(terraform_directory) do
     terraform_opts = [cd: Path.expand(terraform_directory), env: Map.to_list(System.get_env())]
 
-    case System.shell("terraform state list", terraform_opts) do
-      {output, 0} -> {:ok, output}
+    case System.shell("#{DeployEx.Config.iac_tool()} state list", terraform_opts) do
+      {output, 0} ->
+        {:ok, output}
 
       {message, _} ->
         {:error, ErrorMessage.failed_dependency("terraform state list failed", %{message: message})}
@@ -285,10 +286,12 @@ defmodule DeployExHelpers do
 
   def terraform_security_group_id(terraform_directory) do
     terraform_opts = [cd: Path.expand(terraform_directory), env: Map.to_list(System.get_env())]
-    terraform_state_show = "terraform state show 'module.app_security_group.module.sg.aws_security_group.this_name_prefix[0]'" <>
-                           "| grep 'id.*sg-' " <>
-                           "| awk '{print $3}' " <>
-                           "| awk '{print substr($0, 2, length($0) - 2)}'"
+
+    terraform_state_show =
+      "#{DeployEx.Config.iac_tool()} state show 'module.app_security_group.module.sg.aws_security_group.this_name_prefix[0]'" <>
+        "| grep 'id.*sg-' " <>
+        "| awk '{print $3}' " <>
+        "| awk '{print substr($0, 2, length($0) - 2)}'"
 
     case System.shell(terraform_state_show, terraform_opts) do
       {output, 0} ->
@@ -326,7 +329,9 @@ defmodule DeployExHelpers do
   end
 
   def terraform_instance_ips(terraform_directory) do
-    case System.shell("terraform output --json", cd: Path.expand(terraform_directory)) do
+    case System.shell("#{DeployEx.Config.iac_tool()} output --json",
+           cd: Path.expand(terraform_directory)
+         ) do
       {output, 0} ->
         {:ok, parse_terraform_output_to_ips(output)}
 

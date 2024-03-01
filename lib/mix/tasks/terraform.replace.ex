@@ -19,6 +19,11 @@ defmodule Mix.Tasks.Terraform.Replace do
   def run(args) do
     {opts, extra_args} = parse_args(args)
 
+    opts = args
+      |> parse_args
+      |> Keyword.put_new(:directory, @terraform_default_path)
+      |> Keyword.put(:iac_tool, DeployEx.Config.iac_tool())
+
     with :ok <- DeployExHelpers.check_in_umbrella() do
       if opts[:string] do
         terraform_apply_replace(opts[:string], DeployExHelpers.to_terraform_args(args), opts)
@@ -46,7 +51,7 @@ defmodule Mix.Tasks.Terraform.Replace do
   end
 
   defp terraform_apply_replace(replace_str, terraform_args, opts) do
-    cmd = "terraform apply #{terraform_args} --replace \"#{replace_str}\""
+    cmd = "#{opts[:iac_tool]} apply #{terraform_args} --replace \"#{replace_str}\""
     cmd = if opts[:auto_approve], do: "#{cmd} --auto-approve", else: cmd
 
     DeployExHelpers.run_command_with_input(cmd, opts[:directory])
@@ -68,7 +73,7 @@ defmodule Mix.Tasks.Terraform.Replace do
       ]
     )
 
-    {Keyword.put_new(opts, :directory, @terraform_default_path), extra_args}
+    {opts, extra_args}
   end
 
   defp get_instances_from_args(instances, [instance_name], opts) do
@@ -126,4 +131,3 @@ defmodule Mix.Tasks.Terraform.Replace do
     end)
   end
 end
-

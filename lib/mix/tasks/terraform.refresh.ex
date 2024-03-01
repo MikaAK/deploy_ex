@@ -12,9 +12,13 @@ defmodule Mix.Tasks.Terraform.Refresh do
     opts = args
       |> parse_args
       |> Keyword.put_new(:directory, @terraform_default_path)
+      |> Keyword.put(:iac_tool, DeployEx.Config.iac_tool())
 
     with :ok <- DeployExHelpers.check_in_umbrella() do
-      DeployExHelpers.run_command_with_input("terraform refresh #{DeployExHelpers.to_terraform_args(args)}", opts[:directory])
+      DeployExHelpers.run_command_with_input(
+        "#{opts[:iac_tool]} refresh #{DeployExHelpers.to_terraform_args(args)}",
+        opts[:directory]
+      )
     end
   end
 

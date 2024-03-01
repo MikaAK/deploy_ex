@@ -19,6 +19,7 @@ defmodule Mix.Tasks.Terraform.Plan do
     opts = args
       |> parse_args
       |> Keyword.put_new(:directory, @terraform_default_path)
+      |> Keyword.put(:iac_tool, DeployEx.Config.iac_tool())
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          :ok <- run_command(args, opts) do
@@ -42,7 +43,7 @@ defmodule Mix.Tasks.Terraform.Plan do
   end
 
   defp run_command(args, opts) do
-    cmd = "terraform plan #{DeployExHelpers.to_terraform_args(args)}"
+    cmd = "#{opts[:iac_tool]} plan #{DeployExHelpers.to_terraform_args(args)}"
 
     DeployExHelpers.run_command_with_input(cmd, opts[:directory])
   end

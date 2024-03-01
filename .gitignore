@@ -60,6 +60,8 @@ Temporary Items
 ### Terraform ###
 # Local .terraform directories
 **/.terraform/*
+**/.tofurc
+**/.tofu.rc
 
 # Crash log files
 crash.log
