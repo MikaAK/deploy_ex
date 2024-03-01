@@ -1,6 +1,8 @@
 defmodule DeployEx.Config do
   @app :deploy_ex
 
+  def iac_tool, do: Application.get_env(@app, :iac_tool) || "terraform"
+
   def env, do: Application.get_env(@app, :env) || "dev"
   def aws_region, do: Application.get_env(@app, :aws_region) || "us-west-2"
 

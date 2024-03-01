@@ -202,6 +202,15 @@ The following options are present:
 
 There is also a default volume of 16gb created and mounted at the /data directory, you can change this in each specific app type if desired
 
+## Switching out IaC Tools
+By default, DeployEx uses Terraform and Ansible for infrastructure as code (IaC) tools.
+However, you can switch to, e.g., [OpenTofu](https://opentofu.org/) using the `:iac_tool` option
+in `:deploy_ex` config. This should point to the binary for the installed IaC tool:
+
+```elixir
+config :deploy_ex, iac_tool: "tofu
+```
+
 ## Ansible Options
 - `inventory` (alias: `e`) - [Ansible inventories](https://docs.ansible.com/ansible/latest/inventory_guide/intro_inventory.html)
 - `limit` (alias: `i`) - [Ansible limiting/filtering](https://docs.ansible.com/ansible/latest/inventory_guide/intro_patterns.html#patterns-and-ad-hoc-commands) to target specific servers

@@ -27,6 +27,7 @@ defmodule Mix.Tasks.Terraform.Build do
     opts = args
       |> parse_args
       |> Keyword.put_new(:directory, @terraform_default_path)
+      |> Keyword.put(:iac_tool, DeployEx.Config.iac_tool())
       |> Keyword.put_new(:aws_region, @default_aws_region)
       |> Keyword.put_new(:aws_release_bucket, @default_aws_release_bucket)
       |> Keyword.put_new(:aws_log_bucket, DeployEx.Config.aws_log_bucket())
@@ -69,7 +70,7 @@ defmodule Mix.Tasks.Terraform.Build do
       }
 
       write_terraform_template_files(params, opts)
-      run_terraform_init(params)
+      run_terraform_init(params, opts)
     else
       {:error, e} -> Mix.raise(to_string(e))
     end
@@ -97,8 +98,11 @@ defmodule Mix.Tasks.Terraform.Build do
     opts
   end
 
-  defp run_terraform_init(params) do
-    DeployExHelpers.run_command_with_input("terraform init", params[:directory])
+  defp run_terraform_init(params, opts) do
+    DeployExHelpers.run_command_with_input(
+      "#{opts[:iac_tool]} init",
+      params[:directory]
+    )
   end
 
   defp ensure_terraform_directory_exists(directory) do

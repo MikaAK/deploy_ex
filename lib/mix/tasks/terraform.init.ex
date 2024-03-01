@@ -12,6 +12,7 @@ defmodule Mix.Tasks.Terraform.Init do
     opts = args
       |> parse_args
       |> Keyword.put_new(:directory, @terraform_default_path)
+      |> Keyword.put(:iac_tool, DeployEx.Config.iac_tool())
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          :ok <- run_terraform_init(args, opts) do
@@ -34,7 +35,7 @@ defmodule Mix.Tasks.Terraform.Init do
   end
 
   defp run_terraform_init(args, opts) do
-    cmd = "terraform init #{DeployExHelpers.to_terraform_args(args)}"
+    cmd = "#{opts[:iac_tool]} init #{DeployExHelpers.to_terraform_args(args)}"
     cmd = if opts[:upgrade], do: "#{cmd} --upgrade", else: cmd
 
     DeployExHelpers.run_command_with_input(cmd, opts[:directory])
