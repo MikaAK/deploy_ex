@@ -499,4 +499,5 @@ possible without his help!!
 - [ ] Static way to setup redis from apps
 - [ ] Subnet a-z dispersal in networking layer
 - [ ] S3 Backed Terraform State
+  - [ ] Needs a command run before to generate bucket
 - [ ] Automated Terraform & Ansible install on command runs
