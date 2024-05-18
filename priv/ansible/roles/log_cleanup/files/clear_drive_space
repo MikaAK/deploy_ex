@@ -3,5 +3,6 @@
 sudo rm /var/log/daemon.log.*
 sudo rm /var/log/syslog.*
 sudo rm /tmp/appsignal.log
+sudo rm /home/chrome/chromedriver.log
 
 sudo apt-get clean

@@ -1,17 +1,25 @@
 - name: log_cleanup
   block:
-    - name: Create /etc/cron.weekly directory
+    - name: Create /etc/cron.fiveM directory
       file:
-        path: /etc/cron.weekly
+        path: /etc/cron.fiveM
         state: directory
         owner: root
         group: root
         mode: 0755
 
-    - name: Copy clear_drive_space file to /etc/cron.weekly/clear_drive_space
+    - name: Copy clear_drive_space file to /etc/cron.fiveM/clear_drive_space
       copy:
         src: clear_drive_space
-        dest: /etc/cron.weekly/clear_drive_space
+        dest: /etc/cron.fiveM/clear_drive_space
+        owner: root
+        group: root
+        mode: u+x
+
+    - name: Copy default logrotate script to /etc/cron.hourly/logrotate
+      copy:
+        src: logrotate
+        dest: /etc/cron.hourly/logrotate
         owner: root
         group: root
         mode: u+x
@@ -31,5 +39,11 @@
         owner: root
         group: root
         mode: u=rw,g=r,o=r
+
+
+    - name: Restart rsyslog
+      systemd:
+        name: rsyslog.service
+        state: restarted
 
   become: true
