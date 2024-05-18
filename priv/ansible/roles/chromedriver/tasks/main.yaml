@@ -1,5 +1,12 @@
 - name: chromedriver
   block:
+    # to prevent dpkg lock errors.
+    - name: wait for apt
+      shell: |
+        while pgrep -x apt >/dev/null; do sleep 5; done;
+      register: my_output # <- Registers the command output.
+      changed_when: my_output.rc != 0 # <- Uses the return code to define when the task has changed.
+
     - name: Install prerequisites
       apt:
         pkg:
@@ -23,14 +30,23 @@
         name: google-chrome-stable
         update_cache: true
 
-    - name: Get Chrome Version
-      shell: curl https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$(dpkg -s google-chrome-stable | grep Version | cut -d' ' -f 2 | cut -d'-' -f 1 | cut -d'.' -f 1)
-      register: chromedriver_version
+    - name: Get Chrome Version Number
+      shell: google-chrome --version | awk '{print $3}'
+      register: chromedriver_version_number
       changed_when: false
 
-    - name: Download chromedriver {{ chromedriver_version.stdout }}
+    - name: Download chromedriver {{ chromedriver_version_number.stdout }}
       unarchive:
-        src: https://chromedriver.storage.googleapis.com/{{ chromedriver_version.stdout }}/chromedriver_linux64.zip
+        src: https://storage.googleapis.com/chrome-for-testing-public/{{ chromedriver_version_number.stdout }}/linux64/chromedriver-linux64.zip
+        dest: /root/
+        group: root
+        owner: root
+        remote_src: true
+        mode: u+x,g+x,o+x
+
+    - name: Move chromedriver bin into /usr/bin
+      copy:
+        src: /root/chromedriver-linux64/chromedriver
         dest: /usr/bin
         group: root
         owner: root
