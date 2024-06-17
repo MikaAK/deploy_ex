@@ -84,7 +84,6 @@ defmodule Mix.Tasks.DeployEx.Release do
     opts
   end
 
-
   defp split_releases_and_run_release_commands(release_states, opts) do
     with {
       :ok,

@@ -217,7 +217,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
     last_sha: last_sha
   }, file_diffs_by_sha_tuple, app_dep_tree) do
     file_diffs = Map.get(file_diffs_by_sha_tuple, {current_sha, last_sha}) || []
-    app_deps = app_dep_tree[app_name]
+    app_deps = app_dep_tree[app_name] || []
     changed_apps = Enum.map(file_diffs, &String.replace(&1, ~r/^apps\/([a-z0-9_]+)\/.*/, "\\1"))
 
     local_dep_changes? = Enum.any?(changed_apps) and Enum.any?(changed_apps, &(&1 in app_deps))
