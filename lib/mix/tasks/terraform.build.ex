@@ -144,6 +144,10 @@ defmodule Mix.Tasks.Terraform.Build do
             private_ip  = "10.0.1.60"
             enable_ebs  = true
 
+            # This is a suggestion for instance
+
+            instance_type = "r7g.medium"
+
             instance_ebs_secondary_size = 16
 
             tags = {

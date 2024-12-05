@@ -83,7 +83,8 @@ off pass the options when calling `deploy_ex.full_setup`, `terraform.build` or `
 - `no-sentry`
 - `no-database` - Disables PG database creation in AWS RDS
 
-***Note***: It's very important to make sure you add the `:tar` step to your releases, see [here](https://hexdocs.pm/mix/Mix.Tasks.Release.html#module-steps) for info
+***Note***: It's very important to make sure you add the `:tar` step to your releases, see [here](https://hexdocs.pm/mix/Mix.Tasks.Release.html#module-steps) for info.
+
 ```bash
 $ vi mix.exs # Add {:deploy_ex, "~> 0.1"}
 $ mix deps.get
@@ -91,6 +92,9 @@ $ mix deploy_ex.full_setup -yak # generate files & run inital setup
 $ mix deploy_ex.install_github_action
 $ git add . && git commit -m "chore: add deployment"
 ```
+
+***Note***: Make sure to take the ami when terraform is run and uncomment and insert it into `/deploys/terraform/ec2.tf` so that the AMI doesn't change ***FAILURE TO DO THIS WILL CAUSE MASS DEPLOYS VERY OFTEN***
+
 Once you do this, go to Github and set a few Secrets:
 
 - `DEPLOY_EX_AWS_ACCESS_KEY_ID`

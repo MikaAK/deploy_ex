@@ -1,66 +1,30 @@
-data "aws_rds_engine_version" "rds_postgres" {
-  engine = "postgres"
-}
+module "rds_database" {
+  source = "./modules/aws-database"
 
-resource "aws_db_subnet_group" "rds_subnet_group" {
-  name       = "<%= @app_name %>-db-subnet"
-  subnet_ids = module.vpc.public_subnets
-
-  tags = {
-    Name = "<%= DeployExHelpers.upper_title_case(@app_name) %> DB Subnet Group"
-    Vendor = "Postgres"
-    Type   = "Dataase"
-  }
-}
-
-resource "aws_db_parameter_group" "rds_database_parameter_group" {
-  name        = "<%= @kebab_app_name %>-rds-database-param-group"
-  family      = "${data.aws_rds_engine_version.rds_postgres.engine}${floor(data.aws_rds_engine_version.rds_postgres.version)}"
-  description = "Custom parameter group for my RDS instance"
-
-  parameter {
-    name  = "rds.force_ssl"
-    value = 0
-  }
-}
-
-resource "random_integer" "rds_snapshot_postfix" {
-  min = 1
-  max = 50000
-}
-
-# I don't know if it was needed to use coalesce but try wasn't pulling values correctly
-resource "aws_db_instance" "rds_database" {
   for_each = var.resource_databases
 
-  parameter_group_name = aws_db_parameter_group.rds_database_parameter_group.name
+  resource_group = var.resource_group
+  environment    = var.environment
 
-  allocated_storage         = each.value.allocated_storage_gb
-  max_allocated_storage     = each.value.max_allocated_storage_gb
-  db_name                   = each.value.name
-  identifier                = "${each.value.kebab_name}-db"
-  final_snapshot_identifier = "${each.value.kebab_name}-db-final-${random_integer.rds_snapshot_postfix.result}"
-  engine                    = data.aws_rds_engine_version.rds_postgres.engine
-  engine_version            = data.aws_rds_engine_version.rds_postgres.version
-  db_subnet_group_name      = aws_db_subnet_group.rds_subnet_group.name
-  vpc_security_group_ids    = [module.app_security_group.security_group_id]
-  instance_class            = coalesce(lookup(each.value, "instance_type", ""), "db.t3.micro")
-  username                  = coalesce(lookup(each.value, "username", ""), "postgres")
-  password                  = coalesce(lookup(each.value, "password", ""), "<%= Base.encode32(:crypto.strong_rand_bytes(10)) %>")
-  multi_az                  = coalesce(lookup(each.value, "multi_az", ""), false)
+  vpc_id            = module.vpc.vpc_id
+  subnet_ids        = module.vpc.public_subnets
+  security_group_id = module.app_security_group.security_group_id
 
-  performance_insights_enabled          = true
-  performance_insights_retention_period = coalesce(lookup(each.value, "performance_insights_retention_period_days", ""), 7)
-  backup_retention_period               = coalesce(lookup(each.value, "backup_retention_period", ""), 7)
-  backup_window                         = coalesce(lookup(each.value, "backup_window", ""), "03:00-08:00")
-  maintenance_window                    = coalesce(lookup(each.value, "maintenance_window", ""), "Mon:00:00-Mon:03:00")
+  name = each.value.name
 
-  tags = {
-    Name   = "${each.value.title_name} DB"
-    Vendor = "Postgres"
-    Type   = "Database"
-    Environment = var.environment
-    Group       = var.resource_group
-  }
+  database_username = each.value.database_username
+  instance_type     = try(each.value.instance_type, null)
+
+  allocated_storage_gb     = try(each.value.allocated_storage_gb, null)
+  max_allocated_storage_gb = try(each.value.max_allocated_storage_gb, null)
+
+  backup_retention_period = try(each.value.backup_retention_period, null)
+  backup_window           = try(each.value.backup_window, null)
+  maintenance_window      = try(each.value.maintenance_window, null)
+
+  multi_az = try(each.value.multi_az, false)
+
+  performance_insights_retention_period_days = try(each.value.performance_insights_retention_period_days, 7)
+
+  tags = try(each.value.tags, null)
 }
-

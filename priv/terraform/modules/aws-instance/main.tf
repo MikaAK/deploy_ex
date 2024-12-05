@@ -1,17 +1,6 @@
 ### EC2 Start ###
 #################
 
-# Pulls debian image from AWS AMI
-# data "aws_ami" "debian-11" {
-#   most_recent = true
-#   owners      = ["136693071363"]
-
-#   filter {
-#     name   = "name"
-#     values = ["debian-11*amd64*"]
-#   }
-# }
-
 # Choose Subnet
 resource "random_shuffle" "subnet_id" {
   input        = var.subnet_ids
@@ -27,13 +16,14 @@ resource "aws_instance" "ec2_instance" {
   # Enable when multi-instancing
   count = var.instance_count
 
-  # ami           = data.aws_ami.debian-11.id
-  ami           = "ami-031e508e4833ae9cc"
+  ami           = var.instance_ami
   instance_type = var.instance_type
 
   subnet_id              = data.aws_subnet.random_subnet.id
   vpc_security_group_ids = [var.security_group_id]
   private_ip             = var.private_ip
+
+  associate_public_ip_address = !var.disable_public_ip
 
   key_name = var.key_pair_key_name
 
@@ -131,6 +121,25 @@ resource "aws_lb" "ec2_lb" {
 }
 
 # Create HTTP target group
+
+# Enable for HTTP support (if using SSL on server)
+
+# resource "aws_lb_target_group" "ec2_lb_https_target_group" {
+#   count = (var.enable_elb && var.enable_elb_https && var.instance_count > 1) ? 1 : 0
+#   name  = "${lower(replace(var.instance_name, " ", "-"))}-lb-https-tg-${var.environment}"
+#   vpc_id   = data.aws_subnet.random_subnet.vpc_id
+#   protocol = "TCP"
+#   port     = 443
+#   tags = merge({
+#     Name          = "${lower(replace(var.instance_name, " ", "-"))}-https-lb-tg-${var.environment}"
+#     InstanceGroup = "${lower(replace(var.instance_name, " ", "_"))}_${var.environment}"
+#     Group         = var.resource_group
+#     Environment   = var.environment
+#     Vendor        = "Self"
+#     Type          = "Self Made"
+#   }, var.tags)
+# }
+
 resource "aws_lb_target_group" "ec2_lb_target_group" {
   count = (var.enable_elb && var.instance_count > 1) ? 1 : 0
   name  = format("%s-%s", (lower(replace(var.instance_name, " ", "-"))), "lb-tg")
@@ -150,6 +159,16 @@ resource "aws_lb_target_group" "ec2_lb_target_group" {
 }
 
 # Attach instances to target group
+
+# Enable for HTTP support (if using SSL on server)
+
+# resource "aws_lb_target_group_attachment" "ec2_lb_https_target_group_attachment" {
+#   count = (var.enable_elb && var.enable_elb_https && var.instance_count > 1) ? var.instance_count : 0
+#   target_group_arn = aws_lb_target_group.ec2_lb_https_target_group[0].arn
+#   target_id        = aws_instance.ec2_instance[count.index].id
+#   port             = 443
+# }
+
 resource "aws_lb_target_group_attachment" "ec2_lb_target_group_attachment" {
   count = (var.enable_elb && var.instance_count > 1) ? var.instance_count : 0
 
@@ -159,6 +178,20 @@ resource "aws_lb_target_group_attachment" "ec2_lb_target_group_attachment" {
 }
 
 # Create Listener
+
+# Enable for HTTP support (if using SSL on server)
+
+# resource "aws_lb_listener" "ec2_lb_https_listener" {
+#   count = (var.enable_elb && var.enable_elb_https && var.instance_count > 1) ? var.instance_count : 0
+#   load_balancer_arn = aws_lb.ec2_lb[0].arn
+#   port              = 443
+#   protocol          = aws_lb_target_group.ec2_lb_https_target_group[0].protocol
+#   default_action {
+#     type             = "forward"
+#     target_group_arn = aws_lb_target_group.ec2_lb_https_target_group[0].arn
+#   }
+# }
+
 resource "aws_lb_listener" "ec2_lb_listener" {
   count = (var.enable_elb && var.instance_count > 1) ? var.instance_count : 0
 

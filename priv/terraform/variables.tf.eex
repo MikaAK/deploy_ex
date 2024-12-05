@@ -17,36 +17,31 @@ variable "resource_group" {
 }
 
 variable "resource_databases" {
-  description = "database config settings, default max storage is 10TB"
-  type        = map(object({
-    name                     = string
-    title_name               = string
-
-    kebab_name               = string
-    allocated_storage_gb     = number
-    max_allocated_storage_gb = number
+  description = "Map of database configurations"
+  type = map(object({
+    name              = string
+    database_username = string
 
     instance_type            = optional(string)
-    username                 = optional(string)
-    password                 = optional(string)
-    maintenance_window       = optional(string)
-    backup_window            = optional(string)
+    allocated_storage_gb     = optional(number)
+    max_allocated_storage_gb = optional(number)
     backup_retention_period  = optional(number)
+    backup_window            = optional(string)
+    maintenance_window       = optional(string)
     multi_az                 = optional(bool)
 
     performance_insights_retention_period_days = optional(number)
+    tags                                       = optional(map(string))
   }))
 
-  default     = {<%= if @use_db do %>
-    general = {
-      name                     = "<%= @app_name %>"
-      title_name               = "<%= DeployExHelpers.upper_title_case(@app_name) %>"
-      kebab_name               = "<%= @kebab_app_name %>"
-      allocated_storage_gb     = 100
-      max_allocated_storage_gb = 1000
+  default = {
+    <%= @app_name %>_db = {
+      name              = "<%= DeployExHelpers.upper_title_case(@app_name) %> Main"
+      database_username = "<%= @app_name %>"
     }
-  <% end %>}
+  }
 }
+
 
 variable "resource_buckets" {
   description = "Map of project names to buckets"

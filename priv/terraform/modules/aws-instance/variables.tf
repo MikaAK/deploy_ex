@@ -18,18 +18,6 @@ variable "security_group_id" {
   nullable    = false
 }
 
-variable "subnet_ids" {
-  description = "Subnet IDs for EC2 instances"
-  type        = list(string)
-  nullable    = false
-}
-
-variable "key_pair_key_name" {
-  description = "PEM file name to use for the ec2 instances"
-  type        = string
-  nullable    = false
-}
-
 variable "private_ip" {
   description = "Private Static IP to use for the instances"
   type        = string
@@ -43,8 +31,20 @@ variable "disable_public_ip" {
   nullable    = false
 }
 
+variable "subnet_ids" {
+  description = "Subnet IDs for EC2 instances"
+  type        = list(string)
+  nullable    = false
+}
+
+variable "key_pair_key_name" {
+  description = "PEM file name to use for the ec2 instances"
+  type        = string
+  nullable    = false
+}
+
 variable "enable_eip" {
-  description = "Enables instance to generate an elastic ip for itself, sets enable_public_ip to true"
+  description = "Enables instance to generate an elastic ip for itself"
   type        = bool
   default     = false
   nullable    = false
@@ -97,19 +97,19 @@ variable "instance_name" {
   nullable    = false
 }
 
+variable "instance_ami" {
+  description = "Instance AMI"
+  type        = string
+  nullable    = false
+}
+
+
 ### Load Balancer ###
 #####################
 variable "enable_elb" {
   description = "Enables instance to generate an elastic load balancer for itself"
   type        = bool
   default     = false
-  nullable    = false
-}
-
-variable "enable_elb_https" {
-  description = "Enables the load balancer to turn on http (defaults to true)"
-  type        = bool
-  default     = true
   nullable    = false
 }
 
