@@ -85,7 +85,7 @@ defmodule Mix.Tasks.DeployEx.Upload do
   end
 
   defp upload_changed_releases(release_candidates, opts) do
-    case ReleaseUploader.reject_unchanged_releases(release_candidates) do
+    case ReleaseUploader.filter_changed_releases(release_candidates) do
       {:ok, []} ->
         log_unchanged_releases(release_candidates)
 

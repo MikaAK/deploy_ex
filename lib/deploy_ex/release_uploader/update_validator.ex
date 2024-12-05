@@ -3,7 +3,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
 
   @max_git_diff_concurrency 2
 
-  def reject_unchanged(release_states) do
+  def filter_changed(release_states) do
     with {:ok, file_diffs_by_sha_tuple} <- load_file_diffs(release_states),
          {:ok, {
            {invalid_release_states, release_states},
@@ -11,7 +11,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
          }} <- split_invalid_releases(release_states, file_diffs_by_sha_tuple),
          {:ok, dep_changes_by_sha_tuple} <- load_dep_changes(file_diffs_by_sha_tuple),
          {:ok, app_dep_tree} <- MixDepsTreeParser.load_app_dep_tree() do
-      reject_unchanged(
+      filter_changed(
         invalid_release_states,
         release_states,
         file_diffs_by_sha_tuple,
@@ -21,7 +21,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
     end
   end
 
-  def reject_unchanged(
+  def filter_changed(
     invalid_release_states,
     release_states,
     file_diffs_by_sha_tuple,
@@ -128,13 +128,13 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
   end
 
   defp release_has_code_changes?(%DeployEx.ReleaseUploader.State{
-    app_name: app_name,
     sha: current_sha,
-    last_sha: last_sha
+    last_sha: last_sha,
+    release_apps: release_apps
   }, file_diffs_by_sha_tuple) do
     file_diffs = Map.get(file_diffs_by_sha_tuple, {current_sha, last_sha}) || []
 
-    if Enum.any?(file_diffs) do
+    Enum.any?(file_diffs) && Enum.any?(release_apps, fn app_name ->
       root_mix_exs_change? = Enum.any?(file_diffs, &(&1 === "mix.exs"))
       code_change? = Enum.any?(file_diffs, &file_part_of_app(&1, app_name))
       config_change? = Enum.any?(file_diffs, &config_file?(&1))
@@ -152,9 +152,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
       end
 
       changes?
-    else
-      false
-    end
+    end)
   end
 
   def log_app_change([], _) do
@@ -192,42 +190,46 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
   end
 
   defp release_has_dep_changes?(%DeployEx.ReleaseUploader.State{
-    app_name: app_name,
     sha: current_sha,
-    last_sha: last_sha
+    last_sha: last_sha,
+    release_apps: release_apps
   }, dep_changes_by_sha_tuple, app_dep_tree) do
     dep_changes = Map.get(dep_changes_by_sha_tuple, {current_sha, last_sha}) || []
 
-    dep_changes? = Enum.any?(app_dep_tree[app_name] || [], fn app_dep_name ->
-      Enum.any?(dep_changes, &(&1 === app_dep_name))
+    Enum.any?(release_apps, fn app_name ->
+      dep_changes? = Enum.any?(app_dep_tree[app_name] || [], fn app_dep_name ->
+        Enum.any?(dep_changes, &(&1 === app_dep_name))
+      end)
+
+      if dep_changes? do
+        IO.puts(to_string(IO.ANSI.format([
+          :green, "* #{app_name} has dependency changes"
+        ])))
+      end
+
+      dep_changes?
     end)
-
-    if dep_changes? do
-      IO.puts(to_string(IO.ANSI.format([
-        :green, "* #{app_name} has dependency changes"
-      ])))
-    end
-
-    dep_changes?
   end
 
   defp release_has_local_dep_changes?(%DeployEx.ReleaseUploader.State{
-    app_name: app_name,
     sha: current_sha,
-    last_sha: last_sha
+    last_sha: last_sha,
+    release_apps: release_apps
   }, file_diffs_by_sha_tuple, app_dep_tree) do
-    file_diffs = Map.get(file_diffs_by_sha_tuple, {current_sha, last_sha}) || []
-    app_deps = app_dep_tree[app_name] || []
-    changed_apps = Enum.map(file_diffs, &String.replace(&1, ~r/^apps\/([a-z0-9_]+)\/.*/, "\\1"))
+    Enum.any?(release_apps, fn app_name ->
+      file_diffs = Map.get(file_diffs_by_sha_tuple, {current_sha, last_sha}) || []
+      app_deps = app_dep_tree[app_name] || []
+      changed_apps = Enum.map(file_diffs, &String.replace(&1, ~r/^apps\/([a-z0-9_]+)\/.*/, "\\1"))
 
-    local_dep_changes? = Enum.any?(changed_apps) and Enum.any?(changed_apps, &(&1 in app_deps))
+      local_dep_changes? = Enum.any?(changed_apps) and Enum.any?(changed_apps, &(&1 in app_deps))
 
-    if local_dep_changes? do
-      IO.puts(to_string(IO.ANSI.format([
-        :green, "* #{app_name} has local dependency changes"
-      ])))
-    end
+      if local_dep_changes? do
+        IO.puts(to_string(IO.ANSI.format([
+          :green, "* #{app_name} has local dependency changes"
+        ])))
+      end
 
-    local_dep_changes?
+      local_dep_changes?
+    end)
   end
 end

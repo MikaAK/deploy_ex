@@ -88,7 +88,7 @@ defmodule Mix.Tasks.DeployEx.Release do
     with {
       :ok,
       app_type_release_state_tuples
-    } <- reject_unchanged_releases_and_mark_release_type(release_states, opts) do
+    } <- filter_changed_releases_and_mark_release_type(release_states, opts) do
       {has_previous_upload_release_cands, no_prio_upload_release_cands} = Enum.split_with(
         app_type_release_state_tuples,
         fn {_app_type, %ReleaseUploader.State{last_sha: last_sha}} -> last_sha end
@@ -122,30 +122,26 @@ defmodule Mix.Tasks.DeployEx.Release do
     end
   end
 
-  defp reject_unchanged_releases_and_mark_release_type(release_states, opts) do
-    with {:ok, app_dep_tree} <- ReleaseUploader.app_dep_tree(),
-         {:ok, release_apps_by_release_name} <- DeployExHelpers.release_apps_by_release_name() do
+  defp filter_changed_releases_and_mark_release_type(release_states, opts) do
+    with {:ok, app_dep_tree} <- ReleaseUploader.app_dep_tree() do
       if opts[:all] do
         {:ok, Enum.map(
           release_states,
-          &create_app_type_release_state_tuple(&1, release_apps_by_release_name, app_dep_tree)
+          &create_app_type_release_state_tuple(&1, app_dep_tree)
         )}
       else
-        with {:ok, release_states} <- ReleaseUploader.reject_unchanged_releases(release_states) do
+        with {:ok, release_states} <- ReleaseUploader.filter_changed_releases(release_states) do
           {:ok, Enum.map(
             release_states,
-            &create_app_type_release_state_tuple(&1, release_apps_by_release_name, app_dep_tree)
+            &create_app_type_release_state_tuple(&1, app_dep_tree)
           )}
         end
       end
     end
   end
 
-  defp create_app_type_release_state_tuple(%ReleaseUploader.State{} = release_state, release_apps_by_release_name, app_dep_tree) do
-    deps_in_release_app = Enum.flat_map(
-      release_apps_by_release_name[String.to_atom(release_state.app_name)],
-      &(app_dep_tree[&1])
-    )
+  defp create_app_type_release_state_tuple(%ReleaseUploader.State{} = release_state, app_dep_tree) do
+    deps_in_release_app = Enum.flat_map(release_state.release_apps, &(app_dep_tree[&1]))
 
     if "phoenix" in deps_in_release_app do
       {:phoenix, release_state}

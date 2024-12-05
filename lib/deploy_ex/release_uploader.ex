@@ -35,9 +35,9 @@ defmodule DeployEx.ReleaseUploader do
     to: State,
     as: :build
 
-  defdelegate reject_unchanged_releases(release_uploader_states),
+  defdelegate filter_changed_releases(release_uploader_states),
     to: UpdateValidator,
-    as: :reject_unchanged
+    as: :filter_changed
 
   defdelegate app_dep_tree,
     to: UpdateValidator.MixDepsTreeParser,

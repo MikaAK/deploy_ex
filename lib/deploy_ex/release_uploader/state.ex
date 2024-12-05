@@ -1,8 +1,12 @@
 defmodule DeployEx.ReleaseUploader.State do
   @enforce_keys [:local_file, :sha, :app_name]
-  defstruct @enforce_keys ++ [:name, :last_sha, :remote_file]
+  defstruct @enforce_keys ++ [:name, :last_sha, :remote_file, :release_apps]
+
 
   def build(local_releases, remote_releases, git_sha) do
+    # BAd!
+    {:ok, release_apps_map} = DeployExHelpers.release_apps_by_release_name()
+
     Enum.map(local_releases, fn release_file_path ->
       app_name = app_name_from_local_release_file(release_file_path)
       remote_file = find_remote_release(remote_releases, app_name, git_sha)
@@ -13,7 +17,8 @@ defmodule DeployEx.ReleaseUploader.State do
         sha: git_sha,
         name: remote_file_name_for_release(release_file_path, git_sha),
         remote_file: remote_file,
-        last_sha: last_sha_from_remote_file(remote_releases, app_name)
+        last_sha: last_sha_from_remote_file(remote_releases, app_name),
+        release_apps: release_apps_map[String.to_atom(app_name)]
       }
     end)
   end
