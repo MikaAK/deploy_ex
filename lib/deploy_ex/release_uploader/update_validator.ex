@@ -149,7 +149,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
       changes? = Enum.any?(changes)
 
       if changes? do
-        log_app_change(changes, "#{release_app_name} - #{app_name}")
+        log_app_change(changes, release_app_app_name_string(release_app_name, app_name))
       end
 
       changes?
@@ -205,7 +205,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
 
       if dep_changes? do
         IO.puts(to_string(IO.ANSI.format([
-          :green, "* #{release_app_name} - #{app_name} has dependency changes"
+          :green, "* #{release_app_app_name_string(release_app_name, app_name)} has dependency changes"
         ])))
       end
 
@@ -228,11 +228,19 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
 
       if local_dep_changes? do
         IO.puts(to_string(IO.ANSI.format([
-          :green, "* #{release_app_name} - #{app_name} has local dependency changes"
+          :green, "* #{release_app_app_name_string(release_app_name, app_name)} has local dependency changes"
         ])))
       end
 
       local_dep_changes?
     end)
+  end
+
+  defp release_app_app_name_string(release_app_name, release_app_name) do
+    to_string(release_app_name)
+  end
+
+  defp release_app_app_name_string(release_app_name, app_name) do
+    "#{release_app_name} > #{app_name}"
   end
 end
