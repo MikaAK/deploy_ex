@@ -123,19 +123,31 @@ defmodule Mix.Tasks.DeployEx.Release do
   end
 
   defp reject_unchanged_releases_and_mark_release_type(release_states, opts) do
-    with {:ok, app_dep_tree} <- ReleaseUploader.app_dep_tree() do
+    with {:ok, app_dep_tree} <- ReleaseUploader.app_dep_tree(),
+         {:ok, release_apps_by_release_name} <- DeployExHelpers.release_apps_by_release_name() do
       if opts[:all] do
-        {:ok, Enum.map(release_states, &create_app_type_release_state_tuple(&1, app_dep_tree))}
+        {:ok, Enum.map(
+          release_states,
+          &create_app_type_release_state_tuple(&1, release_apps_by_release_name, app_dep_tree)
+        )}
       else
         with {:ok, release_states} <- ReleaseUploader.reject_unchanged_releases(release_states) do
-          {:ok, Enum.map(release_states, &create_app_type_release_state_tuple(&1, app_dep_tree))}
+          {:ok, Enum.map(
+            release_states,
+            &create_app_type_release_state_tuple(&1, release_apps_by_release_name, app_dep_tree)
+          )}
         end
       end
     end
   end
 
-  defp create_app_type_release_state_tuple(%ReleaseUploader.State{} = release_state, app_dep_tree) do
-    if "phoenix" in app_dep_tree[release_state.app_name] do
+  defp create_app_type_release_state_tuple(%ReleaseUploader.State{} = release_state, release_apps_by_release_name, app_dep_tree) do
+    deps_in_release_app = Enum.flat_map(
+      release_apps_by_release_name[String.to_atom(release_state.app_name)],
+      &(app_dep_tree[&1])
+    )
+
+    if "phoenix" in deps_in_release_app do
       {:phoenix, release_state}
     else
       {:normal, release_state}

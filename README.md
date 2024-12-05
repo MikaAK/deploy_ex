@@ -256,8 +256,8 @@ Fish:
 ```fish
 function my-app-ssh
   pushd ~/Documents/path/to/project &&
-  mix compile &&
-  eval "(mix deploy_ex.ssh $@)" &&
+  set ssh_command (mix deploy_ex.ssh $argv) &&
+  eval $ssh_command &&
   popd
 end
 ```

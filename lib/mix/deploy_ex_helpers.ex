@@ -11,6 +11,20 @@ defmodule DeployExHelpers do
     var_file: :string
   ]
 
+
+  def project_apps, do: File.ls!(Mix.Project.get().project()[:apps_path])
+
+  def release_apps_by_release_name do
+    with {:ok, releases} <- fetch_mix_releases() do
+      {:ok, Enum.map(releases, fn {key, opts} ->
+        {key, opts[:applications]
+          |> Keyword.keys
+          |> Enum.map(&to_string/1)
+          |> Enum.filter(&(&1 in DeployExHelpers.project_apps()))}
+      end)}
+    end
+  end
+
   def app_name, do: Mix.Project.get() |> Module.split |> hd
   def underscored_app_name, do: Macro.underscore(app_name())
   def kebab_app_name, do: String.replace(underscored_app_name(), "_", "-")
