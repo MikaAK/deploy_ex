@@ -131,7 +131,8 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
     sha: current_sha,
     last_sha: last_sha,
     release_apps: release_apps
-  }, file_diffs_by_sha_tuple) do
+  } = state, file_diffs_by_sha_tuple) do
+    IO.inspect {state, file_diffs_by_sha_tuple}
     file_diffs = Map.get(file_diffs_by_sha_tuple, {current_sha, last_sha}) || []
 
     Enum.any?(file_diffs) && Enum.any?(release_apps, fn app_name ->
