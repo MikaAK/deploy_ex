@@ -128,11 +128,11 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
   end
 
   defp release_has_code_changes?(%DeployEx.ReleaseUploader.State{
+    app_name: release_app_name,
     sha: current_sha,
     last_sha: last_sha,
     release_apps: release_apps
   } = state, file_diffs_by_sha_tuple) do
-    IO.inspect {state, file_diffs_by_sha_tuple}
     file_diffs = Map.get(file_diffs_by_sha_tuple, {current_sha, last_sha}) || []
 
     Enum.any?(file_diffs) && Enum.any?(release_apps, fn app_name ->
@@ -149,7 +149,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
       changes? = Enum.any?(changes)
 
       if changes? do
-        log_app_change(changes, app_name)
+        log_app_change(changes, "#{release_app_name} - #{app_name}")
       end
 
       changes?
@@ -191,6 +191,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
   end
 
   defp release_has_dep_changes?(%DeployEx.ReleaseUploader.State{
+    app_name: release_app_name,
     sha: current_sha,
     last_sha: last_sha,
     release_apps: release_apps
@@ -204,7 +205,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
 
       if dep_changes? do
         IO.puts(to_string(IO.ANSI.format([
-          :green, "* #{app_name} has dependency changes"
+          :green, "* #{release_app_name} - #{app_name} has dependency changes"
         ])))
       end
 
@@ -213,6 +214,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
   end
 
   defp release_has_local_dep_changes?(%DeployEx.ReleaseUploader.State{
+    app_name: release_app_name,
     sha: current_sha,
     last_sha: last_sha,
     release_apps: release_apps
@@ -226,7 +228,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
 
       if local_dep_changes? do
         IO.puts(to_string(IO.ANSI.format([
-          :green, "* #{app_name} has local dependency changes"
+          :green, "* #{release_app_name} - #{app_name} has local dependency changes"
         ])))
       end
 
