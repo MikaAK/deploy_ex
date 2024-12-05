@@ -133,6 +133,7 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
     last_sha: last_sha,
     release_apps: release_apps
   } = state, file_diffs_by_sha_tuple) do
+    IO.inspect state, label: "HAS_CODE_CHANGES"
     file_diffs = Map.get(file_diffs_by_sha_tuple, {current_sha, last_sha}) || []
 
     Enum.any?(file_diffs) && Enum.any?(release_apps, fn app_name ->
