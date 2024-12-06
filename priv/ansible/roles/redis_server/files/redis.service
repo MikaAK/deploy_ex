@@ -4,13 +4,13 @@ Documentation=https://redis.io/
 After=network.target
 
 [Service]
-Type=notify
-User=redis
-Group=redis
+Type=simple
+User=root
+Group=root
 ExecStart=/usr/bin/redis-server /etc/redis/redis.conf
 PIDFile=/run/redis/redis-server.pid
-TimeoutStartSec=60
-TimeoutStopSec=60
+TimeoutStartSec=120
+TimeoutStopSec=120
 Restart=always
 RestartSec=5
 LimitNOFILE=65535
