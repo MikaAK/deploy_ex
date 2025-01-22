@@ -1,0 +1,53 @@
+- name: chromedriver
+  block:
+    # to prevent dpkg lock errors.
+    - name: Wait for apt to be free
+      shell: |
+        while pgrep -x apt >/dev/null; do sleep 5; done;
+      register: my_output # <- Registers the command output.
+      changed_when: my_output.rc != 0 # <- Uses the return code to define when the task has changed.
+
+    - name: Install prerequisites
+      apt:
+        pkg:
+          - curl
+          - unzip
+          - xvfb
+          - libxi6
+          - libgconf-2-4
+          - default-jdk
+
+    - name: Download Google Chrome apt signing key
+      shell: |
+        curl -fsSL https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add -
+      register: result
+      retries: 3
+      delay: 10
+      until: result.rc == 0
+
+    - name: Add Google Chrome repository to sources
+      apt_repository:
+        repo: deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main
+
+
+    # Add cron script and job for cleaning Chrome temporary files
+    - name: Create cleanup script
+      copy:
+        dest: /usr/local/bin/cleanup_chrome_tmp.sh
+        content: |
+          #!/bin/bash
+          find /tmp -name '.com.google.Chrome.*' -type d -mmin +60 -exec rm -rf {} +
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Add cron job to clean Chrome tmp files
+      cron:
+        name: "Clean Chrome temporary files"
+        user: root
+        minute: "0"
+        hour: "*"
+        job: "/usr/local/bin/cleanup_chrome_tmp.sh"
+
+  become: true
+

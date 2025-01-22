@@ -7,24 +7,6 @@
       register: my_output # <- Registers the command output.
       changed_when: my_output.rc != 0 # <- Uses the return code to define when the task has changed.
 
-    - name: Install prerequisites
-      apt:
-        pkg:
-          - curl
-          - unzip
-          - xvfb
-          - libxi6
-          - libgconf-2-4
-          - default-jdk
-
-    - name: Add Google Chrome apt signing key
-      apt_key:
-        url: https://dl-ssl.google.com/linux/linux_signing_key.pub
-
-    - name: Add Google Chrome repository to sources
-      apt_repository:
-        repo: deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main
-
     - name: Install google-chrome-stable
       apt:
         name: google-chrome-stable
@@ -79,4 +61,6 @@
       systemd:
         name: chromedriver
         state: started
+
   become: true
+

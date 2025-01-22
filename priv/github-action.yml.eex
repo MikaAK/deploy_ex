@@ -36,7 +36,6 @@ jobs:
         with:
           fetch-depth: 25
 
-
       - name: Cache Deps & Build
         uses: actions/cache@v3
         with:
@@ -57,8 +56,8 @@ jobs:
       - name: Install Dependencies
         run: mix deps.get
 
-      - name: Compile Project
-        run: mix compile
+      - name: Compile Project for Release
+        run: env RELEASE_BUILD=true $(./.github/github-action-secrets-to-env.sh env.json) mix compile --warnings-as-errors
 
       - name: Run Terraform Init
         run: mix terraform.init -y
@@ -80,9 +79,6 @@ jobs:
         with:
           name: "env.json"
           json: ${{ toJson(secrets) }}
-
-      - name: Compile Project for Release
-        run: env RELEASE_BUILD=true $(./.github/github-action-secrets-to-env.sh env.json) mix compile
 
       - name: Authorize AWS SSH
         run: mix deploy_ex.ssh.authorize
