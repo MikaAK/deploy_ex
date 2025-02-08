@@ -20,6 +20,7 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
   - `schema-only` - Only dump the schema, no data
   - `local-port` - Local port to use for SSH tunnel (default: random available port)
   - `identifier` - Use RDS instance identifier instead of database name
+  - `format` - Output format (default: custom, options: custom|text)
   """
 
   def run(args) do
@@ -56,13 +57,14 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
 
   defp parse_args(args) do
     OptionParser.parse!(args,
-      aliases: [d: :directory, o: :output, s: :schema_only, p: :local_port, i: :identifier],
+      aliases: [d: :directory, o: :output, s: :schema_only, p: :local_port, i: :identifier, f: :format],
       switches: [
         directory: :string,
         output: :string,
         schema_only: :boolean,
         local_port: :integer,
-        identifier: :string
+        identifier: :string,
+        format: :string
       ]
     )
   end
@@ -162,23 +164,49 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
   end
 
   defp execute_dump(db_info, local_port, opts) do
-    timestamp = DateTime.utc_now() |> Calendar.strftime("%Y%m%d_%H%M%S")
-    output_file = opts[:output] || "./#{db_info.database}_dump_#{timestamp}.sql"
-    schema_only = if opts[:schema_only], do: "--schema-only", else: ""
+    output_file = build_output_filename(db_info.database, opts)
+    format_flag = get_format_flag(opts[:format] || "custom")
+    schema_flag = get_schema_flag(opts[:schema_only])
 
     Mix.shell().info([:yellow, "Starting database dump to #{output_file}"])
 
-    pg_dump_cmd = "PGPASSWORD='#{db_info.password}' pg_dump -h localhost -p #{local_port} " <>
-                  "-U #{db_info.username} #{schema_only} #{db_info.database} > #{output_file}"
-
-    case System.shell(pg_dump_cmd) do
-      {_, 0} ->
+    case run_pg_dump(db_info, local_port, output_file, format_flag, schema_flag) do
+      :ok ->
         Mix.shell().info([:green, "Database dump saved to ", :reset, output_file])
         cleanup_tunnel(local_port)
         :ok
-      {error, _} ->
+      {:error, error} ->
         cleanup_tunnel(local_port)
         {:error, ErrorMessage.internal_server_error("Failed to dump database", %{error: error})}
+    end
+  end
+
+  defp build_output_filename(database, opts) do
+    timestamp = DateTime.utc_now() |> Calendar.strftime("%Y%m%d_%H%M%S")
+    format = opts[:format] || "custom"
+    extension = if format == "custom", do: ".pgdump", else: ".sql"
+    opts[:output] || "./#{database}_dump_#{timestamp}#{extension}"
+  end
+
+  defp get_format_flag(format) do
+    case format do
+      "custom" -> "-Fc"
+      "text" -> "-Fp"
+      _ -> Mix.raise("Unsupported format: #{format}. Supported formats are 'custom' or 'text'")
+    end
+  end
+
+  defp get_schema_flag(schema_only) do
+    if schema_only, do: "--schema-only", else: ""
+  end
+
+  defp run_pg_dump(db_info, local_port, output_file, format_flag, schema_flag) do
+    pg_dump_cmd = "PGPASSWORD='#{db_info.password}' pg_dump -h localhost -p #{local_port} " <>
+                  "-U #{db_info.username} #{schema_flag} #{format_flag} #{db_info.database} > #{output_file}"
+
+    case System.shell(pg_dump_cmd) do
+      {_, 0} -> :ok
+      {error, _} -> {:error, error}
     end
   end
 
