@@ -21,6 +21,24 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
   - `local-port` - Local port to use for SSH tunnel (default: random available port)
   - `identifier` - Use RDS instance identifier instead of database name
   - `format` - Output format (default: custom, options: custom|text)
+
+  ## Format Options
+  The `--format` flag accepts two values:
+
+  - `custom`: PostgreSQL's custom format (default)
+    - Produces a compressed binary file
+    - Can only be restored with pg_restore
+    - Allows selective restore of tables/schemas
+    - Better handling of large objects
+    - Supports parallel restore
+
+  - `text`: Plain SQL format
+    - Human readable SQL statements
+    - Can be edited manually if needed
+    - Can be restored with psql
+    - Useful for version control
+    - Slower restore compared to custom format
+    - No parallel restore support
   """
 
   def run(args) do
