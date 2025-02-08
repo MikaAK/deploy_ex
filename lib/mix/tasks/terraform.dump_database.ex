@@ -1,6 +1,8 @@
 defmodule Mix.Tasks.Terraform.DumpDatabase do
   use Mix.Task
 
+  alias DeployEx.{AwsDatabase, AwsMachine}
+
   @terraform_default_path DeployEx.Config.terraform_folder_path()
 
   @shortdoc "Dumps a database from RDS through a jump server"
@@ -53,25 +55,31 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
     with :ok <- check_pg_dump_installed(),
          :ok <- DeployExHelpers.check_in_umbrella(),
          database_name when not is_nil(database_name) <- List.first(extra_args) || show_database_selection(),
-         {:ok, db_info} <- get_database_info(database_name, opts[:identifier]),
-         {:ok, state} <- DeployEx.TerraformState.read_state(opts[:directory]),
-         {:ok, password} <- DeployEx.TerraformState.get_resource_attribute_by_tag(
-           state,
-           "aws_db_instance",
-           "Name",
-           db_info.name,
-           "password"
-         ),
-         {:ok, jump_server} <- find_jump_server(),
-         {:ok, local_port} <- find_available_port(opts[:local_port]),
-         :ok <- setup_ssh_tunnel(jump_server, db_info, local_port, opts),
-         :ok <- execute_dump(Map.put(db_info, :password, password), local_port, opts) do
-      :ok
+         {:ok, db_info} <- AwsDatabase.get_database_info(database_name, opts[:identifier]),
+         {:ok, password} <- AwsDatabase.get_database_password(db_info, opts[:directory]),
+         {:ok, jump_server} <- AwsMachine.find_jump_server(),
+         {:ok, local_port} <- get_local_port(opts[:local_port]),
+         {host, port} <- AwsDatabase.parse_endpoint(db_info.endpoint),
+         {:ok, pem_file} <- DeployExHelpers.find_pem_file(opts[:directory]),
+         :ok <- AwsMachine.setup_ssh_tunnel(jump_server, host, port, local_port, pem_file) do
+
+      db_info = Map.put(db_info, :password, password)
+      case execute_dump(db_info, local_port, opts) do
+        :ok ->
+          AwsMachine.cleanup_tunnel(local_port)
+          :ok
+        {:error, error} ->
+          AwsMachine.cleanup_tunnel(local_port)
+          Mix.raise("Failed to dump database: #{error}")
+      end
     else
       nil -> Mix.raise("No database name provided")
       {:error, error} -> Mix.raise(to_string(error))
     end
   end
+
+  defp get_local_port(nil), do: AwsMachine.find_available_port()
+  defp get_local_port(port), do: {:ok, port}
 
   defp parse_args(args) do
     OptionParser.parse!(args,
@@ -94,93 +102,6 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
     end
   end
 
-  defp get_database_info(database_name, identifier) do
-    if identifier do
-      case DeployEx.AwsDatabase.fetch_aws_databases_by_identifier(identifier) do
-        {:ok, [db_info | _]} -> {:ok, db_info}
-        {:ok, []} -> {:error, ErrorMessage.not_found("Database with identifier #{identifier} not found")}
-        {:error, error} -> {:error, ErrorMessage.internal_server_error("Failed to get database info", %{error: error})}
-      end
-    else
-      case DeployEx.AwsDatabase.fetch_aws_databases() do
-        {:ok, instances} ->
-          case Enum.find(instances, fn instance -> instance.database == database_name end) do
-            nil -> {:error, ErrorMessage.not_found("Database #{database_name} not found")}
-            instance -> {:ok, format_instance(instance)}
-          end
-        {:error, error} -> {:error, ErrorMessage.internal_server_error("Failed to get database info", %{error: error})}
-      end
-    end
-  end
-
-  defp format_instance(instance) do
-    %{
-      name: get_name_tag(instance),
-      endpoint: "#{instance.endpoint.host}:#{instance.endpoint.port}",
-      port: instance.endpoint.port,
-      username: instance.username,
-      database: instance.database
-    }
-  end
-
-  defp get_name_tag(instance) do
-    Enum.find_value(instance.tags, instance.identifier, fn
-      %{key: "Name", value: value} -> value
-      _ -> false
-    end)
-  end
-
-  defp find_jump_server do
-    with {:ok, instances} <- DeployExHelpers.aws_instance_groups() do
-      server_ips = Enum.flat_map(instances, fn {name, instances} ->
-        Enum.map(instances, fn %{ip: ip, name: server_name} -> {ip, "#{name} (#{server_name})"} end)
-      end)
-
-      case server_ips do
-        [{ip, _}] -> {:ok, ip}  # Single server case
-
-        servers when servers !== [] ->
-          [choice] = DeployExHelpers.prompt_for_choice(Enum.map(servers, fn {_, name} -> name end))
-          {ip, _} = Enum.find(servers, fn {_, name} -> name == choice end)
-          {:ok, ip}
-
-        _ -> {:error, ErrorMessage.not_found("No jump servers found")}
-      end
-    end
-  end
-
-  defp find_available_port(nil) do
-    case :gen_tcp.listen(0, []) do
-      {:ok, socket} ->
-        {:ok, port} = :inet.port(socket)
-        :gen_tcp.close(socket)
-        {:ok, port}
-      {:error, reason} ->
-        {:error, ErrorMessage.internal_server_error("Failed to find available port", %{reason: reason})}
-    end
-  end
-  defp find_available_port(port), do: {:ok, port}
-
-  defp setup_ssh_tunnel(jump_server_ip, db_info, local_port, opts) do
-    {host, port} = parse_endpoint(db_info.endpoint)
-
-    with {:ok, pem_file} <- DeployExHelpers.find_pem_file(opts[:directory]) do
-      abs_pem_file = Path.expand(pem_file)
-      ssh_cmd = "ssh -i #{abs_pem_file} -f -N -L #{local_port}:#{host}:#{port} admin@#{jump_server_ip}"
-
-      case System.shell(ssh_cmd) do
-        {_, 0} -> :ok
-        {error, code} ->
-          {:error, ErrorMessage.internal_server_error("Failed to setup SSH tunnel", %{error: error, code: code})}
-      end
-    end
-  end
-
-  defp parse_endpoint(endpoint) do
-    [host, port_str] = String.split(endpoint, ":")
-    {host, String.to_integer(port_str)}
-  end
-
   defp execute_dump(db_info, local_port, opts) do
     output_file = build_output_filename(db_info.database, opts)
     format_flag = get_format_flag(opts[:format] || "custom")
@@ -188,14 +109,25 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
 
     Mix.shell().info([:yellow, "Starting database dump to #{output_file}"])
 
-    case run_pg_dump(db_info, local_port, output_file, format_flag, schema_flag) do
-      :ok ->
+    pg_dump = System.find_executable("pg_dump")
+    env = [{"PGPASSWORD", db_info.password}]
+    args = [
+      "-h", "localhost",
+      "-p", to_string(local_port),
+      "-U", db_info.username,
+      format_flag,
+      schema_flag,
+      db_info.database,
+      "-f", output_file
+    ]
+    |> Enum.filter(&(&1 != ""))
+
+    case System.cmd(pg_dump, args, env: env, stderr_to_stdout: true) do
+      {_, 0} ->
         Mix.shell().info([:green, "Database dump saved to ", :reset, output_file])
-        cleanup_tunnel(local_port)
         :ok
-      {:error, error} ->
-        cleanup_tunnel(local_port)
-        {:error, ErrorMessage.internal_server_error("Failed to dump database", %{error: error})}
+      {error, _} ->
+        {:error, error}
     end
   end
 
@@ -218,22 +150,8 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
     if schema_only, do: "--schema-only", else: ""
   end
 
-  defp run_pg_dump(db_info, local_port, output_file, format_flag, schema_flag) do
-    pg_dump_cmd = "PGPASSWORD='#{db_info.password}' pg_dump -h localhost -p #{local_port} " <>
-                  "-U #{db_info.username} #{schema_flag} #{format_flag} #{db_info.database} > #{output_file}"
-
-    case System.shell(pg_dump_cmd) do
-      {_, 0} -> :ok
-      {error, _} -> {:error, error}
-    end
-  end
-
-  defp cleanup_tunnel(local_port) do
-    System.shell("pkill -f 'ssh.*#{local_port}'")
-  end
-
-  defp show_database_selection() do
-    case DeployEx.AwsDatabase.fetch_aws_databases() do
+  defp show_database_selection do
+    case AwsDatabase.fetch_aws_databases() do
       {:ok, instances} ->
         database_names = Enum.map(instances, & &1.database)
         case database_names do

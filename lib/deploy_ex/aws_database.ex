@@ -84,4 +84,51 @@ defmodule DeployEx.AwsDatabase do
       _ -> false
     end)
   end
+
+  @doc """
+  Gets database connection info by name or identifier.
+  Returns {:ok, db_info} or {:error, reason}
+  """
+  def get_database_info(name_or_id, is_identifier \\ false) do
+    if is_identifier do
+      case fetch_aws_databases_by_identifier(name_or_id) do
+        {:ok, [db_info | _]} -> {:ok, db_info}
+        {:ok, []} -> {:error, ErrorMessage.not_found("Database with identifier #{name_or_id} not found")}
+        {:error, error} -> {:error, error}
+      end
+    else
+      with {:ok, instances} <- fetch_aws_databases() do
+        case Enum.find(instances, fn instance -> instance.database == name_or_id end) do
+          nil -> {:error, ErrorMessage.not_found("Database #{name_or_id} not found")}
+          instance -> {:ok, format_instance(instance)}
+        end
+      end
+    end
+  end
+
+  @doc """
+  Gets the database password from Terraform state.
+  Returns {:ok, password} or {:error, reason}
+  """
+  def get_database_password(db_info, terraform_dir) do
+    with {:ok, state} <- DeployEx.TerraformState.read_state(terraform_dir),
+         {:ok, password} <- DeployEx.TerraformState.get_resource_attribute_by_tag(
+           state,
+           "aws_db_instance",
+           "Name",
+           db_info.name,
+           "password"
+         ) do
+      {:ok, password}
+    end
+  end
+
+  @doc """
+  Parses a database endpoint string into host and port.
+  Returns {host, port}
+  """
+  def parse_endpoint(endpoint) when is_binary(endpoint) do
+    [host, port_str] = String.split(endpoint, ":")
+    {host, String.to_integer(port_str)}
+  end
 end

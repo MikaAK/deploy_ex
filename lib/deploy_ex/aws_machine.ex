@@ -155,4 +155,69 @@ defmodule DeployEx.AwsMachine do
   defp filter_by_instance_id(instances, instance_ids) do
     Enum.filter(instances, &(&1["instanceId"] in instance_ids))
   end
+
+  @doc """
+  Finds a suitable jump server from available EC2 instances.
+  Returns {:ok, ip} or {:error, reason}
+  """
+  def find_jump_server do
+    with {:ok, instances} <- DeployExHelpers.aws_instance_groups() do
+      server_ips = Enum.flat_map(instances, fn {name, instances} ->
+        Enum.map(instances, fn %{ip: ip, name: server_name} -> {ip, "#{name} (#{server_name})"} end)
+      end)
+
+      case server_ips do
+        [{ip, _}] -> {:ok, ip}  # Single server case
+        servers when servers !== [] ->
+          [choice] = DeployExHelpers.prompt_for_choice(Enum.map(servers, fn {_, name} -> name end))
+          {ip, _} = Enum.find(servers, fn {_, name} -> name == choice end)
+          {:ok, ip}
+        _ -> {:error, ErrorMessage.not_found("No jump servers found")}
+      end
+    end
+  end
+
+  @doc """
+  Sets up an SSH tunnel through a jump server.
+  Returns :ok or {:error, reason}
+  """
+  def setup_ssh_tunnel(jump_server_ip, target_host, target_port, local_port, pem_file) do
+    abs_pem_file = Path.expand(pem_file)
+    args = [
+      "-i", abs_pem_file,
+      "-f", "-N",
+      "-L", "#{local_port}:#{target_host}:#{target_port}",
+      "admin@#{jump_server_ip}"
+    ]
+
+    case System.cmd("ssh", args, stderr_to_stdout: true) do
+      {_, 0} -> :ok
+      {error, code} ->
+        {:error, ErrorMessage.internal_server_error("Failed to setup SSH tunnel", %{error: error, code: code})}
+    end
+  end
+
+  @doc """
+  Finds an available local port for tunneling.
+  Returns {:ok, port_number} or {:error, reason}
+  """
+  def find_available_port do
+    case :gen_tcp.listen(0, []) do
+      {:ok, socket} ->
+        {:ok, port} = :inet.port(socket)
+        :gen_tcp.close(socket)
+        {:ok, port}
+      {:error, reason} ->
+        {:error, ErrorMessage.internal_server_error("Failed to find available port", %{reason: reason})}
+    end
+  end
+
+  @doc """
+  Cleans up an SSH tunnel by killing the associated process.
+  """
+  def cleanup_tunnel(local_port) when is_integer(local_port) do
+    System.cmd("pkill", ["-f", "ssh.*#{local_port}"])
+    :ok
+  end
+  def cleanup_tunnel(_), do: :ok
 end
