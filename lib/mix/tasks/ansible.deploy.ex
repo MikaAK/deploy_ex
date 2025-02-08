@@ -10,18 +10,26 @@ defmodule Mix.Tasks.Ansible.Deploy do
   @shortdoc "Deploys to ansible hosts"
   @moduledoc """
   Deploys each of your nodes with the latest release that can be found
-  from S3
+  from S3.
 
   This will load your release onto each node and sets it up
-  in a SystemD task
+  in a SystemD task.
 
-  ### Options
-  - `directory` - Directory for the playbooks
-  - `only` -  Specify specific apps to deploy too
-  - `except` - Specify apps to not deploy to
-  - `copy-json-env-file` - Copy env file and load into host environments
-  - `only-local-release` - Only deploy if there's a local release
-  - `parallel` - Set max amount of ansible deploys running at once
+  ## Example
+  ```bash
+  mix ansible.deploy
+  mix ansible.deploy --only app1 --only app2
+  mix ansible.deploy --except app3
+  ```
+
+  ## Options
+  - `directory` - Directory containing ansible playbooks (default: #{@ansible_default_path})
+  - `only` - Only deploy specified apps (can be used multiple times)
+  - `except` - Skip deploying specified apps (can be used multiple times)
+  - `copy-json-env-file` - Copy environment file and load into host environments
+  - `only-local-release` - Only deploy if there's a local release available
+  - `parallel` - Maximum number of concurrent ansible deploys (default: #{@playbook_max_concurrency})
+  - `quiet` - Suppress output messages
   """
 
   def run(args) do

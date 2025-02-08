@@ -6,27 +6,39 @@ defmodule Mix.Tasks.DeployEx.Release do
   @default_aws_region Config.aws_region()
   @default_aws_release_bucket Config.aws_release_bucket()
 
-  @shortdoc "Runs mix.release for apps that have changed"
+  @shortdoc "Builds releases for applications with detected changes"
   @moduledoc """
-  This command checks AWS S3 for the current releases and checks
-  if there are any changes in git between the current branch and
-  current release. If there are changes in direct app code,
-  inner umbrella dependency code changes or dep changes in the mix.lock
-  that are connected to your app, the release will run, otherwise it will
-  ignore it
+  Intelligently builds releases for applications that have changes since their last release.
 
-  This command also correctly detects phoenix applications, and if found will
-  run `mix assets.deploy` in those apps
+  The task performs the following:
+  1. Checks AWS S3 for existing releases
+  2. Compares git changes between current branch and last release
+  3. Builds new releases if changes are detected in:
+     - Application code
+     - Umbrella dependency code
+     - mix.lock dependencies
+  4. Automatically runs `mix assets.deploy` for Phoenix applications
+
+  ## Example
+  ```bash
+  # Build releases for all changed apps
+  mix deploy_ex.release
+
+  # Force rebuild specific apps
+  mix deploy_ex.release --only app1 --only app2 --force
+
+  # Build all except certain apps
+  mix deploy_ex.release --except app3
+  ```
 
   ## Options
-
-  - `force` - Force overwrite (alias: `f`)
-  - `quiet` - Force overwrite (alias: `q`)
-  - `only` - Only build release apps
-  - `except` - Build release for apps except
-  - `recompile` - Force recompile (alias: `r`)
-  - `aws-region` - Region for aws (default: `#{@default_aws_region}`)
-  - `aws-bucket` - Region for aws (default: `#{@default_aws_release_bucket}`)
+  - `force` - Force rebuild releases even without changes (alias: `f`)
+  - `quiet` - Suppress output messages (alias: `q`)
+  - `only` - Only build releases for specified apps (can be used multiple times)
+  - `except` - Skip building releases for specified apps (can be used multiple times)
+  - `recompile` - Force recompilation before release (alias: `r`)
+  - `aws-region` - AWS region for S3 storage (default: `#{@default_aws_region}`)
+  - `aws-bucket` - S3 bucket for storing releases (default: `#{@default_aws_release_bucket}`)
   """
 
   def run(args) do
@@ -275,5 +287,3 @@ defmodule Mix.Tasks.DeployEx.Release do
     end
   end
 end
-
-

@@ -3,14 +3,27 @@ defmodule Mix.Tasks.DeployEx.Remake do
 
   alias Mix.Tasks.{Ansible, Terraform}
 
-  @shortdoc "Runs terraform replace with a node, sets it up and deploys the latest copy"
+  @shortdoc "Replaces and redeploys a specific application node"
   @moduledoc """
-  Runs terraform replace with a node, sets it up and deploys the latest copy
+  Replaces a specific application node using Terraform, sets it up with Ansible, and redeploys the application.
+
+  This task performs the following steps:
+  1. Destroys and recreates the specified node's infrastructure using Terraform
+  2. Waits for the new node to initialize
+  3. Configures the node using Ansible setup
+  4. Deploys the latest application version (unless --no-deploy is specified)
 
   ## Example
   ```bash
-  $ mix deploy_ex.remake my_app
+  # Replace and redeploy the my_app node
+  mix deploy_ex.remake my_app
+
+  # Replace node but skip redeployment
+  mix deploy_ex.remake my_app --no-deploy
   ```
+
+  ## Options
+  - `--no-deploy` - Skip redeploying the application after node replacement
   """
 
   def run(args) do

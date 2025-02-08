@@ -1,9 +1,20 @@
 defmodule Mix.Tasks.Ansible.Ping do
   use Mix.Task
 
-  @shortdoc "Pings ansible hosts define in hosts file"
+  @shortdoc "Pings all configured Ansible hosts"
   @moduledoc """
-  Pings ansible hosts define in hosts file
+  Pings all hosts configured in the Ansible inventory file to verify connectivity.
+
+  ## Example
+  ```bash
+  mix ansible.ping
+  ```
+
+  ## Options
+  Any additional arguments passed will be forwarded directly to the ansible command.
+  Common options include:
+  - `-v` - Increase verbosity
+  - `--limit hostname` - Only ping specific hosts
   """
 
   def run(args) do

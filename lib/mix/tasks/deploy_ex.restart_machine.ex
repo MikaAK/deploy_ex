@@ -1,15 +1,42 @@
 defmodule Mix.Tasks.DeployEx.RestartMachine do
   use Mix.Task
 
-  @shortdoc "Stops and starts the machine for a specific app"
+  @shortdoc "Restarts EC2 instances for a specific application"
   @moduledoc """
-  Stops and starts the machine for a specific app rebooting the machine and moving the code
-  to different hardware
+  Stops and restarts EC2 instances running a specific application. This performs a full
+  stop/start cycle rather than just a reboot, which can move instances to different
+  underlying hardware.
+
+  This task:
+  1. Finds all EC2 instances tagged with the given application name
+  2. Prompts for selection of specific instances to restart
+  3. Gracefully stops the selected instances and waits for complete shutdown
+  4. Starts the instances (potentially on different hardware)
+  5. Waits for instances to reach running state and pass health checks
+
+  This is useful for:
+  - Moving instances to different underlying hardware if experiencing host issues
+  - Resolving persistent instance-level problems that survive reboots
+  - Testing instance recovery procedures and failover
+  - Applying certain types of EC2 host maintenance
 
   ## Example
   ```bash
-  $ mix deploy_ex.restart_machine my_app
+  # Restart all instances for my_app
+  mix deploy_ex.restart_machine my_app
+
+  # Restart instances with additional AWS options
+  mix deploy_ex.restart_machine my_app --aws-region us-east-1
   ```
+
+  ## Options
+  - `aws-region` - AWS region to operate in (default: configured region)
+  - `force` - Skip confirmation prompts (alias: `f`)
+  - `quiet` - Suppress non-essential output (alias: `q`)
+
+  The task will prompt for confirmation before stopping instances unless --force is used.
+  It will wait for instances to fully stop before starting them again and verify they
+  reach a running state.
   """
 
   def run(args) do

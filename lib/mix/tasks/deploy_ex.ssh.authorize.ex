@@ -5,20 +5,37 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
 
   @shortdoc "Add or remove ssh authorization to the internal network for specific IPs"
   @moduledoc """
+  Manages SSH authorization by adding or removing IP addresses from the AWS security group whitelist.
 
-  ### Example
+  This task allows you to:
+  1. Add your current IP address to the security group whitelist
+  2. Add a specific IP address to the whitelist
+  3. Remove IP addresses from the whitelist
+
+  Once authorized, you can use other `deploy_ex.ssh` commands to interact with instances in the network.
+
+  ## Example
   ```bash
-  $ mix deploy_ex.ssh.authorize
-  $ mix deploy_ex.ssh.authorize --remove
-  $ mix deploy_ex.ssh.authorize -r # Short for remove
-  $ mix deploy_ex.ssh.authorize --ip 101.123.3.4 # Short for remove
+  # Authorize current IP address
+  mix deploy_ex.ssh.authorize
+
+  # Authorize specific IP address
+  mix deploy_ex.ssh.authorize --ip 101.123.3.4
+
+  # Remove current IP from whitelist
+  mix deploy_ex.ssh.authorize --remove
+  mix deploy_ex.ssh.authorize -r  # Short form
+
+  # Remove specific IP from whitelist
+  mix deploy_ex.ssh.authorize --remove --ip 101.123.3.4
   ```
 
-  This allows you to run other commands from `deploy_ex.ssh` with authorization into the ssh network
-
-  ### Options
+  ## Options
+  - `directory` (`-d`) - Directory containing Terraform files (default: ./deploys/terraform)
+  - `force` (`-f`) - Skip confirmation prompts
+  - `quiet` (`-q`) - Suppress output messages
   - `remove` (`-r`) - Remove authorization instead of adding it
-  - `ip` - IP to whitelist (by default uses the current devices IP)
+  - `ip` - Specific IP address to whitelist (defaults to current device's IP)
   """
 
   def run(args) do

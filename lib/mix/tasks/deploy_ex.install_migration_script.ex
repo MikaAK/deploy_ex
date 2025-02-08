@@ -14,14 +14,27 @@ defmodule Mix.Tasks.DeployEx.InstallMigrationScript do
     "./.github/github-action-secrets-to-env.sh"
   }]
 
-  @shortdoc "Installs a github action to manage terraform & ansible from within it"
+  @shortdoc "Installs a migration script for managing database migrations during deployment"
   @moduledoc """
-  Adds a github action to manage terraform & ansible. This will automatically do a few things:
+  Installs a script that helps manage database migrations during the deployment process.
+  This script ensures migrations are run safely and consistently across all database nodes.
 
-  1) On push will ensure terraform is up to date, if not it will apply changes and submit changes to git
-  2) On push new releases will be built if there are updates for the app
-  3) Built releases will be deployed to S3 bucket
-  4) Built releases will have ansible run on them to deploy them to changed servers
+  The migration script handles:
+  - Checking if migrations are needed
+  - Running migrations in the correct order
+  - Handling rollbacks if migrations fail
+  - Coordinating migrations across multiple database nodes
+  - Logging migration results
+
+  ## Example
+  ```bash
+  mix deploy_ex.install_migration_script
+  ```
+
+  ## Options
+  - `force` - Overwrite existing migration script if present (alias: `f`)
+  - `quiet` - Suppress output messages (alias: `q`)
+  - `pem_directory` - Custom directory containing SSH keys (alias: `d`)
   """
 
   def run(args) do
@@ -71,4 +84,3 @@ defmodule Mix.Tasks.DeployEx.InstallMigrationScript do
     opts
   end
 end
-

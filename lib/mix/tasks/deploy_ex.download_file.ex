@@ -3,19 +3,41 @@ defmodule Mix.Tasks.DeployEx.DownloadFile do
 
   @terraform_default_path DeployEx.Config.terraform_folder_path()
 
-  @shortdoc "Downloads a file from a remote server"
+  @shortdoc "Downloads a file from a remote server using SCP"
   @moduledoc """
-  Downloads a file from a remote server using SCP
+  Downloads a file from a remote server using SCP. This task allows you to securely copy files from
+  your remote application servers to your local machine.
 
-  ## Example
+  ## Usage
   ```bash
-  $ mix deploy_ex.download_file my_app /path/to/remote/file /path/to/local/file
+  mix deploy_ex.download_file APP_NAME REMOTE_PATH [LOCAL_PATH]
+  ```
+
+  Where:
+  - `APP_NAME` is the name of your application/server to download from
+  - `REMOTE_PATH` is the full path to the file on the remote server
+  - `LOCAL_PATH` is optional and defaults to the basename of REMOTE_PATH in current directory
+
+  ## Examples
+  ```bash
+  # Download /var/log/app.log to ./app.log
+  mix deploy_ex.download_file my_app /var/log/app.log
+
+  # Download to specific local path
+  mix deploy_ex.download_file my_app /etc/myapp/config.json ./downloads/remote-config.json
+
+  # Force overwrite existing file
+  mix deploy_ex.download_file my_app /var/log/app.log --force
   ```
 
   ## Options
-  - `directory` - Terraform directory path (default: #{@terraform_default_path})
-  - `force` - Force overwrite existing files
-  - `quiet` - Suppress output messages
+  - `directory` - Terraform directory path containing SSH keys (default: #{@terraform_default_path})
+  - `force` - Force overwrite if local file exists
+  - `quiet` - Suppress informational output messages
+
+  ## Requirements
+  - SSH access to the remote server must be configured
+  - The remote file must be readable by the SSH user
   """
 
   def run(args) do

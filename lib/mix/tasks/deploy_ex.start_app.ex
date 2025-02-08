@@ -3,14 +3,30 @@ defmodule Mix.Tasks.DeployEx.StartApp do
 
   @terraform_default_path DeployEx.Config.terraform_folder_path()
 
-  @shortdoc "Starts the systemd service for a specific service"
+  @shortdoc "Starts a specific application's systemd service"
   @moduledoc """
-  Starts the systemd service for a specific service, partial completions are allowed
+  Starts the systemd service for a specified application on the target server.
+
+  This task:
+  1. Connects to the server running the application via SSH
+  2. Issues a systemd start command for the application's service
+  3. Verifies the service starts successfully
+
+  The application name can be a partial match - it will find the first matching application.
 
   ## Example
   ```bash
-  $ mix deploy_ex.start_app my_app
+  # Start the my_app service
+  mix deploy_ex.start_app my_app
+
+  # Start with custom SSH key directory
+  mix deploy_ex.start_app my_app --directory /path/to/keys
   ```
+
+  ## Options
+  - `directory` - Directory containing SSH keys (default: ./deploys/terraform) (alias: `d`)
+  - `force` - Skip confirmation prompt (alias: `f`)
+  - `quiet` - Suppress output messages (alias: `q`)
   """
 
   def run(args) do

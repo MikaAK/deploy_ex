@@ -11,6 +11,20 @@ defmodule Mix.Tasks.Ansible.Build do
   @moduledoc """
   Builds ansible files into the respository, this can be used if you
   change terraform settings and want to regenerate any ansible files
+
+  ## Options
+  - `directory` - Ansible directory path (default: #{@ansible_default_path})
+  - `terraform_directory` - Terraform directory path (default: #{@terraform_default_path})
+  - `force` - Force overwrite existing files
+  - `quiet` - Suppress output messages
+  - `host_only` - Only generate host configuration files
+  - `new_only` - Only generate files for new applications
+  - `auto_pull_aws` - Automatically pull AWS credentials from ~/.aws/credentials
+  - `aws_release_bucket` - AWS S3 bucket for releases
+  - `no_loki` - Disable Loki logging configuration
+  - `no_sentry` - Disable Sentry error tracking configuration
+  - `no_grafana` - Disable Grafana monitoring configuration
+  - `no_prometheus` - Disable Prometheus metrics configuration
   """
 
   def run(args) do
@@ -332,4 +346,3 @@ defmodule Mix.Tasks.Ansible.Build do
     end
   end
 end
-

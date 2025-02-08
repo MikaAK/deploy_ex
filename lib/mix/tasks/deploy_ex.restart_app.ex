@@ -3,14 +3,30 @@ defmodule Mix.Tasks.DeployEx.RestartApp do
 
   @terraform_default_path DeployEx.Config.terraform_folder_path()
 
-  @shortdoc "Restarts the systemd service for a specific service"
+  @shortdoc "Restarts a specific application's systemd service"
   @moduledoc """
-  Restarts the systemd service for a specific service, partial completions are allowed
+  Restarts the systemd service for a specified application on the target server.
+
+  This task:
+  1. Connects to the server running the application via SSH
+  2. Issues a systemd restart command for the application's service
+  3. Verifies the service restarts successfully
+
+  The application name can be a partial match - it will find the first matching application.
 
   ## Example
   ```bash
-  $ mix deploy_ex.restart_app my_app
+  # Restart the my_app service
+  mix deploy_ex.restart_app my_app
+
+  # Restart with custom SSH key directory
+  mix deploy_ex.restart_app my_app --directory /path/to/keys
   ```
+
+  ## Options
+  - `directory` - Directory containing SSH keys (default: ./deploys/terraform) (alias: `d`)
+  - `force` - Skip confirmation prompt (alias: `f`)
+  - `quiet` - Suppress output messages (alias: `q`)
   """
 
   def run(args) do

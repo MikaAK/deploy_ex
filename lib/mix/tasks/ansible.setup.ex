@@ -4,22 +4,32 @@ defmodule Mix.Tasks.Ansible.Setup do
   @ansible_default_path DeployEx.Config.ansible_folder_path()
   @default_setup_max_concurrency 4
 
-  @shortdoc "Setups ansible hosts called once upon node creation"
+  @shortdoc "Initial setup and configuration of Ansible hosts"
   @moduledoc """
-  Setups ansible hosts called once upon node creation
+  Performs initial setup and configuration of Ansible hosts. This task should be run once
+  when new nodes are created.
 
-  This will Load awscli, python, pip and more onto your node, do
-  a bunch of VM tuning to support BEAM and better TCP traffic as well
-  as setup log rotation and s3 crash_dump upload & server removal
+  The setup process includes:
+  - Installing required system packages (awscli, python, pip)
+  - Configuring VM settings for optimal BEAM and TCP performance
+  - Setting up log rotation
+  - Configuring S3 crash dump uploads
+  - Setting up server cleanup on termination
+  - Installing the application release as a SystemD service
 
-  Finally it'll load your release onto each node and sets it up
-  in a SystemD task
+  ## Example
+  ```bash
+  mix ansible.setup
+  mix ansible.setup --only app1 --only app2
+  mix ansible.setup --except app3
+  ```
 
   ## Options
-  - `directory` - Set ansible directory
-  - `parallel` - Sets amount of parallel setups to do at once
-  - `only` -  Specify specific apps to setup
-  - `except` - Specify apps to not setup
+  - `directory` - Directory containing ansible playbooks (default: ./deploys/ansible)
+  - `parallel` - Maximum number of concurrent setup operations (default: 4)
+  - `only` - Only setup specified apps (can be used multiple times)
+  - `except` - Skip setup for specified apps (can be used multiple times)
+  - `quiet` - Suppress output messages
   """
 
   def run(args) do
@@ -70,4 +80,3 @@ defmodule Mix.Tasks.Ansible.Setup do
     opts
   end
 end
-

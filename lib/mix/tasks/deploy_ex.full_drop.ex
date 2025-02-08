@@ -1,10 +1,22 @@
 defmodule Mix.Tasks.DeployEx.FullDrop do
   use Mix.Task
 
-  @shortdoc "Runs all the commands to drop and remove deploy_ex from the project"
+  @shortdoc "Completely removes DeployEx configuration and files from the project"
   @moduledoc """
-  Runs all the commands to drop and remove deploy_ex from the project
-  Removes ./deploys folder as well
+  Removes all DeployEx-related configuration and files from your project.
+
+  This task:
+  - Runs `mix terraform.drop` to destroy infrastructure
+  - Removes the ./deploys directory containing Terraform and Ansible configs
+  - Removes DeployEx GitHub Actions workflows and scripts
+
+  ## Example
+  ```bash
+  mix deploy_ex.full_drop
+  ```
+
+  This is a destructive operation that cannot be undone. Make sure you want to
+  completely remove DeployEx before running this task.
   """
 
   def run(args) do
@@ -35,5 +47,3 @@ defmodule Mix.Tasks.DeployEx.FullDrop do
     end
   end
 end
-
-

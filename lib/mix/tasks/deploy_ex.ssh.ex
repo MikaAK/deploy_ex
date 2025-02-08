@@ -5,41 +5,51 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
   @shortdoc "Ssh into a specific apps remote node"
   @moduledoc """
+  Establishes an SSH connection to a remote application node.
 
-  ### Example
+  This task allows you to:
+  1. Connect directly to an application instance via SSH
+  2. View application logs remotely
+  3. Connect to a running application via IEx
+  4. Execute commands with root access
+
+  ## Basic Usage
   ```bash
-  $ mix deploy_ex.ssh my_app
-  $ mix deploy_ex.ssh my_app 2 # with a specific node
+  # Connect to a random instance of my_app
+  mix deploy_ex.ssh my_app
+
+  # Connect to a specific instance number
+  mix deploy_ex.ssh my_app 2
   ```
 
-  What this is really meant for is to be able to create a command that instantly
-  connects you to the app. To do this we can do the following:
-
-  Create a bash function that does the following:
+  ## Shell Script Integration
+  You can create a convenient shell script for quick access:
 
   ```bash
-  #! /usr/bin/env
-  pushd ~/Documents/path/to/project &&
+  #!/usr/bin/env bash
+  pushd ~/path/to/project &&
   mix compile &&
-  eval "$(mix deploy.ssh -s $@)" &&
+  eval "$(mix deploy_ex.ssh -s $@)" &&
   popd
   ```
 
-  You can then set this as an executable and call `./my-script.sh my_app` and it
-  will connect you to the node. You can use `--root` or `--log` to do various commands
-  on that node
+  Make the script executable and use it like:
+  ```bash
+  ./my-script.sh my_app
+  ```
 
-  mix compile
-
-  ### Options
-  - `whitelist` - whitelist the current_ip first
-  - `short` - get short form command
-  - `root` - get command to connect with root access
-  - `log_user` - set log user
-  - `log` - get command to remotely monitor logs
-  - `log_count` - sets log count to get back
-  - `all` - gets all logs instead of just ones for the app
-  - `iex` - get command to remotley connect to running node via IEx
+  ## Options
+  - `--whitelist` - Add current IP to security group whitelist before connecting
+  - `--short`, `-s` - Output command in short form for scripting
+  - `--root` - Connect with root user access
+  - `--log` - View remote application logs
+  - `--log_user` - Specify user for log access (default: ubuntu)
+  - `--log_count`, `-n` - Number of log lines to display
+  - `--all` - Show all system logs, not just application logs
+  - `--iex` - Connect to running application node via IEx
+  - `--directory`, `-d` - Directory containing SSH keys (default: ./deploys/terraform)
+  - `--force`, `-f` - Skip confirmation prompts
+  - `--quiet`, `-q` - Suppress non-essential output
   """
 
   def run(args) do

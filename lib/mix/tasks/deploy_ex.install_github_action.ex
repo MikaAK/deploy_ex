@@ -13,15 +13,40 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
     DeployExHelpers.priv_file("github-action-secrets-to-env.sh"),
     "./.github/github-action-secrets-to-env.sh"
   }]
-
-  @shortdoc "Installs a github action to manage terraform & ansible from within it"
+  @shortdoc "Installs a GitHub Action for automated infrastructure and deployment management"
   @moduledoc """
-  Adds a github action to manage terraform & ansible. This will automatically do a few things:
+  Installs a GitHub Action workflow that automates infrastructure management and application deployment.
 
-  1) On push will ensure terraform is up to date, if not it will apply changes and submit changes to git
-  2) On push new releases will be built if there are updates for the app
-  3) Built releases will be deployed to S3 bucket
-  4) Built releases will have ansible run on them to deploy them to changed servers
+  The workflow performs the following steps automatically on each push:
+
+  1. Validates and updates Terraform infrastructure
+     - Checks if infrastructure changes are needed
+     - Applies changes if necessary
+     - Commits any Terraform state changes back to the repository
+
+  2. Handles application releases
+     - Detects changes that require new releases
+     - Builds new release versions when needed
+     - Uploads built releases to S3 storage
+
+  3. Manages deployments
+     - Runs Ansible playbooks to deploy new releases
+     - Only deploys to servers affected by infrastructure changes
+     - Ensures zero-downtime rolling deployments
+
+  ## Example
+  ```bash
+  # Install the GitHub Action workflow
+  mix deploy_ex.install_github_action
+
+  # Install with custom PEM directory
+  mix deploy_ex.install_github_action --pem-directory /path/to/keys
+  ```
+
+  ## Options
+  - `pem-directory` - Directory containing SSH keys (default: ./deploys/terraform)
+  - `force` - Overwrite existing workflow files
+  - `quiet` - Suppress output messages
   """
 
   def run(args) do
@@ -71,4 +96,3 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
     opts
   end
 end
-

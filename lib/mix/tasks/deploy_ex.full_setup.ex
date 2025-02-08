@@ -1,17 +1,35 @@
 defmodule Mix.Tasks.DeployEx.FullSetup do
   use Mix.Task
 
-  @shortdoc "Runs all the commands to setup terraform and ansible"
+  @shortdoc "Performs complete infrastructure and application setup using Terraform and Ansible"
   @moduledoc """
-  Runs all the commands to setup terraform and ansible.
-  It also initializes AWS and pings the nodes to confirm they work. Finally
-  it will attempt to run `mix ansible.setup` as well to setup
-  the nodes post successful ping
+  Performs a complete setup of your infrastructure and application deployment using Terraform and Ansible.
+
+  This task runs through the following steps:
+  1. Builds and applies Terraform configuration to provision infrastructure
+  2. Builds Ansible configuration for server management
+  3. Waits for servers to fully initialize
+  4. Pings servers to verify connectivity
+  5. Runs Ansible setup to configure servers
+  6. Deploys the application (unless skipped)
+
+  ## Example
+  ```bash
+  # Run complete setup with all confirmations
+  mix deploy_ex.full_setup
+
+  # Skip confirmations and deploy automatically
+  mix deploy_ex.full_setup --auto-approve
+
+  # Setup infrastructure but skip final deployment
+  mix deploy_ex.full_setup --skip-deploy
+  ```
 
   ## Options
-  - `auto-approve` - Skip asking for verification with terraform (alias: `y`)
-  - `skip-deploy` - Skips deploy commands after pinging & setting up nodes with ansible (alias: `k`)
-  - `auto_pull_aws` - Automatically pull aws key from host machine and loads it into remote machines (alias: `a`)
+  - `auto-approve` - Skip Terraform plan confirmation prompts (alias: `y`)
+  - `skip-deploy` - Skip application deployment after server setup (alias: `k`)
+  - `skip-setup` - Skip waiting period between infrastructure creation and setup (alias: `p`)
+  - `auto_pull_aws` - Automatically pull AWS credentials from host machine (alias: `a`)
   """
 
   alias Mix.Tasks.{Ansible, Terraform}
@@ -99,5 +117,3 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
     end
   end
 end
-
-
