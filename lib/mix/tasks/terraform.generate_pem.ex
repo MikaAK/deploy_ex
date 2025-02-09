@@ -32,8 +32,21 @@ defmodule Mix.Tasks.Terraform.GeneratePem do
       # If no output file is provided, default to `<key_name>.pem`
       output_file = Path.join(opts[:directory], opts[:output_file] || "#{key_name}.pem")
 
-      save_pem_file(private_key, output_file)
-      Mix.shell().info([:green, "PEM file saved to: ", :reset, output_file])
+      cond do
+        not File.exists?(output_file) ->
+          save_pem_file(private_key, output_file)
+          Mix.shell().info([:green, "PEM file saved to: ", :reset, output_file])
+
+        File.read!(output_file) === private_key ->
+          Mix.shell().info([:green, "PEM file exists and is the same already"])
+
+        true ->
+          Mix.raise("""
+          PEM file exists but is not the same.
+
+          Please manually delete it before rerunning the command...
+          """)
+      end
     else
       {:error, e} ->
         IO.inspect(e, label: "Error extracting PEM from Terraform")
