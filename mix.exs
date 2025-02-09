@@ -30,7 +30,7 @@ defmodule DeployEx.MixProject do
       {:configparser_ex, "~> 4.0"},
       {:elixir_xml_to_map, "~> 3.0", override: true},
       {:exexec, "~> 0.2"},
-      {:erlexec, "~> 1.2", override: true},
+      {:erlexec, "~> 2.0", override: true},
       {:req, "~> 0.3"},
       {:hackney, "~> 1.18"},
       {:sweet_xml, "~> 0.7"}
