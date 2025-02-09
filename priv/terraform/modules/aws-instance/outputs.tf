@@ -13,6 +13,11 @@ output "public_ips" {
   value       = aws_instance.ec2_instance.*.public_ip
 }
 
+output "ipv6_addresses" {
+  description = "IPv6 addresses of the EC2 instance"
+  value       = aws_instance.ec2_instance.*.ipv6_addresses
+}
+
 output "load_balancer_dns_name" {
   description = "Load balancer DNS name"
   value       = aws_lb.ec2_lb.*.dns_name

@@ -57,4 +57,50 @@ defmodule DeployEx.SSH do
       :timer.seconds(30) -> {:error, ErrorMessage.failed_dependency("no return from command after 30 seconds")}
     end
   end
+
+  @doc """
+  Sets up an SSH tunnel through a jump server.
+  Returns :ok or {:error, reason}
+  """
+  def setup_ssh_tunnel(jump_server_ip, target_host, target_port, local_port, pem_file) do
+    abs_pem_file = Path.expand(pem_file)
+    args = [
+      "-i", abs_pem_file,
+      "-f", "-N",
+      "-L", "#{local_port}:#{target_host}:#{target_port}",
+      "admin@#{jump_server_ip}"
+    ]
+
+    case System.cmd("ssh", args, stderr_to_stdout: true) do
+      {_, 0} -> :ok
+      error when is_list(error) ->
+        error_string = List.to_string(error)
+        Mix.shell().error(error_string)
+        {:error, "Failed to setup SSH tunnel: #{error_string}"}
+    end
+  end
+
+  @doc """
+  Finds an available local port for tunneling.
+  Returns {:ok, port_number} or {:error, reason}
+  """
+  def find_available_port do
+    case :gen_tcp.listen(0, []) do
+      {:ok, socket} ->
+        {:ok, port} = :inet.port(socket)
+        :gen_tcp.close(socket)
+        {:ok, port}
+      {:error, reason} ->
+        {:error, ErrorMessage.internal_server_error("Failed to find available port", %{reason: reason})}
+    end
+  end
+
+  @doc """
+  Cleans up an SSH tunnel by killing the associated process.
+  """
+  def cleanup_tunnel(local_port) when is_integer(local_port) do
+    System.cmd("pkill", ["-f", "ssh.*#{local_port}"])
+    :ok
+  end
+  def cleanup_tunnel(_), do: :ok
 end

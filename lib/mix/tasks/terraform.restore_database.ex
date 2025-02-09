@@ -1,7 +1,7 @@
 defmodule Mix.Tasks.Terraform.RestoreDatabase do
   use Mix.Task
 
-  alias DeployEx.{AwsDatabase, AwsMachine}
+  alias DeployEx.{AwsDatabase, AwsMachine, SSH}
 
   @terraform_default_path DeployEx.Config.terraform_folder_path()
 
@@ -14,18 +14,17 @@ defmodule Mix.Tasks.Terraform.RestoreDatabase do
   ## Example
   ```bash
   # Restore to RDS instance
-  mix terraform.restore_database dump_file.pgdump --identifier my-db-identifier
+  mix terraform.restore_database my-database dump_file.pgdump
 
   # Restore to local PostgreSQL
-  mix terraform.restore_database dump_file.sql --local-database my_database
+  mix terraform.restore_database my_database dump_file.sql --local
 
   # Restore only schema
-  mix terraform.restore_database dump_file.pgdump --schema-only --identifier my-db
+  mix terraform.restore_database my-database dump_file.pgdump --schema-only
   ```
 
   ## Options
-  - `identifier` - RDS instance identifier for remote restore
-  - `local-database` - Local database name for local restore (alias: `l`)
+  - `local` - Restore to local PostgreSQL instead of RDS
   - `directory` - Terraform directory path
   - `schema-only` - Only restore the schema, no data
   - `local-port` - Local port to use for SSH tunnel (default: random available port)
@@ -43,12 +42,13 @@ defmodule Mix.Tasks.Terraform.RestoreDatabase do
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
 
     with :ok <- check_restore_tools_installed(),
-         :ok <- validate_options(opts),
-         dump_file when not is_nil(dump_file) <- List.first(extra_args),
+         {database_name, dump_file} <- parse_extra_args(extra_args),
          :ok <- check_dump_file_exists(dump_file),
          format <- detect_dump_format(dump_file),
-         {:ok, connection_info} <- get_connection_info(opts),
+         {:ok, connection_info} <- get_connection_info(database_name, opts),
          {:ok, connection_info} <- setup_connection(connection_info, opts) do
+
+      Mix.shell().info([:yellow, "Restoring database #{database_name} from #{dump_file}"])
 
       restore_result = if format == "custom" do
         run_pg_restore(dump_file, connection_info, opts)
@@ -66,24 +66,29 @@ defmodule Mix.Tasks.Terraform.RestoreDatabase do
           Mix.raise("Failed to restore database: #{error}")
       end
     else
-      nil -> Mix.raise("No dump file provided")
       {:error, error} -> Mix.raise(to_string(error))
     end
   end
 
   defp parse_args(args) do
     OptionParser.parse!(args,
-      aliases: [d: :directory, l: :local_database, s: :schema_only, p: :local_port, i: :identifier],
+      aliases: [d: :directory, s: :schema_only, p: :local_port, l: :local],
       switches: [
         directory: :string,
-        local_database: :string,
+        local: :boolean,
         schema_only: :boolean,
         local_port: :integer,
-        identifier: :string,
         clean: :boolean,
         jobs: :integer
       ]
     )
+  end
+
+  defp parse_extra_args([database_name, dump_file | _]) do
+    {database_name, dump_file}
+  end
+  defp parse_extra_args(_) do
+    {:error, "Must provide both database name and dump file path"}
   end
 
   defp check_restore_tools_installed do
@@ -114,56 +119,48 @@ defmodule Mix.Tasks.Terraform.RestoreDatabase do
     end
   end
 
-  defp validate_options(opts) do
-    cond do
-      opts[:identifier] && opts[:local_database] ->
-        {:error, "Cannot specify both --identifier and --local-database"}
-      !opts[:identifier] && !opts[:local_database] ->
-        {:error, "Must specify either --identifier or --local-database"}
-      opts[:jobs] && !is_integer(opts[:jobs]) ->
-        {:error, "Jobs must be a number"}
-      true ->
-        :ok
-    end
-  end
-
-  defp get_connection_info(opts) do
-    if opts[:local_database] do
+  defp get_connection_info(database_name, opts) do
+    if opts[:local] do
       {:ok, %{
         host: "localhost",
         port: 5432,
-        database: opts[:local_database],
+        database: database_name,
         username: System.get_env("USER"),
         password: nil,
         local: true
       }}
     else
-      with {:ok, db_info} <- AwsDatabase.get_database_info(opts[:identifier], true),
+      with {:ok, db_info} <- AwsDatabase.get_database_info(database_name, false),
            {:ok, password} <- AwsDatabase.get_database_password(db_info, opts[:directory]) do
-        {:ok, Map.put(db_info, :password, password)}
+        {:ok, Map.merge(db_info, %{
+          password: password,
+          local: false
+        })}
       end
     end
   end
 
-  defp get_local_port(nil), do: AwsMachine.find_available_port()
+  defp get_local_port(nil), do: SSH.find_available_port()
   defp get_local_port(port), do: {:ok, port}
 
   defp setup_connection(connection_info, opts) do
     if connection_info.local do
       {:ok, connection_info}
     else
-      with {:ok, jump_server} <- AwsMachine.find_jump_server(),
+      with {:ok, {jump_server_ip, jump_server_ipv6}} <- AwsMachine.find_jump_server(),
            {:ok, local_port} <- get_local_port(opts[:local_port]),
            {host, port} <- AwsDatabase.parse_endpoint(connection_info.endpoint),
            {:ok, pem_file} <- DeployExHelpers.find_pem_file(opts[:directory]),
-           :ok <- AwsMachine.setup_ssh_tunnel(jump_server, host, port, local_port, pem_file) do
+           :ok <- SSH.setup_ssh_tunnel(jump_server_ipv6 || jump_server_ip, host, port, local_port, pem_file) do
+        Mix.shell().info([:green, "Connected a tunnel to #{jump_server_ipv6 || jump_server_ip}:#{port}"])
+
         {:ok, Map.put(connection_info, :local_port, local_port)}
       end
     end
   end
 
   defp cleanup_connection(%{local: true}), do: :ok
-  defp cleanup_connection(%{local_port: port}), do: AwsMachine.cleanup_tunnel(port)
+  defp cleanup_connection(%{local_port: port}), do: SSH.cleanup_tunnel(port)
 
   defp run_pg_restore(dump_file, connection_info, opts) do
     pg_restore = System.find_executable("pg_restore")
@@ -208,5 +205,5 @@ defmodule Mix.Tasks.Terraform.RestoreDatabase do
   end
 
   defp get_connection_details(%{local: true} = info), do: {info.host, info.port}
-  defp get_connection_details(info), do: {info.host, info.local_port}
+  defp get_connection_details(info), do: {"localhost", info.local_port}
 end

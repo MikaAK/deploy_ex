@@ -8,6 +8,7 @@ output "instances" {
   value = { for p in sort(keys(var.<%= @app_name %>_project)) : p => {
     "elastic_ips": module.ec2_instance[p].elastic_ips,
     "public_ips": module.ec2_instance[p].public_ips,
+    "ipv6_addresses": module.ec2_instance[p].ipv6_addresses,
     "instance_ids": module.ec2_instance[p].instance_ids,
     "load_balancer_dns_name": module.ec2_instance[p].load_balancer_dns_name
   }}

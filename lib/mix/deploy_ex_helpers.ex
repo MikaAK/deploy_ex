@@ -321,7 +321,28 @@ defmodule DeployExHelpers do
         end)
         |> Stream.reject(&is_nil(&1["InstanceGroupTag"]))
         |> Stream.filter(&(&1["instanceState"]["name"] === "running"))
-        |> Enum.group_by(&(&1["InstanceGroupTag"]), &%{name: &1["NameTag"], ip: &1["ipAddress"]})}
+        |> Enum.group_by(&(&1["InstanceGroupTag"]), &%{
+          name: &1["NameTag"],
+          ip: &1["ipAddress"],
+          ipv6: &1["ipv6Address"]
+        })}
+    end
+  end
+
+  def terraform_ipv6_addresses(terraform_directory) do
+    case System.shell("terraform output --json", cd: Path.expand(terraform_directory)) do
+      {output, 0} ->
+        {:ok, parse_terraform_output_to_ipv6_addresses(output)}
+
+      {message, _} ->
+        {:error, ErrorMessage.failed_dependency("terraform output failed", %{message: message})}
+    end
+  end
+
+  defp parse_terraform_output_to_ipv6_addresses(output) do
+    case Jason.decode!(output) do
+      %{"ipv6_addresses" => %{"value" => values}} -> values
+      _ -> []
     end
   end
 
@@ -414,7 +435,7 @@ defmodule DeployExHelpers do
             %{app_names: Map.keys(instance_groups)}
           )}
 
-        [%{ip: ip}] -> {:ok, [ip]}
+        [%{ip: ip, ipv6: ipv6}] -> {:ok, [ipv6 || ip]}
 
         instances -> {:ok, prompt_for_choice(Enum.map(instances, &(&1.ip)), true)}
       end

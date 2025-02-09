@@ -1,7 +1,7 @@
 defmodule Mix.Tasks.Terraform.DumpDatabase do
   use Mix.Task
 
-  alias DeployEx.{AwsDatabase, AwsMachine}
+  alias DeployEx.{AwsDatabase, AwsMachine, SSH}
 
   @terraform_default_path DeployEx.Config.terraform_folder_path()
 
@@ -57,19 +57,27 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
          database_name when not is_nil(database_name) <- List.first(extra_args) || show_database_selection(),
          {:ok, db_info} <- AwsDatabase.get_database_info(database_name, opts[:identifier]),
          {:ok, password} <- AwsDatabase.get_database_password(db_info, opts[:directory]),
-         {:ok, jump_server} <- AwsMachine.find_jump_server(),
+         {:ok, {jump_server_ip, jump_server_ipv6}} <- AwsMachine.find_jump_server(),
          {:ok, local_port} <- get_local_port(opts[:local_port]),
          {host, port} <- AwsDatabase.parse_endpoint(db_info.endpoint),
          {:ok, pem_file} <- DeployExHelpers.find_pem_file(opts[:directory]),
-         :ok <- AwsMachine.setup_ssh_tunnel(jump_server, host, port, local_port, pem_file) do
+         :ok <- SSH.setup_ssh_tunnel(
+          jump_server_ipv6 || jump_server_ip,
+          host,
+          port,
+          local_port,
+          pem_file
+          ) do
+
+      Mix.shell().info([:green, "Connected a tunnel to #{jump_server_ipv6 || jump_server_ip}:#{port}"])
 
       db_info = Map.put(db_info, :password, password)
       case execute_dump(db_info, local_port, opts) do
         :ok ->
-          AwsMachine.cleanup_tunnel(local_port)
+          SSH.cleanup_tunnel(local_port)
           :ok
         {:error, error} ->
-          AwsMachine.cleanup_tunnel(local_port)
+          SSH.cleanup_tunnel(local_port)
           Mix.raise("Failed to dump database: #{error}")
       end
     else
@@ -78,7 +86,7 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
     end
   end
 
-  defp get_local_port(nil), do: AwsMachine.find_available_port()
+  defp get_local_port(nil), do: SSH.find_available_port()
   defp get_local_port(port), do: {:ok, port}
 
   defp parse_args(args) do
@@ -126,8 +134,8 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
       {_, 0} ->
         Mix.shell().info([:green, "Database dump saved to ", :reset, output_file])
         :ok
-      {error, _} ->
-        {:error, error}
+
+      {error, _} -> {:error, error}
     end
   end
 

@@ -92,11 +92,11 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         host_name_ips = inspect(hostname_ips, pretty: true)
         Mix.raise("Couldn't find any app with the name of #{app_name}\n#{host_name_ips}")
 
-      {app_name, [%{ip: ip}]} ->
-        log_ssh_command(app_name, pem_file_path, ip, opts)
+      {app_name, [%{ip: ip, ipv6: ipv6}]} ->
+        log_ssh_command(app_name, pem_file_path, ipv6 || ip, opts)
 
       {app_name, instances} ->
-        instance = Enum.random(Enum.sort(instances)) # DeployExHelpers.prompt_for_choice
+        instance = DeployExHelpers.prompt_for_choice(instances) # Enum.random(Enum.sort(instances))
 
         log_ssh_command(app_name, pem_file_path, instance.ip, opts)
 
