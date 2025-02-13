@@ -113,7 +113,7 @@ to monitor it's logs remotely, and `--iex` will give you a command to connect to
 ```
 config :deploy_ex,
   aws_region: "us-west-2",
-  aws_log_bucket: "#{String.replace(DeployExHelpers.underscored_app_name(), "_", "-")}-backend-logs-#{env()}",
+  aws_log_bucket: "#{String.replace(DeployExHelpers.underscored_project_name(), "_", "-")}-backend-logs-#{env()}",
   aws_release_bucket: "my-app-name-elixir-deploys-env"
   deploy_folder: "./deploys"
 ```
@@ -201,6 +201,15 @@ The following options are present:
 - `tags` - Tags specified in `Key=Value` format to add to the EC2 instance
 
 There is also a default volume of 16gb created and mounted at the /data directory, you can change this in each specific app type if desired
+
+## Switching out IaC Tools
+By default, DeployEx uses Terraform and Ansible for infrastructure as code (IaC) tools.
+However, you can switch to, e.g., [OpenTofu](https://opentofu.org/) using the `:iac_tool` option
+in `:deploy_ex` config. This should point to the binary for the installed IaC tool:
+
+```elixir
+config :deploy_ex, iac_tool: "tofu
+```
 
 ## Ansible Options
 - `inventory` (alias: `e`) - [Ansible inventories](https://docs.ansible.com/ansible/latest/inventory_guide/intro_inventory.html)

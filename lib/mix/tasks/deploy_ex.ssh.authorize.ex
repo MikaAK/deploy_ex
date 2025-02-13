@@ -45,7 +45,7 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
-         {:ok, security_group_id} <- DeployExHelpers.terraform_security_group_id(opts[:directory]),
+         {:ok, security_group_id} <- DeployEx.Terraform.security_group_id(opts[:directory]),
          :ok <- add_or_remove_whitelist(opts, security_group_id) do
       :ok
     else

@@ -42,7 +42,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
         |> Keyword.put(:only, Keyword.get_values(opts, :only))
         |> Keyword.put(:except, Keyword.get_values(opts, :except))
 
-      ansible_args = DeployExHelpers.to_ansible_args(args)
+      ansible_args = DeployEx.Ansible.parse_args(args)
 
       DeployExHelpers.check_file_exists!(Path.join(opts[:directory], "aws_ec2.yaml"))
 
@@ -57,7 +57,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
           host_playbook
             |> run_ansible_playbook_command(opts)
             |> Kernel.<>(" #{ansible_args}")
-            |> DeployExHelpers.run_command(opts[:directory])
+            |> DeployEx.Utils.run_command(opts[:directory])
         end, max_concurrency: opts[:parallel], timeout: @playbook_timeout)
         |> DeployEx.Utils.reduce_status_tuples
 

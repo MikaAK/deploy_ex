@@ -56,7 +56,7 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
-         {:ok, pem_file_path} <- DeployExHelpers.find_pem_file(opts[:pem_directory]) do
+         {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:pem_directory]) do
       @github_action_path |> Path.dirname |> File.mkdir_p!
 
       DeployExHelpers.write_template(

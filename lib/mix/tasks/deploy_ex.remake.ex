@@ -68,7 +68,7 @@ defmodule Mix.Tasks.DeployEx.Remake do
   end
 
   defp check_for_node_name([node_name]) do
-    DeployExHelpers.find_app_name([node_name])
+    DeployExHelpers.find_project_name([node_name])
   end
 
   defp check_for_node_name(_) do

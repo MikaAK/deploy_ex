@@ -65,4 +65,79 @@ defmodule DeployEx.Utils do
 
     {status, Enum.reverse(res)}
   end
+
+  def upper_title_case(string) do
+    string |> String.split(~r/_|-/) |> Enum.map_join(" ", &String.capitalize/1)
+  end
+
+  def run_command_with_return(command, directory, extra_opts \\ []) do
+    opts = [
+      cd: directory,
+      env: Map.put(System.get_env(), "ANSIBLE_FORCE_COLOR", "true")
+    ]
+
+    case System.shell(command, Keyword.merge(opts, extra_opts)) do
+      {output, 0} -> {:ok, output}
+      {error, code} -> {:error, ErrorMessage.internal_server_error("couldn't run #{command}", %{error: error, code: code})}
+    end
+  end
+
+  def run_command(command, directory, extra_opts \\ []) do
+    opts = [
+      cd: directory,
+      into: IO.binstream(:stdio, :line),
+      stderr_to_stdout: true,
+      env: Map.put(System.get_env(), "ANSIBLE_FORCE_COLOR", "true")
+    ]
+
+    case System.shell(command, Keyword.merge(opts, extra_opts)) do
+      {output, 0} -> {:ok, output}
+      {error, code} -> {:error, ErrorMessage.internal_server_error("couldn't run #{command}", %{error: error, code: code})}
+    end
+  end
+
+  def run_command_with_input(command, directory) do
+    if root_user?() do
+      Exexec.start_link(
+        root: true,
+        user: "root",
+        limit_users: ["root"],
+        env: [{"SHELL", System.get_env("SHELL", "/bin/bash")}]
+      )
+    else
+      Exexec.start_link()
+    end
+
+    port = Port.open({:spawn, command}, [
+      :nouse_stdio,
+      :exit_status,
+      {:cd, directory}
+    ])
+
+    Exexec.manage(port, [
+      monitor: true,
+      sync: true,
+      stdin: true,
+      pty: true,
+      cd: directory,
+      stderr: :stdout,
+      stdout: fn _, _, c -> Enum.into([c], IO.stream(:stdio, :line)) end
+    ])
+
+    receive do
+      {^port, {:exit_status, 0}} -> :ok
+
+      {^port, {:exit_status, code}} ->
+        {:error, ErrorMessage.internal_server_error("couldn't run #{command}", %{code: code})}
+    end
+  end
+
+  def root_user?, do: current_os_user() === "root"
+
+  def current_os_user do
+    case System.shell("whoami", []) do
+      {result, 0} -> String.trim(result)
+      {reason, _} -> raise "Couldn't determine system user:\n\n    #{reason}"
+    end
+  end
 end

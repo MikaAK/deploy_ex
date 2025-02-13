@@ -21,7 +21,7 @@ defmodule Mix.Tasks.Terraform.Plan do
       |> Keyword.put_new(:directory, @terraform_default_path)
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
-         :ok <- run_command(args, opts) do
+         :ok <- terraform_plan(args, opts) do
       :ok
     else
       {:error, e} -> Mix.raise(to_string(e))
@@ -41,9 +41,10 @@ defmodule Mix.Tasks.Terraform.Plan do
     opts
   end
 
-  defp run_command(args, opts) do
-    cmd = "terraform plan #{DeployExHelpers.to_terraform_args(args)}"
-
-    DeployExHelpers.run_command_with_input(cmd, opts[:directory])
+  defp terraform_plan(args, opts) do
+    DeployEx.Terraform.run_command_with_input(
+      "plan #{DeployEx.Terraform.parse_args(args)}",
+      opts[:directory]
+    )
   end
 end

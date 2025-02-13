@@ -181,7 +181,7 @@ defmodule Mix.Tasks.Ansible.Build do
     if opts[:host_only] do
       :ok
     else
-      app_name = String.replace(DeployExHelpers.underscored_app_name(), "_", "-")
+      app_name = String.replace(DeployExHelpers.underscored_project_name(), "_", "-")
 
       variables = %{
         pem_file_path: pem_file_path(app_name, opts[:directory])
@@ -204,7 +204,7 @@ defmodule Mix.Tasks.Ansible.Build do
 
   defp create_ansible_hosts_file(opts) do
     variables = %{
-      app_name: DeployExHelpers.underscored_app_name()
+      app_name: DeployExHelpers.underscored_project_name()
     }
 
     DeployExHelpers.write_template(

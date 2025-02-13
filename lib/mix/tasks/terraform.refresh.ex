@@ -14,7 +14,10 @@ defmodule Mix.Tasks.Terraform.Refresh do
       |> Keyword.put_new(:directory, @terraform_default_path)
 
     with :ok <- DeployExHelpers.check_in_umbrella() do
-      DeployExHelpers.run_command_with_input("terraform refresh #{DeployExHelpers.to_terraform_args(args)}", opts[:directory])
+      DeployEx.Terraform.run_command_with_input(
+        "refresh #{DeployEx.Terraform.parse_args(args)}",
+        opts[:directory]
+      )
     end
   end
 

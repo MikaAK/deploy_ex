@@ -147,10 +147,10 @@ defmodule Mix.Tasks.Terraform.RestoreDatabase do
     if connection_info.local do
       {:ok, connection_info}
     else
-      with {:ok, {jump_server_ip, jump_server_ipv6}} <- AwsMachine.find_jump_server(),
+      with {:ok, {jump_server_ip, jump_server_ipv6}} <- AwsMachine.find_jump_server(DeployExHelpers.project_name()),
            {:ok, local_port} <- get_local_port(opts[:local_port]),
            {host, port} <- AwsDatabase.parse_endpoint(connection_info.endpoint),
-           {:ok, pem_file} <- DeployExHelpers.find_pem_file(opts[:directory]),
+           {:ok, pem_file} <- DeployEx.Terraform.find_pem_file(opts[:directory]),
            :ok <- SSH.setup_ssh_tunnel(jump_server_ipv6 || jump_server_ip, host, port, local_port, pem_file) do
         Mix.shell().info([:green, "Connected a tunnel to #{jump_server_ipv6 || jump_server_ip}:#{port}"])
 

@@ -51,7 +51,7 @@ defmodule Mix.Tasks.DeployEx.DownloadFile do
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, [app_name, remote_path, local_path]} <- parse_node_name_args(node_name_args),
-         {:ok, app_name} <- DeployExHelpers.find_app_name([app_name]),
+         {:ok, app_name} <- DeployExHelpers.find_project_name([app_name]),
          _ = Mix.shell().info([:yellow, "Downloading #{remote_path} from #{app_name}"]),
          :ok <- download_file(app_name, remote_path, local_path, opts) do
       Mix.shell().info([:green, "Downloaded #{remote_path} to #{local_path} successfully"])
@@ -74,21 +74,17 @@ defmodule Mix.Tasks.DeployEx.DownloadFile do
     if File.exists?(local_path) and not !!opts[:force] do
       {:error, "File #{local_path} already exists. Use --force to overwrite."}
     else
-      with {:ok, instance_ips} <- DeployExHelpers.find_aws_instance_ips(app_name),
-           {:ok, pem_file} <- DeployExHelpers.find_pem_file(opts[:directory]) do
+    with {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:directory]),
+         {:ok, instance_ips} <- DeployEx.AwsMachine.find_instance_ips(DeployExHelpers.project_name(), app_name) do
 
-        # Get first IP if multiple returned
         ip = List.first(instance_ips)
 
-        # Convert paths to absolute paths
-        abs_pem_file = Path.expand(pem_file)
+        abs_pem_file = Path.expand(pem_file_path)
         abs_local_path = Path.expand(local_path)
 
-        # Build scp command
         scp_cmd = "scp -i #{abs_pem_file} admin@#{ip}:#{remote_path} #{abs_local_path}"
 
-        # Run from current directory instead of terraform directory
-        DeployExHelpers.run_command(scp_cmd, File.cwd!())
+        DeployEx.Utils.run_command(scp_cmd, File.cwd!())
       end
     end
   end
