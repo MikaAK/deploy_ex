@@ -38,7 +38,7 @@ defmodule Mix.Tasks.DeployEx.RestartApp do
     {opts, node_name_args} = parse_args(args)
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
 
-    with {:ok, app_name} <- DeployExHelpers.find_app_name(node_name_args),
+    with {:ok, app_name} <- DeployExHelpers.find_project_name(node_name_args),
          _ = Mix.shell().info([:yellow, "Restarting #{app_name} systemd service"]),
          :ok <- restart_service(app_name, opts) do
       Mix.shell().info([:green, "Restarted #{app_name} systemd service successfully"])

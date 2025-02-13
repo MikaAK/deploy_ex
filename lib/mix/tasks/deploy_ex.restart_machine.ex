@@ -47,7 +47,7 @@ defmodule Mix.Tasks.DeployEx.RestartMachine do
 
     {_, node_name_args} = OptionParser.parse!(args, switches: [])
 
-    with {:ok, app_name} <- DeployExHelpers.find_app_name(node_name_args),
+    with {:ok, app_name} <- DeployExHelpers.find_project_name(node_name_args),
          {:ok, instances} <- DeployEx.AwsMachine.fetch_instance_ids_by_tag("InstanceGroup", app_name),
          :ok <- restart_instances(instances, choose_instances(instances)) do
       :ok

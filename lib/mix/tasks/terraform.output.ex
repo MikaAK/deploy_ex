@@ -12,20 +12,19 @@ defmodule Mix.Tasks.Terraform.Output do
     opts = args
       |> parse_args
       |> Keyword.put_new(:directory, @terraform_default_path)
-      |> Keyword.put(:iac_tool, DeployEx.Config.iac_tool())
 
     with :ok <- DeployExHelpers.check_in_umbrella() do
-      cmd = "#{opts[:iac_tool]} output #{DeployExHelpers.to_terraform_args(args)}"
+      cmd = "output #{DeployEx.Terraform.parse_args(args)}"
 
       cmd = if opts[:short], do: "#{cmd} --json", else: cmd
 
-      shell_opts = [cd: opts[:directory]]
+      result = if opts[:short] do
+        DeployEx.Terraform.run_command(cmd, opts[:directory])
+      else
+        DeployEx.Terraform.run_command_with_console_log(cmd, opts[:directory])
+      end
 
-      shell_opts = if opts[:short], do: shell_opts, else: [{:into, IO.stream()} | shell_opts]
-
-      cmd
-        |> System.shell(shell_opts)
-        |> maybe_parse_opts(opts[:short])
+      maybe_parse_opts(result, opts[:short])
     end
   end
 
@@ -51,8 +50,8 @@ defmodule Mix.Tasks.Terraform.Output do
   end
 
   defp maybe_parse_opts({results,  1}, false) do
-    Mix.shell().error(ErrorMessage.failed_dependency("couldn't run #{opts[:iac_tool]} output:\n#{results}"))
+    Mix.shell().error(ErrorMessage.failed_dependency("couldn't run #{DeployEx.Config.iac_tool()} output:\n#{results}"))
   end
 
-  defp maybe_parse_ipts(_, _), do: nil
+  defp maybe_parse_opts(_, _), do: nil
 end

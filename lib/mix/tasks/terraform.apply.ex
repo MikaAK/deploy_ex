@@ -19,7 +19,6 @@ defmodule Mix.Tasks.Terraform.Apply do
     opts = args
       |> parse_args
       |> Keyword.put_new(:directory, @terraform_default_path)
-      |> Keyword.put(:iac_tool, DeployEx.Config.iac_tool())
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          :ok <- run_command(args, opts) do
@@ -44,9 +43,9 @@ defmodule Mix.Tasks.Terraform.Apply do
   end
 
   defp run_command(args, opts) do
-    cmd = "#{opts[:iac_tool]} apply #{DeployExHelpers.to_terraform_args(args)}"
+    cmd = "apply #{DeployEx.Terraform.parse_args(args)}"
     cmd = if opts[:auto_approve], do: "#{cmd} --auto-approve", else: cmd
 
-    DeployExHelpers.run_command_with_input(cmd, opts[:directory])
+    DeployEx.Terraform.run_command_with_input(cmd, opts[:directory])
   end
 end

@@ -43,7 +43,7 @@ defmodule Mix.Tasks.Ansible.Setup do
         |> Keyword.put(:only, Keyword.get_values(opts, :only))
         |> Keyword.put(:except, Keyword.get_values(opts, :except))
 
-      ansible_args = DeployExHelpers.to_ansible_args(args)
+      ansible_args = DeployEx.Ansible.parse_args(args)
 
       DeployExHelpers.check_file_exists!(Path.join(opts[:directory], "aws_ec2.yaml"))
       relative_directory = String.replace(Path.absname(opts[:directory]), "#{File.cwd!()}/", "")
@@ -54,7 +54,7 @@ defmodule Mix.Tasks.Ansible.Setup do
         |> Enum.map(&Path.relative_to(&1, relative_directory))
         |> DeployExHelpers.filter_only_or_except(opts[:only], opts[:except])
         |> Task.async_stream(fn setup_file ->
-          DeployExHelpers.run_command(
+          DeployEx.Utils.run_command(
             "ansible-playbook #{setup_file} #{ansible_args}",
             opts[:directory]
           )

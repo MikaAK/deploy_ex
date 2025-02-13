@@ -59,10 +59,10 @@ defmodule Mix.Tasks.DeployEx.Ssh do
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
-         {:ok, app_name} <- DeployExHelpers.find_app_name(app_params),
-         {:ok, pem_file_path} <- DeployExHelpers.find_pem_file(opts[:directory]),
-         {:ok, hostname_ips} <- DeployExHelpers.aws_instance_groups() do
-      connect_to_host(hostname_ips, app_name, pem_file_path, opts)
+         {:ok, app_name} <- DeployExHelpers.find_project_name(app_params),
+         {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:directory]),
+         {:ok, instance_ips} <- DeployEx.AwsMachine.find_instance_ips(DeployExHelpers.project_name(), app_name) do
+      connect_to_host(app_name, instance_ips, pem_file_path, opts)
     else
       {:error, e} -> Mix.raise(to_string(e))
     end
@@ -86,19 +86,14 @@ defmodule Mix.Tasks.DeployEx.Ssh do
     )
   end
 
-  defp connect_to_host(hostname_ips, app_name, pem_file_path, opts) do
-    case Enum.find(hostname_ips, fn {key, _} -> to_string(key) =~ app_name end) do
-      nil ->
-        host_name_ips = inspect(hostname_ips, pretty: true)
-        Mix.raise("Couldn't find any app with the name of #{app_name}\n#{host_name_ips}")
+  defp connect_to_host(app_name, [], _pem_file_path, _opts) do
+    Mix.raise("Couldn't find any app with the name of #{app_name}")
+  end
 
-      {app_name, [%{ip: ip, ipv6: ipv6}]} ->
-        log_ssh_command(app_name, pem_file_path, ipv6 || ip, opts)
+  defp connect_to_host(app_name, instance_ips, pem_file_path, opts) do
+    instance_ip = DeployExHelpers.prompt_for_choice(instance_ips, false)
 
-      {app_name, instances} ->
-        instance = DeployExHelpers.prompt_for_choice(instances) # Enum.random(Enum.sort(instances))
-
-        log_ssh_command(app_name, pem_file_path, instance.ip, opts)
+    log_ssh_command(app_name, pem_file_path, instance_ip, opts)
 
         # When using Rambo re-enable
         # Mix.shell().info([
@@ -111,7 +106,6 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         # with {:error, e} <- DeployExHelpers.run_command_with_input("ssh -i #{pem_file_path} admin@#{ip}", "") do
         #   Mix.shell().error(to_string(e))
         # end
-    end
   end
 
   defp log_ssh_command(app_name, pem_file_path, ip, opts) do

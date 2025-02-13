@@ -1,5 +1,4 @@
 %{
-  "castore": {:hex, :castore, "1.0.5", "9eeebb394cc9a0f3ae56b813459f990abb0a3dedee1be6b27fdb50301930502f", [:mix], [], "hexpm", "8d7c597c3e4a64c395980882d4bca3cebb8d74197c590dc272cfd3b6a6310578"},
   "certifi": {:hex, :certifi, "2.12.0", "2d1cca2ec95f59643862af91f001478c9863c2ac9cb6e2f89780bfd8de987329", [:rebar3], [], "hexpm", "ee68d85df22e554040cdb4be100f33873ac6051387baf6a8f6ce82272340ff1c"},
   "configparser_ex": {:hex, :configparser_ex, "4.0.0", "17e2b831cfa33a08c56effc610339b2986f0d82a9caa0ed18880a07658292ab6", [:mix], [], "hexpm", "02e6d1a559361a063cba7b75bc3eb2d6ad7e62730c551cc4703541fd11e65e5b"},
   "elixir_xml_to_map": {:hex, :elixir_xml_to_map, "3.1.0", "4d6260486a8cce59e4bf3575fe2dd2a24766546ceeef9f93fcec6f7c62a2827a", [:mix], [{:erlsom, "~> 1.4", [hex: :erlsom, repo: "hexpm", optional: false]}], "hexpm", "8fe5f2e75f90bab07ee2161120c2dc038ebcae8135554f5582990f1c8c21f911"},

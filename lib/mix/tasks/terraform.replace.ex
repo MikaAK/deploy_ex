@@ -19,14 +19,11 @@ defmodule Mix.Tasks.Terraform.Replace do
   def run(args) do
     {opts, extra_args} = parse_args(args)
 
-    opts = args
-      |> parse_args
-      |> Keyword.put_new(:directory, @terraform_default_path)
-      |> Keyword.put(:iac_tool, DeployEx.Config.iac_tool())
+    opts = Keyword.put_new(opts, :directory, @terraform_default_path)
 
     with :ok <- DeployExHelpers.check_in_umbrella() do
       if opts[:string] do
-        terraform_apply_replace(opts[:string], DeployExHelpers.to_terraform_args(args), opts)
+        terraform_apply_replace(opts[:string], DeployEx.Terraform.parse_args(args), opts)
       else
         match_instance_from_terraform_and_replace(opts, args, extra_args)
       end
@@ -34,7 +31,7 @@ defmodule Mix.Tasks.Terraform.Replace do
   end
 
   defp match_instance_from_terraform_and_replace(opts, args, extra_args) do
-    case DeployExHelpers.terraform_instances(opts[:directory]) do
+    case DeployEx.Terraform.instances(opts[:directory]) do
       {:error, e} -> Mix.raise(to_string(e))
 
       {:ok, instances} ->
@@ -45,16 +42,16 @@ defmodule Mix.Tasks.Terraform.Replace do
 
             instance_name
               |> replace_string(node_num)
-              |> terraform_apply_replace(DeployExHelpers.to_terraform_args(args), opts)
+              |> terraform_apply_replace(DeployEx.Terraform.parse_args(args), opts)
           end)
     end
   end
 
   defp terraform_apply_replace(replace_str, terraform_args, opts) do
-    cmd = "#{opts[:iac_tool]} apply #{terraform_args} --replace \"#{replace_str}\""
+    cmd = "apply #{terraform_args} --replace \"#{replace_str}\""
     cmd = if opts[:auto_approve], do: "#{cmd} --auto-approve", else: cmd
 
-    DeployExHelpers.run_command_with_input(cmd, opts[:directory])
+    DeployEx.Terraform.run_command_with_input(cmd, opts[:directory])
   end
 
   defp replace_string(instance_name, node_num) do
@@ -109,7 +106,7 @@ defmodule Mix.Tasks.Terraform.Replace do
   end
 
   defp get_instances_from_args(_, _, opts) do
-    case DeployExHelpers.terraform_instances(opts[:directory]) do
+    case DeployEx.Terraform.instances(opts[:directory]) do
       {:ok, instances} ->
         Mix.raise("""
         Error with arguments provided, must specify one app name or a resource string

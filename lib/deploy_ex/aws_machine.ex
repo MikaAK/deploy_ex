@@ -66,7 +66,7 @@ defmodule DeployEx.AwsMachine do
   end
 
   def find_instances_by_id(region \\ DeployEx.Config.aws_region(), instance_ids) do
-    with {:ok, instances} <- fetch_aws_instances(region) do
+    with {:ok, instances} <- fetch_instances(region) do
       case filter_by_instance_id(instances, instance_ids) do
         [] -> {:error, ErrorMessage.not_found("no aws instances found with those instance ids")}
         instances -> {:ok, instances}
@@ -75,7 +75,7 @@ defmodule DeployEx.AwsMachine do
   end
 
   def fetch_instance_ids_by_tag(region \\ DeployEx.Config.aws_region(), tag_name, tag) do
-    with {:ok, instances} <- fetch_aws_instances_by_tag(region, tag_name, tag) do
+    with {:ok, instances} <- fetch_instances_by_tag(region, tag_name, tag) do
       {:ok, Map.new(instances, &{find_instance_name(&1), &1["instanceId"]})}
     end
   end
@@ -88,8 +88,8 @@ defmodule DeployEx.AwsMachine do
     end)
   end
 
-  def fetch_aws_instances_by_tag(region \\ DeployEx.Config.aws_region(), tag_name, tag) do
-    with {:ok, instances} <- fetch_aws_instances(region) do
+  def fetch_instances_by_tag(region \\ DeployEx.Config.aws_region(), tag_name, tag) do
+    with {:ok, instances} <- fetch_instances(region) do
       case filter_by_tag(instances, tag_name, tag) do
         [] -> {:error, ErrorMessage.not_found("no aws instances found with the tag #{tag_name} of #{tag}")}
 
@@ -98,7 +98,7 @@ defmodule DeployEx.AwsMachine do
     end
   end
 
-  def fetch_aws_instances(region) do
+  def fetch_instances(region) do
     ExAws.EC2.describe_instances()
       |> ex_aws_request(region)
       |> handle_describe_response
@@ -160,8 +160,8 @@ defmodule DeployEx.AwsMachine do
   Finds a suitable jump server from available EC2 instances.
   Returns {:ok, ip} or {:error, reason}
   """
-  def find_jump_server do
-    with {:ok, instances} <- DeployExHelpers.aws_instance_groups() do
+  def find_jump_server(project_name) do
+    with {:ok, instances} <- DeployEx.AwsMachine.fetch_instance_groups(project_name) do
       server_ips = Enum.flat_map(instances, fn {name, instances} ->
         Enum.map(instances, fn %{ip: ip, ipv6: ipv6, name: server_name} -> {ip, ipv6, "#{name} (#{server_name})"} end)
       end)
@@ -170,9 +170,49 @@ defmodule DeployEx.AwsMachine do
         [{ip, ipv6, _}] -> {:ok, {ip, ipv6}}  # Single server case
         servers when servers !== [] ->
           [choice] = DeployExHelpers.prompt_for_choice(Enum.map(servers, fn {_, _, name} -> name end))
-          {ip, ipv6, _} = Enum.find(servers, fn {_, _, name} -> name == choice end)
+          {ip, ipv6, _} = Enum.find(servers, fn {_, _, name} -> name === choice end)
           {:ok, {ip, ipv6}}
         _ -> {:error, ErrorMessage.not_found("No jump servers found")}
+      end
+    end
+  end
+
+  def fetch_instance_groups(project_name) do
+    with {:ok, instances} <- fetch_instances_by_tag("Group", "#{DeployEx.Utils.upper_title_case(project_name)} Backend") do
+      {:ok, instances
+        |> Stream.map(fn instance_data ->
+          instance_data
+            |> Map.put("InstanceGroupTag", Enum.find_value(instance_data["tagSet"]["item"], fn
+              %{"key" => "InstanceGroup", "value" => value} -> value
+              _ -> false
+            end))
+            |> Map.put("NameTag", Enum.find_value(instance_data["tagSet"]["item"], fn
+              %{"key" => "Name", "value" => value} -> value
+              _ -> false
+            end))
+        end)
+        |> Stream.reject(&is_nil(&1["InstanceGroupTag"]))
+        |> Stream.filter(&(&1["instanceState"]["name"] === "running"))
+        |> Enum.group_by(&(&1["InstanceGroupTag"]), &%{
+          name: &1["NameTag"],
+          ip: &1["ipAddress"],
+          ipv6: &1["ipv6Address"]
+        })}
+    end
+  end
+
+  def find_instance_ips(project_name, app_name) do
+    with {:ok, instance_groups} <- fetch_instance_groups(project_name) do
+      case Enum.find_value(instance_groups, fn {group, values} -> if group =~ app_name, do: values end) do
+        nil ->
+          {:error, ErrorMessage.not_found(
+            "no app names found with #{app_name}",
+            %{app_names: Map.keys(instance_groups)}
+          )}
+
+        [%{ip: ip, ipv6: ipv6}] -> {:ok, [ipv6 || ip]}
+
+        instances -> {:ok, Enum.map(instances, &(&1[:ipv6] || &1[:ip]))}
       end
     end
   end

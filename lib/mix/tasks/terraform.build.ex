@@ -27,7 +27,6 @@ defmodule Mix.Tasks.Terraform.Build do
     opts = args
       |> parse_args
       |> Keyword.put_new(:directory, @terraform_default_path)
-      |> Keyword.put(:iac_tool, DeployEx.Config.iac_tool())
       |> Keyword.put_new(:aws_region, @default_aws_region)
       |> Keyword.put_new(:aws_release_bucket, @default_aws_release_bucket)
       |> Keyword.put_new(:aws_log_bucket, DeployEx.Config.aws_log_bucket())
@@ -56,9 +55,9 @@ defmodule Mix.Tasks.Terraform.Build do
         release_bucket_name: opts[:aws_release_bucket],
         logging_bucket_name: opts[:aws_log_bucket],
 
-        pem_app_name: "#{DeployExHelpers.kebab_app_name()}-#{random_bytes}",
-        app_name: DeployExHelpers.underscored_app_name(),
-        kebab_app_name: DeployExHelpers.kebab_app_name(),
+        pem_app_name: "#{DeployExHelpers.kebab_project_name()}-#{random_bytes}",
+        app_name: DeployExHelpers.underscored_project_name(),
+        kebab_app_name: DeployExHelpers.kebab_project_name(),
 
         terraform_app_releases_variables: terraform_app_releases_variables,
         terraform_release_variables: terraform_app_releases_variables,
@@ -70,7 +69,11 @@ defmodule Mix.Tasks.Terraform.Build do
       }
 
       write_terraform_template_files(params, opts)
-      run_terraform_init(params, opts)
+
+      DeployEx.Terraform.run_command_with_input(
+        "init",
+        params[:directory]
+      )
     else
       {:error, e} -> Mix.raise(to_string(e))
     end
@@ -98,13 +101,6 @@ defmodule Mix.Tasks.Terraform.Build do
     opts
   end
 
-  defp run_terraform_init(params, opts) do
-    DeployExHelpers.run_command_with_input(
-      "#{opts[:iac_tool]} init",
-      params[:directory]
-    )
-  end
-
   defp ensure_terraform_directory_exists(directory) do
     if File.exists?(directory) do
       :ok
@@ -129,7 +125,7 @@ defmodule Mix.Tasks.Terraform.Build do
   defp generate_terraform_release_variables(release_name) do
     String.trim_trailing("""
         #{release_name} = {
-          name = "#{DeployExHelpers.upper_title_case(release_name)}"
+          name = "#{DeployEx.Utils.upper_title_case(release_name)}"
           tags = {
             Vendor = "Self"
             Type   = "Self Made"
@@ -143,8 +139,8 @@ defmodule Mix.Tasks.Terraform.Build do
       ""
     else
       """
-          #{DeployExHelpers.underscored_app_name()}_redis = {
-            name        = "#{DeployExHelpers.app_name()} Redis"
+          #{DeployExHelpers.underscored_project_name()}_redis = {
+            name        = "#{DeployExHelpers.title_case_project_name()} Redis"
             private_ip  = "10.0.1.60"
             enable_ebs  = true
 
@@ -157,7 +153,7 @@ defmodule Mix.Tasks.Terraform.Build do
             tags = {
               Vendor      = "Redis"
               Type        = "Database"
-              DatabaseKey = "#{DeployExHelpers.underscored_app_name()}_redis"
+              DatabaseKey = "#{DeployExHelpers.underscored_project_name()}_redis"
             }
           },
       """
