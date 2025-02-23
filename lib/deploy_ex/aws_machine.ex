@@ -133,6 +133,9 @@ defmodule DeployEx.AwsMachine do
       %{"DescribeInstancesResponse" => %{"reservationSet" => %{"item" => item}}} ->
         {:ok, [item["instancesSet"]["item"]]}
 
+      %{"DescribeInstancesResponse" => %{"reservationSet" => nil}} ->
+        {:ok, []}
+
       structure ->
         {:error, ErrorMessage.bad_request(
           "couldn't parse the structure from aws correctly",
@@ -160,8 +163,8 @@ defmodule DeployEx.AwsMachine do
   Finds a suitable jump server from available EC2 instances.
   Returns {:ok, ip} or {:error, reason}
   """
-  def find_jump_server(project_name) do
-    with {:ok, instances} <- DeployEx.AwsMachine.fetch_instance_groups(project_name) do
+  def find_jump_server(project_name, opts \\ []) do
+    with {:ok, instances} <- DeployEx.AwsMachine.fetch_instance_groups(project_name, opts) do
       server_ips = Enum.flat_map(instances, fn {name, instances} ->
         Enum.map(instances, fn %{ip: ip, ipv6: ipv6, name: server_name} -> {ip, ipv6, "#{name} (#{server_name})"} end)
       end)
@@ -177,8 +180,11 @@ defmodule DeployEx.AwsMachine do
     end
   end
 
-  def fetch_instance_groups(project_name) do
-    with {:ok, instances} <- fetch_instances_by_tag("Group", "#{DeployEx.Utils.upper_title_case(project_name)} Backend") do
+  def fetch_instance_groups(project_name, opts \\ []) do
+    resource_group = opts[:resource_group] ||
+                     "#{DeployEx.Utils.upper_title_case(project_name)} Backend"
+
+    with {:ok, instances} <- fetch_instances_by_tag("Group", resource_group) do
       {:ok, instances
         |> Stream.map(fn instance_data ->
           instance_data
@@ -201,8 +207,8 @@ defmodule DeployEx.AwsMachine do
     end
   end
 
-  def find_instance_ips(project_name, app_name) do
-    with {:ok, instance_groups} <- fetch_instance_groups(project_name) do
+  def find_instance_ips(project_name, app_name, opts \\ []) do
+    with {:ok, instance_groups} <- fetch_instance_groups(project_name, opts) do
       case Enum.find_value(instance_groups, fn {group, values} -> if group =~ app_name, do: values end) do
         nil ->
           {:error, ErrorMessage.not_found(

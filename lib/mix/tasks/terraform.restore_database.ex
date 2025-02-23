@@ -24,12 +24,13 @@ defmodule Mix.Tasks.Terraform.RestoreDatabase do
   ```
 
   ## Options
-  - `local` - Restore to local PostgreSQL instead of RDS
-  - `directory` - Terraform directory path
-  - `schema-only` - Only restore the schema, no data
-  - `local-port` - Local port to use for SSH tunnel (default: random available port)
-  - `clean` - Drop database objects before recreating them
-  - `jobs` - Number of parallel jobs for restore (custom format only)
+  - `--local` - Restore to local PostgreSQL instead of RDS
+  - `--directory` - Terraform directory path
+  - `--schema-only` - Only restore the schema, no data
+  - `--local-port` - Local port to use for SSH tunnel (default: random available port)
+  - `--clean` - Drop database objects before recreating them
+  - `--jobs` - Number of parallel jobs for restore (custom format only)
+  - `--resource-group` - Specify a custom resource group name (default: "<ProjectName> Backend")
   """
 
   def run(args) do
@@ -79,7 +80,8 @@ defmodule Mix.Tasks.Terraform.RestoreDatabase do
         schema_only: :boolean,
         local_port: :integer,
         clean: :boolean,
-        jobs: :integer
+        jobs: :integer,
+        resource_group: :string
       ]
     )
   end
@@ -147,7 +149,9 @@ defmodule Mix.Tasks.Terraform.RestoreDatabase do
     if connection_info.local do
       {:ok, connection_info}
     else
-      with {:ok, {jump_server_ip, jump_server_ipv6}} <- AwsMachine.find_jump_server(DeployExHelpers.project_name()),
+      {machine_opts, opts} = Keyword.split(opts, [:resource_group])
+
+      with {:ok, {jump_server_ip, jump_server_ipv6}} <- AwsMachine.find_jump_server(DeployExHelpers.project_name(), machine_opts),
            {:ok, local_port} <- get_local_port(opts[:local_port]),
            {host, port} <- AwsDatabase.parse_endpoint(connection_info.endpoint),
            {:ok, pem_file} <- DeployEx.Terraform.find_pem_file(opts[:directory]),

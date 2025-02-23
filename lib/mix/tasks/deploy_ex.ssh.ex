@@ -50,6 +50,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
   - `--directory`, `-d` - Directory containing SSH keys (default: ./deploys/terraform)
   - `--force`, `-f` - Skip confirmation prompts
   - `--quiet`, `-q` - Suppress non-essential output
+  - `--resource_group`, - Specify the resource group to connect to
   """
 
   def run(args) do
@@ -58,10 +59,12 @@ defmodule Mix.Tasks.DeployEx.Ssh do
     {opts, app_params} = parse_args(args)
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
 
+    {machine_opts, opts} = Keyword.split(opts, [:resource_group])
+
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, app_name} <- DeployExHelpers.find_project_name(app_params),
          {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:directory]),
-         {:ok, instance_ips} <- DeployEx.AwsMachine.find_instance_ips(DeployExHelpers.project_name(), app_name) do
+         {:ok, instance_ips} <- DeployEx.AwsMachine.find_instance_ips(DeployExHelpers.project_name(), app_name, machine_opts) do
       connect_to_host(app_name, instance_ips, pem_file_path, opts)
     else
       {:error, e} -> Mix.raise(to_string(e))
@@ -81,7 +84,8 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         log_count: :integer,
         log_user: :string,
         all: :boolean,
-        iex: :boolean
+        iex: :boolean,
+        resource_group: :string
       ]
     )
   end

@@ -31,9 +31,10 @@ defmodule Mix.Tasks.DeployEx.DownloadFile do
   ```
 
   ## Options
-  - `directory` - Terraform directory path containing SSH keys (default: #{@terraform_default_path})
-  - `force` - Force overwrite if local file exists
-  - `quiet` - Suppress informational output messages
+  - `--directory`, `-d` - Terraform directory path containing SSH keys (default: #{@terraform_default_path})
+  - `--force`, `-f` - Force overwrite if local file exists
+  - `--quiet`, `-q` - Suppress informational output messages
+  - `--resource_group`, - Specify the resource group to connect to
 
   ## Requirements
   - SSH access to the remote server must be configured
@@ -74,8 +75,10 @@ defmodule Mix.Tasks.DeployEx.DownloadFile do
     if File.exists?(local_path) and not !!opts[:force] do
       {:error, "File #{local_path} already exists. Use --force to overwrite."}
     else
-    with {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:directory]),
-         {:ok, instance_ips} <- DeployEx.AwsMachine.find_instance_ips(DeployExHelpers.project_name(), app_name) do
+      {machine_opts, opts} = Keyword.split(opts, [:resource_group])
+
+      with {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:directory]),
+         {:ok, instance_ips} <- DeployEx.AwsMachine.find_instance_ips(DeployExHelpers.project_name(), app_name, machine_opts) do
 
         ip = List.first(instance_ips)
 
@@ -95,7 +98,8 @@ defmodule Mix.Tasks.DeployEx.DownloadFile do
       switches: [
         directory: :string,
         force: :boolean,
-        quiet: :boolean
+        quiet: :boolean,
+        resource_group: :string
       ]
     )
   end

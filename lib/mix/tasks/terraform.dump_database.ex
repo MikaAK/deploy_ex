@@ -17,12 +17,13 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
   ```
 
   ## Options
-  - `output` - Output file path (default: ./dump_<timestamp>.sql)
-  - `directory` - Terraform directory path
-  - `schema-only` - Only dump the schema, no data
-  - `local-port` - Local port to use for SSH tunnel (default: random available port)
-  - `identifier` - Use RDS instance identifier instead of database name
-  - `format` - Output format (default: custom, options: custom|text)
+  - `--output` - Output file path (default: ./dump_<timestamp>.sql)
+  - `--directory` - Terraform directory path
+  - `--schema-only` - Only dump the schema, no data
+  - `--local-port` - Local port to use for SSH tunnel (default: random available port)
+  - `--identifier` - Use RDS instance identifier instead of database name
+  - `--format` - Output format (default: custom, options: custom|text)
+  - `--resource-group` - Specify a custom resource group name (default: "<ProjectName> Backend")
 
   ## Format Options
   The `--format` flag accepts two values:
@@ -51,13 +52,14 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
 
     {opts, extra_args} = parse_args(args)
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
+    {machine_opts, opts} = Keyword.split(opts, [:resource_group])
 
     with :ok <- check_pg_dump_installed(),
          :ok <- DeployExHelpers.check_in_umbrella(),
          database_name when not is_nil(database_name) <- List.first(extra_args) || show_database_selection(),
          {:ok, db_info} <- AwsDatabase.get_database_info(database_name, opts[:identifier]),
          {:ok, password} <- AwsDatabase.get_database_password(db_info, opts[:directory]),
-         {:ok, {jump_server_ip, jump_server_ipv6}} <- AwsMachine.find_jump_server(DeployExHelpers.project_name()),
+         {:ok, {jump_server_ip, jump_server_ipv6}} <- AwsMachine.find_jump_server(DeployExHelpers.project_name(), machine_opts),
          {:ok, local_port} <- get_local_port(opts[:local_port]),
          {host, port} <- AwsDatabase.parse_endpoint(db_info.endpoint),
          {:ok, pem_file} <- DeployEx.Terraform.find_pem_file(opts[:directory]),
@@ -98,7 +100,8 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
         schema_only: :boolean,
         local_port: :integer,
         identifier: :string,
-        format: :string
+        format: :string,
+        resource_group: :string
       ]
     )
   end
