@@ -95,7 +95,11 @@ defmodule Mix.Tasks.DeployEx.Ssh do
   end
 
   defp connect_to_host(app_name, instance_ips, pem_file_path, opts) do
-    instance_ip = DeployExHelpers.prompt_for_choice(instance_ips, false)
+    instance_ip = if opts[:short] do
+      Enum.random(instance_ips)
+    else
+      DeployExHelpers.prompt_for_choice(instance_ips, false)
+    end
 
     log_ssh_command(app_name, pem_file_path, instance_ip, opts)
 

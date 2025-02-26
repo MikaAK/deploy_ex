@@ -67,7 +67,7 @@ defmodule DeployEx.Utils do
   end
 
   def upper_title_case(string) do
-    string |> String.split(~r/_|-/) |> Enum.map_join(" ", &String.capitalize/1)
+    string |> Macro.underscore |> String.split(~r/_|-/) |> Enum.map_join(" ", &String.capitalize/1)
   end
 
   def run_command_with_return(command, directory, extra_opts \\ []) do

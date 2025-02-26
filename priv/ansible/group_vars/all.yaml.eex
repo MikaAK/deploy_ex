@@ -2,9 +2,12 @@ aws_credentials:
   AWS_ACCESS_KEY_ID: "<INSERT_SECRET_OR_PRELOAD_ON_MACHINE>"
   AWS_SECRET_ACCESS_KEY: "<INSERT_SECRET_OR_PRELOAD_ON_MACHINE>"
 <%= if @is_loki_enabled do %>
+
 loki_logger_s3_region: <%= DeployEx.Config.aws_log_region() %>
 loki_logger_s3_bucket_name: <%= DeployEx.Config.aws_log_bucket() %>
-loki_logger_retention: 720h
+loki_logger_retention: 30d
+loki_logger_memory_size_mb: 500
+
 grafana_loki_url: "http://10.0.1.50:3100"<% end %>
 <%= if @is_prometheus_enabled do %>
 grafana_prometheus_url: "http://10.0.1.40:9090"
