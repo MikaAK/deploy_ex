@@ -3,7 +3,6 @@
     - name: Install Prometheus DB
       apt:
         name: prometheus
-        policy_rc_d: 101
         update_cache: true
 
     - name: Add PrometheusDB config to /root/prometheus.yaml
@@ -19,41 +18,30 @@
         name: prometheus
         state: stopped
 
-    - name: Disable the original prometheus service
-      systemd:
-        name: prometheus
-        enabled: no
-
-    - name: Delete prometheus original service
-      ansible.builtin.file:
-        state: absent
-        path: /lib/systemd/system/prometheus.service
-
-    - name: Add prometheus.service file to /etc/systemd/system/prometheus.service
+    - name: Add prometheus_scraper.service file to /etc/systemd/system/prometheus_scraper.service
       template:
         src: prometheus_db.service.j2
-        dest: /etc/systemd/system/prometheus.service
+        dest: /etc/systemd/system/prometheus_db.service
         owner: root
         group: root
         mode: 0644
 
-    - name: Enable prometheus service
+    - name: Enable prometheus_db service
       systemd:
-        name: prometheus
+        name: prometheus_db
         enabled: true
 
-    - name: Stop prometheus service
+    - name: Stop prometheus_db service
       systemd:
-        name: prometheus
+        name: prometheus_db
         state: stopped
-      when: ansible_facts.services[prometheus] is not defined
+      when: ansible_facts.services[prometheus_db] is not defined
 
-    - name: Start prometheus service
+    - name: Start prometheus_db service
       systemd:
         daemon_reload: true
-        name: prometheus
+        name: prometheus_db
         state: started
 
   become: true
-
 

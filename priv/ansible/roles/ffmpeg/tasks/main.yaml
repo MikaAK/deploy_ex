@@ -1,0 +1,10 @@
+- name: ffmpeg
+  block:
+    - name: Install ffmpeg
+      apt:
+        name: ffmpeg
+        update_cache: true
+
+
+  become: yes
+
