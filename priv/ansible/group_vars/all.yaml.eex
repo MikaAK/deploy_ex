@@ -6,7 +6,6 @@ aws_credentials:
 loki_logger_s3_region: <%= DeployEx.Config.aws_log_region() %>
 loki_logger_s3_bucket_name: <%= DeployEx.Config.aws_log_bucket() %>
 loki_logger_retention: 30d
-loki_logger_memory_size_mb: 500
 
 grafana_loki_url: "http://10.0.1.50:3100"<% end %>
 <%= if @is_prometheus_enabled do %>

@@ -30,7 +30,6 @@ storage_config:
     active_index_directory: /data/loki/index
     cache_location: /data/loki/index_cache
     cache_ttl: 24h
-    index_cache_size_mb: {{ loki_logger_memory_size_mb }}
   aws:
     bucketnames: {{ loki_logger_s3_bucket_name }}
     endpoint: s3.{{ loki_logger_s3_region }}.amazonaws.com
@@ -40,14 +39,9 @@ storage_config:
 
 querier:
   max_concurrent: 16
-  query_timeout: 3m
-  max_look_back_period: 30d
-  engine:
-    timeout: 3m
 
 ingester:
   max_chunk_age: 1h
-  chunk_target_size: 1.5MB
   chunk_retain_period: 30s
   wal:
     enabled: true
@@ -57,7 +51,6 @@ compactor:
   working_directory: /data/loki/retention
   compaction_interval: 10m
   retention_enabled: true
-  shared_store: s3
   retention_delete_delay: 6h
   retention_delete_worker_count: 150
   delete_request_store: aws
