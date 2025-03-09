@@ -1,4 +1,6 @@
 # DeployEx (WIP THIS IS NOT AVAILABLE IN HEX)
+**NOTE:** [erlexec fails to compile](https://github.com/saleyn/erlexec/issues/189) in otp 26 making this library not work
+
 *Important: This requires [Terraform](https://terraform.io) and [Ansible](https://www.ansible.com/) to be installed to use the commands*
 
 This library allows you to add deployment to your umbrella application using AWS EC2, Ansible and Terraform
