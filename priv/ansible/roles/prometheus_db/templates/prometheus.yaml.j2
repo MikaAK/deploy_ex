@@ -19,6 +19,11 @@ scrape_configs:
         port: 4050
         access_key: {{ aws_credentials['AWS_ACCESS_KEY_ID'] }}
         secret_key: {{ aws_credentials['AWS_SECRET_ACCESS_KEY'] }}
+        # filters:
+        #   - name: tag:Environment
+        #     values:
+        #       - prod
+
     relabel_configs:
       - source_labels:
         - '__meta_ec2_tag_Name'
@@ -26,4 +31,3 @@ scrape_configs:
       - source_labels:
         - '__meta_ec2_tag_Environment'
         target_label: 'environment'
-

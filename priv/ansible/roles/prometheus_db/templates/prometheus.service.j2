@@ -6,13 +6,13 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/root/
-ExecStart=/usr/bin/prometheus --config.file /root/prometheus-config.yaml
+ExecStart=/usr/bin/prometheus --config.file /root/prometheus-config.yaml --storage.tsdb.retention.size 4GB
 
 Restart=on-failure
 RestartSec=5
 SuccessExitStatus=143
 TimeoutStopSec=10
-SyslogIdentifier=prometheus_db
+SyslogIdentifier=prometheus
 RemainAfterExit=no
 LimitNOFILE=infinity
 

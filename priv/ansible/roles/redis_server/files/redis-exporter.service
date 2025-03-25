@@ -9,6 +9,7 @@ WorkingDirectory=/opt/redis_exporter/
 ExecStart=/opt/redis_exporter/redis_exporter
 SyslogIdentifier=redis-exporter
 LimitNOFILE=infinity
+Environment="REDIS_EXPORTER_WEB_LISTEN_ADDRESS=0.0.0.0:4050"
 RestartSec=5
 Restart=on-failure
 RemainAfterExit=no

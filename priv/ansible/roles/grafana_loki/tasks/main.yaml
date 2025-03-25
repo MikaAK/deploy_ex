@@ -1,16 +1,32 @@
 - name: grafana_loki
   block:
-    - name: Check for Loki {{ loki_architecture }}/{{ loki_version }}
+    - name: Check if Loki binary exists
       stat:
-        path: ~/loki-{{ loki_architecture }}
-      register: loki
+        path: '/root/loki-{{ loki_architecture }}'
+      register: loki_binary
 
-    - name: Download Loki {{ loki_architecture }}/{{ loki_version }}
+    - name: Get installed Loki version
+      command: '/root/loki-{{ loki_architecture }} --version'
+      register: installed_loki_version
+      changed_when: false
+      failed_when: false
+      when: loki_binary.stat.exists
+
+    - name: Set Loki version fact
+      set_fact:
+        current_loki_version: >-
+          {{ installed_loki_version.stdout |
+          regex_search('^v[0-9]+\.[0-9]+\.[0-9]+') | default('') }}
+      when: loki_binary.stat.exists
+
+    - name: 'Download Loki {{ loki_architecture }}/{{ loki_version }}'
       unarchive:
-        src: https://github.com/grafana/loki/releases/download/{{ loki_version }}/loki-{{ loki_architecture }}.zip
+        src: >-
+          https://github.com/grafana/loki/releases/download/{{ loki_version
+          }}/loki-{{ loki_architecture }}.zip
         dest: /root
         remote_src: true
-      when: not loki.stat.exists
+      when: not loki_binary.stat.exists or current_loki_version != loki_version
 
     - name: Add loki-config config to /root/loki-config.yaml
       template:

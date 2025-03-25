@@ -1,6 +1,6 @@
 redis_maxmemory: 1600mb
 redis_maxmemory_policy: allkeys-lru
 redis_io_threads: 3
-redis_version: 5:6.0.16-1+deb11u2
-redis_exporter_version: v1.66.0
+redis_version: 5:7.0.10-1~bpo11+1
+redis_exporter_version: v1.69.0
 redis_stack_enabled: true

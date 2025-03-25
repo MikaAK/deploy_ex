@@ -10,7 +10,8 @@ loki_logger_retention: 30d
 grafana_loki_url: "http://10.0.1.50:3100"<% end %>
 <%= if @is_prometheus_enabled do %>
 grafana_prometheus_url: "http://10.0.1.40:9090"
-grafana_prometheus_ec2_region: <%= DeployEx.Config.aws_region() %>
+
+prometheus_scrape_region: <%= DeployEx.Config.aws_region() %>
 <% end %>
 
 system_env:
