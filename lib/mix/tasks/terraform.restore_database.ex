@@ -31,6 +31,7 @@ defmodule Mix.Tasks.Terraform.RestoreDatabase do
   - `--clean` - Drop database objects before recreating them
   - `--jobs` - Number of parallel jobs for restore (custom format only)
   - `--resource-group` - Specify a custom resource group name (default: "<ProjectName> Backend")
+  - `--pem` - Specify a custom pem file
   """
 
   def run(args) do
@@ -73,7 +74,7 @@ defmodule Mix.Tasks.Terraform.RestoreDatabase do
 
   defp parse_args(args) do
     OptionParser.parse!(args,
-      aliases: [d: :directory, s: :schema_only, p: :local_port, l: :local],
+      aliases: [d: :directory, s: :schema_only, p: :local_port, l: :local, p: :pem],
       switches: [
         directory: :string,
         local: :boolean,
@@ -81,7 +82,8 @@ defmodule Mix.Tasks.Terraform.RestoreDatabase do
         local_port: :integer,
         clean: :boolean,
         jobs: :integer,
-        resource_group: :string
+        resource_group: :string,
+        pem: :string
       ]
     )
   end
@@ -154,7 +156,7 @@ defmodule Mix.Tasks.Terraform.RestoreDatabase do
       with {:ok, {jump_server_ip, jump_server_ipv6}} <- AwsMachine.find_jump_server(DeployExHelpers.project_name(), machine_opts),
            {:ok, local_port} <- get_local_port(opts[:local_port]),
            {host, port} <- AwsDatabase.parse_endpoint(connection_info.endpoint),
-           {:ok, pem_file} <- DeployEx.Terraform.find_pem_file(opts[:directory]),
+           {:ok, pem_file} <- DeployEx.Terraform.find_pem_file(opts[:directory], opts[:pem]),
            :ok <- SSH.setup_ssh_tunnel(jump_server_ipv6 || jump_server_ip, host, port, local_port, pem_file) do
         Mix.shell().info([:green, "Connected a tunnel to #{jump_server_ipv6 || jump_server_ip}:#{port}"])
 

@@ -35,6 +35,7 @@ defmodule Mix.Tasks.DeployEx.InstallMigrationScript do
   - `force` - Overwrite existing migration script if present (alias: `f`)
   - `quiet` - Suppress output messages (alias: `q`)
   - `pem_directory` - Custom directory containing SSH keys (alias: `d`)
+  - `pem` - SSH key file (alias: `p`)
   """
 
   def run(args) do
@@ -44,7 +45,7 @@ defmodule Mix.Tasks.DeployEx.InstallMigrationScript do
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
-         {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:pem_directory]) do
+         {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:pem_directory], opts[:pem]) do
       @github_action_path |> Path.dirname |> File.mkdir_p!
 
       DeployExHelpers.write_template(
@@ -73,11 +74,12 @@ defmodule Mix.Tasks.DeployEx.InstallMigrationScript do
 
   defp parse_args(args) do
     {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quit, d: :pem_directory],
+      aliases: [f: :force, q: :quit, d: :pem_directory, p: :pem],
       switches: [
         force: :boolean,
         quiet: :boolean,
-        pem_directory: :boolean
+        pem_directory: :boolean,
+        pem: :string
       ]
     )
 

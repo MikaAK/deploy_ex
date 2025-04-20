@@ -158,8 +158,8 @@ defmodule DeployExHelpers do
     end
   end
 
-  def run_ssh_command(terraform_directory, app_name, port \\ 22, command) do
-    with {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(terraform_directory),
+  def run_ssh_command(terraform_directory, pem, app_name, port \\ 22, command) do
+    with {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(terraform_directory, pem),
          {:ok, instance_ips} <- DeployEx.AwsMachine.find_instance_ips(project_name(), app_name) do
       pem_rsa_path = Path.join(@server_ssh_pem_path, "id_rsa")
 

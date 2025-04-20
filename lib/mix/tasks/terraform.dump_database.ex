@@ -24,6 +24,7 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
   - `--identifier` - Use RDS instance identifier instead of database name
   - `--format` - Output format (default: custom, options: custom|text)
   - `--resource-group` - Specify a custom resource group name (default: "<ProjectName> Backend")
+  - `--pem` - Specify a custom pem file
 
   ## Format Options
   The `--format` flag accepts two values:
@@ -62,7 +63,7 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
          {:ok, {jump_server_ip, jump_server_ipv6}} <- AwsMachine.find_jump_server(DeployExHelpers.project_name(), machine_opts),
          {:ok, local_port} <- get_local_port(opts[:local_port]),
          {host, port} <- AwsDatabase.parse_endpoint(db_info.endpoint),
-         {:ok, pem_file} <- DeployEx.Terraform.find_pem_file(opts[:directory]),
+         {:ok, pem_file} <- DeployEx.Terraform.find_pem_file(opts[:directory], opts[:pem]),
          :ok <- SSH.setup_ssh_tunnel(
           jump_server_ipv6 || jump_server_ip,
           host,
@@ -93,7 +94,7 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
 
   defp parse_args(args) do
     OptionParser.parse!(args,
-      aliases: [d: :directory, o: :output, s: :schema_only, p: :local_port, i: :identifier, f: :format],
+      aliases: [d: :directory, o: :output, s: :schema_only, p: :local_port, i: :identifier, f: :format, p: :pem],
       switches: [
         directory: :string,
         output: :string,
@@ -101,7 +102,8 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
         local_port: :integer,
         identifier: :string,
         format: :string,
-        resource_group: :string
+        resource_group: :string,
+        pem: :string
       ]
     )
   end

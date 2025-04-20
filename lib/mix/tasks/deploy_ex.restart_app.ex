@@ -27,6 +27,7 @@ defmodule Mix.Tasks.DeployEx.RestartApp do
   - `directory` - Directory containing SSH keys (default: ./deploys/terraform) (alias: `d`)
   - `force` - Skip confirmation prompt (alias: `f`)
   - `quiet` - Suppress output messages (alias: `q`)
+  - `pem` - SSH key file (alias: `p`)
   """
 
   def run(args) do
@@ -50,6 +51,7 @@ defmodule Mix.Tasks.DeployEx.RestartApp do
   defp restart_service(app_name, opts) do
     DeployExHelpers.run_ssh_command(
       opts[:directory],
+      opts[:pem],
       app_name,
       DeployEx.SystemDController.restart_service(app_name)
     )
@@ -57,11 +59,12 @@ defmodule Mix.Tasks.DeployEx.RestartApp do
 
   defp parse_args(args) do
     OptionParser.parse!(args,
-      aliases: [f: :force, q: :quiet, d: :directory],
+      aliases: [f: :force, q: :quiet, d: :directory, p: :pem],
       switches: [
         directory: :string,
         force: :boolean,
-        quiet: :boolean
+        quiet: :boolean,
+        pem: :string
       ]
     )
   end

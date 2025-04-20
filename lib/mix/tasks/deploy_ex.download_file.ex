@@ -35,6 +35,7 @@ defmodule Mix.Tasks.DeployEx.DownloadFile do
   - `--force`, `-f` - Force overwrite if local file exists
   - `--quiet`, `-q` - Suppress informational output messages
   - `--resource_group`, - Specify the resource group to connect to
+  - `--pem`, `-p` - SSH key file
 
   ## Requirements
   - SSH access to the remote server must be configured
@@ -77,7 +78,7 @@ defmodule Mix.Tasks.DeployEx.DownloadFile do
     else
       {machine_opts, opts} = Keyword.split(opts, [:resource_group])
 
-      with {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:directory]),
+      with {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:directory], opts[:pem]),
          {:ok, instance_ips} <- DeployEx.AwsMachine.find_instance_ips(DeployExHelpers.project_name(), app_name, machine_opts) do
 
         ip = List.first(instance_ips)
@@ -94,12 +95,13 @@ defmodule Mix.Tasks.DeployEx.DownloadFile do
 
   defp parse_args(args) do
     OptionParser.parse!(args,
-      aliases: [f: :force, q: :quiet, d: :directory],
+      aliases: [f: :force, q: :quiet, d: :directory, p: :pem],
       switches: [
         directory: :string,
         force: :boolean,
         quiet: :boolean,
-        resource_group: :string
+        resource_group: :string,
+        pem: :string
       ]
     )
   end

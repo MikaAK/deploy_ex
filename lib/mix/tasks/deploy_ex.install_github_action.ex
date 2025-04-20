@@ -47,6 +47,7 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
   - `pem-directory` - Directory containing SSH keys (default: ./deploys/terraform)
   - `force` - Overwrite existing workflow files
   - `quiet` - Suppress output messages
+  - `pem` - SSH key file
   """
 
   def run(args) do
@@ -56,7 +57,7 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
-         {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:pem_directory]) do
+         {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:pem_directory], opts[:pem]) do
       @github_action_path |> Path.dirname |> File.mkdir_p!
 
       DeployExHelpers.write_template(
@@ -85,11 +86,12 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
 
   defp parse_args(args) do
     {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quit, d: :pem_directory],
+      aliases: [f: :force, q: :quit, d: :pem_directory, p: :pem],
       switches: [
         force: :boolean,
         quiet: :boolean,
-        pem_directory: :boolean
+        pem_directory: :boolean,
+        pem: :string
       ]
     )
 
