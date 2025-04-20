@@ -2,5 +2,5 @@
   roles:
     - pip3
     - awscli
-    - prometheus_db
     - prometheus_exporter
+    - prometheus_db

@@ -2,5 +2,6 @@
   roles:
     - pip3
     - awscli
+    - prometheus_exporter
     - grafana_ui
 

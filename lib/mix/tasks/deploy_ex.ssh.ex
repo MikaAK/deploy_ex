@@ -47,6 +47,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
   - `--log_count`, `-n` - Number of log lines to display
   - `--all` - Show all system logs, not just application logs
   - `--iex` - Connect to running application node via IEx
+  - `--pem`, `-p` - Pem file to use, default will use first found
   - `--directory`, `-d` - Directory containing SSH keys (default: ./deploys/terraform)
   - `--force`, `-f` - Skip confirmation prompts
   - `--quiet`, `-q` - Suppress non-essential output
@@ -63,7 +64,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, app_name} <- DeployExHelpers.find_project_name(app_params),
-         {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:directory]),
+         {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:directory], opts[:pem]),
          {:ok, instance_ips} <- DeployEx.AwsMachine.find_instance_ips(DeployExHelpers.project_name(), app_name, machine_opts) do
       connect_to_host(app_name, instance_ips, pem_file_path, opts)
     else
@@ -73,7 +74,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
   defp parse_args(args) do
     OptionParser.parse!(args,
-      aliases: [f: :force, q: :quiet, d: :directory, s: :short, n: :log_count],
+      aliases: [f: :force, q: :quiet, d: :directory, s: :short, n: :log_count, p: :pem],
       switches: [
         directory: :string,
         force: :boolean,
@@ -85,6 +86,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         log_user: :string,
         all: :boolean,
         iex: :boolean,
+        pem: :string,
         resource_group: :string
       ]
     )

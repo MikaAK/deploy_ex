@@ -1,10 +1,80 @@
 - name: ffmpeg
-  block:
-    - name: Install ffmpeg
-      apt:
-        name: ffmpeg
-        update_cache: true
+  vars:
+    ffmpeg_bin_dir: "/opt/ffmpeg"
+    ffmpeg_extract_dir: "{{ ffmpeg_bin_dir }}/lib"
+    ffmpeg_archive_url: "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
+    ffmpeg_checksum_url: "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/checksums.sha256"
+    ffmpeg_archive_path: "{{ ffmpeg_bin_dir }}/ffmpeg-master-latest-linux64-gpl.tar.xz"
+    ffmpeg_checksum_path: "{{ ffmpeg_bin_dir }}/checksums.sha256"
 
+  block:
+    - name: Clean FFmpeg bin dir
+      file:
+        path: "{{ ffmpeg_bin_dir }}"
+        state: absent
+
+    - name: Ensure {{ ffmpeg_bin_dir }} exists
+      file:
+        path: "{{ ffmpeg_bin_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Download FFmpeg static archive
+      get_url:
+        url: "{{ ffmpeg_archive_url }}"
+        dest: "{{ ffmpeg_archive_path }}"
+        mode: '0644'
+
+    - name: Download FFmpeg MD5 checksum file
+      get_url:
+        url: "{{ ffmpeg_checksum_url }}"
+        dest: "{{ ffmpeg_checksum_path }}"
+        mode: '0644'
+
+    - name: Extract matching line for archive from checksums file
+      shell: |
+        grep "{{ ffmpeg_archive_path | basename }}" {{ ffmpeg_checksum_path }} > {{ ffmpeg_checksum_path }}.tmp
+      args:
+        chdir: "{{ ffmpeg_bin_dir }}"
+
+    - name: Validate FFmpeg archive checksum
+      shell: sha256sum -c {{ ffmpeg_checksum_path }}.tmp
+      args:
+        chdir: "{{ ffmpeg_bin_dir }}"
+      register: checksum_result
+      failed_when: "'OK' not in checksum_result.stdout"
+      changed_when: false
+
+    - name: Ensure {{ ffmpeg_extract_dir }} exists
+      file:
+        path: "{{ ffmpeg_extract_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Extract FFmpeg static archive
+      unarchive:
+        src: "{{ ffmpeg_archive_path }}"
+        dest: "{{ ffmpeg_extract_dir }}"
+        remote_src: yes
+        extra_opts: [--strip-components=1]
+
+    - name: Symlink ffmpeg and ffprobe to /usr/bin
+      file:
+        src: "{{ ffmpeg_extract_dir }}/bin/{{ item }}"
+        dest: "/usr/bin/{{ item }}"
+        state: link
+        force: true
+      loop:
+        - ffmpeg
+        - ffprobe
+
+    - name: Display ffmpeg version to verify global install
+      command: ffmpeg -version
+      register: ffmpeg_version_out
+
+    - name: Show ffmpeg version output
+      debug:
+        msg: "{{ ffmpeg_version_out.stdout_lines[0] | regex_search('^(ffmpeg version [^ ]+)') }}"
 
   become: yes
 

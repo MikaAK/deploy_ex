@@ -32,7 +32,7 @@ defmodule DeployEx.Terraform do
     )
   end
 
-  def find_pem_file(terraform_directory) do
+  def find_pem_file(terraform_directory, pem_file) when is_nil(pem_file) do
     res = terraform_directory
       |> Path.join("*.pem")
       |> Path.wildcard()
@@ -43,6 +43,10 @@ defmodule DeployEx.Terraform do
     else
       {:ok, res}
     end
+  end
+
+  def find_pem_file(_terraform_directory, pem_file) do
+    {:ok, pem_file}
   end
 
   def list_state(terraform_directory) do
