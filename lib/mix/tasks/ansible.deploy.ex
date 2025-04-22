@@ -29,6 +29,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
   - `copy-json-env-file` - Copy environment file and load into host environments
   - `only-local-release` - Only deploy if there's a local release available
   - `parallel` - Maximum number of concurrent ansible deploys (default: #{@playbook_max_concurrency})
+  - `target-sha` - Maximum number of concurrent ansible deploys (default: #{@playbook_max_concurrency})
   - `quiet` - Suppress output messages
   """
 
@@ -55,8 +56,9 @@ defmodule Mix.Tasks.Ansible.Deploy do
         |> reject_playbook_without_mix_exs_release
         |> Task.async_stream(fn host_playbook ->
           host_playbook
-            |> run_ansible_playbook_command(opts)
-            |> Kernel.<>(" #{ansible_args}")
+            |> build_ansible_playbook_command(opts)
+            |> Kernel.++(ansible_args)
+            |> Enum.join(" ")
             |> DeployEx.Utils.run_command(opts[:directory])
         end, max_concurrency: opts[:parallel], timeout: @playbook_timeout)
         |> DeployEx.Utils.reduce_status_tuples
@@ -76,7 +78,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
 
   defp parse_args(args) do
     {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quit, d: :directory, l: :only_local_release],
+      aliases: [f: :force, q: :quit, d: :directory, l: :only_local_release, t: :target_sha],
       switches: [
         directory: :string,
         quiet: :boolean,
@@ -84,14 +86,21 @@ defmodule Mix.Tasks.Ansible.Deploy do
         except: :keep,
         copy_json_env_file: :string,
         parallel: :integer,
-        only_local_release: :boolean
+        only_local_release: :boolean,
+        target_sha: :string
       ]
     )
 
     opts
   end
 
-  def run_ansible_playbook_command(host_playbook, opts) do
+  def build_ansible_playbook_command(host_playbook, opts) do
+    ["ansible-playbook", host_playbook]
+      |> add_copy_env_file_flag(opts)
+      |> add_target_release_sha(opts)
+  end
+
+  defp add_copy_env_file_flag(command_list, opts) do
     if opts[:copy_json_env_file] do
       json_file_path = case Path.type(opts[:copy_json_env_file]) do
         :absolute -> opts[:copy_json_env_file]
@@ -101,9 +110,17 @@ defmodule Mix.Tasks.Ansible.Deploy do
       DeployExHelpers.check_file_exists!(json_file_path)
 
 
-      "ansible-playbook #{host_playbook} --extra-vars @#{json_file_path}"
+      command_list ++ ["--extra-vars @#{json_file_path}"]
     else
-      "ansible-playbook #{host_playbook}"
+      command_list
+    end
+  end
+
+  defp add_target_release_sha(command_list, opts) do
+    if opts[:target_sha] do
+      command_list ++ ["--extra-vars \"target_release_sha=#{opts[:target_sha]}\""]
+    else
+      command_list
     end
   end
 

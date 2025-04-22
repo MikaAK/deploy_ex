@@ -116,7 +116,8 @@ to monitor it's logs remotely, and `--iex` will give you a command to connect to
 config :deploy_ex,
   aws_region: "us-west-2",
   aws_log_bucket: "#{String.replace(DeployExHelpers.underscored_project_name(), "_", "-")}-backend-logs-#{env()}",
-  aws_release_bucket: "my-app-name-elixir-deploys-env"
+  aws_release_bucket: "#{String.replace(DeployExHelpers.underscored_project_name(), "_", "-")}-elixir-deploys-{env}"
+  aws_release_state_bucket: "#{String.replace(DeployExHelpers.underscored_project_name(), "_", "-")}-release-state-#{env}"
   deploy_folder: "./deploys"
 ```
 
