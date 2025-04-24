@@ -43,6 +43,7 @@ defmodule DeployEx.SSH do
   def receive_message(return_message \\ "") do
     receive do
       {:ssh_cm, _pid, {:data, _cid, 1, data}} -> receive_message(return_message <> data)
+      {:ssh_cm, _pid, {:data, _cid, 0, data}} -> receive_message(return_message <> data)
       {:ssh_cm, _pid, {:eof, _cid}} -> receive_message(return_message)
       {:ssh_cm, _pid, {:closed, _cid}} -> receive_message(return_message)
 

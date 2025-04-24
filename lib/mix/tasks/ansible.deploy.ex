@@ -20,6 +20,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
   mix ansible.deploy
   mix ansible.deploy --only app1 --only app2
   mix ansible.deploy --except app3
+  mix ansible.deploy --target-sha 2ac12b
   ```
 
   ## Options
@@ -43,7 +44,12 @@ defmodule Mix.Tasks.Ansible.Deploy do
         |> Keyword.put(:only, Keyword.get_values(opts, :only))
         |> Keyword.put(:except, Keyword.get_values(opts, :except))
 
-      ansible_args = DeployEx.Ansible.parse_args(args)
+      ansible_args = args
+        |> DeployEx.Ansible.parse_args()
+        |> then(fn
+          "" -> []
+          arg -> [arg]
+        end)
 
       DeployExHelpers.check_file_exists!(Path.join(opts[:directory], "aws_ec2.yaml"))
 
@@ -71,7 +77,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
 
           Mix.raise(to_string(h))
 
-        _ -> nil
+        _ -> :ok
       end
     end
   end

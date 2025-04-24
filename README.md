@@ -178,7 +178,10 @@ env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
 - [x] `mix ansible.ping` - Pings ansible nodes to see if they can connect
 - [x] `mix ansible.setup` - Runs basic setup on the ansible nodes
 - [x] `mix ansible.deploy` - Deploys to your nodes via ansible from uploaded S3 releases
-- [ ] `mix ansible.rollback` - Rollback to a prior release
+- [x] `mix ansible.rollback` - Rollback to a prior release
+- [x] `mix deploy_ex.list_available_releases` - Lists all available releases in the configured AWS S3 release bucket
+- [x] `mix deploy_ex.list_app_release_history` - Shows the release history for a specific app by SSHing into the node
+- [x] `mix deploy_ex.view_current_release` - Shows the current (latest) release for a specific app by SSHing into the node
 
 ## Universial Options
 Most of these are available on any command in DeployEx
@@ -506,7 +509,7 @@ possible without his help!!
 </details>
 
 ## Goals
-- [ ] Deploy Rollbacks
+- [x] Deploy Rollbacks
 - [ ] Environment seperation (staging/prod)
 - [ ] Canary Deploys
 - [ ] Automated IP Whitelist removal lambda (from `mix deploy_ex.ssh.authorize`)
@@ -515,5 +518,5 @@ possible without his help!!
 - [ ] Static way to setup redis from apps
 - [ ] Subnet a-z dispersal in networking layer
 - [ ] S3 Backed Terraform State
-  - [ ] Needs a command run before to generate bucket
+  - [x] Needs a command run before to generate bucket
 - [ ] Automated Terraform & Ansible install on command runs

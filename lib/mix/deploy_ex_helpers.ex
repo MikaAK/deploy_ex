@@ -158,6 +158,27 @@ defmodule DeployExHelpers do
     end
   end
 
+  def run_ssh_command_with_return(terraform_directory, pem, app_name, port \\ 22, command) do
+    with {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(terraform_directory, pem),
+         {:ok, instance_ips} <- DeployEx.AwsMachine.find_instance_ips(project_name(), app_name) do
+      pem_rsa_path = Path.join(@server_ssh_pem_path, "id_rsa")
+
+      if not File.exists?(pem_rsa_path) do
+        Mix.shell().info([:yellow, "Creating pemfolder at #{@server_ssh_pem_path}"])
+
+        File.mkdir_p!(@server_ssh_pem_path)
+        File.cp!(pem_file_path, pem_rsa_path)
+      end
+
+      instance_ips
+        |> Enum.map(fn instance_ip ->
+          Mix.shell().info([:yellow, "Running #{command} on #{instance_ip}"])
+          DeployEx.SSH.run_command(instance_ip, port, @server_ssh_pem_path, command)
+        end)
+        |> DeployEx.Utils.reduce_status_tuples
+    end
+  end
+
   def run_ssh_command(terraform_directory, pem, app_name, port \\ 22, command) do
     with {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(terraform_directory, pem),
          {:ok, instance_ips} <- DeployEx.AwsMachine.find_instance_ips(project_name(), app_name) do

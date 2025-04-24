@@ -59,7 +59,7 @@
         path: "/srv/release_history.txt"
       register: release_history_file
 
-    - name: Write entry to release_history file
+    - name: Create release_history file
       copy:
         content: ""
         dest: /srv/release_history.txt
@@ -69,20 +69,11 @@
         mode: 0555
       when: current_release_file.stat.exists and not release_history_file.stat.exists
 
-    - name: Check if current release is already in release_history
-      shell: |
-        grep -Fxq "$(cat /srv/current_release.txt)" /srv/release_history.txt
-      register: release_in_history
-      ignore_errors: true
-      changed_when: false
-      when: current_release_file.stat.exists and release_history_file.stat.exists
-
     - name: Write entry to release_history file
       shell: cat /srv/current_release.txt >> /srv/release_history.txt
       when:
         - current_release_file.stat.exists
         - release_history_file.stat.exists
-        - release_in_history.rc != 0
 
     - name: Write current release file
       ansible.builtin.copy:
@@ -134,9 +125,10 @@
         path: /srv/unpack-directory
         state: absent
 
-    - name: Start {{ app_name }} service
+    - name: Start {{ app_name }} service with {{ aws_file_name.stdout_lines[0] }}
       systemd:
         daemon_reload: true
         name: "{{ app_name }}"
         state: started
+
   become: true

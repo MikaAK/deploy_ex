@@ -19,7 +19,7 @@ defmodule DeployEx.AwsBucket do
     case ExAws.request(S3.list_buckets(), region: region) do
       {:ok, %{body: %{buckets: buckets}}} -> {:ok, buckets}
       {:error, {:http_error, code, message}} ->
-        {:error, handle_error(code, message, %{bucket: bucket_name})}
+        {:error, handle_error(code, message, %{region: region})}
     end
   end
 
@@ -27,7 +27,7 @@ defmodule DeployEx.AwsBucket do
     case ExAws.request(S3.list_objects(bucket_name), region: region) do
       {:ok, _} = res -> res
       {:error, {:http_error, code, message}} ->
-        {:error, handle_error(code, message, %{bucket: bucket_name})}
+        {:error, handle_error(code, message, %{region: region, bucket: bucket_name})}
     end
   end
 
@@ -35,7 +35,7 @@ defmodule DeployEx.AwsBucket do
     case ExAws.request(S3.delete_bucket(bucket_name), region: region) do
       {:ok, _} -> :ok
       {:error, {:http_error, code, message}} ->
-        {:error, handle_error(code, message, %{bucket: bucket_name})}
+        {:error, handle_error(code, message, %{region: region, bucket: bucket_name})}
     end
   end
 
@@ -47,11 +47,11 @@ defmodule DeployEx.AwsBucket do
     ErrorMessage.not_found("bucket not found", %{bucket: bucket_name, message: message})
   end
 
-  defp handle_error(code, message, %{bucket: bucket_name}) do
+  defp handle_error(code, message, %{region: region, bucket: bucket_name}) do
     %ErrorMessage{
       code: ErrorMessage.http_code_reason_atom(code),
       message: message,
-      details: %{bucket: bucket_name}
+      details: %{region: region, bucket: bucket_name}
     }
   end
 end

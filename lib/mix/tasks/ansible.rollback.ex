@@ -1,7 +1,7 @@
 defmodule Mix.Tasks.Ansible.Rollback do
   use Mix.Task
 
-  @ansible_default_path DeployEx.Config.ansible_folder_path()
+  @terraform_default_path DeployEx.Config.terraform_folder_path()
 
   @shortdoc "Rollsback an ansible host to a previous sha"
   @moduledoc """
@@ -13,41 +13,43 @@ defmodule Mix.Tasks.Ansible.Rollback do
   ## Example
   ```bash
   mix ansible.rollback my_app
-  mix ansible.rollback my_app --step 2
+  mix ansible.rollback my_app --select
   mix ansible.rollback my_app --sha 2ac12b
   ```
 
   ## Options
-  - `directory` - Directory containing ansible playbooks (default: #{@ansible_default_path})
+  - `directory` - Directory containing terraform playbooks (default: #{@terraform_default_path})
   - `copy-json-env-file` - Copy environment file and load into host environments
   - `target-sha` - Target github sha
   - `quiet` - Suppress output messages
   """
 
   def run(args) do
+    :ssh.start()
+    Application.ensure_all_started(:hackney)
+    Application.ensure_all_started(:telemetry)
+    Application.ensure_all_started(:ex_aws)
+
     with :ok <- DeployExHelpers.check_in_umbrella() do
       {opts, node_name_args} = parse_args(args)
 
       opts = opts
-        |> Keyword.put_new(:directory, @ansible_default_path)
+        |> Keyword.put_new(:directory, @terraform_default_path)
         |> Keyword.put_new(:aws_region, DeployEx.Config.aws_region())
         |> Keyword.put_new(:aws_release_bucket, DeployEx.Config.aws_release_bucket())
 
       with {:ok, app_name} <- DeployExHelpers.find_project_name(node_name_args),
+           _ = Mix.shell().info([:yellow, "Fetching ", :bright, app_name, :reset, :yellow, " releases from S3..."]),
            {:ok, releases} <- DeployEx.ReleaseUploader.fetch_all_remote_releases(opts),
-           {:ok, latest_releases} <- DeployExHelpers.run_ssh_command(
-             opts[:directory],
-             opts[:pem],
-             app_name,
-             DeployEx.ReleaseController.list_releases()
-           ),
-           :ok <- check_any_releases(latest_releases),
-           {:ok, target_sha} <- validate_target_sha_releaes_exists(releases, select_target_sha(latest_releases, opts)) do
+           {:ok, pem} <- DeployEx.Terraform.find_pem_file(opts[:directory], opts[:pem]),
+           {:ok, latest_releases} <- fetch_app_release_history(app_name, pem, opts),
+           {:ok, latest_shas} <- parse_and_check_any_releases(latest_releases),
+           {:ok, target_sha} <- validate_target_sha_release_exists(releases, select_target_sha(latest_shas, opts)) do
         Mix.shell().info([
           :yellow, "Starting rollback to ", :bright, target_sha, :reset, :yellow, " for ", :bright, app_name, :reset
         ])
 
-        with :ok <- Mix.Tasks.Ansible.Deploy.run(args <> "-t #{target_sha}") do
+        with :ok <- Mix.Tasks.Ansible.Deploy.run(["-t", target_sha, "--only", app_name])  |> IO.inspect do
           Mix.shell().info([
             :green, "Rollback completed to ", :bright, target_sha, :reset,
             :green, " for ", :bright, app_name, :reset
@@ -72,32 +74,39 @@ defmodule Mix.Tasks.Ansible.Rollback do
     )
   end
 
-  defp check_any_releases(releases) do
-    if Enum.empty?(releases) do
+  defp parse_and_check_any_releases(releases) do
+    release_shas = parse_releases(releases)
+
+    if Enum.empty?(release_shas) do
       {:error, ErrorMessage.not_found("no releases found")}
     else
-      :ok
+      {:ok, release_shas}
     end
   end
 
-  defp select_target_sha(latest_releases, opts) do
-    release_shas = latest_releases
-      |> Enum.map(&(String.split(&1, "-")))
-      |> Enum.map(fn [timestamp, target_sha | _] -> {timestamp, target_sha} end)
-      |> Enum.uniq_by(fn {_timestamp, target_sha} -> target_sha end)
+  defp fetch_app_release_history(app_name, pem, opts) do
+    Mix.shell().info([:yellow, "Fetching ", :bright, app_name, :reset, :yellow, " release history from elixir machines..."])
 
-    select_target_release(release_shas, opts)
+    DeployExHelpers.run_ssh_command_with_return(
+      opts[:directory],
+      pem,
+      app_name,
+      DeployEx.ReleaseController.list_releases()
+    )
   end
 
-  defp select_target_release(release_shas, opts) do
+  defp select_target_sha(release_shas, opts) do
     if opts[:select] do
-      choice_map = Enum.map(release_shas, fn {timestamp, target_sha} ->
-        timestamp = timestamp |> DateTime.from_unix! |> Calendar.strftime("%Y-%m-%d %H:%M:%S")
+      choice_map = Enum.into(release_shas, %{}, fn {timestamp, target_sha} ->
+        timestamp = timestamp
+          |> String.to_integer
+          |> DateTime.from_unix!
+          |> Calendar.strftime("%Y-%m-%d %H:%M:%S")
 
         {"#{timestamp} - #{target_sha}", target_sha}
       end)
 
-      [choice] = DeployExHelpers.prompt_for_choice(Map.keys(choice_map), false)
+      choice = DeployExHelpers.prompt_for_choice(choice_map |> Map.keys |> Enum.reverse, false)
 
       Map.get(choice_map, choice)
     else
@@ -105,11 +114,22 @@ defmodule Mix.Tasks.Ansible.Rollback do
     end
   end
 
-  def validate_target_sha_releaes_exists(releases, target_sha) do
-    if Enum.member?(releases, target_sha) do
+  def validate_target_sha_release_exists(releases, target_sha) do
+    target_shas = releases |> parse_releases |> Enum.map(fn {_, target_sha} -> target_sha end)
+
+    if Enum.member?(target_shas, target_sha) do
       {:ok, target_sha}
     else
       {:error, ErrorMessage.not_found("release not found")}
     end
+  end
+
+  defp parse_releases(releases) do
+    releases
+      |> Enum.join("\n")
+      |> String.split("\n")
+      |> Enum.map(&(&1 |> Path.basename |> String.split("-")))
+      |> Enum.reject(&(&1 === [""] or is_nil(&1)))
+      |> Enum.map(fn [timestamp, target_sha | _] -> {timestamp, target_sha} end)
   end
 end
