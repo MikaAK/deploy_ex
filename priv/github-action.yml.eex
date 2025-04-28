@@ -62,16 +62,16 @@ jobs:
       - name: Run Terraform Init
         run: mix terraform.init -y
 
-      - name: Run Terraform Build & Apply
-        run: mix terraform.build --force && mix terraform.apply --auto-approve
+      <%# - name: Run Terraform Build & Apply %>
+      <%#   run: mix terraform.build --force && mix terraform.apply --auto-approve %>
 
-      - name: Run Ansible Build
-        run: mix ansible.build --force --new-only
+      <%# - name: Run Ansible Build %>
+      <%#   run: mix ansible.build --force --new-only %>
 
-      - name: Maybe Github Update
-        run: |
-          chmod +x ./.github/github-action-maybe-commit-terraform-changes.sh &&
-          ./.github/github-action-maybe-commit-terraform-changes.sh
+      <%# - name: Maybe Github Update %>
+      <%#   run: | %>
+      <%#     chmod +x ./.github/github-action-maybe-commit-terraform-changes.sh && %>
+      <%#     ./.github/github-action-maybe-commit-terraform-changes.sh %>
 
       - name: create-json
         id: create-json
@@ -97,7 +97,7 @@ jobs:
           chmod 0400 <%= @pem_file_path %>
 
       - name: Run Ansible Deploy
-        run: mix ansible.deploy -l
+        run: mix ansible.deploy -l --target-sha $(git rev-parse --short ${{ github.sha }})
 
       - name: Deauthorize AWS SSH
         run: mix deploy_ex.ssh.authorize -r

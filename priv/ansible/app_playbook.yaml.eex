@@ -1,4 +1,6 @@
 - hosts: group_<%= @app_name %>
+  environment:
+    AWS_USE_DUALSTACK_ENDPOINT: true
   vars:
     app_name: "<%= @app_name %>"
     bucket_name: "<%= @aws_release_bucket %>"

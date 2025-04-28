@@ -8,4 +8,14 @@
         group: root
         mode: '0644'
 
+    - name: Add dualstack to boto config
+      ansible.builtin.copy:
+        content: |
+          [profile default]
+          s3_use_dualstack_endpoint = true
+        dest: ~/.aws/config
+        owner: root
+        group: root
+        mode: '0644'
+
   become: true

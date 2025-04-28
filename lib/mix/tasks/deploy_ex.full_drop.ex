@@ -23,6 +23,8 @@ defmodule Mix.Tasks.DeployEx.FullDrop do
     with :ok <- DeployExHelpers.check_in_umbrella() do
       DeployExHelpers.check_file_exists!("./deploys/terraform")
 
+      Mix.Tasks.Terraform.DropStateBucket.run(args)
+
       with :ok <- Mix.Tasks.Terraform.Drop.run(args) do
         File.rm_rf!("./deploys")
 

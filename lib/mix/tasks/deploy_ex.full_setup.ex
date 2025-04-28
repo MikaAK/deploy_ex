@@ -35,6 +35,7 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
   alias Mix.Tasks.{Ansible, Terraform}
 
   @pre_setup_commands [
+    Terraform.CreateStateBucket,
     Terraform.Build,
     Terraform.Apply,
     Ansible.Build
