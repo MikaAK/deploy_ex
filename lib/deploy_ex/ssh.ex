@@ -1,14 +1,37 @@
 defmodule DeployEx.SSH do
-  def connect_to_ssh(ip, port \\ 22, key_directory, user \\ "admin") do
-    :ssh.connect(String.to_charlist(ip), port,
-      user: String.to_charlist(user),
-      user_dir: String.to_charlist(key_directory)
-    )
+  def connect_to_ssh(ip, port \\ 22, pem_file_path, user \\ "admin") do
+    :ssh.connect(to_charlist(ip), port, maybe_add_ipv6(ip, [
+      {:user, to_charlist(user)},
+      {:user_dir, pem_file_path |> Path.dirname |> to_charlist},
+      {:user_interaction, false},
+      {:silently_accept_hosts, true}
+    ]))
   end
 
-  def run_command(ip, port \\ 22, key_directory, command) do
-    case connect_to_ssh(ip, port, key_directory) do
-      {:error, reason} -> ErrorMessage.bad_gateway("couldn't connect over ssh: #{reason}")
+  defp maybe_add_ipv6(ip_string, opts) do
+    if detect_ip_version(ip_string) == :ipv6 do
+      [:inet6 | opts]
+    else
+      opts
+    end
+  end
+
+  defp detect_ip_version(ip_string) when is_binary(ip_string) do
+    case :inet.parse_address(to_charlist(ip_string)) do
+      {:ok, {_, _, _, _}} ->
+        :ipv4
+
+      {:ok, {_, _, _, _, _, _, _, _}} ->
+        :ipv6
+
+      {:error, _reason} ->
+        :invalid
+    end
+  end
+
+  def run_command(ip, port \\ 22, pem_file_path, command) do
+    case connect_to_ssh(ip, port, pem_file_path) do
+      {:error, reason} -> {:error, ErrorMessage.bad_gateway("couldn't connect over ssh: #{reason}")}
 
       {:ok, conn} ->
         conn

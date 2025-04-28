@@ -170,12 +170,16 @@ defmodule DeployExHelpers do
         File.cp!(pem_file_path, pem_rsa_path)
       end
 
-      instance_ips
+      res = instance_ips
         |> Enum.map(fn instance_ip ->
-          Mix.shell().info([:yellow, "Running #{command} on #{instance_ip}"])
-          DeployEx.SSH.run_command(instance_ip, port, @server_ssh_pem_path, command)
+          Mix.shell().info([:yellow, "Running '#{command}' on #{instance_ip}"])
+          DeployEx.SSH.run_command(instance_ip, port, pem_rsa_path, command)
         end)
         |> DeployEx.Utils.reduce_status_tuples
+
+      with {:error, [error]} <- res do
+        {:error, error}
+      end
     end
   end
 
