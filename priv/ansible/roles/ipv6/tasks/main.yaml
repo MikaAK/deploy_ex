@@ -1,0 +1,11 @@
+- name: ipv6
+  block:
+    - name: Create ipv6 config file
+      ansible.builtin.copy:
+        content: export AWS_USE_DUALSTACK_ENDPOINT=true
+        dest: /etc/profile.d/aws-ipv6.sh
+        owner: root
+        group: root
+        mode: '0644'
+
+  become: true

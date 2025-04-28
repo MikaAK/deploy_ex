@@ -5,7 +5,7 @@
     - name: Populate service facts
       service_facts:
 
-    - name: Find AWS file for {{ app_name }} in S3 (by SHA if set, else latest) and set it into variable
+    - name: Find AWS file for {{ app_name }} in S3 {% if target_release_sha | length > 0 %} with sha {{ target_release_sha }} {% else %} latest {% endif %} and set it into variable
       ansible.builtin.script:
         cmd: >
           {% if target_release_sha | length > 0 %}
