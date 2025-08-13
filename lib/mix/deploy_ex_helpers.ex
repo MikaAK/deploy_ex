@@ -214,13 +214,16 @@ defmodule DeployExHelpers do
     prompt = "Make a selection between 0 and #{length(choices) - 1}"
     prompt = if select_all?, do: "#{prompt}, or type a to select all:", else: prompt
 
-    value = String.trim(Mix.shell().prompt(prompt))
-    valid_choices = Enum.map(0..(length(choices) - 1), &to_string/1)
-    valid_choices = if select_all?, do: ["a" | valid_choices], else: valid_choices
+    value = prompt |> Mix.shell().prompt() |> String.trim()
 
     cond do
-      value in valid_choices -> value |> String.to_integer |> then(&Enum.at(choices, &1))
+      value === "" -> prompt_for_choice(choices, select_all?)
+
       value === "a" -> choices
+
+      String.to_integer(value) in Range.new(0, length(choices) - 1) ->
+        value |> String.to_integer |> then(&[Enum.at(choices, &1)])
+
       true -> prompt_for_choice(choices, select_all?)
     end
   end

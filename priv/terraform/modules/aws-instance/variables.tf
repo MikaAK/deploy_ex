@@ -31,6 +31,13 @@ variable "disable_public_ip" {
   nullable    = false
 }
 
+variable "disable_ipv6" {
+  description = "Disables instance from generating an IPv6 address"
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "subnet_ids" {
   description = "Subnet IDs for EC2 instances"
   type        = list(string)
@@ -124,5 +131,12 @@ variable "elb_instance_port" {
   description = "Changes the application port targeted by the load balancer"
   type        = number
   default     = 80
+  nullable    = false
+}
+
+variable "enable_elb_https" {
+  description = "Enables the load balancer to turn on http (defaults to true)"
+  type        = bool
+  default     = true
   nullable    = false
 }

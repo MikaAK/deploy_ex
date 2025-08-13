@@ -16,6 +16,18 @@ variable "resource_group" {
   default     = "<%= DeployExHelpers.upper_title_case(@app_name) %> Backend"
 }
 
+variable "enable_ipv4" {
+  description = "Enables IPv4 for the VPC"
+  type        = bool
+  default     = false
+}
+
+variable "disable_ipv6" {
+  description = "Disables IPv6 for the VPC"
+  type        = bool
+  default     = false
+}
+
 variable "resource_databases" {
   description = "Map of database configurations"
   type = map(object({
@@ -84,12 +96,14 @@ variable "<%= @app_name %>_project" {
 
     instance_count = optional(number)
     instance_type  = optional(string)
+    instance_ami   = optional(string)
 
     private_ip        = optional(string)
     enable_eip        = optional(bool)
     enable_ebs        = optional(bool)
     enable_lb         = optional(bool)
     enable_lb_https   = optional(bool)
+    disable_ipv6      = optional(bool)
     disable_public_ip = optional(bool)
 
     elb_port                    = optional(number)

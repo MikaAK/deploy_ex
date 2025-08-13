@@ -16,8 +16,9 @@ output "instances" {
 
 <%= if @use_db do %>output "databases" {
   description = "Database Info"
-  value       = { for p in sort(keys(var.resource_databases)) : p => {
-    "database": aws_db_instance.rds_database[p].db_name,
-    "endpoint": aws_db_instance.rds_database[p].endpoint
-  }}
+  value = { for p in sort(keys(var.resource_databases)) : p => {
+    "endpoint" : module.rds_database[p].endpoint,
+    "username" : module.rds_database[p].database_username,
+    "database_name" : module.rds_database[p].database_name
+  } }
 } <% end %>

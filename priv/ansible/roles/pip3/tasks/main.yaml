@@ -13,6 +13,7 @@
 
     - name: Install setuptools
       pip:
+        extra_args: --break-system-packages
         name: setuptools
         executable: pip3
   become: true
