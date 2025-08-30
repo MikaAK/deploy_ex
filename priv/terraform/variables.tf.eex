@@ -46,12 +46,12 @@ variable "resource_databases" {
     tags                                       = optional(map(string))
   }))
 
-  default = {
+  default = <%= if @use_db do %>{
     <%= @app_name %>_db = {
       name              = "<%= DeployEx.Utils.upper_title_case(@app_name) %> Main"
       database_username = "<%= @app_name %>"
     }
-  }
+  }<% else %>{}<% end %>
 }
 
 

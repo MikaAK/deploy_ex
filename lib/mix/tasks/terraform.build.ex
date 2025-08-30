@@ -64,6 +64,13 @@ defmodule Mix.Tasks.Terraform.Build do
         app_name: DeployExHelpers.underscored_project_name(),
         kebab_app_name: DeployExHelpers.kebab_project_name(),
 
+        use_loki: !opts[:no_loki],
+        use_grafana: !opts[:no_grafana],
+        use_prometheus: !opts[:no_prometheus],
+        use_redis: !opts[:no_redis],
+        use_sentry: !opts[:no_sentry],
+        use_database: !opts[:no_database],
+
         terraform_app_releases_variables: terraform_app_releases_variables,
         terraform_release_variables: terraform_app_releases_variables,
         terraform_redis_variables: terraform_redis_variables(opts),
