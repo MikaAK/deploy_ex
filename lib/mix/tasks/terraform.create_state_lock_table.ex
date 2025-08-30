@@ -21,7 +21,7 @@ defmodule Mix.Tasks.Terraform.CreateStateLockTable do
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, tables} <- AwsDynamodb.list_tables() do
-      table_name = DeployEx.Config.aws_terraform_state_lock_table()
+      table_name = DeployEx.Config.aws_release_state_lock_table()
       region = DeployEx.Config.aws_region()
 
       if table_name in tables do
@@ -33,7 +33,7 @@ defmodule Mix.Tasks.Terraform.CreateStateLockTable do
 
         :ok
       else
-        case DeployEx.AwsDynamodb.create_table(region, table_name) do
+        case DeployEx.AwsDynamodb.create_table(region, table_name, "LockID", :string) do
           {:error, error} -> Mix.raise(to_string(error))
 
           :ok ->

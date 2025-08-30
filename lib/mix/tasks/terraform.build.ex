@@ -30,6 +30,8 @@ defmodule Mix.Tasks.Terraform.Build do
       |> Keyword.put_new(:aws_region, @default_aws_region)
       |> Keyword.put_new(:aws_release_bucket, @default_aws_release_bucket)
       |> Keyword.put_new(:aws_log_bucket, DeployEx.Config.aws_log_bucket())
+      |> Keyword.put_new(:aws_release_state_bucket, DeployEx.Config.aws_release_state_bucket())
+      |> Keyword.put_new(:aws_release_state_lock_table, DeployEx.Config.aws_release_state_lock_table())
       |> Keyword.put_new(:env, Mix.env())
 
 
@@ -54,6 +56,9 @@ defmodule Mix.Tasks.Terraform.Build do
 
         release_bucket_name: opts[:aws_release_bucket],
         logging_bucket_name: opts[:aws_log_bucket],
+
+        aws_release_state_bucket: opts[:aws_release_state_bucket],
+        aws_release_state_lock_table: opts[:aws_release_state_lock_table],
 
         pem_app_name: "#{DeployExHelpers.kebab_project_name()}-#{random_bytes}",
         app_name: DeployExHelpers.underscored_project_name(),

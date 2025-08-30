@@ -36,6 +36,7 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
 
   @pre_setup_commands [
     Terraform.CreateStateBucket,
+    Terraform.CreateStateLockTable,
     Terraform.Build,
     Terraform.Apply,
     Terraform.Refresh,

@@ -19,14 +19,14 @@
     - name: Download awscli installer
       unarchive:
         src: https://awscli.amazonaws.com/awscli-exe-linux-x86_64-{{ awscli_version }}.zip
-        dest: /tmp
+        dest: /var/tmp
         remote_src: true
       when: (not awscli_exe.stat.exists) or (awscli_current_version.stdout != awscli_version)
 
     - name: Install awscli {{ awscli_version }}
       command: ./aws/install --update
       args:
-        chdir: /tmp
+        chdir: /var/tmp
       when: (not awscli_exe.stat.exists) or (awscli_current_version.stdout != awscli_version)
 
     - name: Install boto3
@@ -37,7 +37,7 @@
 
     - name: Cleanup awscli installer
       file:
-        path: /tmp/aws
+        path: /var/tmp/aws
         state: absent
 
     - name: Create .aws settings directory

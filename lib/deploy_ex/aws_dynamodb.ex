@@ -3,21 +3,14 @@ defmodule DeployEx.AwsDynamodb do
 
   @type table_res :: %{table_name: String.t(), table_status: String.t()}
 
-  @spec create_table(String.t()) :: ErrorMessage.t_res(any)
-  @spec create_table(String.t(), String.t()) :: ErrorMessage.t_res(any)
-  def create_table(region \\ DeployEx.Config.aws_region(), table_name) do
-    table_spec = %{
-      table_name: table_name,
-      key_schema: [
-        %{attribute_name: "LockID", key_type: "HASH"}
-      ],
-      attribute_definitions: [
-        %{attribute_name: "LockID", attribute_type: "S"}
-      ],
-      billing_mode: "PAY_PER_REQUEST"
-    }
+  @spec create_table(String.t(), String.t(), String.t(), String.t(), Keyword.t()) :: ErrorMessage.t_res(any)
+  def create_table(region \\ DeployEx.Config.aws_region(), table_name, key_name, key_type, opts \\ []) do
+    opts = Keyword.put_new(opts, :billing_mode, :pay_per_request)
 
-    case ExAws.request(Dynamo.create_table(table_spec), region: region) do
+    case ExAws.request(
+      Dynamo.create_table(table_name, key_name, %{key_name => key_type}, 1, 1, opts[:billing_mode]),
+      region: region
+    ) do
       {:ok, _} -> :ok
       {:error, {:http_error, code, message}} ->
         {:error, handle_error(code, message, %{table: table_name})}
@@ -38,7 +31,7 @@ defmodule DeployEx.AwsDynamodb do
   @spec describe_table(String.t(), String.t()) :: ErrorMessage.t_res(table_res)
   def describe_table(region \\ DeployEx.Config.aws_region(), table_name) do
     case ExAws.request(Dynamo.describe_table(table_name), region: region) do
-      {:ok, %{"Table" => table}} -> 
+      {:ok, %{"Table" => table}} ->
         {:ok, %{
           table_name: table["TableName"],
           table_status: table["TableStatus"]
@@ -60,10 +53,10 @@ defmodule DeployEx.AwsDynamodb do
     cond do
       String.contains?(message, "already exists") ->
         ErrorMessage.conflict("table already exists", %{table: table_name, message: message})
-      
+
       String.contains?(message, "ValidationException") ->
         ErrorMessage.bad_request("invalid table configuration", %{table: table_name, message: message})
-      
+
       true ->
         ErrorMessage.bad_request(message, %{table: table_name})
     end
