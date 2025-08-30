@@ -23,8 +23,6 @@ defmodule Mix.Tasks.DeployEx.FullDrop do
     with :ok <- DeployExHelpers.check_in_umbrella() do
       DeployExHelpers.check_file_exists!("./deploys/terraform")
 
-      Mix.Tasks.Terraform.DropStateBucket.run(args)
-
       with :ok <- Mix.Tasks.Terraform.Drop.run(args) do
         File.rm_rf!("./deploys")
 
@@ -36,6 +34,9 @@ defmodule Mix.Tasks.DeployEx.FullDrop do
       remove_if_exists(".github/workflows/deploy-ex-release.yml")
       remove_if_exists(".github/github-action-maybe-commit-terraform-changes.sh")
       remove_if_exists(".github/github-actions-secrets-to-json-file.sh")
+
+      Mix.Tasks.Terraform.DropStateBucket.run(args)
+      Mix.Tasks.Terraform.DropStateLockTable.run(args)
     end
   end
 

@@ -59,6 +59,10 @@ jobs:
       - name: Compile Project for Release
         run: env RELEASE_BUILD=true $(./.github/github-action-secrets-to-env.sh env.json) mix compile --warnings-as-errors
 
+      - name: Allow folder permissions
+        run: |
+          git config --global --add safe.directory /__w/${{ github.repository }}/${{ github.repository }}
+
       - name: Run Terraform Init
         run: mix terraform.init -y
 
