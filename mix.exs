@@ -25,6 +25,7 @@ defmodule DeployEx.MixProject do
       {:error_message, "~> 0.2"},
       {:ex_aws, "~> 2.3"},
       {:ex_aws_s3, "~> 2.3"},
+      {:ex_aws_dynamo, "~> 4.2"},
       {:ex_aws_ec2, "~> 2.0"},
       {:ex_aws_rds, "~> 2.0"},
       {:configparser_ex, ">= 4.0.0"},
