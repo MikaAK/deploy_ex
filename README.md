@@ -382,6 +382,13 @@ possible without his help!!
 
 ## Troubleshooting
 <details>
+  <summary>Ansible setup is hanging forever</summary>
+
+  With debian 13 the tmp folder behaviour changed and small nodes sometimes run out of space. Ssh onto the server using `eval "$(mix deploy_ex.ssh -s --root app)"`and check the /tmp folder with `df -h`. If 100% run `rm -rf /tmp/*`
+
+</details>
+
+<details>
   <summary>Ansible throwing errors about not matching host patterns or you can't connect with `deploy_ex.ssh`</summary>
 
   Sometimes nodes change public ips, to refresh them you can run `mix terraform.refresh`
