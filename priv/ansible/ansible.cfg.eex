@@ -5,7 +5,6 @@ roles_path = ./roles
 deprecation_warnings = False
 private_key_file = <%= @pem_file_path %>
 host_key_checking = False
-interpreter_python = auto_slient
 # log_path = /var/log/syslog
 
 [inventory]

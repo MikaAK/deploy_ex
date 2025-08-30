@@ -33,6 +33,7 @@ module "ec2_instance" {
   enable_elb        = try(each.value.enable_lb, null)
   enable_elb_https  = try(each.value.enable_lb_https, null)
   disable_public_ip = try(each.value.disable_public_ip, null)
+  disable_ipv6      = try(var.disable_ipv6, each.value.disable_ipv6, null)
 
   elb_port          = try(each.value.elb_port, null)
   elb_instance_port = try(each.value.elb_instance_port, null)
