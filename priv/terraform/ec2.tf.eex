@@ -1,11 +1,11 @@
 # Pulls debian image from AWS AMI
-data "aws_ami" "debian-11" {
+data "aws_ami" "debian-13" {
   most_recent = true
   owners      = ["136693071363"]
 
   filter {
     name   = "name"
-    values = ["debian-11*amd64*"]
+    values = ["debian-13*amd64*"]
   }
 }
 
@@ -25,7 +25,7 @@ module "ec2_instance" {
   instance_ami                = coalesce(
     try(each.value.instance_ami, null),
     # "ADD AMI HASH WHEN YOU GET ONE",
-    data.aws_ami.debian-11.id
+    data.aws_ami.debian-13.id
   )
 
   enable_eip        = try(each.value.enable_eip, null)
