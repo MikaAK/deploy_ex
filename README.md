@@ -275,7 +275,7 @@ Fish:
 ```fish
 function my-app-ssh
   pushd ~/Documents/path/to/project &&
-  set ssh_command (mix deploy_ex.ssh $argv) &&
+  set ssh_command (mix deploy_ex.ssh $argv -s) &&
   eval $ssh_command &&
   popd
 end
