@@ -13,7 +13,7 @@ variable "project_name" {
 variable "resource_group" {
   description = "Value of the Group tag for all resources"
   type        = string
-  default     = "<%= DeployExHelpers.upper_title_case(@app_name) %> Backend"
+  default     = "<%= DeployEx.Utils.upper_title_case(@app_name) %> Backend"
 }
 
 variable "enable_ipv4" {
@@ -48,7 +48,7 @@ variable "resource_databases" {
 
   default = {
     <%= @app_name %>_db = {
-      name              = "<%= DeployExHelpers.upper_title_case(@app_name) %> Main"
+      name              = "<%= DeployEx.Utils.upper_title_case(@app_name) %> Main"
       database_username = "<%= @app_name %>"
     }
   }
@@ -62,12 +62,12 @@ variable "resource_buckets" {
   default = {
     <%= if @terraform_loki_variables !== "" do %>logger = {
       bucket_name       = "<%= @logging_bucket_name %>"
-      bucket_title_name = "<%= DeployExHelpers.upper_title_case(@logging_bucket_name) %>"
+      bucket_title_name = "<%= DeployEx.Utils.upper_title_case(@logging_bucket_name) %>"
     },<% end %>
 
     releases = {
       bucket_name       = "<%= @release_bucket_name %>"
-      bucket_title_name = "<%= DeployExHelpers.upper_title_case(@release_bucket_name) %>"
+      bucket_title_name = "<%= DeployEx.Utils.upper_title_case(@release_bucket_name) %>"
     }
   }
 }
