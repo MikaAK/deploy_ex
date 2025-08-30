@@ -3,3 +3,4 @@ bucket_name: ""
 target_release_sha: ""
 app_port: 80
 extra_env: []
+open_files_limit: 65536

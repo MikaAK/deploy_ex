@@ -4,26 +4,6 @@
   - name: Populate service facts
     service_facts:
 
-  - name: Configure vm.overcommit_memory
-    sysctl:
-      name: vm.overcommit_memory
-      value: '1'
-      state: present
-      reload: true
-
-  - name: Disable Transparent Huge Pages (THP)
-    shell: |
-      echo madvise > /sys/kernel/mm/transparent_hugepage/enabled
-    changed_when: false
-
-  - name: Add THP disable to rc.local
-    lineinfile:
-      path: /etc/rc.local
-      line: 'echo madvise > /sys/kernel/mm/transparent_hugepage/enabled'
-      create: yes
-      mode: '0755'
-      insertbefore: 'exit 0'
-
   - name: Install Redis packages
     apt:
       name:
@@ -57,36 +37,48 @@
 
   - name: Add source repository into sources list
     shell: |
-      echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/redis.list
+      echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb bullseye main" | tee /etc/apt/sources.list.d/redis.list
     when: redis_stack_enabled and not redis_stack_source_list.stat.exists
+
+  - name: Add bullseye repo (deb822) for libssl1.1 only
+    deb822_repository:
+      name: debian-bullseye
+      types: [deb]
+      uris: https://deb.debian.org/debian
+      suites: [bullseye]
+      components: [main]
+      enabled: true
+      state: present
+
+  - name: Pin libssl1.1 so only that package can come from bullseye
+    copy:
+      dest: /etc/apt/preferences.d/libssl1.1.pref
+      mode: '0644'
+      content: |
+        Package: libssl1.1
+        Pin: release n=bullseye
+        Pin-Priority: 1001
+
+        Package: *
+        Pin: release n=bullseye
+        Pin-Priority: -10
+
+  - name: Update apt cache
+    apt:
+      update_cache: true
+      cache_valid_time: 0
+
+  - name: Install libssl1.1 runtime
+    apt:
+      name: libssl1.1
+      state: present
 
   - name: Install Redis Stack
     apt:
       name: redis-stack-server
       update_cache: true
-      state: latest
+      state: present
     when: redis_stack_enabled
-
-  - name: Copy redis-stack.service file to /etc/systemd/system/redis-stack-server.servics
-    copy:
-      src: redis-stack.service
-      dest: /etc/systemd/system/redis-stack-server.service
-      mode: 0644
-    when: redis_stack_enabled
-
-  - name: Add redis-stack.conf file to /etc/redis-stack.conf
-    template:
-      src: redis-stack.conf
-      dest: /etc/redis-stack.conf
-      mode: 0644
-    when: redis_stack_enabled
-
-  - name: Copy redis.service file to /etc/systemd/system/redis-server.servics
-    copy:
-      src: redis.service
-      dest: /etc/systemd/system/redis-server.service
-      mode: 0644
-    when: not redis_stack_enabled
 
   - name: Add redis.conf file to /etc/redis/redis.conf
     template:
@@ -95,6 +87,15 @@
       owner: root
       group: root
       mode: o+r
+
+  - name: Copy redis-stack.service to /etc/systemd/system/redis-stack.service
+    copy:
+      src: redis-stack.service
+      dest: /etc/systemd/system/redis-stack.service
+      owner: root
+      group: root
+      mode: 0644
+    when: redis_stack_enabled
 
   - name: Run ulimit -n 65536
     shell: ulimit -n 65536 # noqa command-instead-of-shell
@@ -126,40 +127,30 @@
 
   - name: Stop redis service
     systemd:
-      name: redis-server
+      name: redis
       state: stopped
-      enabled: no
-
-  - name: Enable redis service
-    systemd:
-      name: redis-server
-      enabled: yes
-      daemon_reload: yes
-    when: not redis_stack_enabled
 
   - name: Start redis service
     systemd:
-      name: redis-server
+      name: redis
       state: started
     when: not redis_stack_enabled
 
-  - name: Stop redis stack service
-    systemd:
-      name: redis-stack-server
-      state: stopped
-      enabled: no
-    when: redis_stack_enabled
-
   - name: Enable redis stack service
     systemd:
-      name: redis-stack-server
+      name: redis-stack
       enabled: true
-      daemon_reload: true
+    when: redis_stack_enabled
+
+  - name: Stop redis stack service
+    systemd:
+      name: redis-stack
+      state: stopped
     when: redis_stack_enabled
 
   - name: Start redis stack service
     systemd:
-      name: redis-stack-server
+      name: redis-stack
       state: started
     when: redis_stack_enabled
 
@@ -208,5 +199,4 @@
     systemd:
       name: redis-exporter
       state: started
-
   become: true

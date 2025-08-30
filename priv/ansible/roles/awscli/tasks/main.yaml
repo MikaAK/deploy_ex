@@ -48,4 +48,45 @@
     - name: Set AWS CLI Credentials
       shell: echo "[default]\naws_access_key_id = {{ aws_credentials['AWS_ACCESS_KEY_ID'] }}\naws_secret_access_key = {{ aws_credentials['AWS_SECRET_ACCESS_KEY'] }}" >  /root/.aws/credentials
 
+    - name: Ensure systemd-networkd directory exists
+      file:
+        path: /etc/systemd/network
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install systemd-networkd DHCP config to alow for hostname DNS lookup
+      copy:
+        dest: /etc/systemd/network/10-ec2-accept-domains.network
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Match]
+          Name=en*
+
+          [Network]
+          DHCP=ipv4
+
+          [DHCPv4]
+          UseDomains=true
+
+    - name: Ensure systemd-resolved manages /etc/resolv.conf
+      file:
+        src: /run/systemd/resolve/resolv.conf
+        dest: /etc/resolv.conf
+        state: link
+        force: true
+
+    - name: Restart systemd-networkd
+      systemd:
+        name: systemd-networkd
+        state: restarted
+
+    - name: Restart systemd-resolved
+      systemd:
+        name: systemd-resolved
+        state: restarted
+
   become: true

@@ -2,7 +2,7 @@
   block:
     - name: Install Grafana Deps
       apt:
-        name: [apt-transport-https, software-properties-common, wget]
+        name: [apt-transport-https, wget]
         update_cache: true
 
     - name: Check for /etc/apt/sources.list.d/grafana.list
@@ -26,6 +26,7 @@
     - name: Install Grafana
       apt:
         name: grafana
+        state: latest
         update_cache: true
 
     - name: Add grafana.ini file to /etc/grafana/grafana.ini

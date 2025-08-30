@@ -17,7 +17,7 @@ Environment={{ env }}
 {% endfor %}
 SyslogIdentifier={{ app_name }}
 RemainAfterExit=no
-LimitNOFILE=infinity
+LimitNOFILE={{ open_files_limit }}
 
 [Install]
 WantedBy=multi-user.target
