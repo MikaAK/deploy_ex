@@ -23,6 +23,11 @@ defmodule DeployEx.Config do
     "#{DeployExHelpers.kebab_project_name()}-elixir-release-state-#{env()}"
   end
 
+  def aws_terraform_state_lock_table do
+    Application.get_env(@app, :aws_terraform_state_lock_table) ||
+      "#{DeployExHelpers.kebab_project_name()}-terraform-state-lock-#{env()}"
+  end
+
   def deploy_folder, do: Application.get_env(@app, :deploy_folder) || "./deploys"
 
   def terraform_folder_path, do: Path.join(deploy_folder(), "terraform")

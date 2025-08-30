@@ -38,6 +38,7 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
     Terraform.CreateStateBucket,
     Terraform.Build,
     Terraform.Apply,
+    Terraform.Refresh,
     Ansible.Build
   ]
 

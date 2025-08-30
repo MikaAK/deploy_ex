@@ -4,3 +4,4 @@
     - awscli
     - prometheus_exporter
     - prometheus_db
+    - ipv6

@@ -9,6 +9,7 @@
     - log_cleanup
     - pip3
     - awscli
+    - ipv6
     <%= unless @no_prometheus do %>- prometheus_exporter
     <% end %>
     <%= unless @no_loki do %>- grafana_loki_promtail

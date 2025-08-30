@@ -5,6 +5,14 @@ terraform {
       version = "~> 5.34"
     }
   }
+
+  backend "s3" {
+    bucket         = "<%= @aws_release_state_bucket %>"
+    key            = "terraform.tfstate"
+    region         = "<%= @aws_region %>"
+    dynamodb_table = "<%= @aws_terraform_state_lock_table %>"
+    encrypt        = true
+  }
 }
 
 provider "aws" {

@@ -6,6 +6,4 @@
     - log_cleanup
     - prometheus_exporter
     - redis_server
-
-
-
+    - ipv6
