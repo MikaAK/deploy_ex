@@ -31,6 +31,46 @@ defmodule DeployEx.AwsBucket do
     end
   end
 
+  def delete_all_objects(region \\ DeployEx.Config.aws_region(), bucket_name, continuation_token \\ nil) do
+    list_opts = if continuation_token, do: [continuation_token: continuation_token], else: []
+
+    case ExAws.request(S3.list_objects_v2(bucket_name, list_opts), region: region) do
+      {:ok, %{body: %{contents: objects, is_truncated: is_truncated, next_continuation_token: next_token}}} when objects !== [] ->
+        object_keys = Enum.map(objects, & &1.key)
+
+        case ExAws.request(S3.delete_multiple_objects(bucket_name, object_keys), region: region) do
+          {:ok, _} ->
+            if is_truncated do
+              delete_all_objects(region, bucket_name, next_token)
+            else
+              :ok
+            end
+          {:error, {:http_error, code, message}} ->
+            {:error, handle_error(code, message, %{region: region, bucket: bucket_name})}
+        end
+
+      {:ok, %{body: %{contents: [], is_truncated: is_truncated, next_continuation_token: next_token}}} ->
+        if is_truncated do
+          delete_all_objects(region, bucket_name, next_token)
+        else
+          :ok
+        end
+
+      {:ok, %{body: %{contents: objects}}} when objects !== [] ->
+        object_keys = Enum.map(objects, & &1.key)
+
+        case ExAws.request(S3.delete_multiple_objects(bucket_name, object_keys), region: region) do
+          {:ok, _} -> :ok
+          {:error, {:http_error, code, message}} ->
+            {:error, handle_error(code, message, %{region: region, bucket: bucket_name})}
+        end
+
+      {:ok, _} -> :ok
+      {:error, {:http_error, code, message}} ->
+        {:error, handle_error(code, message, %{region: region, bucket: bucket_name})}
+    end
+  end
+
   def delete_bucket(region \\ DeployEx.Config.aws_region(), bucket_name) do
     case ExAws.request(S3.delete_bucket(bucket_name), region: region) do
       {:ok, _} -> :ok

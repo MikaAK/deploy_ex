@@ -24,16 +24,16 @@ defmodule Mix.Tasks.Terraform.DropStateBucket do
       region = DeployEx.Config.aws_region()
 
       if bucket in Enum.map(buckets, &(&1.name)) do
-        case DeployEx.AwsBucket.delete_bucket(region, bucket) do
-          :ok ->
-            Mix.shell().info([
-              :green, "Successfully deleted bucket ",
-              :green, :bright, bucket, :reset, :green,
-              " from ", :bright, region, :reset, :green, "!"
-            ])
-            :ok
-          {:error, error} ->
-            Mix.raise(to_string(error))
+        with :ok <- DeployEx.AwsBucket.delete_all_objects(region, bucket),
+             :ok <- DeployEx.AwsBucket.delete_bucket(region, bucket) do
+          Mix.shell().info([
+            :green, "Successfully deleted bucket ",
+            :green, :bright, bucket, :reset, :green,
+            " from ", :bright, region, :reset, :green, "!"
+          ])
+          :ok
+        else
+          {:error, error} -> Mix.raise(to_string(error))
         end
       else
         Mix.shell().info([
