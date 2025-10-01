@@ -11,13 +11,42 @@ data "aws_subnet" "random_subnet" {
   id = random_shuffle.subnet_id.result[0]
 }
 
+data "aws_subnets" "az_specific" {
+  count = var.instance_availability_zone != null ? 1 : 0
+
+  filter {
+    name   = "subnet-id"
+    values = var.subnet_ids
+  }
+
+  filter {
+    name   = "availability-zone"
+    values = [var.instance_availability_zone]
+  }
+}
+
 locals {
-  kebab_instance_name = lower(replace(var.instance_name, " ", "_"))
+  snake_instance_name = lower(replace(var.instance_name, " ", "_"))
+  kebab_instance_name = lower(replace(var.instance_name, " ", "-"))
   user_data_env = "echo \"export AWS_USE_DUALSTACK_ENDPOINT=${var.disable_ipv6 ? "false" : "true"}\" >> /etc/profile"
   user_data = <<-EOF
-  ${file("${path.module}/user_data_init_script.sh")}
+  ${templatefile(
+    "${path.module}/cloud_init_data.yaml.tftpl",
+    {
+      volume_id = var.enable_ebs ? aws_ebs_volume.ec2_ebs[count.index].id : ""
+    }
+  )}
   ${local.user_data_env}
   EOF
+  selected_subnet_id = var.instance_availability_zone != null ? (
+    length(data.aws_subnets.az_specific[0].ids) > 0 ?
+    data.aws_subnets.az_specific[0].ids[0] :
+    random_shuffle.subnet_id.result[0]
+  ) : random_shuffle.subnet_id.result[0]
+}
+
+data "aws_subnet" "selected_subnet" {
+  id = local.selected_subnet_id
 }
 
 # Create EC2 Instance
@@ -30,6 +59,7 @@ resource "aws_instance" "ec2_instance" {
 
   key_name = var.key_pair_key_name
 
+  availability_zone      = coalesce(var.instance_availability_zone, data.aws_subnet.selected_subnet.availability_zone)
   subnet_id              = data.aws_subnet.random_subnet.id
   vpc_security_group_ids = [var.security_group_id]
   private_ip             = var.private_ip
@@ -48,12 +78,28 @@ resource "aws_instance" "ec2_instance" {
     enable_resource_name_dns_aaaa_record = !var.disable_ipv6
   }
 
+  root_block_device {
+    volume_type           = "gp3"
+    volume_size           = var.instance_ebs_primary_size
+    encrypted             = false
+    delete_on_termination = true # Can use this to not delete root device
+
+    tags = merge({
+      Name          = "${var.instance_name}-root-${var.environment}-${count.index}"
+      InstanceGroup = local.snake_instance_name
+      Group         = var.resource_group
+      Environment   = var.environment
+      Type          = "Self Made"
+    }, var.tags)
+  }
+
+  user_data_replace_on_change = true # Can use this to roll instances
   user_data = var.enable_ebs ? file("${path.module}/user_data_init_script.sh") : ""
 
   tags = merge({
-    Name          = format("%s-%s", var.instance_name, count.index)
+    Name          = "${var.instance_name}-${var.count.index}"
     Group         = var.resource_group
-    InstanceGroup = local.kebab_instance_name
+    InstanceGroup = local.snake_instance_name
     Environment   = var.environment
     Type          = "Self Made"
   }, var.tags)
@@ -66,12 +112,14 @@ resource "aws_instance" "ec2_instance" {
 resource "aws_ebs_volume" "ec2_ebs" {
   count = var.enable_ebs ? var.instance_count : 0
 
-  availability_zone = data.aws_subnet.random_subnet.availability_zone
+  availability_zone = coalesce(var.instance_availability_zone, data.aws_subnet.selected_subnet.availability_zone)
   size              = var.instance_ebs_secondary_size
+  snapshot_id       = var.instance_ebs_secondary_snapshot_id
+  type              = "gp3"
 
   tags = merge({
-    Name          = format("%s-%s-%s", var.instance_name, "ebs", count.index) # instance-name-ebs
-    InstanceGroup = local.kebab_instance_name
+    Name          = "${var.instance_name}-ebs-${var.environment}-${count.index}"
+    InstanceGroup = local.snake_instance_name
     Group         = var.resource_group
     Environment   = var.environment
     Vendor        = "Self"
@@ -97,8 +145,8 @@ resource "aws_eip" "ec2_eip" {
 
   domain = "vpc"
   tags = merge({
-    Name          = format("%s-%s-%s", var.instance_name, "eip", count.index) # instance-name-eip
-    InstanceGroup = lower(replace(var.instance_name, " ", "_"))
+    Name          = "${var.instance_name}-eip-${var.environment}-${count.index}"
+    InstanceGroup = local.snake_instance_name
     Group         = var.resource_group
     Environment   = var.environment
     Vendor        = "Self"
@@ -120,15 +168,15 @@ resource "aws_eip_association" "ec2_eip_association" {
 # Add Load Balancing if needed and enabled
 resource "aws_lb" "ec2_lb" {
   count              = (var.enable_elb && var.instance_count > 1) ? 1 : 0
-  name               = format("%s-%s", (lower(replace(var.instance_name, " ", "-"))), "lb")
+  name               = "${local.kebab_instance_name}-lb"
   load_balancer_type = "application"
 
   subnets         = var.subnet_ids
   security_groups = [var.security_group_id]
 
   tags = merge({
-    Name          = format("%s-%s", var.instance_name, "lb")
-    InstanceGroup = lower(replace(var.instance_name, " ", "_"))
+    Name          = "${var.instance_name}-lb"
+    InstanceGroup = local.snake_instance_name
     Group         = var.resource_group
     Environment   = var.environment
     Vendor        = "Self"
@@ -139,13 +187,13 @@ resource "aws_lb" "ec2_lb" {
 
 resource "aws_lb_target_group" "ec2_lb_https_target_group" {
   count = (var.enable_elb && var.enable_elb_https && var.instance_count > 1) ? 1 : 0
-  name  = "${lower(replace(var.instance_name, " ", "-"))}-lb-https-tg-${var.environment}"
+  name  = "${local.kebab_instance_name}-lb-https-tg-${var.environment}"
   vpc_id   = data.aws_subnet.random_subnet.vpc_id
   protocol = "TCP"
   port     = 443
   tags = merge({
-    Name          = "${lower(replace(var.instance_name, " ", "-"))}-https-lb-tg-${var.environment}"
-    InstanceGroup = "${lower(replace(var.instance_name, " ", "_"))}_${var.environment}"
+    Name          = "${local.kebab_instance_name}-https-lb-tg-${var.environment}"
+    InstanceGroup = "${local.snake_instance_name}_${var.environment}"
     Group         = var.resource_group
     Environment   = var.environment
     Vendor        = "Self"
@@ -155,15 +203,15 @@ resource "aws_lb_target_group" "ec2_lb_https_target_group" {
 
 resource "aws_lb_target_group" "ec2_lb_target_group" {
   count = (var.enable_elb && var.instance_count > 1) ? 1 : 0
-  name  = format("%s-%s", (lower(replace(var.instance_name, " ", "-"))), "lb-tg")
+  name  = "${local.kebab_instance_name}-lb-tg"
 
   vpc_id   = data.aws_subnet.random_subnet.vpc_id
   protocol = "HTTP"
   port     = var.elb_instance_port
 
   tags = merge({
-    Name          = format("%s-%s", var.instance_name, "lb-sg")
-    InstanceGroup = lower(replace(var.instance_name, " ", "_"))
+    Name          = "${var.instance_name}-http-lb-tg"
+    InstanceGroup = local.kebab_instance_name
     Group         = var.resource_group
     Environment   = var.environment
     Vendor        = "Self"

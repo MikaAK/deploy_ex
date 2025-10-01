@@ -18,15 +18,20 @@ module "ec2_instance" {
   instance_name  = each.value.name
   environment    = var.environment
 
-  tags                        = try(each.value.tags, null)
-  instance_type               = try(each.value.instance_type, null)
-  instance_count              = try(each.value.instance_count, null)
-  instance_ebs_secondary_size = try(each.value.instance_ebs_secondary_size, null)
-  instance_ami                = coalesce(
+  tags                       = try(each.value.tags, null)
+  instance_type              = try(each.value.instance_type, null)
+  instance_count             = try(each.value.instance_count, null)
+  instance_availability_zone = try(each.value.instance_availability_zone, null)
+  instance_ami               = coalesce(
     try(each.value.instance_ami, null),
     # "ADD AMI HASH WHEN YOU GET ONE",
     data.aws_ami.debian-13.id
   )
+
+  instance_ebs_primary_size          = try(each.value.instance_ebs_primary_size, null)
+  instance_ebs_secondary_size        = try(each.value.instance_ebs_secondary_size, null)
+  instance_ebs_secondary_snapshot_id = try(each.value.instance_ebs_secondary_snapshot_id, null)
+
 
   enable_eip        = try(each.value.enable_eip, null)
   enable_ebs        = try(each.value.enable_ebs, null)

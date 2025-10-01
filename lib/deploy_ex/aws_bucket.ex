@@ -94,4 +94,12 @@ defmodule DeployEx.AwsBucket do
       details: %{region: region, bucket: bucket_name}
     }
   end
+
+  defp handle_error(code, message, %{region: region}) do
+    %ErrorMessage{
+      code: ErrorMessage.http_code_reason_atom(code),
+      message: message,
+      details: %{region: region}
+    }
+  end
 end

@@ -67,13 +67,6 @@ variable "tags" {
 ### EBS ###
 ###########
 
-variable "instance_ebs_secondary_size" {
-  description = "EBS size, default 16GB"
-  type        = number
-  default     = 16
-  nullable    = false
-}
-
 variable "enable_ebs" {
   description = "Enables instance to generate an elastic bean stalk volume for itself"
   type        = bool
@@ -81,8 +74,36 @@ variable "enable_ebs" {
   nullable    = false
 }
 
+variable "instance_ebs_primary_size" {
+  description = "Root volume size in GB, default 8GB"
+  type        = number
+  default     = 8
+  nullable    = false
+}
+
+variable "instance_ebs_secondary_size" {
+  description = "EBS size, default 16GB"
+  type        = number
+  default     = 16
+  nullable    = false
+}
+
+variable "instance_ebs_secondary_snapshot_id" {
+  description = "EBS snapshot ID to restore from when creating new volume"
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 ### Instances ###
 #################
+
+variable "instance_availability_zone" {
+  description = "Instance availability zone"
+  type        = string
+  default     = null
+  nullable    = true
+}
 
 variable "instance_count" {
   description = "Instance count, default 1"

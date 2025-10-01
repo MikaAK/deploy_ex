@@ -106,9 +106,12 @@ variable "<%= @app_name %>_project" {
     disable_ipv6      = optional(bool)
     disable_public_ip = optional(bool)
 
-    elb_port                    = optional(number)
-    elb_instance_port           = optional(number)
-    instance_ebs_secondary_size = optional(number)
+    elb_port = optional(number)
+    elb_instance_port = optional(number)
+
+    instance_ebs_primary_size          = optional(number)
+    instance_ebs_secondary_size        = optional(number)
+    instance_ebs_secondary_snapshot_id = optional(number)
 
     tags = optional(map(string))
   }))

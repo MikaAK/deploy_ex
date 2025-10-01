@@ -9,6 +9,10 @@ limits_config:
 
 common:
   path_prefix: /data/loki
+  storage:
+    filesystem:
+      chunks_directory: /data/loki/chunks
+      rules_directory: /data/loki/rules
   replication_factor: 1
   ring:
     instance_addr: 0.0.0.0
@@ -29,7 +33,7 @@ storage_config:
   tsdb_shipper:
     active_index_directory: /data/loki/index
     cache_location: /data/loki/index_cache
-    cache_ttl: 24h
+,   cache_ttl: 24h
   aws:
     bucketnames: {{ loki_logger_s3_bucket_name }}
     endpoint: s3.{{ loki_logger_s3_region }}.amazonaws.com

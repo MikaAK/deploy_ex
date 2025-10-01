@@ -1,0 +1,123 @@
+#cloud-config
+package_update: true
+packages:
+  - xfsprogs
+  - e2fsprogs
+
+write_files:
+  - path: /usr/local/sbin/prepare-data-disk.sh
+    permissions: '0755'
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      VOL_ID="${volume_id}"
+      MP="/data"
+
+      # Optional volume support
+      if [ -z "$${VOL_ID}" ] || [ "$${VOL_ID}" = "null" ]; then
+        echo "[data-disk] No volume_id provided; skipping."
+        exit 0
+      fi
+
+      # AWS NVMe by-id uses volume id without hyphens
+      VOL_ID_NOHYPHENS="$${VOL_ID//-/}"
+      BYID="/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_$${VOL_ID_NOHYPHENS}"
+
+      echo "[data-disk] Waiting for $${BYID} to appear..."
+      for i in $(seq 1 120); do
+        [ -e "$${BYID}" ] && break
+        sleep 1
+      done
+      if [ ! -e "$${BYID}" ]; then
+        echo "[data-disk] $${BYID} not found after waiting; exiting (nofail)."
+        exit 0
+      fi
+
+      # Resolve to raw block device (e.g., /dev/nvme1n1)
+      DEV="$(readlink -f "$${BYID}")"
+      if [ -z "$${DEV}" ] || [ ! -b "$${DEV}" ]; then
+        echo "[data-disk] Resolved device invalid: $${DEV}"
+        exit 0
+      fi
+
+      mkdir -p "$${MP}"
+
+      # ---- Robust discovery of FS and target ----
+      # Ask lsblk for PATH, TYPE, FSTYPE for the device and its children
+      # We prefer any path that already has a filesystem (FSTYPE != "")
+      mapfile -t LINES < <(lsblk -ln -o PATH,TYPE,FSTYPE "$${DEV}")
+
+      CANDIDATE_WITH_FS=""
+      PARTS=()
+
+      for line in "$${LINES[@]}"; do
+        # line format: "/dev/nvme1n1 part xfs" or "/dev/nvme1n1 disk"
+        PATH_FIELD="$(awk '{print $1}' <<< "$${line}")"
+        TYPE_FIELD="$(awk '{print $2}' <<< "$${line}")"
+        FSTYPE_FIELD="$(awk '{print $3}' <<< "$${line}")"
+
+        # Collect partitions
+        if [ "$${TYPE_FIELD}" = "part" ]; then
+          PARTS+=("$${PATH_FIELD}")
+        fi
+
+        # First existing filesystem wins (could be on raw device or a partition)
+        if [ -n "$${FSTYPE_FIELD}" ] && [ -z "$${CANDIDATE_WITH_FS}" ]; then
+          CANDIDATE_WITH_FS="$${PATH_FIELD}"
+        fi
+      done
+
+      if [ -n "$${CANDIDATE_WITH_FS}" ]; then
+        TARGET="$${CANDIDATE_WITH_FS}"
+        FSTYPE="$(blkid -s TYPE -o value "$${TARGET}")"
+        echo "[data-disk] Found existing filesystem $${FSTYPE} on $${TARGET}; preserving."
+      else
+        # No filesystem anywhere. Prefer a single partition if present; else raw device.
+        if [ "$${#PARTS[@]}" -eq 1 ]; then
+          TARGET="$${PARTS[0]}"
+        elif [ "$${#PARTS[@]}" -ge 2 ]; then
+          TARGET="$${PARTS[0]}"
+        else
+          TARGET="$${DEV}"
+        fi
+        echo "[data-disk] No filesystem detected on any path; formatting $${TARGET} as XFS..."
+        mkfs.xfs -f "$${TARGET}"
+        FSTYPE="xfs"
+      fi
+
+      # Fetch UUID for fstab
+      UUID="$(blkid -s UUID -o value "$${TARGET}")"
+      if [ -z "$${UUID}" ]; then
+        echo "[data-disk] Could not read UUID for $${TARGET}."
+        exit 1
+      fi
+
+      # Clean stale entries and write a single UUID-based fstab line
+      sed -i '\|/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_|d' /etc/fstab
+      sed -i '\|[[:space:]]/data[[:space:]]|d' /etc/fstab
+      echo "UUID=$${UUID} $${MP} $${FSTYPE} defaults,nofail,x-systemd.device-timeout=30s 0 2" >> /etc/fstab
+
+      # Mount and grow
+      if ! mountpoint -q "$${MP}"; then
+        mount "$${MP}"
+      fi
+
+      case "$${FSTYPE}" in
+        xfs)
+          xfs_growfs "$${MP}" || true
+          ;;
+        ext4|ext3|ext2)
+          SRC="$(findmnt -no SOURCE "$${MP}")"
+          resize2fs "$${SRC}" || true
+          ;;
+        *)
+          echo "[data-disk] Filesystem $${FSTYPE}: no grow action defined."
+          ;;
+      esac
+
+      echo "[data-disk] Done. Mounted $${TARGET} ($${FSTYPE}) on $${MP}."
+
+runcmd:
+  - /usr/local/sbin/prepare-data-disk.sh | tee -a /var/log/prepare-data-disk.log
