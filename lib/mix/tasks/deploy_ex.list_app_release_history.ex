@@ -31,12 +31,14 @@ defmodule Mix.Tasks.DeployEx.ListAppReleaseHistory do
         Mix.raise("app is required to be passed in. Example: mix deploy_ex.list_app_release my_app")
       else
         [app_name] = extra_args
+        {machine_opts, opts} = Keyword.split(opts, [:resource_group])
 
         case DeployExHelpers.run_ssh_command_with_return(
           opts[:directory],
           opts[:pem],
           app_name,
-          DeployEx.ReleaseController.list_releases()
+          DeployEx.ReleaseController.list_releases(),
+          machine_opts
         ) do
           {:ok, [latest_releases]} ->
             Mix.shell().info([:green, "\nLatest releases for #{app_name}:"])
@@ -57,7 +59,7 @@ defmodule Mix.Tasks.DeployEx.ListAppReleaseHistory do
   defp parse_args(args) do
     OptionParser.parse!(args,
       aliases: [a: :app, d: :directory, p: :pem],
-      switches: [app: :string, directory: :string, pem: :string]
+      switches: [app: :string, directory: :string, pem: :string, resource_group: :string]
     )
   end
 end

@@ -38,11 +38,13 @@ defmodule Mix.Tasks.Ansible.Rollback do
         |> Keyword.put_new(:aws_region, DeployEx.Config.aws_region())
         |> Keyword.put_new(:aws_release_bucket, DeployEx.Config.aws_release_bucket())
 
+      {machine_opts, opts} = Keyword.split(opts, [:resource_group])
+
       with {:ok, app_name} <- DeployExHelpers.find_project_name(node_name_args),
            _ = Mix.shell().info([:yellow, "Fetching ", :bright, app_name, :reset, :yellow, " releases from S3..."]),
            {:ok, releases} <- DeployEx.ReleaseUploader.fetch_all_remote_releases(opts),
            {:ok, pem} <- DeployEx.Terraform.find_pem_file(opts[:directory], opts[:pem]),
-           {:ok, latest_releases} <- fetch_app_release_history(app_name, pem, opts),
+           {:ok, latest_releases} <- fetch_app_release_history(app_name, pem, opts, machine_opts),
            {:ok, latest_shas} <- parse_and_check_any_releases(latest_releases),
            {:ok, target_sha} <- validate_target_sha_release_exists(releases, select_target_sha(latest_shas, opts)) do
         Mix.shell().info([
@@ -69,7 +71,8 @@ defmodule Mix.Tasks.Ansible.Rollback do
         force: :boolean,
         quiet: :boolean,
         select: :boolean,
-        pem: :string
+        pem: :string,
+        resource_group: :string
       ]
     )
   end
@@ -84,14 +87,15 @@ defmodule Mix.Tasks.Ansible.Rollback do
     end
   end
 
-  defp fetch_app_release_history(app_name, pem, opts) do
+  defp fetch_app_release_history(app_name, pem, opts, machine_opts) do
     Mix.shell().info([:yellow, "Fetching ", :bright, app_name, :reset, :yellow, " release history from elixir machines..."])
 
     DeployExHelpers.run_ssh_command_with_return(
       opts[:directory],
       pem,
       app_name,
-      DeployEx.ReleaseController.list_releases()
+      DeployEx.ReleaseController.list_releases(),
+      machine_opts
     )
   end
 

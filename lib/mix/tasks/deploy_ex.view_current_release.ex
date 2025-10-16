@@ -28,18 +28,21 @@ defmodule Mix.Tasks.DeployEx.ViewCurrentRelease do
       if extra_args == [] do
         Mix.raise("app_name is required. Example: mix deploy_ex.view_current_release my_app")
       else
-        [app_name] = extra_args
-
-        case DeployExHelpers.run_ssh_command_with_return(
-               opts[:directory],
-               opts[:pem],
-               app_name,
-               DeployEx.ReleaseController.current_release()
-             ) do
-          {:ok, [current_release | _]} ->
-            Mix.shell().info([:green, "\nCurrent release for #{app_name}:\n  ", :yellow, current_release])
+        with {:ok, app_name} <- DeployExHelpers.find_project_name(extra_args),
+             {:ok, releases} <- DeployExHelpers.run_ssh_command_with_return(
+                 opts[:directory],
+                 opts[:pem],
+                 app_name,
+                 DeployEx.ReleaseController.current_release(),
+                 opts
+               ) do
+          releases |> Enum.with_index |> Enum.each(fn {current_release, index} ->
+            Mix.shell().info([:green, "\nCurrent release for #{app_name} - #{index}:\n  ", :yellow, current_release])
+          end)
+        else
           {:ok, []} ->
-            Mix.shell().info([:yellow, "No releases found for #{app_name}."])
+            Mix.shell().info([:yellow, "No releases found for #{hd(extra_args)}."])
+
           {:error, err} ->
             Mix.raise("Error fetching current release: #{err}")
         end
@@ -50,7 +53,7 @@ defmodule Mix.Tasks.DeployEx.ViewCurrentRelease do
   defp parse_args(args) do
     OptionParser.parse!(args,
       aliases: [d: :directory, p: :pem],
-      switches: [directory: :string, pem: :string]
+      switches: [directory: :string, pem: :string, resource_group: :string]
     )
   end
 end

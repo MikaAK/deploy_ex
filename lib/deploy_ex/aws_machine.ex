@@ -207,7 +207,7 @@ defmodule DeployEx.AwsMachine do
     end
   end
 
-  def find_instance_ips(project_name, app_name, opts \\ []) do
+  def find_instance_details(project_name, app_name, opts \\ []) do
     with {:ok, instance_groups} <- fetch_instance_groups(project_name, opts) do
       case Enum.find_value(instance_groups, fn {group, values} -> if group =~ app_name, do: values end) do
         nil ->
@@ -216,10 +216,18 @@ defmodule DeployEx.AwsMachine do
             %{app_names: Map.keys(instance_groups)}
           )}
 
-        [%{ip: ip, ipv6: ipv6}] -> {:ok, [ipv6 || ip]}
-
-        instances -> {:ok, Enum.map(instances, &(&1[:ipv6] || &1[:ip]))}
+        instances -> {:ok, instances}
       end
+    end
+  end
+
+  def find_instance_ips(project_name, app_name, opts \\ []) do
+    case find_instance_details(project_name, app_name, opts) do
+      {:ok, [%{ip: ip, ipv6: ipv6}]} -> {:ok, [ipv6 || ip]}
+
+      {:ok, instances} -> {:ok, Enum.map(instances, &(&1[:ipv6] || &1[:ip]))}
+
+      e -> e
     end
   end
 end

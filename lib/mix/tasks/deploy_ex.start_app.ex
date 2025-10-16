@@ -35,22 +35,24 @@ defmodule Mix.Tasks.DeployEx.StartApp do
 
     {opts, node_name_args} = parse_args(args)
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
+    {machine_opts, opts} = Keyword.split(opts, [:resource_group])
 
     with {:ok, app_name} <- DeployExHelpers.find_project_name(node_name_args),
          _ = Mix.shell().info([:yellow, "Starting #{app_name} systemd service"]),
-         :ok <- start_service(app_name, opts) do
+         :ok <- start_service(app_name, opts, machine_opts) do
       Mix.shell().info([:green, "Started #{app_name} systemd service successfully"])
     else
       {:error, e} -> Mix.raise(to_string(e))
     end
   end
 
-  defp start_service(app_name, opts) do
+  defp start_service(app_name, opts, machine_opts) do
     DeployExHelpers.run_ssh_command(
       opts[:directory],
       opts[:pem],
       app_name,
-      DeployEx.SystemDController.start_service(app_name)
+      DeployEx.SystemDController.start_service(app_name),
+      machine_opts
     )
   end
 
@@ -61,7 +63,8 @@ defmodule Mix.Tasks.DeployEx.StartApp do
         directory: :string,
         force: :boolean,
         quiet: :boolean,
-        pem: :string
+        pem: :string,
+        resource_group: :string
       ]
     )
   end

@@ -158,9 +158,9 @@ defmodule DeployExHelpers do
     end
   end
 
-  def run_ssh_command_with_return(terraform_directory, pem, app_name, port \\ 22, command) do
+  def run_ssh_command_with_return(terraform_directory, pem, app_name, command, opts) do
     with {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(terraform_directory, pem),
-         {:ok, instance_ips} <- DeployEx.AwsMachine.find_instance_ips(project_name(), app_name) do
+         {:ok, instance_details} <- DeployEx.AwsMachine.find_instance_details(project_name(), app_name, opts) do
       pem_rsa_path = Path.join(@server_ssh_pem_path, "id_rsa")
 
       if not File.exists?(pem_rsa_path) do
@@ -170,10 +170,11 @@ defmodule DeployExHelpers do
         File.cp!(pem_file_path, pem_rsa_path)
       end
 
-      res = instance_ips
-        |> Enum.map(fn instance_ip ->
-          Mix.shell().info([:yellow, "Running '#{command}' on #{instance_ip}"])
-          DeployEx.SSH.run_command(instance_ip, port, pem_rsa_path, command)
+      res = instance_details
+        |> prompt_for_instance_choice(true)
+        |> Enum.map(fn ip_address ->
+          Mix.shell().info([:yellow, "Running '#{command}' on #{ip_address}"])
+          DeployEx.SSH.run_command(ip_address, opts[:port] || 22, pem_rsa_path, command)
         end)
         |> DeployEx.Utils.reduce_status_tuples
 
@@ -183,9 +184,9 @@ defmodule DeployExHelpers do
     end
   end
 
-  def run_ssh_command(terraform_directory, pem, app_name, port \\ 22, command) do
+  def run_ssh_command(terraform_directory, pem, app_name, command, opts) do
     with {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(terraform_directory, pem),
-         {:ok, instance_ips} <- DeployEx.AwsMachine.find_instance_ips(project_name(), app_name) do
+         {:ok, instance_details} <- DeployEx.AwsMachine.find_instance_details(project_name(), app_name, opts) do
       pem_rsa_path = Path.join(@server_ssh_pem_path, "id_rsa")
 
       if not File.exists?(pem_rsa_path) do
@@ -195,10 +196,12 @@ defmodule DeployExHelpers do
         File.cp!(pem_file_path, pem_rsa_path)
       end
 
-      Enum.each(instance_ips, fn instance_ip ->
-        Mix.shell().info([:yellow, "Running #{command} on #{instance_ip}"])
-        DeployEx.SSH.run_command(instance_ip, port, @server_ssh_pem_path, command)
-      end)
+      instance_details
+        |> prompt_for_instance_choice(true)
+        |> Enum.each(fn instance_ip ->
+          Mix.shell().info([:yellow, "Running #{command} on #{instance_ip}"])
+          DeployEx.SSH.run_command(instance_ip, opts[:port] || 22, @server_ssh_pem_path, command)
+        end)
     end
   end
 
@@ -226,5 +229,14 @@ defmodule DeployExHelpers do
 
       true -> prompt_for_choice(choices, select_all?)
     end
+  end
+
+  def prompt_for_instance_choice(instance_details, select_all? \\ true) do
+    ip_map = Map.new(instance_details, &{&1.name, &1.ipv6 || &1.ip})
+
+    instance_details
+      |> Enum.map(&(&1.name))
+      |> DeployExHelpers.prompt_for_choice(select_all?)
+      |> Enum.map(&ip_map[&1])
   end
 end
