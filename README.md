@@ -187,6 +187,7 @@ env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
 Most of these are available on any command in DeployEx
 - `aws-bucket` - Bucket to use for aws deploys
 - `aws-region` - Bucket to use for aws deploys
+- `resource-group` - The resource group to target (AWS Group Tag for instances), by default this is "AppName Backend"
 
 ## Terraform Variables
 The main variables you'll want to know about are the ones inside `deploys/terraform/variables.tf`
