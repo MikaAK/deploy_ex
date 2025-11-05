@@ -37,11 +37,18 @@ module "ec2_instance" {
   enable_ebs        = try(each.value.enable_ebs, null)
   enable_elb        = try(each.value.enable_lb, null)
   enable_elb_https  = try(each.value.enable_lb_https, null)
+
   disable_public_ip = try(each.value.disable_public_ip, null)
   disable_ipv6      = try(var.disable_ipv6, each.value.disable_ipv6, null)
 
-  elb_port          = try(each.value.elb_port, null)
-  elb_instance_port = try(each.value.elb_instance_port, null)
+  elb_health_check_path    = try(each.value.elb_health_check_path, null)
+  elb_health_check_matcher = try(each.value.elb_health_check_matcher, null)
+  elb_health_check_https_matcher = try(each.value.elb_health_check_https_matcher, null)
+
+  elb_health_check_unhealthy_threshold   = try(each.value.elb_health_check_unhealthy_threshold, null)
+  elb_health_check_healthy_threshold     = try(each.value.elb_health_check_healthy_threshold, null)
+  elb_health_check_timeout  = try(each.value.elb_health_check_timeout, null)
+  elb_health_check_interval = try(each.value.elb_health_check_interval, null)
 
   private_ip = try(each.value.private_ip, null)
 

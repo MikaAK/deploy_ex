@@ -161,3 +161,59 @@ variable "enable_elb_https" {
   default     = true
   nullable    = false
 }
+
+variable "elb_instance_port" {
+  description = "Changes the application port targeted by the load balancer"
+  type        = number
+  default     = 80
+  nullable    = false
+}
+
+variable "elb_health_check_path" {
+  description = "Changes the application path targeted by the load balancer health check"
+  type        = string
+  default     = ""
+  nullable    = false
+}
+
+variable "elb_health_check_https_matcher" {
+  description = "Changes the status codes for the load balancer health check"
+  type        = string
+  default     = "200-299"
+  nullable    = false
+}
+
+variable "elb_health_check_matcher" {
+  description = "Changes the status codes for the load balancer health check"
+  type        = string
+  default     = "200-299,301"
+  nullable    = false
+}
+
+variable "elb_health_check_unhealthy_threshold" {
+  description = "Changes the unhealthy threshold checks for the load balancer health check"
+  type        = number
+  default     = 2
+  nullable    = false
+}
+
+variable "elb_health_check_healthy_threshold" {
+  description = "Changes the healthy threshold checks for the load balancer health check"
+  type        = number
+  default     = 2
+  nullable    = false
+}
+
+variable "elb_health_check_timeout" {
+  description = "Changes the health check timeout"
+  type        = number
+  default     = 5
+  nullable    = false
+}
+
+variable "elb_health_check_interval" {
+  description = "Changes the health check interval"
+  type        = number
+  default     = 20
+  nullable    = false
+}

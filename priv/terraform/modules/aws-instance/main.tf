@@ -191,6 +191,21 @@ resource "aws_lb_target_group" "ec2_lb_https_target_group" {
   vpc_id   = data.aws_subnet.random_subnet.vpc_id
   protocol = "TCP"
   port     = 443
+
+  dynamic "health_check" {
+    for_each = var.elb_health_check_path != "" ? [1] : []
+
+    content {
+      path                = var.elb_health_check_path
+      protocol            = "HTTPS"
+      interval            = var.elb_health_check_interval
+      timeout             = var.elb_health_check_timeout
+      healthy_threshold   = var.elb_health_check_healthy_threshold
+      unhealthy_threshold = var.elb_health_check_unhealthy_threshold
+      matcher             = var.elb_health_check_https_matcher
+    }
+  }
+
   tags = merge({
     Name          = "${local.kebab_instance_name}-https-lb-tg-${var.environment}"
     InstanceGroup = "${local.snake_instance_name}_${var.environment}"
@@ -208,6 +223,20 @@ resource "aws_lb_target_group" "ec2_lb_target_group" {
   vpc_id   = data.aws_subnet.random_subnet.vpc_id
   protocol = "HTTP"
   port     = var.elb_instance_port
+
+  dynamic "health_check" {
+    for_each = var.elb_health_check_path != "" ? [1] : []
+
+    content {
+      path                = var.elb_health_check_path
+      protocol            = "HTTP"
+      interval            = var.elb_health_check_interval
+      timeout             = var.elb_health_check_timeout
+      healthy_threshold   = var.elb_health_check_healthy_threshold
+      unhealthy_threshold = var.elb_health_check_unhealthy_threshold
+      matcher             = var.elb_health_check_matcher
+    }
+  }
 
   tags = merge({
     Name          = "${var.instance_name}-http-lb-tg"
