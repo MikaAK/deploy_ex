@@ -28,27 +28,27 @@ module "ec2_instance" {
     data.aws_ami.debian-13.id
   )
 
-  instance_ebs_primary_size          = try(each.value.instance_ebs_primary_size, null)
-  instance_ebs_secondary_size        = try(each.value.instance_ebs_secondary_size, null)
-  instance_ebs_secondary_snapshot_id = try(each.value.instance_ebs_secondary_snapshot_id, null)
+  instance_ebs_primary_size          = try(each.value.ebs.primary_size, null)
+  instance_ebs_secondary_size        = try(each.value.ebs.secondary_size, null)
+  instance_ebs_secondary_snapshot_id = try(each.value.ebs.secondary_snapshot_id, null)
 
 
   enable_eip        = try(each.value.enable_eip, null)
-  enable_ebs        = try(each.value.enable_ebs, null)
-  enable_elb        = try(each.value.enable_lb, null)
-  enable_elb_https  = try(each.value.enable_lb_https, null)
+  enable_ebs        = try(each.value.ebs.enable_secondary, null)
+  enable_elb        = try(each.value.load_balancer.enable, null)
+  enable_elb_https  = try(each.value.load_balancer.enable_https, null)
 
   disable_public_ip = try(each.value.disable_public_ip, null)
   disable_ipv6      = try(var.disable_ipv6, each.value.disable_ipv6, null)
 
-  elb_health_check_path    = try(each.value.elb_health_check_path, null)
-  elb_health_check_matcher = try(each.value.elb_health_check_matcher, null)
-  elb_health_check_https_matcher = try(each.value.elb_health_check_https_matcher, null)
+  elb_health_check_path    = try(each.value.load_balancer.health_check.path, null)
+  elb_health_check_matcher = try(each.value.load_balancer.health_check.matcher, null)
+  elb_health_check_https_matcher = try(each.value.load_balancer.health_check.https_matcher, null)
 
-  elb_health_check_unhealthy_threshold   = try(each.value.elb_health_check_unhealthy_threshold, null)
-  elb_health_check_healthy_threshold     = try(each.value.elb_health_check_healthy_threshold, null)
-  elb_health_check_timeout  = try(each.value.elb_health_check_timeout, null)
-  elb_health_check_interval = try(each.value.elb_health_check_interval, null)
+  elb_health_check_unhealthy_threshold   = try(each.value.load_balancer.health_check.unhealthy_threshold, null)
+  elb_health_check_healthy_threshold     = try(each.value.load_balancer.health_check.healthy_threshold, null)
+  elb_health_check_timeout  = try(each.value.load_balancer.health_check.timeout, null)
+  elb_health_check_interval = try(each.value.load_balancer.health_check.interval, null)
 
   private_ip = try(each.value.private_ip, null)
 

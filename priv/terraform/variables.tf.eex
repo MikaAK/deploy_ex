@@ -100,26 +100,35 @@ variable "<%= @app_name %>_project" {
 
     private_ip        = optional(string)
     enable_eip        = optional(bool)
-    enable_ebs        = optional(bool)
-    enable_lb         = optional(bool)
-    enable_lb_https   = optional(bool)
     disable_ipv6      = optional(bool)
     disable_public_ip = optional(bool)
 
-    elb_port                 = optional(number)
-    elb_instance_port        = optional(number)
-    elb_health_check_path    = optional(string)
-    elb_health_check_matcher = optional(string)
-    elb_health_check_https_matcher = optional(string)
+    load_balancer = optional(object({
+      enable       = optional(bool)
+      enable_https = optional(bool)
 
-    elb_health_check_unhealthy_threshold   = optional(number)
-    elb_health_check_healthy_threshold     = optional(number)
-    elb_health_check_health_check_timeout  = optional(number)
-    elb_health_check_health_check_interval = optional(number)
+      port          = optional(number)
+      instance_port = optional(number)
 
-    instance_ebs_primary_size          = optional(number)
-    instance_ebs_secondary_size        = optional(number)
-    instance_ebs_secondary_snapshot_id = optional(number)
+      health_check = optional(object({
+        path          = optional(string)
+        protocol      = optional(string)
+        matcher       = optional(string)
+        https_matcher = optional(string)
+
+        unhealthy_threshold   = optional(number)
+        healthy_threshold     = optional(number)
+        timeout  = optional(number)
+        interval = optional(number)
+      }))
+    }))
+
+    ebs = optional(object({
+      enable_secondary      = optional(bool)
+      primary_size          = optional(number)
+      secondary_size        = optional(number)
+      secondary_snapshot_id = optional(string)
+    }))
 
     tags = optional(map(string))
   }))
