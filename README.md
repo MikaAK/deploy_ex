@@ -199,15 +199,31 @@ The following options are present:
 - `name` - Should aim not to touch this, it effects a lot of tags, if you do, make sure to modify the ansible files to match as the instance name itself is based on this
 - `instance_count`- Number of instances to create for this app
 - `instance_type` - The instance tier to use eg `t3.nano` or `t3.micro`
+- `instance_ami` - Override the default AMI for this instance
+- `private_ip` - Set a static private IP for the instance
 - `enable_eip` - Enable an Elastic IP from AWS giving this a static URL
-- `enable_ebs` - Enable a secondary EBS Volume mounted on /data
-- `instance_ebs_secondary_size` - Set the EBS Volume on /data size (default: 16GB)
-- `enable_lb` - Enable a load balancer when there is more than one `instance_count`
-- `elb_port` - Port for the load balancer to serve, this is the url you will hit
-- `elb_instance_port` - Port for the load balancer to forward to, this is your application port
+- `disable_ipv6` - Disable IPv6 for this instance
+- `disable_public_ip` - Disable public IP assignment for this instance
+- `load_balancer` - Load balancer configuration object:
+  - `enable` - Enable a load balancer when there is more than one `instance_count`
+  - `enable_https` - Enable HTTPS listener on the load balancer
+  - `port` - Port for the load balancer to serve, this is the url you will hit
+  - `instance_port` - Port for the load balancer to forward to, this is your application port
+  - `health_check` - Health check configuration object:
+    - `path` - Health check endpoint path (e.g., "/health")
+    - `protocol` - Protocol for health checks (HTTP/HTTPS)
+    - `matcher` - HTTP status codes considered healthy for HTTP (default: "200-299,301")
+    - `https_matcher` - HTTP status codes considered healthy for HTTPS (default: "200-299")
+    - `unhealthy_threshold` - Number of failed checks before marking unhealthy (default: 2)
+    - `healthy_threshold` - Number of successful checks before marking healthy (default: 2)
+    - `timeout` - Health check timeout in seconds (default: 5)
+    - `interval` - Time between health checks in seconds (default: 20)
+- `ebs` - EBS volume configuration object:
+  - `enable_secondary` - Enable a secondary EBS Volume mounted on /data
+  - `primary_size` - Set the primary EBS Volume size in GB (default: 16GB)
+  - `secondary_size` - Set the secondary EBS Volume on /data size in GB (default: 16GB)
+  - `secondary_snapshot_id` - Snapshot ID to restore secondary volume from
 - `tags` - Tags specified in `Key=Value` format to add to the EC2 instance
-
-There is also a default volume of 16gb created and mounted at the /data directory, you can change this in each specific app type if desired
 
 ## Switching out IaC Tools
 By default, DeployEx uses Terraform and Ansible for infrastructure as code (IaC) tools.
