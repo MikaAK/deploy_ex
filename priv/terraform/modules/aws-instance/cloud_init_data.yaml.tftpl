@@ -3,121 +3,204 @@ package_update: true
 packages:
   - xfsprogs
   - e2fsprogs
+  - awscli
+  - jq
 
 write_files:
-  - path: /usr/local/sbin/prepare-data-disk.sh
+  - path: /usr/local/sbin/deploy-app.sh
     permissions: '0755'
     owner: root:root
     content: |
       #!/usr/bin/env bash
       set -euo pipefail
-
-      VOL_ID="${volume_id}"
-      MP="/data"
-
-      # Optional volume support
-      if [ -z "$${VOL_ID}" ] || [ "$${VOL_ID}" = "null" ]; then
-        echo "[data-disk] No volume_id provided; skipping."
-        exit 0
-      fi
-
-      # AWS NVMe by-id uses volume id without hyphens
-      VOL_ID_NOHYPHENS="$${VOL_ID//-/}"
-      BYID="/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_$${VOL_ID_NOHYPHENS}"
-
-      echo "[data-disk] Waiting for $${BYID} to appear..."
-      for i in $(seq 1 120); do
-        [ -e "$${BYID}" ] && break
-        sleep 1
-      done
-      if [ ! -e "$${BYID}" ]; then
-        echo "[data-disk] $${BYID} not found after waiting; exiting (nofail)."
-        exit 0
-      fi
-
-      # Resolve to raw block device (e.g., /dev/nvme1n1)
-      DEV="$(readlink -f "$${BYID}")"
-      if [ -z "$${DEV}" ] || [ ! -b "$${DEV}" ]; then
-        echo "[data-disk] Resolved device invalid: $${DEV}"
-        exit 0
-      fi
-
-      mkdir -p "$${MP}"
-
-      # ---- Robust discovery of FS and target ----
-      # Ask lsblk for PATH, TYPE, FSTYPE for the device and its children
-      # We prefer any path that already has a filesystem (FSTYPE != "")
-      mapfile -t LINES < <(lsblk -ln -o PATH,TYPE,FSTYPE "$${DEV}")
-
-      CANDIDATE_WITH_FS=""
-      PARTS=()
-
-      for line in "$${LINES[@]}"; do
-        # line format: "/dev/nvme1n1 part xfs" or "/dev/nvme1n1 disk"
-        PATH_FIELD="$(awk '{print $1}' <<< "$${line}")"
-        TYPE_FIELD="$(awk '{print $2}' <<< "$${line}")"
-        FSTYPE_FIELD="$(awk '{print $3}' <<< "$${line}")"
-
-        # Collect partitions
-        if [ "$${TYPE_FIELD}" = "part" ]; then
-          PARTS+=("$${PATH_FIELD}")
-        fi
-
-        # First existing filesystem wins (could be on raw device or a partition)
-        if [ -n "$${FSTYPE_FIELD}" ] && [ -z "$${CANDIDATE_WITH_FS}" ]; then
-          CANDIDATE_WITH_FS="$${PATH_FIELD}"
-        fi
-      done
-
-      if [ -n "$${CANDIDATE_WITH_FS}" ]; then
-        TARGET="$${CANDIDATE_WITH_FS}"
-        FSTYPE="$(blkid -s TYPE -o value "$${TARGET}")"
-        echo "[data-disk] Found existing filesystem $${FSTYPE} on $${TARGET}; preserving."
-      else
-        # No filesystem anywhere. Prefer a single partition if present; else raw device.
-        if [ "$${#PARTS[@]}" -eq 1 ]; then
-          TARGET="$${PARTS[0]}"
-        elif [ "$${#PARTS[@]}" -ge 2 ]; then
-          TARGET="$${PARTS[0]}"
-        else
-          TARGET="$${DEV}"
-        fi
-        echo "[data-disk] No filesystem detected on any path; formatting $${TARGET} as XFS..."
-        mkfs.xfs -f "$${TARGET}"
-        FSTYPE="xfs"
-      fi
-
-      # Fetch UUID for fstab
-      UUID="$(blkid -s UUID -o value "$${TARGET}")"
-      if [ -z "$${UUID}" ]; then
-        echo "[data-disk] Could not read UUID for $${TARGET}."
+      
+      exec > >(tee /var/log/deploy-app.log|logger -t deploy-app -s 2>/dev/console) 2>&1
+      
+      APP_NAME="${app_name}"
+      ENVIRONMENT="${environment}"
+      BUCKET_NAME="$${APP_NAME}-elixir-deploys-$${ENVIRONMENT}"
+      APP_PORT="${app_port}"
+      
+      echo "Starting deployment for $${APP_NAME} in $${ENVIRONMENT}"
+      
+      # Find latest release in S3
+      echo "Finding latest release in S3..."
+      LATEST_RELEASE=$(aws s3 ls $${BUCKET_NAME}/$${APP_NAME} --recursive | awk '{print $4}' | sort -r | head -n 1)
+      
+      if [ -z "$${LATEST_RELEASE}" ]; then
+        echo "ERROR: No releases found in s3://$${BUCKET_NAME}/$${APP_NAME}"
         exit 1
       fi
-
-      # Clean stale entries and write a single UUID-based fstab line
-      sed -i '\|/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_|d' /etc/fstab
-      sed -i '\|[[:space:]]/data[[:space:]]|d' /etc/fstab
-      echo "UUID=$${UUID} $${MP} $${FSTYPE} defaults,nofail,x-systemd.device-timeout=30s 0 2" >> /etc/fstab
-
-      # Mount and grow
-      if ! mountpoint -q "$${MP}"; then
-        mount "$${MP}"
+      
+      echo "Found latest release: $${LATEST_RELEASE}"
+      
+      # Create directories
+      mkdir -p /srv/$${APP_NAME}
+      mkdir -p /srv/unpack-directory
+      
+      # Download release
+      echo "Downloading release from S3..."
+      aws s3 cp "s3://$${BUCKET_NAME}/$${LATEST_RELEASE}" /srv/$${LATEST_RELEASE##*/}
+      
+      # Track release history
+      if [ -f /srv/current_release.txt ]; then
+        cat /srv/current_release.txt >> /srv/release_history.txt || touch /srv/release_history.txt
       fi
+      echo "$${LATEST_RELEASE##*/}" > /srv/current_release.txt
+      
+      # Extract release
+      echo "Extracting release..."
+      tar -xzf /srv/$${LATEST_RELEASE##*/} -C /srv/unpack-directory
+      
+      # Stop existing service if running
+      if systemctl is-active --quiet $${APP_NAME}; then
+        echo "Stopping existing $${APP_NAME} service..."
+        systemctl stop $${APP_NAME} || true
+      fi
+      
+      # Replace app directory
+      rm -rf /srv/$${APP_NAME}
+      mv /srv/unpack-directory /srv/$${APP_NAME}
+      chmod -R 755 /srv/$${APP_NAME}
+      
+      # Create systemd service
+      echo "Creating systemd service..."
+      cat > /etc/systemd/system/$${APP_NAME}.service <<EOF
+      [Unit]
+      Description=$${APP_NAME} service
+      After=network.target
+      
+      [Service]
+      Type=simple
+      User=root
+      Group=root
+      WorkingDirectory=/srv/$${APP_NAME}
+      ExecStart=/srv/$${APP_NAME}/bin/$${APP_NAME} start
+      ExecStop=/srv/$${APP_NAME}/bin/$${APP_NAME} stop
+      Restart=on-failure
+      RestartSec=5
+      Environment=PORT=$${APP_PORT}
+      SyslogIdentifier=$${APP_NAME}
+      RemainAfterExit=no
+      LimitNOFILE=1000000
+      
+      [Install]
+      WantedBy=multi-user.target
+      EOF
+      
+      # Enable and start service
+      echo "Starting $${APP_NAME} service..."
+      systemctl daemon-reload
+      systemctl enable $${APP_NAME}
+      systemctl start $${APP_NAME}
+      
+      echo "Deployment complete!"
+      systemctl status $${APP_NAME} --no-pager || true
 
-      case "$${FSTYPE}" in
-        xfs)
-          xfs_growfs "$${MP}" || true
-          ;;
-        ext4|ext3|ext2)
-          SRC="$(findmnt -no SOURCE "$${MP}")"
-          resize2fs "$${SRC}" || true
-          ;;
-        *)
-          echo "[data-disk] Filesystem $${FSTYPE}: no grow action defined."
-          ;;
-      esac
+  - path: /usr/local/sbin/prepare-ebs-volume.sh
+    permissions: '0755'
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      
+      exec > >(tee /var/log/prepare-ebs-volume.log|logger -t prepare-ebs -s 2>/dev/console) 2>&1
+      
+      prepare_ebs_volume() {
+        local VOL_ID="$${1:-}"
+        local MP="$${2:-/data}"
 
-      echo "[data-disk] Done. Mounted $${TARGET} ($${FSTYPE}) on $${MP}."
+        if [ -z "$${VOL_ID}" ] || [ "$${VOL_ID}" = "null" ]; then
+          echo "[data-disk] No volume_id provided; skipping."
+          return 0
+        fi
+
+        VOL_ID_NOHYPHENS="$${VOL_ID//-/}"
+        BYID="/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_$${VOL_ID_NOHYPHENS}"
+
+        echo "[data-disk] Waiting for $${BYID} to appear..."
+        for i in $(seq 1 120); do
+          [ -e "$${BYID}" ] && break
+          sleep 1
+        done
+        
+        if [ ! -e "$${BYID}" ]; then
+          echo "[data-disk] $${BYID} not found after waiting; exiting (nofail)."
+          return 0
+        fi
+
+        DEV="$(readlink -f "$${BYID}")"
+        if [ -z "$${DEV}" ] || [ ! -b "$${DEV}" ]; then
+          echo "[data-disk] Resolved device invalid: $${DEV}"
+          return 0
+        fi
+
+        mkdir -p "$${MP}"
+
+        mapfile -t LINES < <(lsblk -ln -o PATH,TYPE,FSTYPE "$${DEV}")
+        CANDIDATE_WITH_FS=""
+        PARTS=()
+
+        for line in "$${LINES[@]}"; do
+          PATH_FIELD="$(awk '{print $1}' <<< "$${line}")"
+          TYPE_FIELD="$(awk '{print $2}' <<< "$${line}")"
+          FSTYPE_FIELD="$(awk '{print $3}' <<< "$${line}")"
+
+          if [ "$${TYPE_FIELD}" = "part" ]; then
+            PARTS+=("$${PATH_FIELD}")
+          fi
+
+          if [ -n "$${FSTYPE_FIELD}" ] && [ -z "$${CANDIDATE_WITH_FS}" ]; then
+            CANDIDATE_WITH_FS="$${PATH_FIELD}"
+          fi
+        done
+
+        if [ -n "$${CANDIDATE_WITH_FS}" ]; then
+          TARGET="$${CANDIDATE_WITH_FS}"
+          FSTYPE="$(blkid -s TYPE -o value "$${TARGET}")"
+          echo "[data-disk] Found existing filesystem $${FSTYPE} on $${TARGET}; preserving."
+        else
+          if [ "$${#PARTS[@]}" -eq 1 ]; then
+            TARGET="$${PARTS[0]}"
+          elif [ "$${#PARTS[@]}" -ge 2 ]; then
+            TARGET="$${PARTS[0]}"
+          else
+            TARGET="$${DEV}"
+          fi
+          echo "[data-disk] No filesystem detected; formatting $${TARGET} as XFS..."
+          mkfs.xfs -f "$${TARGET}"
+          FSTYPE="xfs"
+        fi
+
+        UUID="$(blkid -s UUID -o value "$${TARGET}")"
+        if [ -z "$${UUID}" ]; then
+          echo "[data-disk] Could not read UUID for $${TARGET}."
+          return 1
+        fi
+
+        sed -i '\|/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_|d' /etc/fstab
+        sed -i '\|[[:space:]]/data[[:space:]]|d' /etc/fstab
+        echo "UUID=$${UUID} $${MP} $${FSTYPE} defaults,nofail,x-systemd.device-timeout=30s 0 2" >> /etc/fstab
+
+        if ! mountpoint -q "$${MP}"; then
+          mount "$${MP}"
+        fi
+
+        case "$${FSTYPE}" in
+          xfs) xfs_growfs "$${MP}" || true ;;
+          ext4|ext3|ext2)
+            SRC="$(findmnt -no SOURCE "$${MP}")"
+            resize2fs "$${SRC}" || true
+            ;;
+          *) echo "[data-disk] Filesystem $${FSTYPE}: no grow action defined." ;;
+        esac
+
+        echo "[data-disk] Done. Mounted $${TARGET} ($${FSTYPE}) on $${MP}."
+      }
+      
+      # Run with volume_id from template
+      prepare_ebs_volume "${volume_id}" "/data"
 
 runcmd:
-  - /usr/local/sbin/prepare-data-disk.sh | tee -a /var/log/prepare-data-disk.log
+  - /usr/local/sbin/prepare-ebs-volume.sh
+  - /usr/local/sbin/deploy-app.sh

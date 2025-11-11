@@ -55,6 +55,10 @@
       dest: /etc/apt/preferences.d/libssl1.1.pref
       mode: '0644'
       content: |
+        Package: redis-stack-server
+        Pin: release n=bullseye
+        Pin-Priority: 1001
+
         Package: libssl1.1
         Pin: release n=bullseye
         Pin-Priority: 1001
@@ -77,6 +81,7 @@
     apt:
       name: redis-stack-server
       update_cache: true
+      default_release: "bullseye"
       state: present
     when: redis_stack_enabled
 

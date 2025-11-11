@@ -4,5 +4,7 @@ sudo rm /var/log/daemon.log.*
 sudo rm /var/log/syslog.*
 sudo rm /tmp/appsignal.log
 sudo rm /home/chrome/chromedriver.log
+sudo journalctl --vacuum-time=5m
+sudo systemctl restart systemd-journald
 
 sudo apt-get clean

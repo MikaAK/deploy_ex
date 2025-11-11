@@ -10,7 +10,9 @@ output "instances" {
     "public_ips": module.ec2_instance[p].public_ips,
     "ipv6_addresses": module.ec2_instance[p].ipv6_addresses,
     "instance_ids": module.ec2_instance[p].instance_ids,
-    "load_balancer_dns_name": module.ec2_instance[p].load_balancer_dns_name
+    "load_balancer_dns_name": module.ec2_instance[p].load_balancer_dns_name,
+    "is_autoscaling": module.ec2_instance[p].is_autoscaling,
+    "autoscaling_group_name": module.ec2_instance[p].autoscaling_group_name
   }}
 }
 

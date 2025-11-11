@@ -68,7 +68,7 @@ variable "tags" {
 ###########
 
 variable "enable_ebs" {
-  description = "Enables instance to generate an elastic bean stalk volume for itself"
+  description = "Enables instance to generate an Elastic Block Store volume for itself"
   type        = bool
   default     = false
   nullable    = false
@@ -215,5 +215,71 @@ variable "elb_health_check_interval" {
   description = "Changes the health check interval"
   type        = number
   default     = 20
+  nullable    = false
+}
+
+### Autoscaling ###
+###################
+
+variable "enable_autoscaling" {
+  description = "Enables AWS Auto Scaling Group instead of fixed instance count"
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "autoscaling_min_size" {
+  description = "Minimum number of instances in the Auto Scaling Group"
+  type        = number
+  default     = 1
+  nullable    = false
+}
+
+variable "autoscaling_max_size" {
+  description = "Maximum number of instances in the Auto Scaling Group"
+  type        = number
+  default     = 1
+  nullable    = false
+}
+
+variable "autoscaling_desired_capacity" {
+  description = "Desired number of instances in the Auto Scaling Group"
+  type        = number
+  default     = 1
+  nullable    = false
+}
+
+variable "autoscaling_cpu_target_percent" {
+  description = "Target CPU utilization percentage for autoscaling policy"
+  type        = number
+  default     = 60
+  nullable    = false
+}
+
+variable "autoscaling_scale_in_cooldown" {
+  description = "Cooldown period in seconds for scale-in actions"
+  type        = number
+  default     = 300
+  nullable    = false
+}
+
+variable "autoscaling_scale_out_cooldown" {
+  description = "Cooldown period in seconds for scale-out actions"
+  type        = number
+  default     = 300
+  nullable    = false
+}
+
+variable "app_port" {
+  description = "Port number for the application"
+  type        = number
+  default     = 4000
+  nullable    = false
+}
+
+variable "use_custom_ami" {
+  description = "Enable custom AMI lookup from SSM Parameter Store. Set to false to always use instance_ami directly."
+  type        = bool
+  default     = true
   nullable    = false
 }

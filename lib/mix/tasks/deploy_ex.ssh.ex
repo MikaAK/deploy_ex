@@ -18,8 +18,11 @@ defmodule Mix.Tasks.DeployEx.Ssh do
   # Connect to a random instance of my_app
   mix deploy_ex.ssh my_app
 
-  # Connect to a specific instance number
-  mix deploy_ex.ssh my_app 2
+  # Connect to a specific instance by index
+  mix deploy_ex.ssh my_app --index 2
+
+  # List all instances and their IPs
+  mix deploy_ex.ssh my_app --list
   ```
 
   ## Shell Script Integration
@@ -51,7 +54,9 @@ defmodule Mix.Tasks.DeployEx.Ssh do
   - `--directory`, `-d` - Directory containing SSH keys (default: ./deploys/terraform)
   - `--force`, `-f` - Skip confirmation prompts
   - `--quiet`, `-q` - Suppress non-essential output
-  - `--resource_group`, - Specify the resource group to connect to
+  - `--resource_group` - Specify the resource group to connect to
+  - `--index`, `-i` - Connect to a specific instance by index (0-based)
+  - `--list`, `-l` - List all instances and their IPs without connecting
   """
 
   def run(args) do
@@ -64,9 +69,13 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, app_name} <- DeployExHelpers.find_project_name(app_params),
-         {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:directory], opts[:pem]),
          {:ok, instance_ips} <- DeployEx.AwsMachine.find_instance_ips(DeployExHelpers.project_name(), app_name, machine_opts) do
-      connect_to_host(app_name, instance_ips, pem_file_path, opts)
+      if opts[:list] do
+        list_instances(app_name, instance_ips)
+      else
+        {:ok, pem_file_path} = DeployEx.Terraform.find_pem_file(opts[:directory], opts[:pem])
+        connect_to_host(app_name, instance_ips, pem_file_path, opts)
+      end
     else
       {:error, e} -> Mix.raise(to_string(e))
     end
@@ -74,7 +83,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
   defp parse_args(args) do
     OptionParser.parse!(args,
-      aliases: [f: :force, q: :quiet, d: :directory, s: :short, n: :log_count, p: :pem],
+      aliases: [f: :force, q: :quiet, d: :directory, s: :short, n: :log_count, p: :pem, i: :index, l: :list],
       switches: [
         directory: :string,
         force: :boolean,
@@ -87,9 +96,39 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         all: :boolean,
         iex: :boolean,
         pem: :string,
-        resource_group: :string
+        resource_group: :string,
+        index: :integer,
+        list: :boolean
       ]
     )
+  end
+
+  defp list_instances(app_name, []) do
+    Mix.shell().info([:yellow, "No instances found for #{app_name}"])
+  end
+
+  defp list_instances(app_name, instance_ips) do
+    Mix.shell().info([
+      :green, "\n",
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+      :bright, "Instances for: ", :normal, app_name, "\n",
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    ])
+
+    instance_ips
+    |> Enum.with_index()
+    |> Enum.each(fn {ip, index} ->
+      Mix.shell().info([
+        :cyan, "  [#{index}] ", :reset, ip
+      ])
+    end)
+
+    Mix.shell().info([
+      :green, "\n",
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+      :reset, "Total instances: ", :bright, "#{length(instance_ips)}", :reset, "\n",
+      "Use ", :cyan, "--index N", :reset, " to connect to a specific instance\n"
+    ])
   end
 
   defp connect_to_host(app_name, [], _pem_file_path, _opts) do
@@ -97,10 +136,20 @@ defmodule Mix.Tasks.DeployEx.Ssh do
   end
 
   defp connect_to_host(app_name, instance_ips, pem_file_path, opts) do
-    instance_ip = if opts[:short] do
-      Enum.random(instance_ips)
-    else
-      DeployExHelpers.prompt_for_choice(instance_ips, false)
+    instance_ip = cond do
+      opts[:index] !== nil ->
+        case Enum.at(instance_ips, opts[:index]) do
+          nil ->
+            Mix.raise("Instance index #{opts[:index]} not found. Available: 0..#{length(instance_ips) - 1}")
+          ip ->
+            ip
+        end
+
+      opts[:short] ->
+        Enum.random(instance_ips)
+
+      true ->
+        DeployExHelpers.prompt_for_choice(instance_ips, false)
     end
 
     log_ssh_command(app_name, pem_file_path, instance_ip, opts)

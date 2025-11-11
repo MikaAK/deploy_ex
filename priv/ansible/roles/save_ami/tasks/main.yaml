@@ -1,0 +1,86 @@
+- name: save_ami
+  block:
+    - name: Get instance metadata
+      uri:
+        url: http://169.254.169.254/latest/meta-data/instance-id
+        return_content: yes
+      register: instance_id_result
+
+    - name: Get AWS region
+      uri:
+        url: http://169.254.169.254/latest/meta-data/placement/region
+        return_content: yes
+      register: region_result
+
+    - name: Set instance and region facts
+      set_fact:
+        instance_id: "{{ instance_id_result.content }}"
+        aws_region: "{{ region_result.content }}"
+
+    - name: Create AMI from current instance
+      command: >
+        aws ec2 create-image
+        --region {{ aws_region }}
+        --instance-id {{ instance_id }}
+        --name "{{ app_name }}-{{ environment }}-{{ ansible_date_time.epoch }}"
+        --description "Auto-generated AMI for {{ app_name }} in {{ environment }} at {{ ansible_date_time.iso8601 }}"
+        --tag-specifications 'ResourceType=image,Tags=[
+          {Key=Name,Value={{ app_name }}-{{ environment }}},
+          {Key=App,Value={{ app_name }}},
+          {Key=Environment,Value={{ environment }}},
+          {Key=CreatedAt,Value={{ ansible_date_time.iso8601 }}},
+          {Key=ManagedBy,Value=DeployEx},
+          {Key=Type,Value=AutoScaleReady}
+        ]'
+        --no-reboot
+      register: ami_creation_result
+
+    - name: Parse AMI ID from result
+      set_fact:
+        new_ami_id: "{{ (ami_creation_result.stdout | from_json).ImageId }}"
+
+    - name: Store AMI ID in SSM Parameter Store
+      command: >
+        aws ssm put-parameter
+        --region {{ aws_region }}
+        --name "/deploy_ex/{{ environment }}/{{ app_name }}/latest_ami"
+        --value "{{ new_ami_id }}"
+        --type String
+        --overwrite
+        --description "Latest AMI for {{ app_name }} in {{ environment }}"
+
+    - name: Wait for AMI to be available (async, non-blocking)
+      command: >
+        aws ec2 wait image-available
+        --region {{ aws_region }}
+        --image-ids {{ new_ami_id }}
+      async: 1800
+      poll: 0
+      register: ami_wait_task
+
+    - name: Log AMI creation success
+      debug:
+        msg: "Created AMI {{ new_ami_id }} for {{ app_name }}-{{ environment }}. AMI will be available in ~5-10 minutes."
+
+    - name: Cleanup old AMIs (keep last 3)
+      shell: |
+        aws ec2 describe-images \
+          --region {{ aws_region }} \
+          --owners self \
+          --filters "Name=tag:App,Values={{ app_name }}" "Name=tag:Environment,Values={{ environment }}" "Name=tag:ManagedBy,Values=DeployEx" \
+          --query 'Images | sort_by(@, &CreationDate) | [:-3].[ImageId]' \
+          --output text | while read ami_id; do
+            if [ -n "$ami_id" ]; then
+              echo "Deregistering old AMI: $ami_id"
+              aws ec2 deregister-image --region {{ aws_region }} --image-id $ami_id || true
+            fi
+          done
+      register: cleanup_result
+      ignore_errors: yes
+
+    - name: Log cleanup result
+      debug:
+        msg: "{{ cleanup_result.stdout_lines }}"
+      when: cleanup_result.stdout_lines | length > 0
+
+  become: true

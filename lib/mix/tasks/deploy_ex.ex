@@ -32,6 +32,10 @@ defmodule Mix.Tasks.DeployEx do
     {"deploy_ex.view_current_release", "Shows the current (latest) release for a specific app via SSH"},
     {"deploy_ex.test", "Runs mix.release for apps that have changed"},
 
+    # Autoscaling Commands
+    {"deploy_ex.autoscale.status", "Displays autoscaling group status (instance count, limits, policies)"},
+    {"deploy_ex.autoscale.scale", "Manually sets desired capacity of an autoscaling group"},
+
     # Ansible Commands
     {"ansible.build", "Builds ansible files into your repository"},
     {"ansible.deploy", "Deploys to ansible hosts"},

@@ -1,8 +1,12 @@
 defmodule DeployEx.SSH do
   def connect_to_ssh(ip, port \\ 22, pem_file_path, user \\ "admin") do
+    key_file = pem_file_path |> Path.basename |> to_charlist
+    
     :ssh.connect(to_charlist(ip), port, maybe_add_ipv6(ip, [
       {:user, to_charlist(user)},
       {:user_dir, pem_file_path |> Path.dirname |> to_charlist},
+      {:auth_methods, ~c"publickey"},
+      {:key_cb, {:ssh_file, [{:identity, key_file}]}},
       {:user_interaction, false},
       {:silently_accept_hosts, true}
     ]))

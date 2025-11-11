@@ -183,6 +183,25 @@ env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
 - [x] `mix deploy_ex.list_app_release_history` - Shows the release history for a specific app by SSHing into the node
 - [x] `mix deploy_ex.view_current_release` - Shows the current (latest) release for a specific app by SSHing into the node
 
+### Autoscaling Commands
+- [x] `mix deploy_ex.autoscale.status <app_name>` - Display Auto Scaling Group status (capacity, instances, policies)
+- [x] `mix deploy_ex.autoscale.scale <app_name> <desired_capacity>` - Manually set desired capacity of an ASG
+
+**Examples:**
+```bash
+# View autoscaling status
+mix deploy_ex.autoscale.status my_app
+
+# Manually scale to 5 instances
+mix deploy_ex.autoscale.scale my_app 5
+
+# List all instances for SSH
+mix deploy_ex.ssh my_app --list
+
+# Connect to specific instance by index
+mix deploy_ex.ssh my_app --index 0
+```
+
 ## Universial Options
 Most of these are available on any command in DeployEx
 - `aws-bucket` - Bucket to use for aws deploys
@@ -197,7 +216,7 @@ Inside this file specifically the `my_app_project` variable is the most importan
 The following options are present:
 
 - `name` - Should aim not to touch this, it effects a lot of tags, if you do, make sure to modify the ansible files to match as the instance name itself is based on this
-- `instance_count`- Number of instances to create for this app
+- `instance_count`- Number of instances to create for this app (ignored when autoscaling is enabled)
 - `instance_type` - The instance tier to use eg `t3.nano` or `t3.micro`
 - `instance_ami` - Override the default AMI for this instance
 - `private_ip` - Set a static private IP for the instance
@@ -224,6 +243,67 @@ The following options are present:
   - `secondary_size` - Set the secondary EBS Volume on /data size in GB (default: 16GB)
   - `secondary_snapshot_id` - Snapshot ID to restore secondary volume from
 - `tags` - Tags specified in `Key=Value` format to add to the EC2 instance
+- `autoscaling` - Configure AWS Auto Scaling Groups (see below)
+
+### Autoscaling Configuration
+
+DeployEx supports AWS Auto Scaling Groups with automatic CPU-based scaling. When enabled, instances are managed dynamically by AWS based on load.
+
+**Configuration:**
+```hcl
+my_app_project = {
+  my_app = {
+    name = "My App"
+    
+    enable_lambda_setup = true  # Enable Lambda-based setup (works for both static and autoscaling instances)
+  
+    lambda_setup = {
+      deploy_ex_version = "latest"  # or "v1.2.3"
+      ansible_roles = [
+        "beam_linux_tuning",
+        "pip3",
+        "awscli",
+        "ipv6",
+        "prometheus_exporter",
+        "grafana_loki_promtail",
+        "log_cleanup"
+      ]
+    }
+    
+    autoscaling = {
+      enable             = true
+      min_size           = 1
+      max_size           = 5
+      desired_capacity   = 2
+      cpu_target_percent = 60
+      scale_in_cooldown  = 300
+      scale_out_cooldown = 300
+    }
+    
+    # Optional: EBS volumes work with autoscaling via dynamic attachment
+    enable_ebs = true
+    instance_ebs_secondary_size = 32
+  }
+}
+```
+
+**How it works:**
+- Instances automatically launch when CPU exceeds target percentage
+- Instances terminate when CPU drops below target
+- New instances download the latest release from S3 and start automatically
+- EBS volumes (if enabled) attach/detach dynamically as instances scale
+- Instances join the cluster automatically via libcluster tags
+
+**IAM Permissions:**
+Autoscaled instances have IAM roles with permissions for:
+- S3 release downloads
+- CloudWatch metrics and logs
+- EC2 volume attachment/detachment (if EBS enabled)
+
+**Limitations:**
+- Elastic IPs are not supported with autoscaling (instances get dynamic IPs)
+- EBS volumes require a pool equal to `max_size` (one volume per potential instance)
+- EBS volumes are AZ-specific and only attach to instances in the same AZ
 
 ## Switching out IaC Tools
 By default, DeployEx uses Terraform and Ansible for infrastructure as code (IaC) tools.
@@ -297,6 +377,86 @@ function my-app-ssh
   popd
 end
 ```
+
+## Deploying with Autoscaling
+
+When using autoscaling, there are three strategies for deploying new application versions:
+
+### Strategy 1: Ansible Deploy (Recommended for Quick Updates)
+Deploy to all running instances simultaneously using Ansible:
+```bash
+mix deploy_ex.upload
+mix ansible.deploy
+```
+
+**Pros:** Fast, no instance replacement, maintains current capacity
+**Cons:** All instances update at once (brief downtime possible)
+
+### Strategy 2: Instance Refresh (Recommended for Zero-Downtime)
+Update the Launch Template and trigger a rolling instance refresh:
+```bash
+# Upload new release
+mix deploy_ex.upload
+
+# Update Terraform (if Launch Template changes needed)
+mix terraform.apply
+
+# AWS automatically performs rolling refresh
+# - Maintains 50% healthy instances
+# - New instances download latest release
+# - Old instances gradually terminated
+```
+
+**Pros:** Zero-downtime, gradual rollout, automatic rollback on health check failures
+**Cons:** Slower (replaces all instances), uses more resources temporarily
+
+### Strategy 3: Scale-In/Out Cycle
+Force new instances by scaling down then up:
+```bash
+mix deploy_ex.upload
+mix deploy_ex.autoscale.scale my_app 0  # Scale to min
+sleep 30
+mix deploy_ex.autoscale.scale my_app 3  # Scale back up
+```
+
+**Pros:** Simple, forces fresh instances
+**Cons:** Temporary capacity reduction, not recommended for production
+
+### How New Instances Get the Right Version
+
+Autoscaled instances automatically discover and download the correct release version:
+
+1. **Query Existing Nodes:** New instance finds a running instance via AWS API
+2. **SSH to Get Version:** Reads `/srv/current_release.txt` from existing instance (managed by Ansible)
+3. **Respects Rollbacks:** Uses the same release file that Ansible deployed, even if it's a rolled-back version
+4. **Fallback to Latest:** If no instances exist, queries S3 for the most recent release (enables initial deployment)
+5. **Download from S3:** Fetches the discovered version from S3
+
+This approach ensures version consistency across scale events and respects rollback operations while still allowing autoscaling from zero instances.
+
+### Instance Setup Included in Autoscaling
+
+Autoscaled instances receive **full Ansible setup** via Lambda + SSM:
+
+**Basic Setup (in user-data):**
+- **BEAM Linux Tuning:** File descriptor limits (65536), kernel parameters for networking, TCP congestion window optimization
+- **IPv6/Dualstack:** AWS dualstack endpoint configuration for S3 and EC2
+- **Log Management:** Aggressive log rotation (daily, 4 rotations) and weekly cleanup to prevent disk space issues
+- **EBS Volume Management:** Dynamic attachment/detachment with filesystem detection and growth
+
+**Advanced Setup (via Lambda):**
+- **Prometheus Exporter:** Metrics collection for monitoring
+- **Loki Promtail:** Log aggregation to Loki
+- **Additional Ansible Roles:** Any roles configured in your setup playbook
+
+**How it works:**
+1. Instance boots and triggers SNS notification
+2. Lambda function is invoked
+3. Lambda downloads Ansible roles from DeployEx GitHub releases
+4. Lambda runs Ansible setup via SSM Run Command
+5. Instance completes setup and starts application
+
+**No S3 upload needed** - Ansible roles are packaged in DeployEx releases automatically via GitHub Actions.
 
 ## Monitoring
 Out of the box, deploy_ex will generate Prometheus, Grafana UI, Grafana Loki and Sentry (WIP) into the application
@@ -441,6 +601,81 @@ possible without his help!!
 
   All you need to do is run `mix ansible.deploy --only <app_name>` this will find all nodes
   that match the input and run a redeploy using the last release found in S3
+
+</details>
+
+<details>
+  <summary>Autoscaling: Instances not joining the cluster</summary>
+
+  Check that instances have proper tags for libcluster discovery:
+  - Verify `Group` and `InstanceGroup` tags are set on instances
+  - Check libcluster configuration uses `EC2Tag` strategy
+  - Ensure security groups allow inter-instance communication
+  - Run `mix deploy_ex.autoscale.status <app>` to see instance states
+
+</details>
+
+<details>
+  <summary>Autoscaling: User-data script failures</summary>
+
+  Check user-data execution logs:
+  ```bash
+  # SSH to instance
+  mix deploy_ex.ssh my_app --index 0
+  
+  # Check user-data logs
+  sudo cat /var/log/user-data.log
+  sudo journalctl -u cloud-final
+  ```
+
+  Common issues:
+  - IAM role missing S3 or EC2 permissions
+  - Release file not found in S3 bucket
+  - SSH key not available for release discovery
+  - Network connectivity issues
+
+</details>
+
+<details>
+  <summary>Autoscaling: Terraform desired_capacity drift</summary>
+
+  If Terraform shows drift on `desired_capacity`, this is expected. The ASG has `lifecycle { ignore_changes = [desired_capacity] }` to allow AWS to manage capacity dynamically without Terraform interference.
+
+</details>
+
+<details>
+  <summary>Autoscaling: Scale-in not happening</summary>
+
+  Check these settings:
+  - Verify `min_size` allows scale-in (not equal to `max_size`)
+  - Check CPU is actually dropping below target percentage
+  - Review `scale_in_cooldown` period (default 300s)
+  - Ensure no scale-in protection on instances
+  - Check CloudWatch metrics for actual CPU utilization
+
+</details>
+
+<details>
+  <summary>Autoscaling: New instances get wrong version</summary>
+
+  The user-data script queries existing instances for the current release version from `/srv/current_release.txt`. If this fails, it falls back to the latest release in S3. Check:
+  - Ensure SSH keys are properly configured in Launch Template
+  - Check security groups allow SSH between instances
+  - Verify `/srv/current_release.txt` exists on running instances (created by Ansible)
+  - Verify releases exist in S3 bucket
+  - Check `/var/log/user-data.log` for release discovery details
+
+</details>
+
+<details>
+  <summary>Autoscaling: EBS volumes not attaching</summary>
+
+  Check:
+  - Volume pool size equals `max_size` (one volume per potential instance)
+  - Volumes are in the same AZ as instances
+  - IAM role has `ec2:AttachVolume` and `ec2:DescribeVolumes` permissions
+  - Check `/var/log/user-data.log` for attachment errors
+  - Verify volumes have correct `InstanceGroup` tag
 
 </details>
 

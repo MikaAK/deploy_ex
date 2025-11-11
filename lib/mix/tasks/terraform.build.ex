@@ -142,6 +142,16 @@ defmodule Mix.Tasks.Terraform.Build do
             Vendor = "Self"
             Type   = "Self Made"
           }
+
+          # Autoscaling Configuration (optional)
+          # Uncomment and configure to enable AWS Auto Scaling Groups
+          # autoscaling = {
+          #   enable             = true
+          #   min_size           = 1
+          #   max_size           = 5
+          #   desired_capacity   = 2
+          #   cpu_target_percent = 60
+          # }
         }
     """, "\n")
   end

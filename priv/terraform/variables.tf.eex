@@ -130,6 +130,16 @@ variable "<%= @app_name %>_project" {
       secondary_snapshot_id = optional(string)
     }))
 
+    autoscaling = optional(object({
+      enable                 = optional(bool)
+      min_size               = optional(number)
+      max_size               = optional(number)
+      desired_capacity       = optional(number)
+      cpu_target_percent     = optional(number)
+      scale_in_cooldown      = optional(number)
+      scale_out_cooldown     = optional(number)
+    }))
+
     tags = optional(map(string))
   }))
 

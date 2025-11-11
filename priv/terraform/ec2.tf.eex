@@ -52,6 +52,17 @@ module "ec2_instance" {
 
   private_ip = try(each.value.private_ip, null)
 
+  enable_autoscaling              = try(each.value.autoscaling.enable, false)
+  autoscaling_min_size            = try(each.value.autoscaling.min_size, try(each.value.instance_count, 1))
+  autoscaling_max_size            = try(each.value.autoscaling.max_size, try(each.value.instance_count, 1))
+  autoscaling_desired_capacity    = try(each.value.autoscaling.desired_capacity, try(each.value.instance_count, 1))
+  autoscaling_cpu_target_percent  = try(each.value.autoscaling.cpu_target_percent, 60)
+  autoscaling_scale_in_cooldown   = try(each.value.autoscaling.scale_in_cooldown, 300)
+  autoscaling_scale_out_cooldown  = try(each.value.autoscaling.scale_out_cooldown, 300)
+
+  app_port       = try(each.value.app_port, 4000)
+  use_custom_ami = try(each.value.use_custom_ami, true)
+
   security_group_id = module.app_security_group.security_group_id
   subnet_ids        = module.vpc.public_subnets
 
