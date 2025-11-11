@@ -52,19 +52,23 @@ module "ec2_instance" {
 
   private_ip = try(each.value.private_ip, null)
 
-  enable_autoscaling              = try(each.value.autoscaling.enable, false)
-  autoscaling_min_size            = try(each.value.autoscaling.min_size, try(each.value.instance_count, 1))
-  autoscaling_max_size            = try(each.value.autoscaling.max_size, try(each.value.instance_count, 1))
-  autoscaling_desired_capacity    = try(each.value.autoscaling.desired_capacity, try(each.value.instance_count, 1))
-  autoscaling_cpu_target_percent  = try(each.value.autoscaling.cpu_target_percent, 60)
-  autoscaling_scale_in_cooldown   = try(each.value.autoscaling.scale_in_cooldown, 300)
-  autoscaling_scale_out_cooldown  = try(each.value.autoscaling.scale_out_cooldown, 300)
+  enable_autoscaling              = try(each.value.autoscaling.enable, null)
+  autoscaling_min_size            = try(each.value.autoscaling.min_size, null)
+  autoscaling_max_size            = try(each.value.autoscaling.max_size, null)
+  autoscaling_desired_capacity    = try(each.value.autoscaling.desired_capacity, null)
+  autoscaling_cpu_target_percent  = try(each.value.autoscaling.cpu_target_percent, null)
+  autoscaling_scale_in_cooldown   = try(each.value.autoscaling.scale_in_cooldown, null)
+  autoscaling_scale_out_cooldown  = try(each.value.autoscaling.scale_out_cooldown, null)
 
-  app_port       = try(each.value.app_port, 4000)
-  use_custom_ami = try(each.value.use_custom_ami, true)
+  app_port       = try(each.value.app_port, null)
+  use_custom_ami = try(each.value.use_custom_ami, null)
 
-  security_group_id = module.app_security_group.security_group_id
-  subnet_ids        = module.vpc.public_subnets
+  github_token = try(var.github_token, "")
+  github_repo  = try(var.github_repo, "")
+
+  iam_instance_profile_name = aws_iam_instance_profile.ec2_instance_profile.name
+  security_group_id         = module.app_security_group.security_group_id
+  subnet_ids                = module.vpc.public_subnets
 
   key_pair_key_name = aws_key_pair.key_pair.key_name
 }

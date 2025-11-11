@@ -6,18 +6,17 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/root/
-ExecStart=/usr/bin/prometheus --config.file /root/prometheus-config.yaml --storage.tsdb.retention.size 4GB
-
+ExecStart=/usr/bin/prometheus --storage.tsdb.retention.size {{ prometheus_retention_size }} --storage.tsdb.path /data --storage.tsdb.retention.time {{ prometheus_retention_time }} --query.max-concurrency 10 --query.max-samples 5e7 --storage.tsdb.wal-compression
 Restart=on-failure
 RestartSec=5
 SuccessExitStatus=143
 TimeoutStopSec=10
-SyslogIdentifier=prometheus
 RemainAfterExit=no
 LimitNOFILE=infinity
 
 [Install]
 WantedBy=multi-user.target
+
 
 
 

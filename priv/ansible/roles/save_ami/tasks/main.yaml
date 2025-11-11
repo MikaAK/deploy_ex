@@ -22,12 +22,12 @@
         aws ec2 create-image
         --region {{ aws_region }}
         --instance-id {{ instance_id }}
-        --name "{{ app_name }}-{{ environment }}-{{ ansible_date_time.epoch }}"
-        --description "Auto-generated AMI for {{ app_name }} in {{ environment }} at {{ ansible_date_time.iso8601 }}"
+        --name "{{ app_name }}-{{ env }}-{{ ansible_date_time.epoch }}"
+        --description "Auto-generated AMI for {{ app_name }} in {{ env }} at {{ ansible_date_time.iso8601 }}"
         --tag-specifications 'ResourceType=image,Tags=[
-          {Key=Name,Value={{ app_name }}-{{ environment }}},
+          {Key=Name,Value={{ app_name }}-{{ env }}},
           {Key=App,Value={{ app_name }}},
-          {Key=Environment,Value={{ environment }}},
+          {Key=Environment,Value={{ env }}},
           {Key=CreatedAt,Value={{ ansible_date_time.iso8601 }}},
           {Key=ManagedBy,Value=DeployEx},
           {Key=Type,Value=AutoScaleReady}
@@ -43,11 +43,11 @@
       command: >
         aws ssm put-parameter
         --region {{ aws_region }}
-        --name "/deploy_ex/{{ environment }}/{{ app_name }}/latest_ami"
+        --name "/deploy_ex/{{ env }}/{{ app_name }}/latest_ami"
         --value "{{ new_ami_id }}"
         --type String
         --overwrite
-        --description "Latest AMI for {{ app_name }} in {{ environment }}"
+        --description "Latest AMI for {{ app_name }} in {{ env }}"
 
     - name: Wait for AMI to be available (async, non-blocking)
       command: >
@@ -60,14 +60,14 @@
 
     - name: Log AMI creation success
       debug:
-        msg: "Created AMI {{ new_ami_id }} for {{ app_name }}-{{ environment }}. AMI will be available in ~5-10 minutes."
+        msg: "Created AMI {{ new_ami_id }} for {{ app_name }}-{{ env }}. AMI will be available in ~5-10 minutes."
 
     - name: Cleanup old AMIs (keep last 3)
       shell: |
         aws ec2 describe-images \
           --region {{ aws_region }} \
           --owners self \
-          --filters "Name=tag:App,Values={{ app_name }}" "Name=tag:Environment,Values={{ environment }}" "Name=tag:ManagedBy,Values=DeployEx" \
+          --filters "Name=tag:App,Values={{ app_name }}" "Name=tag:Environment,Values={{ env }}" "Name=tag:ManagedBy,Values=DeployEx" \
           --query 'Images | sort_by(@, &CreationDate) | [:-3].[ImageId]' \
           --output text | while read ami_id; do
             if [ -n "$ami_id" ]; then

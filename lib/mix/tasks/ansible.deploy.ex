@@ -35,7 +35,8 @@ defmodule Mix.Tasks.Ansible.Deploy do
   """
 
   def run(args) do
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_in_umbrella(),
+         :ok <- DeployExHelpers.ensure_ansible_installed() do
       opts = parse_args(args)
 
       opts = opts

@@ -28,6 +28,19 @@ variable "disable_ipv6" {
   default     = false
 }
 
+variable "github_token" {
+  description = "GitHub personal access token for triggering workflows (optional)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "github_repo" {
+  description = "GitHub repository in format 'owner/repo' for triggering setup workflows"
+  type        = string
+  default     = ""
+}
+
 variable "resource_databases" {
   description = "Map of database configurations"
   type = map(object({

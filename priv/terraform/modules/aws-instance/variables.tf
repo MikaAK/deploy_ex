@@ -18,6 +18,12 @@ variable "security_group_id" {
   nullable    = false
 }
 
+variable "iam_instance_profile_name" {
+  description = "Name of the IAM instance profile to attach to EC2 instances"
+  type        = string
+  nullable    = false
+}
+
 variable "private_ip" {
   description = "Private Static IP to use for the instances"
   type        = string
@@ -281,5 +287,20 @@ variable "use_custom_ami" {
   description = "Enable custom AMI lookup from SSM Parameter Store. Set to false to always use instance_ami directly."
   type        = bool
   default     = true
+  nullable    = false
+}
+
+variable "github_token" {
+  description = "GitHub personal access token for triggering workflows (optional - if not provided, scheduled workflow will handle setup)"
+  type        = string
+  default     = ""
+  sensitive   = true
+  nullable    = false
+}
+
+variable "github_repo" {
+  description = "GitHub repository in format 'owner/repo' for triggering setup workflows"
+  type        = string
+  default     = ""
   nullable    = false
 }

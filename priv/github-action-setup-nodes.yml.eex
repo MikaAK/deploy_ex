@@ -1,0 +1,101 @@
+name: Setup New Nodes
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # Every 15 minutes (fallback)
+  push:
+    branches: [main]
+  workflow_dispatch:  # Manual trigger
+    inputs:
+      instance_ids:
+        description: 'Space-separated instance IDs to setup (leave empty to auto-detect)'
+        required: false
+        type: string
+
+jobs:
+  check-and-setup:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-west-2' }}
+      
+      - name: Setup Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.16'
+          otp-version: '26'
+      
+      - name: Install dependencies
+        working-directory: ./deploys
+        run: mix deps.get
+      
+      - name: Check for nodes needing setup
+        id: check
+        working-directory: ./deploys
+        run: |
+          # If instance_ids provided via input, use those
+          if [ -n "${{ inputs.instance_ids }}" ]; then
+            INCOMPLETE_NODES="${{ inputs.instance_ids }}"
+            echo "Using provided instance IDs: $INCOMPLETE_NODES"
+          else
+            # Otherwise auto-detect via Mix task
+            INCOMPLETE_NODES=$(mix deploy_ex.find_nodes --setup-incomplete --format ids --quiet)
+          fi
+          
+          NODE_COUNT=$(echo "$INCOMPLETE_NODES" | wc -w | tr -d ' ')
+          
+          echo "incomplete_nodes=$INCOMPLETE_NODES" >> $GITHUB_OUTPUT
+          echo "node_count=$NODE_COUNT" >> $GITHUB_OUTPUT
+          
+          if [ "$NODE_COUNT" -gt 0 ]; then
+            echo "Found $NODE_COUNT node(s) needing setup: $INCOMPLETE_NODES"
+          else
+            echo "No nodes need setup"
+          fi
+      
+      - name: Get instance app names
+        id: app_names
+        if: steps.check.outputs.node_count > 0
+        working-directory: ./deploys
+        run: |
+          # Get unique app names from the incomplete nodes
+          APP_NAMES=$(mix deploy_ex.find_nodes --setup-incomplete --format json --quiet | \
+            jq -r '.[].app_name' | sort -u | tr '\n' ' ' | xargs)
+          
+          echo "app_names=$APP_NAMES" >> $GITHUB_OUTPUT
+          echo "Setting up apps: $APP_NAMES"
+      
+      - name: Run ansible setup for specific apps
+        if: steps.check.outputs.node_count > 0
+        working-directory: ./deploys
+        run: |
+          # Run ansible.setup with --only for each app that has incomplete nodes
+<%= for app_name <- app_names do %>          if echo "${{ steps.app_names.outputs.app_names }}" | grep -q "<%= app_name %>"; then
+            echo "Running setup for <%= app_name %>..."
+            mix ansible.setup --only <%= app_name %>
+          fi
+<% end %>        env:
+          MIX_ENV: prod
+      
+      - name: Tag nodes as configured
+        if: steps.check.outputs.node_count > 0
+        run: |
+          for instance_id in ${{ steps.check.outputs.incomplete_nodes }}; do
+            aws ec2 create-tags \
+              --resources "$instance_id" \
+              --tags Key=SetupComplete,Value=true
+            
+            echo "✓ Tagged $instance_id as SetupComplete=true"
+          done
+      
+      - name: Summary
+        if: steps.check.outputs.node_count > 0
+        run: |
+          echo "::notice title=Setup Complete::Configured ${{ steps.check.outputs.node_count }} node(s) for apps: ${{ steps.app_names.outputs.app_names }}"

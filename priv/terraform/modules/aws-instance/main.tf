@@ -3,36 +3,6 @@
 
 data "aws_caller_identity" "current" {}
 
-# Fetch custom AMI from SSM if available, otherwise use base AMI
-data "external" "custom_ami" {
-  program = ["bash", "${path.module}/scripts/get_ami_from_ssm.sh"]
-  
-  query = {
-    param_name   = "/deploy_ex/${var.environment}/${replace(lower(var.instance_name), "-", "_")}/latest_ami"
-    fallback_ami = var.instance_ami
-  }
-}
-
-locals {
-  snake_instance_name = replace(lower(var.instance_name), "-", "_")
-  kebab_instance_name = replace(lower(var.instance_name), "_", "-")
-  
-  # Use custom AMI if available and different from base AMI
-  use_custom_ami = data.external.custom_ami.result.ami_id != var.instance_ami
-  selected_ami   = data.external.custom_ami.result.ami_id
-  
-  # Calculate the subnet ID to use based on instance count
-  selected_subnet_id = var.instance_count == 1 ? (
-    length(var.subnet_ids) > 0 ? var.subnet_ids[0] : ""
-  ) : random_shuffle.subnet_id.result[0]
-  
-  enable_load_balancer = var.enable_elb && var.instance_count > 1
-  enable_https_load_balancer = var.enable_elb && var.enable_elb_https && var.instance_count > 1
-}
-
-### EC2 Start ###
-#################
-
 # Choose Subnet
 resource "random_shuffle" "subnet_id" {
   input        = var.subnet_ids
@@ -61,6 +31,33 @@ data "aws_subnet" "selected_subnet" {
   id = local.selected_subnet_id
 }
 
+
+# Fetch custom AMI from SSM if available, otherwise use base AMI
+data "external" "custom_ami" {
+  program = ["bash", "${path.module}/scripts/get_ami_from_ssm.sh"]
+  
+  query = {
+    param_name   = "/deploy_ex/${var.environment}/${replace(lower(var.instance_name), "-", "_")}/latest_ami"
+    fallback_ami = var.instance_ami
+  }
+}
+
+locals {
+  use_custom_ami = data.external.custom_ami.result.ami_id != var.instance_ami
+  selected_ami   = data.external.custom_ami.result.ami_id
+
+  enable_load_balancer = (var.enable_elb && var.instance_count > 1) || var.enable_autoscaling
+  enable_load_balancer_https = var.enable_elb && var.enable_elb_https || var.enable_autoscaling && var.enable_autoscaling_https
+
+  snake_instance_name = lower(replace(var.instance_name, " ", "_"))
+  kebab_instance_name = lower(replace(var.instance_name, " ", "-"))
+  selected_subnet_id = var.instance_availability_zone != null ? (
+    length(data.aws_subnets.az_specific[0].ids) > 0 ?
+    data.aws_subnets.az_specific[0].ids[0] :
+    random_shuffle.subnet_id.result[0]
+  ) : random_shuffle.subnet_id.result[0]
+}
+
 # Create EC2 Instance
 resource "aws_instance" "ec2_instance" {
   # Enable when multi-instancing, disable when autoscaling
@@ -70,7 +67,7 @@ resource "aws_instance" "ec2_instance" {
   instance_type = var.instance_type
 
   key_name = var.key_pair_key_name
-  iam_instance_profile = aws_iam_instance_profile.ec2_instance_profile.name
+  iam_instance_profile = var.iam_instance_profile_name
 
   availability_zone      = coalesce(var.instance_availability_zone, data.aws_subnet.selected_subnet.availability_zone)
   subnet_id              = local.selected_subnet_id
@@ -98,7 +95,7 @@ resource "aws_instance" "ec2_instance" {
     delete_on_termination = true # Can use this to not delete root device
 
     tags = merge({
-      Name          = "${local.kebab_instance_name}-root-${var.environment}-${count.index}"
+      Name          = "${var.instance_name}-root-${var.environment}-${count.index}"
       InstanceGroup = local.snake_instance_name
       Group         = var.resource_group
       Environment   = var.environment
@@ -108,18 +105,22 @@ resource "aws_instance" "ec2_instance" {
 
   user_data_replace_on_change = true
   user_data = templatefile("${path.module}/cloud_init_data.yaml.tftpl", {
-    app_name    = local.snake_instance_name
-    environment = var.environment
-    app_port    = var.app_port
-    volume_id   = var.enable_ebs ? aws_ebs_volume.ec2_ebs[count.index].id : ""
+    app_name     = local.snake_instance_name
+    environment  = var.environment
+    app_port     = var.app_port
+    volume_id    = var.enable_ebs ? aws_ebs_volume.ec2_ebs[count.index].id : ""
+    github_token = var.github_token
+    github_repo  = var.github_repo
   })
 
   tags = merge({
-    Name          = "${local.kebab_instance_name}-${count.index}"
+    Name          = "${var.instance_name}-${var.environment}-${count.index}"
     Group         = var.resource_group
     InstanceGroup = local.snake_instance_name
     Environment   = var.environment
     Type          = "Self Made"
+    ManagedBy     = "DeployEx"
+    SetupComplete = local.use_custom_ami ? "true" : "false"
   }, var.tags)
 }
 
@@ -175,11 +176,10 @@ resource "aws_eip" "ec2_eip" {
   }, var.tags)
 }
 
-# Associate Elastic IP to Linux Server
 resource "aws_eip_association" "ec2_eip_association" {
   count = var.enable_autoscaling ? 0 : (var.enable_eip ? var.instance_count : 0)
 
-  instance_id   = element(aws_instance.ec2_instance, count.index).id
+  instance_id   = aws_instance.ec2_instance[count.index].id
   allocation_id = aws_eip.ec2_eip[count.index].id
 }
 
@@ -189,14 +189,13 @@ resource "aws_eip_association" "ec2_eip_association" {
 # Add Load Balancing if needed and enabled
 resource "aws_lb" "ec2_lb" {
   count              = local.enable_load_balancer ? 1 : 0
-  name               = "${local.kebab_instance_name}-lb"
-  load_balancer_type = "application"
+  name               = "${local.kebab_instance_name}-lb-${var.environment}"
+  load_balancer_type = "network"
 
   subnets         = var.subnet_ids
-  security_groups = [var.security_group_id]
 
   tags = merge({
-    Name          = "${local.kebab_instance_name}-lb"
+    Name          = "${local.kebab_instance_name}-lb-${var.environment}"
     InstanceGroup = local.snake_instance_name
     Group         = var.resource_group
     Environment   = var.environment
@@ -207,7 +206,7 @@ resource "aws_lb" "ec2_lb" {
 
 resource "aws_lb_target_group" "ec2_lb_target_group" {
   count = local.enable_load_balancer ? 1 : 0
-  name  = "${local.kebab_instance_name}-lb-tg"
+  name  = "${local.kebab_instance_name}-lb-tg-${var.environment}"
 
   vpc_id   = data.aws_subnet.random_subnet.vpc_id
   protocol = "TCP"
@@ -228,7 +227,7 @@ resource "aws_lb_target_group" "ec2_lb_target_group" {
   }
 
   tags = merge({
-    Name          = "${local.kebab_instance_name}-http-lb-tg"
+    Name          = "${local.kebab_instance_name}-lb-tg-${var.environment}"
     InstanceGroup = local.snake_instance_name
     Group         = var.resource_group
     Environment   = var.environment
@@ -238,7 +237,7 @@ resource "aws_lb_target_group" "ec2_lb_target_group" {
 }
 
 resource "aws_lb_target_group_attachment" "ec2_lb_target_group_attachment" {
-  count = var.enable_autoscaling ? 1 : 0
+  count = local.enable_load_balancer && !var.enable_autoscaling ? var.instance_count : 0
 
   target_group_arn = aws_lb_target_group.ec2_lb_target_group[0].arn
   target_id        = aws_instance.ec2_instance[count.index].id
@@ -249,8 +248,8 @@ resource "aws_lb_listener" "ec2_lb_listener" {
   count = local.enable_load_balancer ? 1 : 0
 
   load_balancer_arn = aws_lb.ec2_lb[0].arn
-  port              = aws_lb_target_group.ec2_lb_target_group[0].port
-  protocol          = aws_lb_target_group.ec2_lb_target_group[0].protocol
+  port              = 80
+  protocol          = "TCP"
 
   default_action {
     type             = "forward"
@@ -259,7 +258,7 @@ resource "aws_lb_listener" "ec2_lb_listener" {
 }
 
 resource "aws_lb_target_group" "ec2_lb_https_target_group" {
-  count = local.enable_https_load_balancer ? 1 : 0
+  count = local.enable_load_balancer ? 1 : 0
   name  = "${local.kebab_instance_name}-lb-https-tg-${var.environment}"
   vpc_id   = data.aws_subnet.random_subnet.vpc_id
   protocol = "TCP"
@@ -290,17 +289,17 @@ resource "aws_lb_target_group" "ec2_lb_https_target_group" {
 }
 
 resource "aws_lb_target_group_attachment" "ec2_lb_https_target_group_attachment" {
-  count = var.enable_autoscaling ? 1 : 0
+  count = local.enable_load_balancer && !var.enable_autoscaling ? var.instance_count : 0
   target_group_arn = aws_lb_target_group.ec2_lb_https_target_group[0].arn
   target_id        = aws_instance.ec2_instance[count.index].id
   port             = aws_lb_target_group.ec2_lb_https_target_group[0].port
 }
 
 resource "aws_lb_listener" "ec2_lb_https_listener" {
-  count = local.enable_https_load_balancer ? 1 : 0
+  count = local.enable_load_balancer ? 1 : 0
   load_balancer_arn = aws_lb.ec2_lb[0].arn
-  port              = aws_lb_target_group.ec2_lb_https_target_group[0].port
-  protocol          = aws_lb_target_group.ec2_lb_https_target_group[0].protocol
+  port              = 443
+  protocol          = "TCP"
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.ec2_lb_https_target_group[0].arn
@@ -317,11 +316,12 @@ resource "aws_launch_template" "ec2_lt" {
   image_id      = local.selected_ami
   instance_type = var.instance_type
   key_name      = var.key_pair_key_name
+  description   = "Launch template for ${local.kebab_instance_name} using AMI: ${local.selected_ami}"
 
   vpc_security_group_ids = [var.security_group_id]
 
   iam_instance_profile {
-    name = aws_iam_instance_profile.ec2_instance_profile.name
+    name = var.iam_instance_profile_name
   }
 
   metadata_options {
@@ -348,6 +348,8 @@ resource "aws_launch_template" "ec2_lt" {
       InstanceGroup = local.snake_instance_name
       Environment   = var.environment
       Type          = "Self Made"
+      ManagedBy     = "DeployEx"
+      SetupComplete = local.use_custom_ami ? "true" : "false"
     }, var.tags)
   }
 
@@ -367,10 +369,12 @@ resource "aws_launch_template" "ec2_lt" {
     templatefile(
       "${path.module}/cloud_init_data.yaml.tftpl",
       {
-        app_name    = local.snake_instance_name
-        environment = var.environment
-        app_port    = var.app_port
-        volume_id   = ""  # Autoscaling instances handle volume attachment separately
+        app_name     = local.snake_instance_name
+        environment  = var.environment
+        app_port     = var.app_port
+        volume_id    = ""  # Autoscaling instances handle volume attachment separately
+        github_token = var.github_token
+        github_repo  = var.github_repo
       }
     )
   )
@@ -378,6 +382,9 @@ resource "aws_launch_template" "ec2_lt" {
   lifecycle {
     create_before_destroy = true
   }
+  
+  # Ensure ASG picks up new version automatically
+  update_default_version = true
 
   tags = merge({
     Name          = "${local.kebab_instance_name}-launch-template"
@@ -410,6 +417,15 @@ resource "aws_autoscaling_group" "ec2_asg" {
     version = "$Latest"
   }
 
+  instance_refresh {
+    strategy = "Rolling"
+    preferences {
+      min_healthy_percentage = 50
+      instance_warmup        = 300
+    }
+    triggers = ["tag"]
+  }
+
   tag {
     key                 = "Name"
     value               = "${var.instance_name}-${var.environment}"
@@ -440,15 +456,6 @@ resource "aws_autoscaling_group" "ec2_asg" {
     propagate_at_launch = true
   }
 
-  instance_refresh {
-    strategy = "Rolling"
-    preferences {
-      min_healthy_percentage = 50
-      instance_warmup        = 60
-    }
-    triggers = ["tag"]
-  }
-
   lifecycle {
     ignore_changes = [desired_capacity]
   }
@@ -471,93 +478,5 @@ resource "aws_autoscaling_policy" "cpu_target" {
   estimated_instance_warmup = 60
 }
 
-### IAM Role for EC2 Instances ###
-####################################
-
-resource "aws_iam_role" "ec2_instance_role" {
-  name  = "${local.kebab_instance_name}-instance-role-${var.environment}"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "ec2.amazonaws.com"
-      }
-    }]
-  })
-
-  tags = merge({
-    Name          = "${local.kebab_instance_name}-instance-role"
-    InstanceGroup = local.snake_instance_name
-    Group         = var.resource_group
-    Environment   = var.environment
-    Type          = "Self Made"
-  }, var.tags)
-}
-
-resource "aws_iam_role_policy" "ec2_instance_policy" {
-  name  = "${local.kebab_instance_name}-instance-policy-${var.environment}"
-  role  = aws_iam_role.ec2_instance_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:ListBucket"
-        ]
-        Resource = [
-          "arn:aws:s3:::*-elixir-deploys-${var.environment}",
-          "arn:aws:s3:::*-elixir-deploys-${var.environment}/*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "cloudwatch:PutMetricData",
-          "ec2:DescribeVolumes",
-          "ec2:DescribeTags",
-          "ec2:AttachVolume",
-          "ec2:DetachVolume",
-          "ec2:DescribeInstances",
-          "ec2:DescribeInstanceStatus",
-          "ec2:CreateImage",
-          "ec2:CreateTags",
-          "ec2:DescribeImages",
-          "ec2:DeregisterImage",
-          "logs:PutLogEvents",
-          "logs:DescribeLogStreams",
-          "logs:DescribeLogGroups",
-          "logs:CreateLogStream",
-          "logs:CreateLogGroup",
-          "ssm:PutParameter"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ssm:PutParameter"
-        ]
-        Resource = "arn:aws:ssm:*:*:parameter/deploy_ex/${var.environment}/*"
-      }
-    ]
-  })
-}
-
-resource "aws_iam_instance_profile" "ec2_instance_profile" {
-  name  = "${local.kebab_instance_name}-instance-profile-${var.environment}"
-  role  = aws_iam_role.ec2_instance_role.name
-
-  tags = merge({
-    Name          = "${local.kebab_instance_name}-instance-profile"
-    InstanceGroup = local.snake_instance_name
-    Group         = var.resource_group
-    Environment   = var.environment
-    Type          = "Self Made"
-  }, var.tags)
-}
+# IAM instance profile is now provided externally via iam_instance_profile_name variable
+# This allows sharing a single role across all applications in the environment

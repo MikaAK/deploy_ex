@@ -6,6 +6,9 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
   @github_action_path "./.github/workflows/deploy-ex-release.yml"
   @github_action_template_path DeployExHelpers.priv_file("github-action.yml.eex")
 
+  @github_action_setup_nodes_path "./.github/workflows/setup-new-nodes.yml"
+  @github_action_setup_nodes_template_path DeployExHelpers.priv_file("github-action-setup-nodes.yml.eex")
+
   @github_action_scripts_paths [{
     DeployExHelpers.priv_file("github-action-maybe-commit-terraform-changes.sh"),
     "./.github/github-action-maybe-commit-terraform-changes.sh"
@@ -13,30 +16,26 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
     DeployExHelpers.priv_file("github-action-secrets-to-env.sh"),
     "./.github/github-action-secrets-to-env.sh"
   }]
-  @shortdoc "Installs a GitHub Action for automated infrastructure and deployment management"
+  @shortdoc "Installs GitHub Actions for automated infrastructure and deployment management"
   @moduledoc """
-  Installs a GitHub Action workflow that automates infrastructure management and application deployment.
+  Installs GitHub Action workflows that automate infrastructure management and application deployment.
 
-  The workflow performs the following steps automatically on each push:
+  This installs two workflows:
 
-  1. Validates and updates Terraform infrastructure
-     - Checks if infrastructure changes are needed
-     - Applies changes if necessary
-     - Commits any Terraform state changes back to the repository
+  1. **deploy-ex-release.yml** - Main deployment workflow
+     - Validates and updates Terraform infrastructure
+     - Builds and uploads releases to S3
+     - Deploys applications via Ansible
 
-  2. Handles application releases
-     - Detects changes that require new releases
-     - Builds new release versions when needed
-     - Uploads built releases to S3 storage
-
-  3. Manages deployments
-     - Runs Ansible playbooks to deploy new releases
-     - Only deploys to servers affected by infrastructure changes
-     - Ensures zero-downtime rolling deployments
+  2. **setup-new-nodes.yml** - Automated node setup
+     - Detects new EC2 instances that need configuration
+     - Runs ansible.setup automatically
+     - Tags instances as configured
+     - Triggered on schedule and on-demand
 
   ## Example
   ```bash
-  # Install the GitHub Action workflow
+  # Install the GitHub Action workflows
   mix deploy_ex.install_github_action
 
   # Install with custom PEM directory
@@ -60,12 +59,23 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
          {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:pem_directory], opts[:pem]) do
       @github_action_path |> Path.dirname |> File.mkdir_p!
 
+      app_names = releases |> Keyword.keys |> Enum.map(&to_string/1)
+
       DeployExHelpers.write_template(
         @github_action_template_path,
         @github_action_path,
         %{
-          app_names: releases |> Keyword.keys |> Enum.map(&to_string/1),
+          app_names: app_names,
           pem_file_path: pem_file_path
+        },
+        opts
+      )
+
+      DeployExHelpers.write_template(
+        @github_action_setup_nodes_template_path,
+        @github_action_setup_nodes_path,
+        %{
+          app_names: app_names
         },
         opts
       )

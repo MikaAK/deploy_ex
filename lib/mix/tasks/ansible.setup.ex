@@ -33,7 +33,8 @@ defmodule Mix.Tasks.Ansible.Setup do
   """
 
   def run(args) do
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_in_umbrella(),
+         :ok <- DeployExHelpers.ensure_ansible_installed() do
       opts = args
         |> parse_args
         |> Keyword.put_new(:directory, @ansible_default_path)
