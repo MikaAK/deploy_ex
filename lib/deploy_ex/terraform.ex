@@ -1,14 +1,45 @@
 defmodule DeployEx.Terraform do
   @terraform_flags [
-    var_file: :string
+    var_file: :string,
+    target: :keep
   ]
 
   def parse_args(args) do
-    {terraform_opts, _extra_args, _invalid_args} = OptionParser.parse(args,
+    parse_args(args, nil)
+  end
+
+  def parse_args(args, command) do
+    default_args = DeployEx.Config.terraform_default_args(command)
+    all_args = default_args ++ args
+
+    {terraform_opts, _extra_args, _invalid_args} = OptionParser.parse(all_args,
       strict: @terraform_flags
     )
 
-    terraform_opts |> OptionParser.to_argv(@terraform_flags) |> Enum.join(" ")
+    terraform_opts
+    |> expand_target_args()
+    |> OptionParser.to_argv(@terraform_flags)
+    |> Enum.join(" ")
+  end
+
+  defp expand_target_args(opts) do
+    case Keyword.get_values(opts, :target) do
+      [] ->
+        opts
+
+      targets ->
+        opts_without_target = Keyword.delete(opts, :target)
+
+        expanded_targets = Enum.flat_map(targets, fn target ->
+          [:target, build_target_string(target)]
+        end)
+
+        opts_without_target ++ expanded_targets
+    end
+  end
+
+  defp build_target_string(target) do
+    "module.ec2_instance[\\\"#{target}\\\"]"
   end
 
   def run_command(command, terraform_directory) do

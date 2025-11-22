@@ -195,7 +195,7 @@ resource "aws_lb" "ec2_lb" {
   subnets         = var.subnet_ids
 
   tags = merge({
-    Name          = "${local.kebab_instance_name}-lb-${var.environment}"
+    Name          = "${local.kebab_instance_name}-lb"
     InstanceGroup = local.snake_instance_name
     Group         = var.resource_group
     Environment   = var.environment
@@ -326,6 +326,12 @@ resource "aws_launch_template" "ec2_lt" {
 
   metadata_options {
     http_protocol_ipv6 = "enabled"
+  }
+
+  private_dns_name_options {
+    hostname_type                        = "resource-name"
+    enable_resource_name_dns_a_record    = true
+    enable_resource_name_dns_aaaa_record = !var.disable_ipv6
   }
 
   block_device_mappings {

@@ -34,7 +34,7 @@ defmodule Mix.Tasks.Terraform.Init do
   end
 
   defp run_terraform_init(args, opts) do
-    cmd = "init #{DeployEx.Terraform.parse_args(args)}"
+    cmd = "init #{DeployEx.Terraform.parse_args(args, :init)}"
     cmd = if opts[:upgrade], do: "#{cmd} --upgrade", else: cmd
 
     DeployEx.Terraform.run_command_with_input(cmd, opts[:directory])

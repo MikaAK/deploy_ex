@@ -65,6 +65,10 @@ defmodule DeployEx.AwsMachine do
     instance["instanceState"]["name"] === "stopped"
   end
 
+  defp instance_running_or_pending?(instance) do
+    instance["instanceState"]["name"] in ["pending", "running", "starting"]
+  end
+
   def find_instances_by_id(region \\ DeployEx.Config.aws_region(), instance_ids) do
     with {:ok, instances} <- fetch_instances(region) do
       case filter_by_instance_id(instances, instance_ids) do

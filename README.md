@@ -208,6 +208,46 @@ Most of these are available on any command in DeployEx
 - `aws-region` - Bucket to use for aws deploys
 - `resource-group` - The resource group to target (AWS Group Tag for instances), by default this is "AppName Backend"
 
+## Terraform Command Options
+
+### Targeting Specific Apps
+You can target specific apps when running terraform commands using the `--target` flag. This allows you to apply changes to only specific resources:
+
+```bash
+# Target a specific app
+mix terraform.apply --target cfx_web
+
+# Target multiple apps
+mix terraform.apply --target cfx_web --target cfx_api
+
+# Use with other commands
+mix terraform.plan --target cfx_web
+mix terraform.destroy --target cfx_web
+```
+
+The `--target` flag automatically expands to the full terraform module path `module.ec2_instance["app_name"]`.
+
+### Default Command Arguments
+You can configure default arguments for terraform commands in your config. This is useful for setting common options like `--var-file`:
+
+```elixir
+# config/config.exs
+config :deploy_ex, :terraform_default_args, %{
+  apply: ["--var-file=production.tfvars"],
+  plan: ["--var-file=production.tfvars"],
+  destroy: ["--var-file=production.tfvars"]
+}
+```
+
+Default arguments are merged with command-line arguments, with command-line arguments taking precedence. This works for all terraform commands:
+- `:apply`
+- `:plan`
+- `:destroy`
+- `:refresh`
+- `:replace`
+- `:init`
+- `:output`
+
 ## Terraform Variables
 The main variables you'll want to know about are the ones inside `deploys/terraform/variables.tf`
 

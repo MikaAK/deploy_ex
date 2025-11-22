@@ -23,7 +23,7 @@ defmodule Mix.Tasks.Terraform.Replace do
 
     with :ok <- DeployExHelpers.check_in_umbrella() do
       if opts[:string] do
-        terraform_apply_replace(opts[:string], DeployEx.Terraform.parse_args(args), opts)
+        terraform_apply_replace(opts[:string], DeployEx.Terraform.parse_args(args, :replace), opts)
       else
         match_instance_from_terraform_and_replace(opts, args, extra_args)
       end
@@ -42,7 +42,7 @@ defmodule Mix.Tasks.Terraform.Replace do
 
             instance_name
               |> replace_string(node_num)
-              |> terraform_apply_replace(DeployEx.Terraform.parse_args(args), opts)
+              |> terraform_apply_replace(DeployEx.Terraform.parse_args(args, :replace), opts)
           end)
     end
   end

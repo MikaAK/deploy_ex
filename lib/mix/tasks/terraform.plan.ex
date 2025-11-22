@@ -43,7 +43,7 @@ defmodule Mix.Tasks.Terraform.Plan do
 
   defp terraform_plan(args, opts) do
     DeployEx.Terraform.run_command_with_input(
-      "plan #{DeployEx.Terraform.parse_args(args)}",
+      "plan #{DeployEx.Terraform.parse_args(args, :plan)}",
       opts[:directory]
     )
   end

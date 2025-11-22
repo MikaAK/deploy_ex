@@ -163,7 +163,7 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Status do
     ], stderr_to_stdout: true) do
       {output, 0} ->
         case Jason.decode(output) do
-          {:ok, %{"ScalingPolicies" => policies}} when length(policies) > 0 ->
+          {:ok, %{"ScalingPolicies" => [_ | _] = policies}} ->
             Mix.shell().info([
               :cyan, "\nScaling Policies:\n"
             ])

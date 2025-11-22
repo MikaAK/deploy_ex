@@ -15,7 +15,7 @@ defmodule Mix.Tasks.Terraform.Refresh do
 
     with :ok <- DeployExHelpers.check_in_umbrella() do
       DeployEx.Terraform.run_command_with_input(
-        "refresh #{DeployEx.Terraform.parse_args(args)}",
+        "refresh #{DeployEx.Terraform.parse_args(args, :refresh)}",
         opts[:directory]
       )
     end
