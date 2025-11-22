@@ -26,6 +26,13 @@ Under the default commands you will gain the following services (all of which ca
 - [Commands](https://github.com/MikaAK/deploy_ex#commands)
 - [Univiersal Options](https://github.com/MikaAK/deploy_ex#universial-options)
 - [Terraform Variables](https://github.com/MikaAK/deploy_ex#terraform-variables)
+- [Autoscaling](https://github.com/MikaAK/deploy_ex#autoscaling)
+  - [Configuration](https://github.com/MikaAK/deploy_ex#autoscaling-configuration)
+  - [How It Works](https://github.com/MikaAK/deploy_ex#how-autoscaling-works)
+  - [Deployment Strategies](https://github.com/MikaAK/deploy_ex#autoscaling-deployment-strategies)
+  - [Commands](https://github.com/MikaAK/deploy_ex#autoscaling-commands)
+  - [Instance Setup](https://github.com/MikaAK/deploy_ex#autoscaling-instance-setup)
+  - [Connecting to Instances](https://github.com/MikaAK/deploy_ex#connecting-to-autoscaled-instances)
 - [Connecting to Your Nodes](https://github.com/MikaAK/deploy_ex#connecting-to-your-nodes)
   - [Authorizing for SSH](https://github.com/MikaAK/deploy_ex#authorizing-for-ssh)
   - [Connecting to Node as Root](https://github.com/MikaAK/deploy_ex#connection-to-node-as-root)
@@ -183,25 +190,6 @@ env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
 - [x] `mix deploy_ex.list_app_release_history` - Shows the release history for a specific app by SSHing into the node
 - [x] `mix deploy_ex.view_current_release` - Shows the current (latest) release for a specific app by SSHing into the node
 
-### Autoscaling Commands
-- [x] `mix deploy_ex.autoscale.status <app_name>` - Display Auto Scaling Group status (capacity, instances, policies)
-- [x] `mix deploy_ex.autoscale.scale <app_name> <desired_capacity>` - Manually set desired capacity of an ASG
-
-**Examples:**
-```bash
-# View autoscaling status
-mix deploy_ex.autoscale.status my_app
-
-# Manually scale to 5 instances
-mix deploy_ex.autoscale.scale my_app 5
-
-# List all instances for SSH
-mix deploy_ex.ssh my_app --list
-
-# Connect to specific instance by index
-mix deploy_ex.ssh my_app --index 0
-```
-
 ## Universial Options
 Most of these are available on any command in DeployEx
 - `aws-bucket` - Bucket to use for aws deploys
@@ -283,32 +271,30 @@ The following options are present:
   - `secondary_size` - Set the secondary EBS Volume on /data size in GB (default: 16GB)
   - `secondary_snapshot_id` - Snapshot ID to restore secondary volume from
 - `tags` - Tags specified in `Key=Value` format to add to the EC2 instance
-- `autoscaling` - Configure AWS Auto Scaling Groups (see below)
+- `autoscaling` - Configure AWS Auto Scaling Groups (see [Autoscaling section](https://github.com/MikaAK/deploy_ex#autoscaling))
+
+## Switching out IaC Tools
+By default, DeployEx uses Terraform and Ansible for infrastructure as code (IaC) tools.
+However, you can switch to, e.g., [OpenTofu](https://opentofu.org/) using the `:iac_tool` option
+in `:deploy_ex` config. This should point to the binary for the installed IaC tool:
+
+```elixir
+config :deploy_ex, iac_tool: "tofu
+```
+
+## Autoscaling
+
+DeployEx supports AWS Auto Scaling Groups (ASG) with automatic CPU-based scaling. When enabled, instances are managed dynamically by AWS based on load, providing automatic horizontal scaling for your applications.
 
 ### Autoscaling Configuration
 
-DeployEx supports AWS Auto Scaling Groups with automatic CPU-based scaling. When enabled, instances are managed dynamically by AWS based on load.
+Enable autoscaling in your Terraform variables (`deploys/terraform/variables.tf`):
 
-**Configuration:**
 ```hcl
 my_app_project = {
   my_app = {
-    name = "My App"
-    
-    enable_lambda_setup = true  # Enable Lambda-based setup (works for both static and autoscaling instances)
-  
-    lambda_setup = {
-      deploy_ex_version = "latest"  # or "v1.2.3"
-      ansible_roles = [
-        "beam_linux_tuning",
-        "pip3",
-        "awscli",
-        "ipv6",
-        "prometheus_exporter",
-        "grafana_loki_promtail",
-        "log_cleanup"
-      ]
-    }
+    name          = "My App"
+    instance_type = "t3.nano"
     
     autoscaling = {
       enable             = true
@@ -320,39 +306,240 @@ my_app_project = {
       scale_out_cooldown = 300
     }
     
+    load_balancer = {
+      enable        = true
+      port          = 80
+      instance_port = 4000
+      health_check = {
+        path     = "/health"
+        protocol = "HTTP"
+      }
+    }
+    
     # Optional: EBS volumes work with autoscaling via dynamic attachment
-    enable_ebs = true
-    instance_ebs_secondary_size = 32
+    ebs = {
+      enable_secondary = true
+      secondary_size   = 32
+    }
   }
 }
 ```
 
-**How it works:**
-- Instances automatically launch when CPU exceeds target percentage
-- Instances terminate when CPU drops below target
-- New instances download the latest release from S3 and start automatically
-- EBS volumes (if enabled) attach/detach dynamically as instances scale
-- Instances join the cluster automatically via libcluster tags
+**Configuration Options:**
+- `enable` - Enable autoscaling for this app
+- `min_size` - Minimum number of instances (ASG will never scale below this)
+- `max_size` - Maximum number of instances (ASG will never scale above this)
+- `desired_capacity` - Initial number of instances to launch
+- `cpu_target_percent` - Target CPU utilization percentage (ASG scales to maintain this)
+- `scale_in_cooldown` - Seconds to wait after scale-in before another scale-in (default: 300)
+- `scale_out_cooldown` - Seconds to wait after scale-out before another scale-out (default: 300)
+
+### How Autoscaling Works
+
+**Automatic Scaling:**
+- AWS monitors average CPU utilization across all instances
+- When CPU exceeds `cpu_target_percent`, new instances launch automatically
+- When CPU drops below target, instances terminate automatically
+- Cooldown periods prevent rapid scaling oscillations
+
+**Instance Lifecycle:**
+1. **Launch:** New instance boots with Launch Template configuration
+2. **User-Data Execution:** Cloud-init runs setup scripts
+3. **Release Discovery:** Instance queries existing nodes or S3 for current version
+4. **Download & Start:** Instance downloads release from S3 and starts application
+5. **Health Checks:** Load balancer marks instance healthy after successful checks
+6. **Cluster Join:** Instance automatically joins cluster via libcluster EC2 tag strategy
+
+**Version Consistency:**
+New instances automatically discover the correct release version:
+1. Query existing instances via AWS API for running nodes
+2. SSH to existing instance and read `/srv/current_release.txt` (managed by Ansible)
+3. Respects rollbacks - uses the version Ansible deployed, not necessarily latest
+4. Fallback to latest S3 release if no instances exist (enables scaling from zero)
 
 **IAM Permissions:**
-Autoscaled instances have IAM roles with permissions for:
-- S3 release downloads
+Autoscaled instances receive an IAM role with permissions for:
+- S3 release downloads (`s3:GetObject` on release bucket)
 - CloudWatch metrics and logs
-- EC2 volume attachment/detachment (if EBS enabled)
+- EC2 instance discovery (`ec2:DescribeInstances`)
+- EC2 volume attachment/detachment if EBS enabled (`ec2:AttachVolume`, `ec2:DetachVolume`)
+
+**Load Balancing:**
+- Network Load Balancer (NLB) automatically created when autoscaling enabled
+- Instances register/deregister automatically with target groups
+- Health checks ensure traffic only routes to healthy instances
+- Supports both HTTP (port 80) and HTTPS (port 443) listeners
+
+**EBS Volumes:**
+- Volume pool created equal to `max_size` (one volume per potential instance)
+- Volumes attach/detach dynamically as instances scale
+- Volumes are AZ-specific and only attach to instances in same AZ
+- User-data script handles attachment, filesystem detection, and mounting
 
 **Limitations:**
-- Elastic IPs are not supported with autoscaling (instances get dynamic IPs)
-- EBS volumes require a pool equal to `max_size` (one volume per potential instance)
-- EBS volumes are AZ-specific and only attach to instances in the same AZ
+- Elastic IPs not supported with autoscaling (instances get dynamic IPs)
+- EBS volumes require pool equal to `max_size`
+- EBS volumes are AZ-specific
+- `instance_count` is ignored when autoscaling enabled
 
-## Switching out IaC Tools
-By default, DeployEx uses Terraform and Ansible for infrastructure as code (IaC) tools.
-However, you can switch to, e.g., [OpenTofu](https://opentofu.org/) using the `:iac_tool` option
-in `:deploy_ex` config. This should point to the binary for the installed IaC tool:
+### Autoscaling Deployment Strategies
 
-```elixir
-config :deploy_ex, iac_tool: "tofu
+When deploying new application versions with autoscaling, you have three strategies:
+
+#### Strategy 1: Ansible Deploy (Fast Updates)
+Deploy to all running instances simultaneously:
+```bash
+mix deploy_ex.upload
+mix ansible.deploy
 ```
+
+**Pros:** Fast, no instance replacement, maintains current capacity  
+**Cons:** All instances update at once (brief downtime possible)  
+**Best for:** Quick updates, bug fixes, low-traffic periods
+
+#### Strategy 2: Instance Refresh (Zero-Downtime)
+Trigger AWS rolling instance refresh:
+```bash
+mix deploy_ex.upload
+mix terraform.apply  # Updates Launch Template if needed
+# AWS automatically performs rolling refresh
+```
+
+**How it works:**
+- AWS gradually replaces instances (maintains 50% healthy)
+- New instances download latest release from S3
+- Old instances terminate after new ones are healthy
+- Automatic rollback on health check failures
+
+**Pros:** Zero-downtime, gradual rollout, automatic rollback  
+**Cons:** Slower (replaces all instances), uses more resources temporarily  
+**Best for:** Production deployments, critical updates
+
+#### Strategy 3: Manual Scale Cycle (Testing)
+Force new instances by scaling down then up:
+```bash
+mix deploy_ex.upload
+mix deploy_ex.autoscale.scale my_app 0
+sleep 30
+mix deploy_ex.autoscale.scale my_app 3
+```
+
+**Pros:** Simple, forces fresh instances  
+**Cons:** Temporary capacity reduction, downtime  
+**Best for:** Testing, non-production environments
+
+### Autoscaling Commands
+
+#### View Autoscaling Status
+```bash
+mix deploy_ex.autoscale.status <app_name>
+```
+
+Displays:
+- Current, minimum, and maximum capacity
+- Instance count and IDs
+- Instance lifecycle states (InService, Pending, Terminating)
+- Health status
+- Availability zones
+- Scaling policy configuration (CPU target)
+
+**Example:**
+```bash
+mix deploy_ex.autoscale.status my_app
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Autoscaling Group: my-app-asg-dev
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Capacity:
+  Desired: 3
+  Minimum: 1
+  Maximum: 5
+
+Current Instances: 3
+  • i-0abc123 (InService, Healthy) - us-west-2a
+  • i-0def456 (InService, Healthy) - us-west-2b
+  • i-0ghi789 (Pending, Healthy) - us-west-2c
+
+Scaling Policies:
+  • my-app-cpu-target-dev (TargetTrackingScaling)
+    Target: 60% ASGAverageCPUUtilization
+```
+
+#### Manually Scale Capacity
+```bash
+mix deploy_ex.autoscale.scale <app_name> <desired_capacity>
+```
+
+Sets the desired number of instances. AWS will launch or terminate instances to match.
+
+**Examples:**
+```bash
+# Scale to 5 instances
+mix deploy_ex.autoscale.scale my_app 5
+
+# Scale to minimum (useful before maintenance)
+mix deploy_ex.autoscale.scale my_app 1
+
+# Scale to zero (stops all instances)
+mix deploy_ex.autoscale.scale my_app 0
+```
+
+**Notes:**
+- Desired capacity must be between `min_size` and `max_size`
+- AWS rejects values outside this range
+- Terraform ignores `desired_capacity` drift (allows dynamic scaling)
+
+### Autoscaling Instance Setup
+
+Autoscaled instances receive full setup automatically via user-data and Lambda:
+
+**Basic Setup (in user-data):**
+- **BEAM Linux Tuning:** File descriptor limits (65536), kernel parameters
+- **IPv6/Dualstack:** AWS dualstack endpoint configuration
+- **Log Management:** Aggressive log rotation (daily, 4 rotations) and weekly cleanup
+- **EBS Volume Management:** Dynamic attachment/detachment with filesystem detection
+- **Release Discovery:** Queries existing instances or S3 for current version
+- **Application Start:** Downloads release and starts systemd service
+
+**Advanced Setup (via Lambda + SSM):**
+- **Prometheus Exporter:** Metrics collection for monitoring
+- **Loki Promtail:** Log aggregation to Loki
+- **Additional Ansible Roles:** Any roles configured in your setup playbook
+
+**How Lambda Setup Works:**
+1. Instance boots and triggers SNS notification
+2. Lambda function invokes on SNS event
+3. Lambda downloads Ansible roles from DeployEx GitHub releases
+4. Lambda runs Ansible setup via SSM Run Command
+5. Instance completes setup and starts application
+
+**No manual intervention needed** - all setup is automated and consistent.
+
+### Connecting to Autoscaled Instances
+
+The `mix deploy_ex.ssh` command supports autoscaled instances:
+
+```bash
+# List all instances and their IPs
+mix deploy_ex.ssh my_app --list
+
+# Connect to specific instance by index
+mix deploy_ex.ssh my_app --index 0
+
+# Connect to random instance (default)
+mix deploy_ex.ssh my_app
+
+# View logs from specific instance
+mix deploy_ex.ssh my_app --index 1 --log
+
+# Connect to IEx on specific instance
+mix deploy_ex.ssh my_app --index 2 --iex
+```
+
+**Instance Selection:**
+- `--list` - Shows all instances with indices and IPs
+- `--index N` - Connects to instance at index N (0-based)
+- No flag - Prompts for selection or connects to random instance with `-s`
 
 ## Ansible Options
 - `inventory` (alias: `e`) - [Ansible inventories](https://docs.ansible.com/ansible/latest/inventory_guide/intro_inventory.html)
@@ -418,85 +605,6 @@ function my-app-ssh
 end
 ```
 
-## Deploying with Autoscaling
-
-When using autoscaling, there are three strategies for deploying new application versions:
-
-### Strategy 1: Ansible Deploy (Recommended for Quick Updates)
-Deploy to all running instances simultaneously using Ansible:
-```bash
-mix deploy_ex.upload
-mix ansible.deploy
-```
-
-**Pros:** Fast, no instance replacement, maintains current capacity
-**Cons:** All instances update at once (brief downtime possible)
-
-### Strategy 2: Instance Refresh (Recommended for Zero-Downtime)
-Update the Launch Template and trigger a rolling instance refresh:
-```bash
-# Upload new release
-mix deploy_ex.upload
-
-# Update Terraform (if Launch Template changes needed)
-mix terraform.apply
-
-# AWS automatically performs rolling refresh
-# - Maintains 50% healthy instances
-# - New instances download latest release
-# - Old instances gradually terminated
-```
-
-**Pros:** Zero-downtime, gradual rollout, automatic rollback on health check failures
-**Cons:** Slower (replaces all instances), uses more resources temporarily
-
-### Strategy 3: Scale-In/Out Cycle
-Force new instances by scaling down then up:
-```bash
-mix deploy_ex.upload
-mix deploy_ex.autoscale.scale my_app 0  # Scale to min
-sleep 30
-mix deploy_ex.autoscale.scale my_app 3  # Scale back up
-```
-
-**Pros:** Simple, forces fresh instances
-**Cons:** Temporary capacity reduction, not recommended for production
-
-### How New Instances Get the Right Version
-
-Autoscaled instances automatically discover and download the correct release version:
-
-1. **Query Existing Nodes:** New instance finds a running instance via AWS API
-2. **SSH to Get Version:** Reads `/srv/current_release.txt` from existing instance (managed by Ansible)
-3. **Respects Rollbacks:** Uses the same release file that Ansible deployed, even if it's a rolled-back version
-4. **Fallback to Latest:** If no instances exist, queries S3 for the most recent release (enables initial deployment)
-5. **Download from S3:** Fetches the discovered version from S3
-
-This approach ensures version consistency across scale events and respects rollback operations while still allowing autoscaling from zero instances.
-
-### Instance Setup Included in Autoscaling
-
-Autoscaled instances receive **full Ansible setup** via Lambda + SSM:
-
-**Basic Setup (in user-data):**
-- **BEAM Linux Tuning:** File descriptor limits (65536), kernel parameters for networking, TCP congestion window optimization
-- **IPv6/Dualstack:** AWS dualstack endpoint configuration for S3 and EC2
-- **Log Management:** Aggressive log rotation (daily, 4 rotations) and weekly cleanup to prevent disk space issues
-- **EBS Volume Management:** Dynamic attachment/detachment with filesystem detection and growth
-
-**Advanced Setup (via Lambda):**
-- **Prometheus Exporter:** Metrics collection for monitoring
-- **Loki Promtail:** Log aggregation to Loki
-- **Additional Ansible Roles:** Any roles configured in your setup playbook
-
-**How it works:**
-1. Instance boots and triggers SNS notification
-2. Lambda function is invoked
-3. Lambda downloads Ansible roles from DeployEx GitHub releases
-4. Lambda runs Ansible setup via SSM Run Command
-5. Instance completes setup and starts application
-
-**No S3 upload needed** - Ansible roles are packaged in DeployEx releases automatically via GitHub Actions.
 
 ## Monitoring
 Out of the box, deploy_ex will generate Prometheus, Grafana UI, Grafana Loki and Sentry (WIP) into the application
