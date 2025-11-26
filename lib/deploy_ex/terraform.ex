@@ -30,16 +30,23 @@ defmodule DeployEx.Terraform do
       targets ->
         opts_without_target = Keyword.delete(opts, :target)
 
-        expanded_targets = Enum.flat_map(targets, fn target ->
-          [:target, build_target_string(target)]
+        expanded_targets = Enum.map(targets, fn target ->
+          {:target, build_target_string(target)}
         end)
 
         opts_without_target ++ expanded_targets
     end
   end
 
+  defp build_target_string("module.ec2_instance" <> _ = target) do
+    target
+  end
+
   defp build_target_string(target) do
-    "module.ec2_instance[\\\"#{target}\\\"]"
+    case DeployExHelpers.find_project_name([target]) do
+      {:ok, app_name} -> "module.ec2_instance[\"#{app_name}\"]"
+      _ -> target
+    end
   end
 
   def run_command(command, terraform_directory) do
