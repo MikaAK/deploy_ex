@@ -35,7 +35,7 @@ data "aws_subnet" "selected_subnet" {
 # Fetch custom AMI from SSM if available, otherwise use base AMI
 data "external" "custom_ami" {
   program = ["bash", "${path.module}/scripts/get_ami_from_ssm.sh"]
-  
+
   query = {
     param_name   = "/deploy_ex/${var.environment}/${replace(lower(var.instance_name), "-", "_")}/latest_ami"
     fallback_ami = var.instance_ami
@@ -46,8 +46,8 @@ locals {
   use_custom_ami = data.external.custom_ami.result.ami_id != var.instance_ami
   selected_ami   = data.external.custom_ami.result.ami_id
 
-  enable_load_balancer = (var.enable_elb && var.instance_count > 1) || var.enable_autoscaling
-  enable_load_balancer_https = var.enable_elb && var.enable_elb_https || var.enable_autoscaling && var.enable_autoscaling_https
+  enable_load_balancer = var.enable_elb && (var.instance_count > 1 || var.enable_autoscaling)
+  enable_load_balancer_https = var.enable_elb && var.enable_elb_https
 
   snake_instance_name = lower(replace(var.instance_name, " ", "_"))
   kebab_instance_name = lower(replace(var.instance_name, " ", "-"))
@@ -308,6 +308,17 @@ resource "aws_lb_listener" "ec2_lb_https_listener" {
 
 ### Autoscaling Start ###
 #########################
+data "aws_instances" "autoscaling_instances" {
+  filter {
+    name   = "tag:InstanceGroup"
+    values = ["${local.snake_instance_name}_${var.environment}"]
+  }
+
+  filter {
+    name   = "instance-state-name"
+    values = ["pending", "running"]
+  }
+}
 
 resource "aws_launch_template" "ec2_lt" {
   count = var.enable_autoscaling ? 1 : 0
@@ -388,7 +399,7 @@ resource "aws_launch_template" "ec2_lt" {
   lifecycle {
     create_before_destroy = true
   }
-  
+
   # Ensure ASG picks up new version automatically
   update_default_version = true
 

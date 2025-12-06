@@ -61,7 +61,7 @@ module "ec2_instance" {
   autoscaling_scale_out_cooldown  = try(each.value.autoscaling.scale_out_cooldown, null)
 
   app_port       = try(each.value.app_port, null)
-  use_custom_ami = try(each.value.use_custom_ami, null)
+  use_latest_ami = try(each.value.use_latest_ami, null)
 
   github_token = try(var.github_token, "")
   github_repo  = try(var.github_repo, "")

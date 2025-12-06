@@ -1,6 +1,6 @@
 output "instance_ids" {
-  description = "ID of the EC2 instance"
-  value       = aws_instance.ec2_instance.*.id
+  description = "IDs of the EC2 instances (single or autoscaling)"
+  value = var.enable_autoscaling ? data.aws_instances.autoscaling_instances.ids : aws_instance.ec2_instance.*.id
 }
 
 output "elastic_ips" {
@@ -10,12 +10,13 @@ output "elastic_ips" {
 
 output "public_ips" {
   description = "Public IP address of the EC2 instance"
-  value       = aws_instance.ec2_instance.*.public_ip
+  value       = var.enable_autoscaling ? data.aws_instances.autoscaling_instances.public_ips : aws_instance.ec2_instance.*.public_ip
 }
+
 
 output "ipv6_addresses" {
   description = "IPv6 addresses of the EC2 instance"
-  value       = aws_instance.ec2_instance.*.ipv6_addresses
+  value       = var.enable_autoscaling ? data.aws_instances.autoscaling_instances.ipv6_addresses : aws_instance.ec2_instance.*.ipv6_addresses
 }
 
 output "load_balancer_dns_name" {
@@ -25,12 +26,12 @@ output "load_balancer_dns_name" {
 
 output "autoscaling_group_name" {
   description = "Name of the Auto Scaling Group"
-  value       = var.enable_autoscaling ? aws_autoscaling_group.ec2_asg[0].name : null
+  value       = var.enable_autoscaling ? aws_autoscaling_group.ec2_asg.*.name : null
 }
 
 output "autoscaling_group_arn" {
   description = "ARN of the Auto Scaling Group"
-  value       = var.enable_autoscaling ? aws_autoscaling_group.ec2_asg[0].arn : null
+  value       = var.enable_autoscaling ? aws_autoscaling_group.ec2_asg.*.arn : null
 }
 
 output "is_autoscaling" {
