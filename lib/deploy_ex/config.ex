@@ -34,8 +34,20 @@ defmodule DeployEx.Config do
   def ansible_folder_path, do: Path.join(deploy_folder(), "ansible")
 
   def terraform_default_args(command) do
-    @app
-      |> Application.get_env(:terraform_default_args, %{})
-      |> Map.get(command, [])
+    result = @app
+      |> Application.get_env(:terraform_default_args, [])
+      |> Keyword.filter(fn {key, _} ->
+        to_string(command) =~ Regex.compile!(to_string(key))
+      end)
+
+    case result do
+      [] -> []
+      [{_, _} | _] = args_map ->
+        args_map
+          |> Enum.reduce([], fn {_, args}, acc -> Keyword.merge(acc, args) end)
+          |> Enum.reduce([], fn {key, value}, acc ->
+            ["--#{String.replace(to_string(key), "_", "-")}", to_string(value) | acc]
+          end)
+    end
   end
 end
