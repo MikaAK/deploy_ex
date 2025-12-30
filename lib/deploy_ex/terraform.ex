@@ -43,9 +43,13 @@ defmodule DeployEx.Terraform do
   end
 
   defp build_target_string(target) do
-    case DeployExHelpers.find_project_name([target]) do
-      {:ok, app_name} -> "module.ec2_instance[\"#{app_name}\"]"
-      _ -> target
+    if target =~ ~r/[^a-zA-Z0-9_-]/ do
+      target
+    else
+      case DeployExHelpers.find_project_name([target]) do
+        {:ok, app_name} -> "module.ec2_instance[\\\"#{app_name}\\\"]"
+        _ -> target
+      end
     end
   end
 
