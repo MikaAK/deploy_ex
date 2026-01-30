@@ -30,6 +30,11 @@ defmodule DeployEx.Config do
 
   def deploy_folder, do: Application.get_env(@app, :deploy_folder) || "./deploys"
 
+  def aws_resource_group do
+    Application.get_env(@app, :aws_resource_group) ||
+      "#{DeployEx.Utils.upper_title_case(DeployExHelpers.project_name())} Backend"
+  end
+
   def terraform_folder_path, do: Path.join(deploy_folder(), "terraform")
   def ansible_folder_path, do: Path.join(deploy_folder(), "ansible")
 

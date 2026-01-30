@@ -80,8 +80,21 @@ defmodule DeployEx.AwsMachine do
 
   def fetch_instance_ids_by_tag(region \\ DeployEx.Config.aws_region(), tag_name, tag) do
     with {:ok, instances} <- fetch_instances_by_tag(region, tag_name, tag) do
-      {:ok, Map.new(instances, &{find_instance_name(&1), &1["instanceId"]})}
+      {:ok, instances_to_id_map(instances)}
     end
+  end
+
+  def fetch_instance_ids_by_tags(tag_filters, opts \\ []) when is_list(tag_filters) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+    all_filters = tag_filters ++ resource_group_filter(opts)
+
+    with {:ok, instances} <- fetch_instances(region) do
+      {:ok, instances |> filter_instances_by_tags(all_filters) |> instances_to_id_map}
+    end
+  end
+
+  defp instances_to_id_map(instances) do
+    Map.new(instances, &{find_instance_name(&1), &1["instanceId"]})
   end
 
   defp find_instance_name(%{"tagSet" => %{"item" => items}}) do
@@ -149,13 +162,8 @@ defmodule DeployEx.AwsMachine do
   end
 
   defp filter_by_tag(instances, tag_name, tag_value) do
-    Enum.filter(instances, fn %{"tagSet" => %{"item" => tags}} ->
-       Enum.any?(tags, fn
-        %{"key" => ^tag_name, "value" => ^tag_value} -> true
-        %{"key" => ^tag_name, "value" => value} when is_list(tag_value) -> value in tag_value
-        %{"key" => ^tag_name, "value" => value} when is_struct(tag_value, Regex) -> Regex.match?(tag_value, value)
-        _ -> false
-      end)
+    Enum.filter(instances, fn instance ->
+      has_tag?(instance, tag_name, tag_value)
     end)
   end
 
@@ -184,22 +192,17 @@ defmodule DeployEx.AwsMachine do
     end
   end
 
-  def fetch_instance_groups(project_name, opts \\ []) do
-    resource_group = opts[:resource_group] ||
-                     "#{DeployEx.Utils.upper_title_case(project_name)} Backend"
+  def fetch_instance_groups(_project_name, opts \\ []) do
+    resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
 
     with {:ok, instances} <- fetch_instances_by_tag("Group", resource_group) do
       {:ok, instances
         |> Stream.map(fn instance_data ->
+          tags = get_instance_tags(instance_data)
+
           instance_data
-            |> Map.put("InstanceGroupTag", Enum.find_value(instance_data["tagSet"]["item"], fn
-              %{"key" => "InstanceGroup", "value" => value} -> value
-              _ -> false
-            end))
-            |> Map.put("NameTag", Enum.find_value(instance_data["tagSet"]["item"], fn
-              %{"key" => "Name", "value" => value} -> value
-              _ -> false
-            end))
+            |> Map.put("InstanceGroupTag", tags["InstanceGroup"])
+            |> Map.put("NameTag", tags["Name"])
         end)
         |> Stream.reject(&is_nil(&1["InstanceGroupTag"]))
         |> Stream.filter(&(&1["instanceState"]["name"] === "running"))
@@ -237,45 +240,44 @@ defmodule DeployEx.AwsMachine do
 
   def find_instances_by_tags(tag_filters, opts \\ []) when is_list(tag_filters) do
     region = opts[:region] || DeployEx.Config.aws_region()
-    
+    all_filters = tag_filters ++ resource_group_filter(opts)
+
     with {:ok, instances} <- fetch_instances(region) do
-      filtered = Enum.filter(instances, fn instance ->
-        Enum.all?(tag_filters, fn {tag_name, tag_value} ->
-          has_tag?(instance, tag_name, tag_value)
-        end)
-      end)
-      
-      {:ok, filtered}
+      {:ok, filter_instances_by_tags(instances, all_filters)}
     end
   end
 
-  def find_instances_needing_setup(opts \\ []) do
+  def find_instances_needing_setup(tag_filters \\ [], opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
-    
+    all_filters = tag_filters ++ resource_group_filter(opts)
+
     with {:ok, instances} <- fetch_instances_by_tag(region, "ManagedBy", "DeployEx") do
       incomplete = instances
+      |> filter_instances_by_tags(all_filters)
       |> Enum.filter(&instance_running_or_pending?/1)
       |> Enum.reject(&setup_complete?/1)
-      
+
       {:ok, incomplete}
     end
   end
 
-  def find_instances_setup_complete(opts \\ []) do
+  def find_instances_setup_complete(tag_filters \\ [], opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
-    
+    all_filters = tag_filters ++ resource_group_filter(opts)
+
     with {:ok, instances} <- fetch_instances_by_tag(region, "ManagedBy", "DeployEx") do
       complete = instances
+      |> filter_instances_by_tags(all_filters)
       |> Enum.filter(&instance_running_or_pending?/1)
       |> Enum.filter(&setup_complete?/1)
-      
+
       {:ok, complete}
     end
   end
 
   def parse_instance_info(instance) do
     tags = get_instance_tags(instance)
-    
+
     %{
       instance_id: instance["instanceId"],
       instance_type: instance["instanceType"],
@@ -293,7 +295,7 @@ defmodule DeployEx.AwsMachine do
 
   defp has_tag?(instance, tag_name, tag_value) do
     tags = get_instance_tags(instance)
-    
+
     case tag_value do
       values when is_list(values) -> tags[tag_name] in values
       %Regex{} = regex -> tags[tag_name] && Regex.match?(regex, tags[tag_name])
@@ -310,12 +312,53 @@ defmodule DeployEx.AwsMachine do
     case instance["tagSet"] do
       %{"item" => items} when is_list(items) ->
         Map.new(items, fn %{"key" => k, "value" => v} -> {k, v} end)
-      
+
       %{"item" => %{"key" => k, "value" => v}} ->
         %{k => v}
-      
+
       _ ->
         %{}
+    end
+  end
+
+  defp filter_instances_by_tags(instances, []), do: instances
+  defp filter_instances_by_tags(instances, tag_filters) do
+    Enum.filter(instances, fn instance ->
+      Enum.all?(tag_filters, fn {tag_name, tag_value} ->
+        has_tag?(instance, tag_name, tag_value)
+      end)
+    end)
+  end
+
+  defp resource_group_filter(opts) do
+    if opts[:resource_group], do: [{"Group", opts[:resource_group]}], else: []
+  end
+
+  def fetch_instance_node_numbers(opts \\ []) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+
+    with {:ok, instances} <- fetch_instances_by_tag(region, "ManagedBy", "DeployEx") do
+      filtered = filter_instances_by_tags(instances, resource_group_filter(opts))
+
+      instance_nodes = filtered
+      |> Enum.map(fn instance ->
+        tags = get_instance_tags(instance)
+        instance_group = tags["InstanceGroup"]
+        name = tags["Name"]
+        node_num = parse_node_number_from_name(name)
+        {instance_group, node_num}
+      end)
+      |> Enum.reject(fn {group, _} -> is_nil(group) end)
+
+      {:ok, instance_nodes}
+    end
+  end
+
+  defp parse_node_number_from_name(nil), do: nil
+  defp parse_node_number_from_name(name) do
+    case Regex.run(~r/-(\d+)$/, name) do
+      [_, num] -> String.to_integer(num)
+      _ -> nil
     end
   end
 end

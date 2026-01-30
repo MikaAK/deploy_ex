@@ -1,5 +1,7 @@
 defmodule DeployEx.SystemDController do
   def restart_service(service_name) do
+    service_name = strip_env_suffix(service_name)
+
     join_commands([
       stop_service(service_name),
       "systemctl daemon-reload",
@@ -8,11 +10,16 @@ defmodule DeployEx.SystemDController do
   end
 
   def start_service(service_name) do
-    "systemctl start #{service_name}"
+    "systemctl start #{strip_env_suffix(service_name)}"
   end
 
   def stop_service(service_name) do
-    "systemctl stop #{service_name}"
+    "systemctl stop #{strip_env_suffix(service_name)}"
+  end
+
+  defp strip_env_suffix(service_name) do
+    service_name
+    |> String.replace(~r/_(prod|dev|staging|test)$/, "")
   end
 
   defp join_commands(commands), do: Enum.join(commands, " && ")

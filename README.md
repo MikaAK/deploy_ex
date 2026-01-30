@@ -119,14 +119,23 @@ to monitor it's logs remotely, and `--iex` will give you a command to connect to
 
 ### Available Configuration
 
-```
+```elixir
 config :deploy_ex,
   aws_region: "us-west-2",
+  aws_resource_group: "#{DeployExHelpers.project_name()} Backend",  # AWS "Group" tag for filtering instances
   aws_log_bucket: "#{String.replace(DeployExHelpers.underscored_project_name(), "_", "-")}-backend-logs-#{env()}",
   aws_release_bucket: "#{String.replace(DeployExHelpers.underscored_project_name(), "_", "-")}-elixir-deploys-{env}"
   aws_release_state_bucket: "#{String.replace(DeployExHelpers.underscored_project_name(), "_", "-")}-release-state-#{env}"
   deploy_folder: "./deploys"
 ```
+
+**Configuration Options:**
+- `aws_region` - AWS region for all operations (default: `"us-west-2"`)
+- `aws_resource_group` - AWS "Group" tag value for filtering instances (default: `"#{ProjectName} Backend"`)
+- `aws_log_bucket` - S3 bucket for logs
+- `aws_release_bucket` - S3 bucket for release artifacts
+- `aws_release_state_bucket` - S3 bucket for release state
+- `deploy_folder` - Local folder for deployment files (default: `"./deploys"`)
 
 ### Usage with Github Actions
 ***Note: This doesn't work properly with branch protections, to do
@@ -179,7 +188,7 @@ env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
 - [x] `mix terraform.build` - Add the terraform files to project, or rebuilds them
 - [x] `mix terraform.apply` - Applies terraform changes
 - [x] `mix terraform.refresh` - Refreshes terraform state to pull new IPs and sync with AWS
-- [x] `mix terraform.replace` - Replaces a resource within terraform, has fuzzy matching nodes
+- [x] `mix terraform.replace` - Replaces a resource within terraform, has fuzzy matching nodes (uses AWS API for instance discovery)
 - [x] `mix terraform.drop` - Destroys all terraform built resources
 - [x] `mix ansible.build` - Adds ansible files to the project, or rebuilds them
 - [x] `mix ansible.ping` - Pings ansible nodes to see if they can connect

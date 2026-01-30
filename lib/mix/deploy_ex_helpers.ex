@@ -165,10 +165,11 @@ defmodule DeployExHelpers do
 
       if not File.exists?(pem_rsa_path) do
         Mix.shell().info([:yellow, "Creating pemfolder at #{@server_ssh_pem_path}"])
-
-        File.mkdir_p!(@server_ssh_pem_path)
-        File.cp!(pem_file_path, pem_rsa_path)
       end
+
+      File.mkdir_p!(@server_ssh_pem_path)
+      File.cp!(pem_file_path, pem_rsa_path)
+      File.chmod!(pem_rsa_path, 0o600)
 
       res = instance_details
         |> prompt_for_instance_choice(true)
@@ -191,16 +192,21 @@ defmodule DeployExHelpers do
 
       if not File.exists?(pem_rsa_path) do
         Mix.shell().info([:yellow, "Creating pemfolder at #{@server_ssh_pem_path}"])
-
-        File.mkdir_p!(@server_ssh_pem_path)
-        File.cp!(pem_file_path, pem_rsa_path)
       end
+
+      File.mkdir_p!(@server_ssh_pem_path)
+      File.cp!(pem_file_path, pem_rsa_path)
+      File.chmod!(pem_rsa_path, 0o600)
 
       instance_details
         |> prompt_for_instance_choice(true)
-        |> Enum.each(fn instance_ip ->
+        |> Enum.reduce_while(:ok, fn instance_ip, :ok ->
           Mix.shell().info([:yellow, "Running #{command} on #{instance_ip}"])
-          DeployEx.SSH.run_command(instance_ip, opts[:port] || 22, @server_ssh_pem_path, command)
+
+          case DeployEx.SSH.run_command(instance_ip, opts[:port] || 22, pem_rsa_path, command) do
+            {:ok, _} -> {:cont, :ok}
+            {:error, _} = error -> {:halt, error}
+          end
         end)
     end
   end

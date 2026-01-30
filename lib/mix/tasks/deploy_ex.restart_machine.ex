@@ -30,9 +30,10 @@ defmodule Mix.Tasks.DeployEx.RestartMachine do
   ```
 
   ## Options
-  - `aws-region` - AWS region to operate in (default: configured region)
-  - `force` - Skip confirmation prompts (alias: `f`)
-  - `quiet` - Suppress non-essential output (alias: `q`)
+  - `--aws-region` - AWS region to operate in (default: configured region)
+  - `--resource-group` - Specify a custom resource group name
+  - `--force` - Skip confirmation prompts (alias: `f`)
+  - `--quiet` - Suppress non-essential output (alias: `q`)
 
   The task will prompt for confirmation before stopping instances unless --force is used.
   It will wait for instances to fully stop before starting them again and verify they
@@ -45,10 +46,18 @@ defmodule Mix.Tasks.DeployEx.RestartMachine do
     Application.ensure_all_started(:telemetry)
     Application.ensure_all_started(:ex_aws)
 
-    {_, node_name_args} = OptionParser.parse!(args, switches: [])
+    {opts, node_name_args} = OptionParser.parse!(args,
+      aliases: [f: :force, q: :quiet],
+      switches: [
+        aws_region: :string,
+        resource_group: :string,
+        force: :boolean,
+        quiet: :boolean
+      ]
+    )
 
     with {:ok, app_name} <- DeployExHelpers.find_project_name(node_name_args),
-         {:ok, instances} <- DeployEx.AwsMachine.fetch_instance_ids_by_tag("InstanceGroup", app_name),
+         {:ok, instances} <- DeployEx.AwsMachine.fetch_instance_ids_by_tags([{"InstanceGroup", app_name}], region: opts[:aws_region], resource_group: opts[:resource_group]),
          :ok <- restart_instances(instances, choose_instances(instances)) do
       :ok
     else

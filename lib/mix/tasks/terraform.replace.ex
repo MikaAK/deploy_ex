@@ -5,7 +5,7 @@ defmodule Mix.Tasks.Terraform.Replace do
 
   @shortdoc "Runs terraform replace with a node"
   @moduledoc """
-  Runs terraform init
+  Replaces EC2 instances managed by terraform.
 
   ## Example
   ```bash
@@ -14,9 +14,21 @@ defmodule Mix.Tasks.Terraform.Replace do
   $ mix terraform.replace <my_app> -n 10
   $ mix terraform.replace --string "module.vpc.aws_route_table.public[0]"
   ```
+
+  ## Options
+  - `directory` (`-d`) - Directory containing Terraform files (default: ./deploys/terraform)
+  - `node` (`-n`) - Specific node number to replace
+  - `string` (`-s`) - Raw terraform resource string to replace
+  - `all` - Replace all matching instances
+  - `auto_approve` (`-y`) - Skip confirmation prompts
+  - `resource_group` - Filter instances by resource group
+  - `region` - AWS region (defaults to configured region)
   """
 
   def run(args) do
+    Application.ensure_all_started(:hackney)
+    Application.ensure_all_started(:ex_aws)
+
     {opts, extra_args} = parse_args(args)
 
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
@@ -25,20 +37,21 @@ defmodule Mix.Tasks.Terraform.Replace do
       if opts[:string] do
         terraform_apply_replace(opts[:string], DeployEx.Terraform.parse_args(args, :replace), opts)
       else
-        match_instance_from_terraform_and_replace(opts, args, extra_args)
+        match_instance_and_replace(opts, args, extra_args)
       end
     end
   end
 
-  defp match_instance_from_terraform_and_replace(opts, args, extra_args) do
-    case DeployEx.Terraform.instances(opts[:directory]) do
+  defp match_instance_and_replace(opts, args, extra_args) do
+    case DeployEx.AwsMachine.fetch_instance_node_numbers(region: opts[:region], resource_group: opts[:resource_group]) do
       {:error, e} -> Mix.raise(to_string(e))
 
       {:ok, instances} ->
         instances
           |> get_instances_from_args(extra_args, opts)
           |> Enum.map(fn {instance_name, node_num} ->
-            Mix.shell().info([:yellow, "* replacing #{instance_name}-#{node_num}"])
+            display_name = format_instance_display(instance_name, node_num)
+            Mix.shell().info([:yellow, "* replacing #{display_name}"])
 
             instance_name
               |> replace_string(node_num)
@@ -54,9 +67,16 @@ defmodule Mix.Tasks.Terraform.Replace do
     DeployEx.Terraform.run_command_with_input(cmd, opts[:directory])
   end
 
-  defp replace_string(instance_name, node_num) do
-    "module.ec2_instance[\\\"#{instance_name}\\\"].aws_instance.ec2_instance[#{node_num || 0}]"
+  defp replace_string(instance_name, nil) do
+    "module.ec2_instance[\\\"#{instance_name}\\\"].aws_autoscaling_group.ec2_asg[0]"
   end
+
+  defp replace_string(instance_name, node_num) do
+    "module.ec2_instance[\\\"#{instance_name}\\\"].aws_instance.ec2_instance[#{node_num}]"
+  end
+
+  defp format_instance_display(instance_name, nil), do: "#{instance_name} (autoscaling)"
+  defp format_instance_display(instance_name, node_num), do: "#{instance_name}-#{node_num}"
 
   defp parse_args(args) do
     {opts, extra_args} = OptionParser.parse!(args,
@@ -66,7 +86,9 @@ defmodule Mix.Tasks.Terraform.Replace do
         directory: :string,
         node: :integer,
         all: :boolean,
-        auto_approve: :boolean
+        auto_approve: :boolean,
+        resource_group: :string,
+        region: :string
       ]
     )
 
@@ -105,26 +127,25 @@ defmodule Mix.Tasks.Terraform.Replace do
     selected_instances
   end
 
-  defp get_instances_from_args(_, _, opts) do
-    case DeployEx.Terraform.instances(opts[:directory]) do
-      {:ok, instances} ->
-        Mix.raise("""
-        Error with arguments provided, must specify one app name or a resource string
+  defp get_instances_from_args(instances, _, _opts) do
+    Mix.raise("""
+    Error with arguments provided, must specify one app name or a resource string
 
-          Examples:
-            $ mix terraform.replace my_app
-            $ mix terraform.replace my_app -n 1
-            $ mix terraform.replace --string "module.ec2_instance[\"my_instance\"].aws_instance.ec2_instance[0]"
+      Examples:
+        $ mix terraform.replace my_app
+        $ mix terraform.replace my_app -n 1
+        $ mix terraform.replace --string "module.ec2_instance[\"my_instance\"].aws_instance.ec2_instance[0]"
 
-        #{instances_to_list_str(instances)}
-        """)
-      {:error, e} -> Mix.raise(to_string(e))
-    end
+    #{instances_to_list_str(instances)}
+    """)
   end
 
   defp instances_to_list_str(instances) do
-    Enum.map_join(instances, "\n", fn {name, num} ->
-      "  - #{IO.ANSI.bright() <> name} - #{to_string(num) <> IO.ANSI.reset() <> IO.ANSI.red()}"
+    Enum.map_join(instances, "\n", fn
+      {name, nil} ->
+        "  - #{IO.ANSI.bright() <> name} (autoscaling)#{IO.ANSI.reset() <> IO.ANSI.red()}"
+      {name, num} ->
+        "  - #{IO.ANSI.bright() <> name} - #{to_string(num) <> IO.ANSI.reset() <> IO.ANSI.red()}"
     end)
   end
 end

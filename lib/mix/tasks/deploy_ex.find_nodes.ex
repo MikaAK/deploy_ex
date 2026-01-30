@@ -21,6 +21,7 @@ defmodule Mix.Tasks.DeployEx.FindNodes do
     * `--setup-incomplete` - Find instances needing setup
     * `--format FORMAT` - Output: table (default), json, ids
     * `--region REGION` - AWS region
+    * `--resource-group GROUP` - Filter by resource group name
     * `--quiet` - Suppress messages (alias: `q`)
   """
 
@@ -40,16 +41,16 @@ defmodule Mix.Tasks.DeployEx.FindNodes do
     instances =
       case {opts[:setup_complete], opts[:setup_incomplete]} do
         {true, _} ->
-          {:ok, instances} = AwsMachine.find_instances_setup_complete(region: opts[:region])
+          {:ok, instances} = AwsMachine.find_instances_setup_complete([], region: opts[:region], resource_group: opts[:resource_group])
           instances
 
         {_, true} ->
-          {:ok, instances} = AwsMachine.find_instances_needing_setup(region: opts[:region])
+          {:ok, instances} = AwsMachine.find_instances_needing_setup([], region: opts[:region], resource_group: opts[:resource_group])
           instances
 
         _ ->
           tag_filters = build_tag_filters(opts)
-          {:ok, instances} = AwsMachine.find_instances_by_tags(tag_filters, region: opts[:region])
+          {:ok, instances} = AwsMachine.find_instances_by_tags(tag_filters, region: opts[:region], resource_group: opts[:resource_group])
           instances
       end
 
@@ -74,6 +75,7 @@ defmodule Mix.Tasks.DeployEx.FindNodes do
         setup_incomplete: :boolean,
         format: :string,
         region: :string,
+        resource_group: :string,
         quiet: :boolean
       ]
     )
