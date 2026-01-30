@@ -1,0 +1,40 @@
+#!/bin/bash
+set -euo pipefail
+
+DOMAIN="{{ domain }}"
+EMAIL="{{ letsencrypt_email }}"
+CREDS_FILE="/etc/letsencrypt/cloudflare-credentials.ini"
+
+# Wait for network to be ready
+sleep 30
+
+# Check if Cloudflare credentials exist
+if [ ! -f "$CREDS_FILE" ]; then
+    echo "Cloudflare credentials not found at $CREDS_FILE"
+    exit 1
+fi
+
+# Check if certificate exists and is valid
+if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+    EXPIRY=$(openssl x509 -in "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" -noout -enddate | cut -d= -f2)
+    EXPIRY_EPOCH=$(date -d "$EXPIRY" +%s)
+    CURRENT_EPOCH=$(date +%s)
+    DAYS_LEFT=$(( (EXPIRY_EPOCH - CURRENT_EPOCH) / 86400 ))
+
+    if [ $DAYS_LEFT -gt 0 ]; then
+        echo "Certificate is valid for $DAYS_LEFT days."
+        exit 0
+    fi
+fi
+
+# Certificate doesn't exist or is expired, obtain a new one
+echo "Obtaining new certificate for $DOMAIN using DNS challenge..."
+certbot certonly \
+    --dns-cloudflare \
+    --dns-cloudflare-credentials "$CREDS_FILE" \
+    -d "$DOMAIN" \
+    --non-interactive \
+    --agree-tos \
+    --email "$EMAIL"
+
+echo "Certificate obtained successfully"

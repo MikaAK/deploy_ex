@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Let's Encrypt Certificate Renewal daily
+Requires=cert-renewal.service
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=3600
+
+[Install]
+WantedBy=timers.target

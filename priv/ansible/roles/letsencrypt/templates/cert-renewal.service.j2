@@ -1,0 +1,8 @@
+[Unit]
+Description=Let's Encrypt Certificate Renewal
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/renew-certificates.sh
+PrivateTmp=true

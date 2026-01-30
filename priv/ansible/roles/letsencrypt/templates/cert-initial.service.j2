@@ -1,0 +1,11 @@
+[Unit]
+Description=Let's Encrypt Initial Certificate Check
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/check-certificates.sh
+
+[Install]
+WantedBy=multi-user.target

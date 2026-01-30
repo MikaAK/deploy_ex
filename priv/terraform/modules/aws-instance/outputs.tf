@@ -1,6 +1,6 @@
 output "instance_ids" {
   description = "IDs of the EC2 instances (single or autoscaling)"
-  value = var.enable_autoscaling ? data.aws_instances.autoscaling_instances.ids : aws_instance.ec2_instance.*.id
+  value       = var.enable_autoscaling ? data.aws_instances.autoscaling_instances.ids : aws_instance.ec2_instance.*.id
 }
 
 output "elastic_ips" {

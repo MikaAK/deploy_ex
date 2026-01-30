@@ -1,0 +1,43 @@
+#!/bin/bash
+set -euo pipefail
+
+DOMAIN="{{ domain }}"
+EMAIL="{{ letsencrypt_email }}"
+CREDS_FILE="/etc/letsencrypt/cloudflare-credentials.ini"
+
+# Check if Cloudflare credentials exist
+if [ ! -f "$CREDS_FILE" ]; then
+    echo "Cloudflare credentials not found at $CREDS_FILE"
+    exit 1
+fi
+
+# Check if certificate exists and is valid for at least 7 days
+if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+    EXPIRY=$(openssl x509 -in "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" -noout -enddate | cut -d= -f2)
+    EXPIRY_EPOCH=$(date -d "$EXPIRY" +%s)
+    CURRENT_EPOCH=$(date +%s)
+    DAYS_LEFT=$(( (EXPIRY_EPOCH - CURRENT_EPOCH) / 86400 ))
+
+    if [ $DAYS_LEFT -gt 7 ]; then
+        echo "Certificate is valid for $DAYS_LEFT days. No renewal needed."
+        exit 0
+    fi
+fi
+
+# Obtain or renew certificate using DNS challenge
+echo "Obtaining/renewing certificate for $DOMAIN using DNS challenge..."
+certbot certonly \
+    --dns-cloudflare \
+    --dns-cloudflare-credentials "$CREDS_FILE" \
+    -d "$DOMAIN" \
+    --non-interactive \
+    --agree-tos \
+    --email "$EMAIL" \
+    --force-renewal
+
+# Restart services that use SSL
+systemctl restart cfx-web || true
+systemctl restart cfx-cms || true
+systemctl restart cfx-hooks || true
+
+echo "Certificate obtained/renewed successfully"

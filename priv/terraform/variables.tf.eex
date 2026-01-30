@@ -144,13 +144,36 @@ variable "<%= @app_name %>_project" {
     }))
 
     autoscaling = optional(object({
-      enable                 = optional(bool)
-      min_size               = optional(number)
-      max_size               = optional(number)
-      desired_capacity       = optional(number)
-      cpu_target_percent     = optional(number)
-      scale_in_cooldown      = optional(number)
-      scale_out_cooldown     = optional(number)
+      enable                       = optional(bool)
+      min_size                     = optional(number)
+      max_size                     = optional(number)
+      desired_capacity             = optional(number)
+      cpu_target_percent           = optional(number)
+      scale_in_cooldown            = optional(number)
+      scale_out_cooldown           = optional(number)
+      switch_disable_delay_minutes = optional(number)
+      ignore_capacity_changes      = optional(bool, false)
+
+      templates = optional(map(object({
+        instance_type           = string
+        instance_ami            = optional(string)
+        min_size                = optional(number)
+        max_size                = optional(number)
+        desired_capacity        = optional(number)
+        ignore_capacity_changes = optional(bool, false)
+
+        scheduling = optional(list(object({
+          name       = string
+          recurrence = string
+          time_zone  = optional(string)
+
+          changes = object({
+            min_size         = optional(number)
+            max_size         = optional(number)
+            desired_capacity = optional(number)
+          })
+        })))
+      })))
     }))
 
     tags = optional(map(string))

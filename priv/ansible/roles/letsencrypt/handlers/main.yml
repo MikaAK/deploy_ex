@@ -1,0 +1,30 @@
+---
+- name: restart certificate renewal service
+  become: true
+  systemd:
+    name: cert-renewal
+    state: restarted
+
+- name: reload systemd
+  become: true
+  systemd:
+    daemon_reload: yes
+
+- name: enable certificate renewal service
+  become: true
+  systemd:
+    name: cert-renewal
+    enabled: yes
+
+- name: enable certificate renewal timer
+  become: true
+  systemd:
+    name: cert-renewal.timer
+    enabled: yes
+    state: started
+
+- name: enable certificate initial service
+  become: true
+  systemd:
+    name: cert-initial
+    enabled: yes

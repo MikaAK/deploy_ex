@@ -3,6 +3,17 @@
 
 data "aws_caller_identity" "current" {}
 
+data "aws_ami_ids" "latest_app_ami" {
+  count          = var.use_latest_ami ? 1 : 0
+  owners         = ["self"]
+  sort_ascending = false
+
+  filter {
+    name   = "name"
+    values = ["${lower(replace(var.instance_name, " ", "_"))}-${var.environment}-*"]
+  }
+}
+
 # Choose Subnet
 resource "random_shuffle" "subnet_id" {
   input        = var.subnet_ids
@@ -32,21 +43,13 @@ data "aws_subnet" "selected_subnet" {
 }
 
 
-# Fetch custom AMI from SSM if available, otherwise use base AMI
-data "external" "custom_ami" {
-  program = ["bash", "${path.module}/scripts/get_ami_from_ssm.sh"]
-
-  query = {
-    param_name   = "/deploy_ex/${var.environment}/${replace(lower(var.instance_name), "-", "_")}/latest_ami"
-    fallback_ami = var.instance_ami
-  }
-}
-
 locals {
-  use_custom_ami = data.external.custom_ami.result.ami_id != var.instance_ami
-  selected_ami   = data.external.custom_ami.result.ami_id
+  latest_custom_ami = var.use_latest_ami && length(data.aws_ami_ids.latest_app_ami) > 0 && length(data.aws_ami_ids.latest_app_ami[0].ids) > 0 ? data.aws_ami_ids.latest_app_ami[0].ids[0] : null
 
-  enable_load_balancer = var.enable_elb && (var.instance_count > 1 || var.enable_autoscaling)
+  selected_ami   = coalesce(local.latest_custom_ami, var.instance_ami)
+  use_latest_ami = local.latest_custom_ami != null && local.latest_custom_ami != var.instance_ami
+
+  enable_load_balancer       = var.enable_elb && (var.instance_count > 1 || var.enable_autoscaling)
   enable_load_balancer_https = var.enable_elb && var.enable_elb_https
 
   snake_instance_name = lower(replace(var.instance_name, " ", "_"))
@@ -56,6 +59,64 @@ locals {
     data.aws_subnets.az_specific[0].ids[0] :
     random_shuffle.subnet_id.result[0]
   ) : random_shuffle.subnet_id.result[0]
+
+  use_autoscaling_templates = var.enable_autoscaling && var.autoscaling_templates != null
+
+  autoscaling_template_keys        = local.use_autoscaling_templates ? sort(keys(var.autoscaling_templates)) : []
+  default_autoscaling_template_key = local.use_autoscaling_templates ? local.autoscaling_template_keys[0] : null
+
+  autoscaling_pool_max_size = local.use_autoscaling_templates ? max([
+    for template in values(var.autoscaling_templates) : coalesce(try(template.max_size, null), var.autoscaling_max_size)
+  ]...) : var.autoscaling_max_size
+
+  autoscaling_template_schedules = local.use_autoscaling_templates ? merge([
+    for template_key, template in var.autoscaling_templates : {
+      for schedule in coalesce(try(template.scheduling, null), []) : "${template_key}:${schedule.name}" => {
+        template_key = template_key
+        schedule     = schedule
+      }
+    }
+  ]...) : {}
+
+  autoscaling_template_enable_schedules = local.use_autoscaling_templates ? {
+    for schedule_key, schedule_entry in local.autoscaling_template_schedules : schedule_key => schedule_entry
+    if(
+      coalesce(
+        try(schedule_entry.schedule.changes.min_size, null),
+        try(var.autoscaling_templates[schedule_entry.template_key].min_size, null),
+        var.autoscaling_min_size
+      ) > 0
+      ||
+      coalesce(
+        try(schedule_entry.schedule.changes.max_size, null),
+        try(var.autoscaling_templates[schedule_entry.template_key].max_size, null),
+        var.autoscaling_max_size
+      ) > 0
+      ||
+      coalesce(
+        try(schedule_entry.schedule.changes.desired_capacity, null),
+        try(var.autoscaling_templates[schedule_entry.template_key].desired_capacity, null),
+        var.autoscaling_desired_capacity
+      ) > 0
+    )
+  } : {}
+
+  autoscaling_template_enable_schedules_disable_other_recurrence = {
+    for schedule_key, schedule_entry in local.autoscaling_template_enable_schedules : schedule_key => (
+      var.autoscaling_switch_disable_delay_minutes > 0
+      && length(split(" ", schedule_entry.schedule.recurrence)) == 5
+      && can(tonumber(element(split(" ", schedule_entry.schedule.recurrence), 0)))
+      && can(tonumber(element(split(" ", schedule_entry.schedule.recurrence), 1)))
+      ) ? join(" ", concat(
+        [
+          tostring((tonumber(element(split(" ", schedule_entry.schedule.recurrence), 0)) + var.autoscaling_switch_disable_delay_minutes) % 60),
+          tostring((tonumber(element(split(" ", schedule_entry.schedule.recurrence), 1)) + (
+            (tonumber(element(split(" ", schedule_entry.schedule.recurrence), 0)) + var.autoscaling_switch_disable_delay_minutes) - ((tonumber(element(split(" ", schedule_entry.schedule.recurrence), 0)) + var.autoscaling_switch_disable_delay_minutes) % 60)
+          ) / 60) % 24)
+        ],
+        slice(split(" ", schedule_entry.schedule.recurrence), 2, 5)
+    )) : schedule_entry.schedule.recurrence
+  }
 }
 
 # Create EC2 Instance
@@ -66,7 +127,7 @@ resource "aws_instance" "ec2_instance" {
   ami           = local.selected_ami
   instance_type = var.instance_type
 
-  key_name = var.key_pair_key_name
+  key_name             = var.key_pair_key_name
   iam_instance_profile = var.iam_instance_profile_name
 
   availability_zone      = coalesce(var.instance_availability_zone, data.aws_subnet.selected_subnet.availability_zone)
@@ -75,7 +136,7 @@ resource "aws_instance" "ec2_instance" {
   private_ip             = var.private_ip
 
   # Enable both IPv6 and IPv4 (dual-stack)
-  ipv6_address_count     = var.disable_ipv6 ? 0 : 1
+  ipv6_address_count          = var.disable_ipv6 ? 0 : 1
   associate_public_ip_address = !var.disable_public_ip
 
   metadata_options {
@@ -83,8 +144,8 @@ resource "aws_instance" "ec2_instance" {
   }
 
   private_dns_name_options {
-    hostname_type                     = "resource-name"
-    enable_resource_name_dns_a_record = true
+    hostname_type                        = "resource-name"
+    enable_resource_name_dns_a_record    = true
     enable_resource_name_dns_aaaa_record = !var.disable_ipv6
   }
 
@@ -120,7 +181,7 @@ resource "aws_instance" "ec2_instance" {
     Environment   = var.environment
     Type          = "Self Made"
     ManagedBy     = "DeployEx"
-    SetupComplete = local.use_custom_ami ? "true" : "false"
+    SetupComplete = local.use_latest_ami ? "true" : "false"
   }, var.tags)
 }
 
@@ -131,7 +192,7 @@ resource "aws_instance" "ec2_instance" {
 # For autoscaling: creates a pool of volumes equal to max_size
 # For static instances: creates volumes equal to instance_count
 resource "aws_ebs_volume" "ec2_ebs" {
-  count = var.enable_ebs ? (var.enable_autoscaling ? var.autoscaling_max_size : var.instance_count) : 0
+  count = var.enable_ebs ? (var.enable_autoscaling ? local.autoscaling_pool_max_size : var.instance_count) : 0
 
   availability_zone = coalesce(var.instance_availability_zone, data.aws_subnet.selected_subnet.availability_zone)
   size              = var.instance_ebs_secondary_size
@@ -139,12 +200,12 @@ resource "aws_ebs_volume" "ec2_ebs" {
   type              = "gp3"
 
   tags = merge({
-    Name          = "${local.kebab_instance_name}-ebs-${var.environment}-${count.index}"
-    InstanceGroup = local.snake_instance_name
-    Group         = var.resource_group
-    Environment   = var.environment
-    Vendor        = "Self"
-    Type          = "Self Made"
+    Name            = "${local.kebab_instance_name}-ebs-${var.environment}-${count.index}"
+    InstanceGroup   = local.snake_instance_name
+    Group           = var.resource_group
+    Environment     = var.environment
+    Vendor          = "Self"
+    Type            = "Self Made"
     AutoscalingPool = var.enable_autoscaling ? "true" : "false"
   }, var.tags)
 }
@@ -192,7 +253,7 @@ resource "aws_lb" "ec2_lb" {
   name               = "${local.kebab_instance_name}-lb-${var.environment}"
   load_balancer_type = "network"
 
-  subnets         = var.subnet_ids
+  subnets = var.subnet_ids
 
   tags = merge({
     Name          = "${local.kebab_instance_name}-lb"
@@ -258,8 +319,8 @@ resource "aws_lb_listener" "ec2_lb_listener" {
 }
 
 resource "aws_lb_target_group" "ec2_lb_https_target_group" {
-  count = local.enable_load_balancer ? 1 : 0
-  name  = "${local.kebab_instance_name}-lb-https-tg-${var.environment}"
+  count    = local.enable_load_balancer ? 1 : 0
+  name     = "${local.kebab_instance_name}-lb-https-tg-${var.environment}"
   vpc_id   = data.aws_subnet.random_subnet.vpc_id
   protocol = "TCP"
   port     = 443
@@ -289,14 +350,14 @@ resource "aws_lb_target_group" "ec2_lb_https_target_group" {
 }
 
 resource "aws_lb_target_group_attachment" "ec2_lb_https_target_group_attachment" {
-  count = local.enable_load_balancer && !var.enable_autoscaling ? var.instance_count : 0
+  count            = local.enable_load_balancer && !var.enable_autoscaling ? var.instance_count : 0
   target_group_arn = aws_lb_target_group.ec2_lb_https_target_group[0].arn
   target_id        = aws_instance.ec2_instance[count.index].id
   port             = aws_lb_target_group.ec2_lb_https_target_group[0].port
 }
 
 resource "aws_lb_listener" "ec2_lb_https_listener" {
-  count = local.enable_load_balancer ? 1 : 0
+  count             = local.enable_load_balancer ? 1 : 0
   load_balancer_arn = aws_lb.ec2_lb[0].arn
   port              = 443
   protocol          = "TCP"
@@ -321,7 +382,7 @@ data "aws_instances" "autoscaling_instances" {
 }
 
 resource "aws_launch_template" "ec2_lt" {
-  count = var.enable_autoscaling ? 1 : 0
+  count = var.enable_autoscaling && !local.use_autoscaling_templates ? 1 : 0
 
   name_prefix   = "${local.kebab_instance_name}-lt-"
   image_id      = local.selected_ami
@@ -366,7 +427,7 @@ resource "aws_launch_template" "ec2_lt" {
       Environment   = var.environment
       Type          = "Self Made"
       ManagedBy     = "DeployEx"
-      SetupComplete = local.use_custom_ami ? "true" : "false"
+      SetupComplete = local.use_latest_ami ? "true" : "false"
     }, var.tags)
   }
 
@@ -389,7 +450,7 @@ resource "aws_launch_template" "ec2_lt" {
         app_name     = local.snake_instance_name
         environment  = var.environment
         app_port     = var.app_port
-        volume_id    = ""  # Autoscaling instances handle volume attachment separately
+        volume_id    = "" # Autoscaling instances handle volume attachment separately
         github_token = var.github_token
         github_repo  = var.github_repo
       }
@@ -413,18 +474,18 @@ resource "aws_launch_template" "ec2_lt" {
 }
 
 resource "aws_autoscaling_group" "ec2_asg" {
-  count = var.enable_autoscaling ? 1 : 0
+  count = var.enable_autoscaling && !local.use_autoscaling_templates ? 1 : 0
 
-  name                = "${local.kebab_instance_name}-asg-${var.environment}"
-  min_size            = var.autoscaling_min_size
-  max_size            = var.autoscaling_max_size
-  desired_capacity    = var.autoscaling_desired_capacity
-  vpc_zone_identifier = var.subnet_ids
-  health_check_type   = var.enable_elb ? "ELB" : "EC2"
+  name                      = "${local.kebab_instance_name}-asg-${var.environment}"
+  min_size                  = var.autoscaling_min_size
+  max_size                  = var.autoscaling_max_size
+  desired_capacity          = var.autoscaling_desired_capacity
+  vpc_zone_identifier       = var.instance_availability_zone != null ? [local.selected_subnet_id] : var.subnet_ids
+  health_check_type         = local.enable_load_balancer ? "ELB" : "EC2"
   health_check_grace_period = 60
-  default_cooldown    = var.autoscaling_scale_out_cooldown
+  default_cooldown          = var.autoscaling_scale_out_cooldown
 
-  target_group_arns = var.enable_elb ? concat(
+  target_group_arns = local.enable_load_balancer ? concat(
     [aws_lb_target_group.ec2_lb_target_group[0].arn],
     var.enable_elb_https ? [aws_lb_target_group.ec2_lb_https_target_group[0].arn] : []
   ) : []
@@ -474,12 +535,176 @@ resource "aws_autoscaling_group" "ec2_asg" {
   }
 
   lifecycle {
-    ignore_changes = [desired_capacity]
+    ignore_changes = [desired_capacity, min_size, max_size]
+  }
+}
+
+resource "aws_launch_template" "ec2_lt_templates" {
+  for_each = local.use_autoscaling_templates ? var.autoscaling_templates : {}
+
+  name_prefix   = "${local.kebab_instance_name}-lt-${each.key}-${var.environment}"
+  image_id      = coalesce(try(each.value.instance_ami, null), local.selected_ami)
+  instance_type = each.value.instance_type
+  key_name      = var.key_pair_key_name
+  description   = "Launch template for ${local.kebab_instance_name} (${each.key}) using AMI: ${coalesce(try(each.value.instance_ami, null), local.selected_ami)}"
+
+  vpc_security_group_ids = [var.security_group_id]
+
+  iam_instance_profile {
+    name = var.iam_instance_profile_name
+  }
+
+  private_dns_name_options {
+    hostname_type                        = "resource-name"
+    enable_resource_name_dns_a_record    = true
+    enable_resource_name_dns_aaaa_record = !var.disable_ipv6
+  }
+
+  metadata_options {
+    http_protocol_ipv6 = "enabled"
+  }
+
+  block_device_mappings {
+    device_name = "/dev/sda1"
+
+    ebs {
+      volume_type           = "gp3"
+      volume_size           = var.instance_ebs_primary_size
+      encrypted             = false
+      delete_on_termination = true
+    }
+  }
+
+  tag_specifications {
+    resource_type = "instance"
+
+    tags = merge({
+      Name          = local.kebab_instance_name
+      Group         = var.resource_group
+      InstanceGroup = local.snake_instance_name
+      Environment   = var.environment
+      Type          = "Self Made"
+      ManagedBy     = "DeployEx"
+      SetupComplete = local.use_latest_ami ? "true" : "false"
+    }, var.tags)
+  }
+
+  tag_specifications {
+    resource_type = "volume"
+
+    tags = merge({
+      Name          = "${local.kebab_instance_name}-root"
+      InstanceGroup = local.snake_instance_name
+      Group         = var.resource_group
+      Environment   = var.environment
+      Type          = "Self Made"
+    }, var.tags)
+  }
+
+  user_data = base64encode(
+    templatefile(
+      "${path.module}/cloud_init_data.yaml.tftpl",
+      {
+        app_name     = local.snake_instance_name
+        environment  = var.environment
+        app_port     = var.app_port
+        volume_id    = ""
+        github_token = var.github_token
+        github_repo  = var.github_repo
+      }
+    )
+  )
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  update_default_version = true
+
+  tags = merge({
+    Name                   = "${local.kebab_instance_name}-launch-template-${each.key}"
+    InstanceGroup          = "${local.snake_instance_name}_${var.environment}"
+    Group                  = var.resource_group
+    Environment            = var.environment
+    Type                   = "Self Made"
+    AutoscalingTemplateKey = each.key
+  }, var.tags)
+}
+
+resource "aws_autoscaling_group" "ec2_asg_templates" {
+  for_each = local.use_autoscaling_templates ? var.autoscaling_templates : {}
+
+  name                      = "${local.kebab_instance_name}-asg-${each.key}-${var.environment}"
+  min_size                  = coalesce(try(each.value.min_size, null), var.autoscaling_min_size)
+  max_size                  = coalesce(try(each.value.max_size, null), var.autoscaling_max_size)
+  desired_capacity          = coalesce(try(each.value.desired_capacity, null), var.autoscaling_desired_capacity)
+  vpc_zone_identifier       = var.instance_availability_zone != null ? [local.selected_subnet_id] : var.subnet_ids
+  health_check_type         = local.enable_load_balancer ? "ELB" : "EC2"
+  health_check_grace_period = 60
+  default_cooldown          = var.autoscaling_scale_out_cooldown
+
+  target_group_arns = local.enable_load_balancer ? concat(
+    [aws_lb_target_group.ec2_lb_target_group[0].arn],
+    var.enable_elb_https ? [aws_lb_target_group.ec2_lb_https_target_group[0].arn] : []
+  ) : []
+
+  launch_template {
+    id      = aws_launch_template.ec2_lt_templates[each.key].id
+    version = "$Latest"
+  }
+
+  instance_refresh {
+    strategy = "Rolling"
+    preferences {
+      min_healthy_percentage = 50
+      instance_warmup        = 300
+    }
+    triggers = ["tag"]
+  }
+
+  tag {
+    key                 = "Name"
+    value               = "${var.instance_name}-${var.environment}"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Group"
+    value               = var.resource_group
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "InstanceGroup"
+    value               = "${local.snake_instance_name}_${var.environment}"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Environment"
+    value               = var.environment
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Type"
+    value               = "Self Made"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "AutoscalingTemplateKey"
+    value               = each.key
+    propagate_at_launch = true
+  }
+
+  lifecycle {
+    ignore_changes = [desired_capacity, min_size, max_size]
   }
 }
 
 resource "aws_autoscaling_policy" "cpu_target" {
-  count = var.enable_autoscaling ? 1 : 0
+  count = var.enable_autoscaling && !local.use_autoscaling_templates ? 1 : 0
 
   name                   = "${local.kebab_instance_name}-cpu-target-${var.environment}"
   policy_type            = "TargetTrackingScaling"
@@ -495,5 +720,67 @@ resource "aws_autoscaling_policy" "cpu_target" {
   estimated_instance_warmup = 60
 }
 
-# IAM instance profile is now provided externally via iam_instance_profile_name variable
-# This allows sharing a single role across all applications in the environment
+resource "aws_autoscaling_policy" "cpu_target_templates" {
+  for_each = local.use_autoscaling_templates ? var.autoscaling_templates : {}
+
+  name                   = "${local.kebab_instance_name}-cpu-target-${each.key}-${var.environment}"
+  policy_type            = "TargetTrackingScaling"
+  autoscaling_group_name = aws_autoscaling_group.ec2_asg_templates[each.key].name
+
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ASGAverageCPUUtilization"
+    }
+    target_value = var.autoscaling_cpu_target_percent
+  }
+
+  estimated_instance_warmup = 60
+}
+
+resource "aws_autoscaling_schedule" "template_switch" {
+  for_each = local.autoscaling_template_schedules
+
+  scheduled_action_name  = "${local.kebab_instance_name}-${each.value.template_key}-${each.value.schedule.name}-${var.environment}"
+  autoscaling_group_name = aws_autoscaling_group.ec2_asg_templates[each.value.template_key].name
+  recurrence             = each.value.schedule.recurrence
+  time_zone              = try(each.value.schedule.time_zone, null)
+
+  min_size = coalesce(
+    try(each.value.schedule.changes.min_size, null),
+    try(var.autoscaling_templates[each.value.template_key].min_size, null),
+    var.autoscaling_min_size
+  )
+
+  max_size = coalesce(
+    try(each.value.schedule.changes.max_size, null),
+    try(var.autoscaling_templates[each.value.template_key].max_size, null),
+    var.autoscaling_max_size
+  )
+
+  desired_capacity = coalesce(
+    try(each.value.schedule.changes.desired_capacity, null),
+    try(var.autoscaling_templates[each.value.template_key].desired_capacity, null),
+    var.autoscaling_desired_capacity
+  )
+}
+
+resource "aws_autoscaling_schedule" "template_switch_disable_others" {
+  for_each = local.use_autoscaling_templates ? merge([
+    for schedule_key, schedule_entry in local.autoscaling_template_enable_schedules : {
+      for other_template_key in local.autoscaling_template_keys : "${schedule_key}:${other_template_key}" => {
+        schedule_key       = schedule_key
+        schedule_entry     = schedule_entry
+        other_template_key = other_template_key
+      } if other_template_key != schedule_entry.template_key
+    }
+  ]...) : {}
+
+  scheduled_action_name  = "${local.kebab_instance_name}-${each.value.other_template_key}-off-${each.value.schedule_entry.schedule.name}-${var.environment}"
+  autoscaling_group_name = aws_autoscaling_group.ec2_asg_templates[each.value.other_template_key].name
+  recurrence             = local.autoscaling_template_enable_schedules_disable_other_recurrence[each.value.schedule_key]
+  time_zone              = try(each.value.schedule_entry.schedule.time_zone, null)
+
+  min_size         = 0
+  max_size         = 0
+  desired_capacity = 0
+}

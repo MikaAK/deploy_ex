@@ -52,13 +52,16 @@ module "ec2_instance" {
 
   private_ip = try(each.value.private_ip, null)
 
-  enable_autoscaling              = try(each.value.autoscaling.enable, null)
-  autoscaling_min_size            = try(each.value.autoscaling.min_size, null)
-  autoscaling_max_size            = try(each.value.autoscaling.max_size, null)
-  autoscaling_desired_capacity    = try(each.value.autoscaling.desired_capacity, null)
-  autoscaling_cpu_target_percent  = try(each.value.autoscaling.cpu_target_percent, null)
-  autoscaling_scale_in_cooldown   = try(each.value.autoscaling.scale_in_cooldown, null)
-  autoscaling_scale_out_cooldown  = try(each.value.autoscaling.scale_out_cooldown, null)
+  enable_autoscaling                       = try(each.value.autoscaling.enable, null)
+  autoscaling_min_size                     = try(each.value.autoscaling.min_size, null)
+  autoscaling_max_size                     = try(each.value.autoscaling.max_size, null)
+  autoscaling_desired_capacity             = try(each.value.autoscaling.desired_capacity, null)
+  autoscaling_cpu_target_percent           = try(each.value.autoscaling.cpu_target_percent, null)
+  autoscaling_scale_in_cooldown            = try(each.value.autoscaling.scale_in_cooldown, null)
+  autoscaling_scale_out_cooldown           = try(each.value.autoscaling.scale_out_cooldown, null)
+  autoscaling_ignore_capacity_changes      = try(each.value.autoscaling.ignore_capacity_changes, null)
+  autoscaling_switch_disable_delay_minutes = try(each.value.autoscaling.switch_disable_delay_minutes, null)
+  autoscaling_templates                    = try(each.value.autoscaling.templates, null)
 
   app_port       = try(each.value.app_port, null)
   use_latest_ami = try(each.value.use_latest_ami, null)

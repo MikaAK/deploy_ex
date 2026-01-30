@@ -1,0 +1,130 @@
+- name: letsencrypt
+  block:
+    - name: Ensure Cloudflare API token is configured
+      fail:
+        msg: "cloudflare_api_token is required for certbot DNS challenge (Zone:DNS:Edit)."
+      when: cloudflare_api_token is not defined or cloudflare_api_token | length == 0
+
+    - name: Install required packages
+      apt:
+        name:
+          - certbot
+          - python3-certbot-dns-cloudflare
+        state: present
+        update_cache: yes
+
+    - name: Create Cloudflare credentials file for certbot
+      template:
+        src: cloudflare-credentials.ini.j2
+        dest: /etc/letsencrypt/cloudflare-credentials.ini
+        mode: '0600'
+        owner: root
+        group: root
+      when: cloudflare_api_token is defined
+
+    - name: Create certificate renewal script
+      template:
+        src: renew-certificates.sh.j2
+        dest: /usr/local/bin/renew-certificates.sh
+        mode: '0755'
+      notify: restart certificate renewal service
+
+    - name: Create systemd service for certificate renewal
+      template:
+        src: cert-renewal.service.j2
+        dest: /etc/systemd/system/cert-renewal.service
+        mode: '0644'
+      notify:
+        - reload systemd
+        - enable certificate renewal service
+
+    - name: Create systemd timer for certificate renewal
+      template:
+        src: cert-renewal.timer.j2
+        dest: /etc/systemd/system/cert-renewal.timer
+        mode: '0644'
+      notify:
+        - reload systemd
+        - enable certificate renewal timer
+
+    - name: Create startup script for certificate check
+      template:
+        src: check-certificates.sh.j2
+        dest: /usr/local/bin/check-certificates.sh
+        mode: '0755'
+
+    - name: Create systemd service for initial certificate check on boot
+      template:
+        src: cert-initial.service.j2
+        dest: /etc/systemd/system/cert-initial.service
+        mode: '0644'
+      notify:
+        - reload systemd
+        - enable certificate initial service
+
+    - name: Add certificate check to cloud-init (if it exists)
+      lineinfile:
+        path: /etc/rc.local
+        line: '/usr/local/bin/check-certificates.sh'
+        insertbefore: '^exit 0'
+        mode: '0755'
+        create: yes
+
+    - name: Run initial certificate check now
+      systemd:
+        name: cert-initial
+        state: started
+
+    - name: Ensure certificates exist or generate them
+      shell: |
+        #!/bin/bash
+        set -euo pipefail
+
+        DOMAIN="{{ domain }}"
+        EMAIL="{{ letsencrypt_email }}"
+        CREDS_FILE="/etc/letsencrypt/cloudflare-credentials.ini"
+
+        # Check if Cloudflare credentials exist
+        if [ ! -f "$CREDS_FILE" ]; then
+            echo "Cloudflare credentials not found at $CREDS_FILE"
+            exit 1
+        fi
+
+        # Check if certificate exists and is valid for at least 7 days
+        if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+            EXPIRY=$(openssl x509 -in "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" -noout -enddate | cut -d= -f2)
+            EXPIRY_EPOCH=$(date -d "$EXPIRY" +%s)
+            CURRENT_EPOCH=$(date +%s)
+            DAYS_LEFT=$(( (EXPIRY_EPOCH - CURRENT_EPOCH) / 86400 ))
+
+            if [ $DAYS_LEFT -gt 7 ]; then
+                echo "Certificate is valid for $DAYS_LEFT days. No renewal needed."
+                exit 0
+            fi
+        fi
+
+        # Obtain or renew certificate using DNS challenge
+        echo "Obtaining/renewing certificate for $DOMAIN using DNS challenge..."
+        certbot certonly \
+            --dns-cloudflare \
+            --dns-cloudflare-credentials "$CREDS_FILE" \
+            -d "$DOMAIN" \
+            --non-interactive \
+            --agree-tos \
+            --email "$EMAIL" \
+            --force-renewal
+
+        echo "Certificate obtained/renewed successfully"
+        /usr/local/bin/check-certificates.sh
+      args:
+        creates: "/etc/letsencrypt/live/{{ domain }}/fullchain.pem"
+
+    - name: Set proper permissions for certificate files
+      file:
+        path: /etc/letsencrypt
+        state: directory
+        recurse: yes
+        mode: '0755'
+        owner: root
+        group: root
+  become: true

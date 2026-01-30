@@ -168,13 +168,6 @@ variable "enable_elb_https" {
   nullable    = false
 }
 
-variable "elb_instance_port" {
-  description = "Changes the application port targeted by the load balancer"
-  type        = number
-  default     = 80
-  nullable    = false
-}
-
 variable "elb_health_check_path" {
   description = "Changes the application path targeted by the load balancer health check"
   type        = string
@@ -276,6 +269,46 @@ variable "autoscaling_scale_out_cooldown" {
   nullable    = false
 }
 
+variable "autoscaling_ignore_capacity_changes" {
+  description = "Whether to ignore changes to capacity settings from external sources like scheduled scaling"
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "autoscaling_switch_disable_delay_minutes" {
+  description = "Delay in minutes before disabling the other autoscaling template after enabling one (warmup window). Only supported for 5-field cron recurrences."
+  type        = number
+  default     = 0
+  nullable    = false
+}
+
+variable "autoscaling_templates" {
+  description = "Optional map of autoscaling templates. When provided, a launch template + ASG will be created per key."
+  type = map(object({
+    instance_type           = string
+    instance_ami            = optional(string)
+    min_size                = optional(number)
+    max_size                = optional(number)
+    desired_capacity        = optional(number)
+    ignore_capacity_changes = optional(bool, false)
+
+    scheduling = optional(list(object({
+      name       = string
+      recurrence = string
+      time_zone  = optional(string)
+
+      changes = object({
+        min_size         = optional(number)
+        max_size         = optional(number)
+        desired_capacity = optional(number)
+      })
+    })))
+  }))
+  default  = null
+  nullable = true
+}
+
 variable "app_port" {
   description = "Port number for the application"
   type        = number
@@ -283,8 +316,8 @@ variable "app_port" {
   nullable    = false
 }
 
-variable "use_custom_ami" {
-  description = "Enable custom AMI lookup from SSM Parameter Store. Set to false to always use instance_ami directly."
+variable "use_latest_ami" {
+  description = "Enable latest AMI lookup instead of source AMI"
   type        = bool
   default     = true
   nullable    = false
