@@ -238,6 +238,40 @@ defmodule DeployEx.AwsMachine do
     end
   end
 
+  def find_qa_instance_ips(app_name \\ nil, opts \\ []) do
+    resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
+
+    with {:ok, instances} <- fetch_instances_by_tag("Group", resource_group) do
+      qa_ips = instances
+      |> Enum.filter(&instance_running_or_pending?/1)
+      |> Enum.filter(&qa_node?/1)
+      |> maybe_filter_by_app_name(app_name)
+      |> Enum.map(fn instance ->
+        tags = get_instance_tags(instance)
+        name = tags["Name"]
+        ip = instance["ipv6Address"] || instance["ipAddress"]
+        {name, ip}
+      end)
+      |> Enum.reject(fn {_, ip} -> is_nil(ip) end)
+
+      {:ok, qa_ips}
+    end
+  end
+
+  defp maybe_filter_by_app_name(instances, nil), do: instances
+  defp maybe_filter_by_app_name(instances, app_name) do
+    Enum.filter(instances, fn instance ->
+      tags = get_instance_tags(instance)
+      instance_group = tags["InstanceGroup"]
+      instance_group && instance_group =~ app_name
+    end)
+  end
+
+  defp qa_node?(instance) do
+    tags = get_instance_tags(instance)
+    tags["QaNode"] === "true"
+  end
+
   def find_instances_by_tags(tag_filters, opts \\ []) when is_list(tag_filters) do
     region = opts[:region] || DeployEx.Config.aws_region()
     all_filters = tag_filters ++ resource_group_filter(opts)
@@ -309,12 +343,17 @@ defmodule DeployEx.AwsMachine do
   end
 
   defp get_instance_tags(instance) do
-    case instance["tagSet"] do
+    case instance["tagSet"] || instance[:tag_set] do
       %{"item" => items} when is_list(items) ->
         Map.new(items, fn %{"key" => k, "value" => v} -> {k, v} end)
 
       %{"item" => %{"key" => k, "value" => v}} ->
         %{k => v}
+
+      tags when is_list(tags) ->
+        Map.new(tags, fn tag ->
+          {tag[:key] || tag["key"], tag[:value] || tag["value"]}
+        end)
 
       _ ->
         %{}

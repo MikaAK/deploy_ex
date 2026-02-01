@@ -1,23 +1,21 @@
 defmodule Mix.Tasks.DeployEx.ListAppReleaseHistory do
   use Mix.Task
 
-  @terraform_default_path DeployEx.Config.terraform_folder_path()
-
-  @shortdoc "Lists the latest releases for a specific app via SSH"
+  @shortdoc "Lists the release history for a specific app from S3"
   @moduledoc """
-  Lists the latest releases for the specified app by connecting to the remote server via SSH.
+  Lists the release history for the specified app by fetching from S3.
 
   ## Example
-      mix deploy_ex.list_app_release --app my_app --directory /path/to/dir --pem /path/to/key.pem
+      mix deploy_ex.list_app_release_history my_app
+      mix deploy_ex.list_app_release_history my_app --limit 10
 
   ## Options
-    * `--app` or `-a` - The app name to fetch releases for (required)
-    * `--directory` or `-d` - Directory to SSH into (required)
-    * `--pem` or `-p` - PEM SSH key file (required)
+    * `--limit` or `-l` - Number of releases to show (default: 25)
+    * `--aws-region` - AWS region (optional, defaults to config)
+    * `--aws-bucket` - S3 bucket for releases (optional, defaults to config)
   """
 
   def run(args) do
-    :ssh.start()
     Application.ensure_all_started(:hackney)
     Application.ensure_all_started(:telemetry)
     Application.ensure_all_started(:ex_aws)
@@ -25,29 +23,23 @@ defmodule Mix.Tasks.DeployEx.ListAppReleaseHistory do
     with :ok <- DeployExHelpers.check_in_umbrella() do
       {opts, extra_args} = parse_args(args)
 
-      opts = Keyword.put_new(opts, :directory, @terraform_default_path)
+      opts = opts
+        |> Keyword.put_new(:region, DeployEx.Config.aws_region())
+        |> Keyword.put_new(:bucket, DeployEx.Config.aws_release_bucket())
+        |> Keyword.put_new(:limit, 25)
 
       if extra_args === [] do
-        Mix.raise("app is required to be passed in. Example: mix deploy_ex.list_app_release my_app")
+        Mix.raise("app is required to be passed in. Example: mix deploy_ex.list_app_release_history my_app")
       else
-        [app_name] = extra_args
-        {machine_opts, opts} = Keyword.split(opts, [:resource_group])
-
-        case DeployExHelpers.run_ssh_command_with_return(
-          opts[:directory],
-          opts[:pem],
-          app_name,
-          DeployEx.ReleaseController.list_releases(),
-          machine_opts
-        ) do
-          {:ok, [latest_releases]} ->
-            Mix.shell().info([:green, "\nLatest releases for #{app_name}:"])
-            Enum.each(String.split(latest_releases, "\n"), fn release ->
-              Mix.shell().info([:yellow, "  #{release}"])
-            end)
-
-          {:ok, []} ->
-            Mix.shell().info([:yellow, "No releases found for #{app_name}."])
+        with {:ok, app_name} <- DeployExHelpers.find_project_name(extra_args),
+             {:ok, releases} <- DeployEx.ReleaseController.list_release_history(app_name, opts[:limit], opts) do
+          Mix.shell().info([:green, "\nRelease history for #{app_name}:"])
+          Enum.each(releases, fn release ->
+            Mix.shell().info([:yellow, "  #{release}"])
+          end)
+        else
+          {:error, %ErrorMessage{code: :not_found}} ->
+            Mix.shell().info([:yellow, "No releases found for #{hd(extra_args)}."])
 
           {:error, err} ->
             Mix.raise("Error fetching releases: #{err}")
@@ -58,8 +50,8 @@ defmodule Mix.Tasks.DeployEx.ListAppReleaseHistory do
 
   defp parse_args(args) do
     OptionParser.parse!(args,
-      aliases: [a: :app, d: :directory, p: :pem],
-      switches: [app: :string, directory: :string, pem: :string, resource_group: :string]
+      aliases: [l: :limit, r: :region, b: :bucket],
+      switches: [limit: :integer, region: :string, bucket: :string]
     )
   end
 end

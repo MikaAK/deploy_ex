@@ -1,12 +1,5 @@
 defmodule DeployEx.ReleaseController do
-  def list_releases(limit \\ 25) do
-    "cat /srv/release_history.txt | tac | head -n #{limit}"
-  end
-
-  @doc """
-  Returns the SSH command to read the current_release.txt file for the given app_name.
-  """
-  def current_release do
-    "cat /srv/current_release.txt | tac"
-  end
+  defdelegate fetch_current_release(app_name, opts \\ []), to: DeployEx.ReleaseTracker
+  defdelegate list_release_history(app_name, limit \\ 25, opts \\ []), to: DeployEx.ReleaseTracker
+  defdelegate set_current_release(app_name, release_name, opts \\ []), to: DeployEx.ReleaseTracker
 end

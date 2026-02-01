@@ -20,19 +20,30 @@ write_files:
       ENVIRONMENT="${environment}"
       BUCKET_NAME="$${APP_NAME}-elixir-deploys-$${ENVIRONMENT}"
       APP_PORT="${app_port}"
+      RELEASE_STATE_KEY="release-state/$${APP_NAME}/current_release.txt"
       
       echo "Starting deployment for $${APP_NAME} in $${ENVIRONMENT}"
       
-      # Find latest release in S3
-      echo "Finding latest release in S3..."
-      LATEST_RELEASE=$(aws s3 ls $${BUCKET_NAME}/$${APP_NAME} --recursive | awk '{print $4}' | sort -r | head -n 1)
+      # Try to get current release from S3 release state
+      echo "Checking for current release in S3 release state..."
+      CURRENT_RELEASE=""
+      if aws s3 cp "s3://$${BUCKET_NAME}/$${RELEASE_STATE_KEY}" /tmp/current_release.txt 2>/dev/null; then
+        CURRENT_RELEASE=$(cat /tmp/current_release.txt | tr -d '\n')
+        echo "Found current release from S3 state: $${CURRENT_RELEASE}"
+      fi
       
-      if [ -z "$${LATEST_RELEASE}" ]; then
+      # If no release state exists, find latest release in S3
+      if [ -z "$${CURRENT_RELEASE}" ]; then
+        echo "No release state found, finding latest release in S3..."
+        CURRENT_RELEASE=$(aws s3 ls $${BUCKET_NAME}/$${APP_NAME} --recursive | awk '{print $4}' | sort -r | head -n 1)
+      fi
+      
+      if [ -z "$${CURRENT_RELEASE}" ]; then
         echo "ERROR: No releases found in s3://$${BUCKET_NAME}/$${APP_NAME}"
         exit 1
       fi
       
-      echo "Found latest release: $${LATEST_RELEASE}"
+      echo "Deploying release: $${CURRENT_RELEASE}"
       
       # Create directories
       mkdir -p /srv/$${APP_NAME}
@@ -40,17 +51,11 @@ write_files:
       
       # Download release
       echo "Downloading release from S3..."
-      aws s3 cp "s3://$${BUCKET_NAME}/$${LATEST_RELEASE}" /srv/$${LATEST_RELEASE##*/}
-      
-      # Track release history
-      if [ -f /srv/current_release.txt ]; then
-        cat /srv/current_release.txt >> /srv/release_history.txt || touch /srv/release_history.txt
-      fi
-      echo "$${LATEST_RELEASE##*/}" > /srv/current_release.txt
+      aws s3 cp "s3://$${BUCKET_NAME}/$${CURRENT_RELEASE}" /srv/$${CURRENT_RELEASE##*/}
       
       # Extract release
       echo "Extracting release..."
-      tar -xzf /srv/$${LATEST_RELEASE##*/} -C /srv/unpack-directory
+      tar -xzf /srv/$${CURRENT_RELEASE##*/} -C /srv/unpack-directory
       
       # Stop existing service if running
       if systemctl is-active --quiet $${APP_NAME}; then

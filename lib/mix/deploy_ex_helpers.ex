@@ -246,6 +246,73 @@ defmodule DeployExHelpers do
       |> Enum.map(&ip_map[&1])
   end
 
+  def find_similar_strings(items, target, opts \\ []) do
+    extract_fn = Keyword.get(opts, :extract_fn, &Function.identity/1)
+    limit = Keyword.get(opts, :limit, 5)
+    min_distance = Keyword.get(opts, :min_distance, 0.0)
+
+    items
+    |> Enum.map(fn item ->
+      extracted = extract_fn.(item) || ""
+      distance = String.jaro_distance(target, extracted)
+      {item, extracted, distance}
+    end)
+    |> Enum.filter(fn {_, extracted, distance} -> extracted !== "" and distance >= min_distance end)
+    |> Enum.sort_by(fn {_, _, distance} -> distance end, :desc)
+    |> Enum.take(limit)
+  end
+
+  def format_release_suggestions(releases, _sha) do
+    releases
+    |> Enum.sort_by(&extract_timestamp_from_release/1, :desc)
+    |> Enum.take(5)
+    |> Enum.map(fn release ->
+      release_sha = extract_sha_from_release(release)
+      timestamp = extract_timestamp_from_release(release)
+      humanized = humanize_timestamp(timestamp)
+      "#{release_sha} (#{humanized})"
+    end)
+  end
+
+  def extract_sha_from_release(release_name) do
+    case String.split(Path.basename(release_name), "-") do
+      [_timestamp, sha | _rest] -> sha
+      _ -> nil
+    end
+  end
+
+  defp extract_timestamp_from_release(release_name) do
+    case String.split(Path.basename(release_name), "-") do
+      [timestamp | _rest] -> timestamp
+      _ -> nil
+    end
+  end
+
+  defp humanize_timestamp(nil), do: "unknown date"
+  defp humanize_timestamp(timestamp) do
+    case Integer.parse(timestamp) do
+      {unix_ts, _} ->
+        case DateTime.from_unix(unix_ts) do
+          {:ok, datetime} -> humanize_datetime(datetime)
+          _ -> timestamp
+        end
+      :error -> timestamp
+    end
+  end
+
+  defp humanize_datetime(datetime) do
+    now = DateTime.utc_now()
+    diff_seconds = DateTime.diff(now, datetime)
+
+    cond do
+      diff_seconds < 60 -> "just now"
+      diff_seconds < 3600 -> "#{div(diff_seconds, 60)} minutes ago"
+      diff_seconds < 86400 -> "#{div(diff_seconds, 3600)} hours ago"
+      diff_seconds < 604_800 -> "#{div(diff_seconds, 86400)} days ago"
+      true -> Calendar.strftime(datetime, "%Y-%m-%d %H:%M")
+    end
+  end
+
   def ensure_ansible_installed do
     case System.cmd("which", ["ansible-playbook"], stderr_to_stdout: true) do
       {_, 0} ->

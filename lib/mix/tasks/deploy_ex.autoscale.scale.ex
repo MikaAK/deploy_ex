@@ -1,6 +1,8 @@
 defmodule Mix.Tasks.DeployEx.Autoscale.Scale do
   use Mix.Task
 
+  alias DeployEx.AwsAutoscaling
+
   @shortdoc "Manually set desired capacity of an autoscaling group"
   @moduledoc """
   Manually adjusts the desired capacity of an Auto Scaling Group.
@@ -29,6 +31,10 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Scale do
   """
 
   def run(args) do
+    Application.ensure_all_started(:hackney)
+    Application.ensure_all_started(:telemetry)
+    Application.ensure_all_started(:ex_aws)
+
     {opts, remaining_args} = OptionParser.parse!(args,
       aliases: [e: :environment],
       switches: [environment: :string]
@@ -54,13 +60,12 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Scale do
 
     environment = Keyword.get(opts, :environment, Mix.env() |> to_string())
 
-    with :ok <- check_aws_cli_installed(),
-         :ok <- DeployExHelpers.check_in_umbrella() do
-      asg_name = build_asg_name(app_name, environment)
+    with :ok <- DeployExHelpers.check_in_umbrella() do
+      asg_name = AwsAutoscaling.build_asg_name(app_name, environment)
 
       Mix.shell().info([:blue, "Scaling #{app_name} to #{desired_capacity} instances..."])
 
-      case set_desired_capacity(asg_name, desired_capacity) do
+      case AwsAutoscaling.set_desired_capacity(asg_name, desired_capacity) do
         :ok ->
           Mix.shell().info([
             :green, "\n✓ Successfully requested scaling to #{desired_capacity} instances.\n"
@@ -70,64 +75,29 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Scale do
             " to check the current status."
           ])
 
-        {:error, :not_found} ->
+        {:error, %ErrorMessage{code: :not_found}} ->
           Mix.shell().error([
             :red, "\nError: Autoscaling group '#{asg_name}' not found.\n"
           ])
           Mix.shell().info("Ensure autoscaling is enabled for #{app_name} in your Terraform configuration.")
 
-        {:error, :out_of_range} ->
-          Mix.shell().error([
-            :red, "\nError: Desired capacity #{desired_capacity} is outside the min/max range.\n"
-          ])
-          Mix.shell().info("Check the autoscaling group's min_size and max_size configuration.")
+        {:error, %ErrorMessage{code: :bad_request} = error} ->
+          if String.contains?(to_string(error), "outside") or String.contains?(to_string(error), "range") do
+            Mix.shell().error([
+              :red, "\nError: Desired capacity #{desired_capacity} is outside the min/max range.\n"
+            ])
+            Mix.shell().info("Check the autoscaling group's min_size and max_size configuration.")
+          else
+            Mix.shell().error([
+              :red, "\nError setting desired capacity: #{inspect(error)}\n"
+            ])
+          end
 
-        {:error, reason} ->
+        {:error, error} ->
           Mix.shell().error([
-            :red, "\nError setting desired capacity: #{reason}\n"
+            :red, "\nError setting desired capacity: #{inspect(error)}\n"
           ])
       end
-    end
-  end
-
-  defp check_aws_cli_installed do
-    case System.cmd("which", ["aws"], stderr_to_stdout: true) do
-      {_, 0} -> :ok
-      _ ->
-        Mix.raise("""
-        AWS CLI is not installed or not in PATH.
-        Please install it: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
-        """)
-    end
-  end
-
-  defp build_asg_name(app_name, environment) do
-    app_name
-    |> String.replace("_", "-")
-    |> Kernel.<>("-asg-#{environment}")
-  end
-
-  defp set_desired_capacity(asg_name, desired_capacity) do
-    case System.cmd("aws", [
-      "autoscaling", "set-desired-capacity",
-      "--auto-scaling-group-name", asg_name,
-      "--desired-capacity", to_string(desired_capacity)
-    ], stderr_to_stdout: true) do
-      {"", 0} ->
-        :ok
-
-      {output, _} ->
-        cond do
-          String.contains?(output, "does not exist") ->
-            {:error, :not_found}
-
-          String.contains?(output, "outside of limits") or
-          String.contains?(output, "must be between") ->
-            {:error, :out_of_range}
-
-          true ->
-            {:error, output}
-        end
     end
   end
 end

@@ -1,14 +1,34 @@
 defmodule DeployEx.AwsSecurityGroup do
-  def find_security_group_id(opts \\ []) do
+  def find_security_group(opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
-    resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
-    sg_name = "#{kebab_case(resource_group)}-sg"
+    project_name = opts[:project_name] || DeployEx.Config.aws_project_name()
+    sg_prefix = "#{project_name}-sg"
 
     with {:ok, security_groups} <- describe_security_groups(region) do
-      case Enum.find(security_groups, &(&1["groupName"] === sg_name)) do
-        nil -> {:error, ErrorMessage.not_found("no security group found with name #{sg_name}")}
-        sg -> {:ok, sg["groupId"]}
+      matching = security_groups
+        |> Enum.filter(fn sg ->
+          name = sg["groupName"] || ""
+          String.starts_with?(name, sg_prefix) or name === sg_prefix
+        end)
+        |> Enum.sort_by(& &1["groupName"], :desc)
+        |> List.first()
+
+      case matching do
+        nil ->
+          available = security_groups
+            |> Enum.map(& &1["groupName"])
+            |> Enum.filter(& &1)
+            |> Enum.reject(&(&1 === "default"))
+          {:error, ErrorMessage.not_found("no security group found matching prefix #{sg_prefix}", %{available: available})}
+        sg ->
+          {:ok, %{id: sg["groupId"], vpc_id: sg["vpcId"], name: sg["groupName"]}}
       end
+    end
+  end
+
+  def find_security_group_id(opts \\ []) do
+    with {:ok, sg} <- find_security_group(opts) do
+      {:ok, sg.id}
     end
   end
 
@@ -52,9 +72,4 @@ defmodule DeployEx.AwsSecurityGroup do
     end
   end
 
-  defp kebab_case(string) do
-    string
-    |> String.replace("_", "-")
-    |> String.downcase()
-  end
 end

@@ -1,6 +1,8 @@
 defmodule Mix.Tasks.DeployEx.Autoscale.Status do
   use Mix.Task
 
+  alias DeployEx.AwsAutoscaling
+
   @shortdoc "Displays autoscaling group status for an application"
   @moduledoc """
   Displays the current status of an Auto Scaling Group including:
@@ -24,6 +26,10 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Status do
   """
 
   def run(args) do
+    Application.ensure_all_started(:hackney)
+    Application.ensure_all_started(:telemetry)
+    Application.ensure_all_started(:ex_aws)
+
     {opts, remaining_args} = OptionParser.parse!(args,
       aliases: [e: :environment],
       switches: [environment: :string]
@@ -36,76 +42,37 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Status do
 
     environment = Keyword.get(opts, :environment, Mix.env() |> to_string())
 
-    with :ok <- check_aws_cli_installed(),
-         :ok <- DeployExHelpers.check_in_umbrella() do
-      asg_name = build_asg_name(app_name, environment)
-
+    with :ok <- DeployExHelpers.check_in_umbrella() do
       Mix.shell().info([:blue, "Fetching autoscaling status for #{app_name}..."])
 
-      case describe_autoscaling_group(asg_name) do
-        {:ok, asg_data} ->
-          display_status(asg_data, asg_name)
+      case AwsAutoscaling.find_asg_by_prefix(app_name, environment) do
+        {:ok, []} ->
+          asg_name = AwsAutoscaling.build_asg_name(app_name, environment)
+          case AwsAutoscaling.describe_auto_scaling_group(asg_name) do
+            {:ok, asg_data} ->
+              display_status(asg_data, asg_name)
 
-        {:error, :not_found} ->
-          Mix.shell().info([:yellow, "\nAutoscaling is not enabled for #{app_name} or the group does not exist."])
-          Mix.shell().info("To enable autoscaling, set enable_autoscaling = true in your Terraform variables.")
+            {:error, %ErrorMessage{code: :not_found}} ->
+              Mix.shell().info([:yellow, "\nAutoscaling is not enabled for #{app_name} or the group does not exist."])
+              Mix.shell().info("To enable autoscaling, set enable_autoscaling = true in your Terraform variables.")
 
-        {:error, reason} ->
-          Mix.shell().error([:red, "\nError fetching autoscaling status: #{reason}"])
+            {:error, error} ->
+              Mix.shell().error([:red, "\nError fetching autoscaling status: #{inspect(error)}"])
+          end
+
+        {:ok, asgs} ->
+          Enum.each(asgs, fn asg_data ->
+            display_status(asg_data, asg_data.name)
+          end)
+
+        {:error, error} ->
+          Mix.shell().error([:red, "\nError fetching autoscaling status: #{inspect(error)}"])
       end
     end
   end
 
-  defp check_aws_cli_installed do
-    case System.cmd("which", ["aws"], stderr_to_stdout: true) do
-      {_, 0} -> :ok
-      _ ->
-        Mix.raise("""
-        AWS CLI is not installed or not in PATH.
-        Please install it: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
-        """)
-    end
-  end
-
-  defp build_asg_name(app_name, environment) do
-    app_name
-    |> String.replace("_", "-")
-    |> Kernel.<>("-asg-#{environment}")
-  end
-
-  defp describe_autoscaling_group(asg_name) do
-    case System.cmd("aws", [
-      "autoscaling", "describe-auto-scaling-groups",
-      "--auto-scaling-group-names", asg_name,
-      "--output", "json"
-    ], stderr_to_stdout: true) do
-      {output, 0} ->
-        case Jason.decode(output) do
-          {:ok, %{"AutoScalingGroups" => [asg | _]}} ->
-            {:ok, asg}
-
-          {:ok, %{"AutoScalingGroups" => []}} ->
-            {:error, :not_found}
-
-          {:error, _} ->
-            {:error, "Failed to parse AWS response"}
-        end
-
-      {error, _} ->
-        if String.contains?(error, "does not exist") do
-          {:error, :not_found}
-        else
-          {:error, error}
-        end
-    end
-  end
-
   defp display_status(asg_data, asg_name) do
-    desired = asg_data["DesiredCapacity"]
-    min_size = asg_data["MinSize"]
-    max_size = asg_data["MaxSize"]
-    instances = asg_data["Instances"] || []
-    instance_count = length(instances)
+    instance_count = length(asg_data.instances)
 
     Mix.shell().info([
       :green, "\n",
@@ -116,9 +83,9 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Status do
 
     Mix.shell().info([
       :cyan, "Capacity:\n",
-      :reset, "  Desired: ", :bright, "#{desired}", :reset, "\n",
-      "  Minimum: #{min_size}\n",
-      "  Maximum: #{max_size}\n"
+      :reset, "  Desired: ", :bright, "#{asg_data.desired_capacity}", :reset, "\n",
+      "  Minimum: #{asg_data.min_size}\n",
+      "  Maximum: #{asg_data.max_size}\n"
     ])
 
     Mix.shell().info([
@@ -126,21 +93,16 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Status do
     ])
 
     if instance_count > 0 do
-      Enum.each(instances, fn instance ->
-        instance_id = instance["InstanceId"]
-        lifecycle_state = instance["LifecycleState"]
-        health_status = instance["HealthStatus"]
-        az = instance["AvailabilityZone"]
-
-        state_color = case lifecycle_state do
+      Enum.each(asg_data.instances, fn instance ->
+        state_color = case instance.lifecycle_state do
           "InService" -> :green
           "Pending" -> :yellow
           _ -> :red
         end
 
         Mix.shell().info([
-          "  • ", state_color, instance_id, :reset,
-          " (", lifecycle_state, ", ", health_status, ") - ", az
+          "  • ", state_color, instance.instance_id, :reset,
+          " (", instance.lifecycle_state, ", ", instance.health_status, ") - ", instance.availability_zone
         ])
       end)
     else
@@ -156,40 +118,24 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Status do
   end
 
   defp display_scaling_policies(asg_name) do
-    case System.cmd("aws", [
-      "autoscaling", "describe-policies",
-      "--auto-scaling-group-name", asg_name,
-      "--output", "json"
-    ], stderr_to_stdout: true) do
-      {output, 0} ->
-        case Jason.decode(output) do
-          {:ok, %{"ScalingPolicies" => [_ | _] = policies}} ->
-            Mix.shell().info([
-              :cyan, "\nScaling Policies:\n"
-            ])
+    case AwsAutoscaling.describe_scaling_policies(asg_name) do
+      {:ok, [_ | _] = policies} ->
+        Mix.shell().info([
+          :cyan, "\nScaling Policies:\n"
+        ])
 
-            Enum.each(policies, fn policy ->
-              policy_type = policy["PolicyType"]
-              policy_name = policy["PolicyName"]
+        Enum.each(policies, fn policy ->
+          Mix.shell().info(["  • ", :bright, policy.policy_name, :reset, " (#{policy.policy_type})"])
 
-              Mix.shell().info(["  • ", :bright, policy_name, :reset, " (#{policy_type})"])
-
-              if target_config = policy["TargetTrackingConfiguration"] do
-                if predefined = target_config["PredefinedMetricSpecification"] do
-                  metric_type = predefined["PredefinedMetricType"]
-                  target_value = target_config["TargetValue"]
-
-                  Mix.shell().info([
-                    "    Target: ", :bright, "#{target_value}%", :reset,
-                    " #{metric_type}"
-                  ])
-                end
-              end
-            end)
-
-          _ ->
-            nil
-        end
+          if target_config = policy.target_tracking_configuration do
+            if target_config.predefined_metric_type do
+              Mix.shell().info([
+                "    Target: ", :bright, "#{target_config.target_value}%", :reset,
+                " #{target_config.predefined_metric_type}"
+              ])
+            end
+          end
+        end)
 
       _ ->
         nil

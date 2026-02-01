@@ -29,6 +29,7 @@ defmodule Mix.Tasks.Ansible.Setup do
   - `parallel` - Maximum number of concurrent setup operations (default: 4)
   - `only` - Only setup specified apps (can be used multiple times)
   - `except` - Skip setup for specified apps (can be used multiple times)
+  - `include-qa` - Include QA nodes in setup (default: excluded)
   - `quiet` - Suppress output messages
   """
 
@@ -55,8 +56,9 @@ defmodule Mix.Tasks.Ansible.Setup do
         |> Enum.map(&Path.relative_to(&1, relative_directory))
         |> DeployExHelpers.filter_only_or_except(opts[:only], opts[:except])
         |> Task.async_stream(fn setup_file ->
+          qa_limit = if opts[:include_qa], do: "", else: "--limit '!qa_true'"
           DeployEx.Utils.run_command(
-            "ansible-playbook #{setup_file} #{ansible_args}",
+            "ansible-playbook #{setup_file} #{ansible_args} #{qa_limit}",
             opts[:directory]
           )
         end, max_concurrency: opts[:parallel], timeout: :timer.minutes(30))
@@ -74,7 +76,8 @@ defmodule Mix.Tasks.Ansible.Setup do
         only: :keep,
         except: :keep,
         force: :boolean,
-        quiet: :boolean
+        quiet: :boolean,
+        include_qa: :boolean
       ]
     )
 

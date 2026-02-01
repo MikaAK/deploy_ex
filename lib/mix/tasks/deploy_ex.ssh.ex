@@ -57,6 +57,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
   - `--resource_group` - Specify the resource group to connect to
   - `--index`, `-i` - Connect to a specific instance by index (0-based)
   - `--list`, `-l` - List all instances and their IPs without connecting
+  - `--qa` - Show only QA nodes (optionally filter by app_name)
   """
 
   def run(args) do
@@ -67,14 +68,12 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
     {machine_opts, opts} = Keyword.split(opts, [:resource_group])
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
-         {:ok, app_name} <- DeployExHelpers.find_project_name(app_params),
-         {:ok, instance_ips} <- DeployEx.AwsMachine.find_instance_ips(DeployExHelpers.project_name(), app_name, machine_opts) do
-      if opts[:list] do
-        list_instances(app_name, instance_ips)
+    with :ok <- DeployExHelpers.check_in_umbrella() do
+      if opts[:qa] do
+        app_name = List.first(app_params)
+        run_qa_mode(app_name, machine_opts, opts)
       else
-        {:ok, pem_file_path} = DeployEx.Terraform.find_pem_file(opts[:directory], opts[:pem])
-        connect_to_host(app_name, instance_ips, pem_file_path, opts)
+        run_app_mode(app_params, machine_opts, opts)
       end
     else
       {:error, e} -> Mix.raise(to_string(e))
@@ -98,9 +97,42 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         pem: :string,
         resource_group: :string,
         index: :integer,
-        list: :boolean
+        list: :boolean,
+        qa: :boolean
       ]
     )
+  end
+
+  defp run_qa_mode(app_name, machine_opts, opts) do
+    case DeployEx.AwsMachine.find_qa_instance_ips(app_name, machine_opts) do
+      {:ok, []} ->
+        Mix.shell().info([:yellow, "No QA nodes found"])
+
+      {:ok, qa_instances} ->
+        if opts[:list] do
+          list_qa_instances(qa_instances)
+        else
+          {:ok, pem_file_path} = DeployEx.Terraform.find_pem_file(opts[:directory], opts[:pem])
+          connect_to_qa_host(qa_instances, pem_file_path, opts)
+        end
+
+      {:error, e} ->
+        Mix.raise(to_string(e))
+    end
+  end
+
+  defp run_app_mode(app_params, machine_opts, opts) do
+    with {:ok, app_name} <- DeployExHelpers.find_project_name(app_params),
+         {:ok, instance_ips} <- DeployEx.AwsMachine.find_instance_ips(DeployExHelpers.project_name(), app_name, machine_opts) do
+      if opts[:list] do
+        list_instances(app_name, instance_ips)
+      else
+        {:ok, pem_file_path} = DeployEx.Terraform.find_pem_file(opts[:directory], opts[:pem])
+        connect_to_host(app_name, instance_ips, pem_file_path, opts)
+      end
+    else
+      {:error, e} -> Mix.raise(to_string(e))
+    end
   end
 
   defp list_instances(app_name, []) do
@@ -129,6 +161,60 @@ defmodule Mix.Tasks.DeployEx.Ssh do
       :reset, "Total instances: ", :bright, "#{length(instance_ips)}", :reset, "\n",
       "Use ", :cyan, "--index N", :reset, " to connect to a specific instance\n"
     ])
+  end
+
+  defp list_qa_instances(qa_instances) do
+    Mix.shell().info([
+      :green, "\n",
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+      :bright, "QA Nodes", :normal, "\n",
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    ])
+
+    qa_instances
+    |> Enum.with_index()
+    |> Enum.each(fn {{name, ip}, index} ->
+      Mix.shell().info([
+        :cyan, "  [#{index}] ", :reset, name, " (", ip, ")"
+      ])
+    end)
+
+    Mix.shell().info([
+      :green, "\n",
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+      :reset, "Total QA nodes: ", :bright, "#{length(qa_instances)}", :reset, "\n",
+      "Use ", :cyan, "--index N", :reset, " to connect to a specific instance\n"
+    ])
+  end
+
+  defp connect_to_qa_host(qa_instances, pem_file_path, opts) do
+    {name, ip} = cond do
+      opts[:index] !== nil ->
+        case Enum.at(qa_instances, opts[:index]) do
+          nil ->
+            Mix.raise("Instance index #{opts[:index]} not found. Available: 0..#{length(qa_instances) - 1}")
+          instance ->
+            instance
+        end
+
+      opts[:short] ->
+        Enum.random(qa_instances)
+
+      true ->
+        choices = Enum.map(qa_instances, fn {name, ip} -> "#{name} (#{ip})" end)
+        [choice] = DeployExHelpers.prompt_for_choice(choices, false)
+        Enum.find(qa_instances, fn {name, ip} -> "#{name} (#{ip})" === choice end)
+    end
+
+    app_name = extract_app_name_from_qa_node(name)
+    log_ssh_command(app_name, pem_file_path, ip, opts)
+  end
+
+  defp extract_app_name_from_qa_node(name) do
+    case Regex.run(~r/^(.+)-qa-\d+$/, name) do
+      [_, app_name] -> app_name
+      _ -> name
+    end
   end
 
   defp connect_to_host(app_name, [], _pem_file_path, _opts) do

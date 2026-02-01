@@ -49,36 +49,75 @@
         dest: /srv/unpack-directory
         remote_src: true
 
-    - name: Check for current release file
-      stat:
-        path: "/srv/current_release.txt"
-      register: current_release_file
+    - name: Fetch current release from S3
+      amazon.aws.aws_s3:
+        bucket: "{{ bucket_name }}"
+        mode: get
+        object: "release-state/{{ app_name }}/current_release.txt"
+        dest: /tmp/current_release.txt
+      register: current_release_fetch
+      ignore_errors: true
 
-    - name: Check for release history
-      stat:
-        path: "/srv/release_history.txt"
-      register: release_history_file
+    - name: Read current release content
+      slurp:
+        src: /tmp/current_release.txt
+      register: current_release_content
+      when: current_release_fetch is succeeded
 
-    - name: Create release_history file
+    - name: Set current release fact
+      set_fact:
+        existing_release: "{{ (current_release_content.content | default('') | b64decode | trim) if current_release_fetch is succeeded else '' }}"
+
+    - name: Set release changed fact
+      set_fact:
+        release_changed: "{{ existing_release != aws_file_name.stdout_lines[0] }}"
+
+    - name: Fetch release history from S3
+      amazon.aws.aws_s3:
+        bucket: "{{ bucket_name }}"
+        mode: get
+        object: "release-state/{{ app_name }}/release_history.txt"
+        dest: /tmp/release_history.txt
+      register: release_history_fetch
+      ignore_errors: true
+      when: release_changed | bool
+
+    - name: Create empty release history if not exists
       copy:
         content: ""
-        dest: /srv/release_history.txt
-        force: no
-        group: sys
-        owner: root
-        mode: 0555
-      when: current_release_file.stat.exists and not release_history_file.stat.exists
+        dest: /tmp/release_history.txt
+      when: release_changed | bool and (release_history_fetch.failed | default(false))
 
-    - name: Write entry to release_history file
-      shell: cat /srv/current_release.txt >> /srv/release_history.txt
-      when:
-        - current_release_file.stat.exists
-        - release_history_file.stat.exists
+    - name: Append current release to history
+      shell: cat /tmp/current_release.txt >> /tmp/release_history.txt
+      when: release_changed | bool and current_release_fetch is succeeded
 
-    - name: Write current release file
-      ansible.builtin.copy:
+    - name: Write new current release
+      copy:
         content: "{{ aws_file_name.stdout_lines[0] }}\n"
-        dest: "/srv/current_release.txt"
+        dest: /tmp/current_release.txt
+      when: release_changed | bool
+
+    - name: Upload current release to S3
+      amazon.aws.aws_s3:
+        bucket: "{{ bucket_name }}"
+        mode: put
+        object: "release-state/{{ app_name }}/current_release.txt"
+        src: /tmp/current_release.txt
+      when: release_changed | bool
+
+    - name: Upload release history to S3
+      amazon.aws.aws_s3:
+        bucket: "{{ bucket_name }}"
+        mode: put
+        object: "release-state/{{ app_name }}/release_history.txt"
+        src: /tmp/release_history.txt
+      when: release_changed | bool
+
+    - name: Skip release state update (same version)
+      debug:
+        msg: "Skipping release state update - already at {{ aws_file_name.stdout_lines[0] }}"
+      when: not (release_changed | bool)
 
     - name: Add erlang_systemd.service file to /etc/systemd/system/{{ app_name }}.service
       template:

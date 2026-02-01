@@ -33,6 +33,11 @@ Under the default commands you will gain the following services (all of which ca
   - [Commands](https://github.com/MikaAK/deploy_ex#autoscaling-commands)
   - [Instance Setup](https://github.com/MikaAK/deploy_ex#autoscaling-instance-setup)
   - [Connecting to Instances](https://github.com/MikaAK/deploy_ex#connecting-to-autoscaled-instances)
+- [QA Nodes](https://github.com/MikaAK/deploy_ex#qa-nodes)
+  - [Quick Start](https://github.com/MikaAK/deploy_ex#quick-start-1)
+  - [QA Node Commands](https://github.com/MikaAK/deploy_ex#qa-node-commands)
+  - [How QA Nodes Work](https://github.com/MikaAK/deploy_ex#how-qa-nodes-work)
+  - [QA Node Tags](https://github.com/MikaAK/deploy_ex#qa-node-tags)
 - [Connecting to Your Nodes](https://github.com/MikaAK/deploy_ex#connecting-to-your-nodes)
   - [Authorizing for SSH](https://github.com/MikaAK/deploy_ex#authorizing-for-ssh)
   - [Connecting to Node as Root](https://github.com/MikaAK/deploy_ex#connection-to-node-as-root)
@@ -198,6 +203,7 @@ env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
 - [x] `mix deploy_ex.list_available_releases` - Lists all available releases in the configured AWS S3 release bucket
 - [x] `mix deploy_ex.list_app_release_history` - Shows the release history for a specific app by SSHing into the node
 - [x] `mix deploy_ex.view_current_release` - Shows the current (latest) release for a specific app by SSHing into the node
+- [x] `mix deploy_ex.instance.status` - Displays detailed instance status including autoscaling, IPs, load balancer health, and tags
 
 ## Universial Options
 Most of these are available on any command in DeployEx
@@ -439,6 +445,48 @@ mix deploy_ex.autoscale.scale my_app 3
 
 ### Autoscaling Commands
 
+#### View Instance Status
+```bash
+mix deploy_ex.instance.status <app_name>
+```
+
+Displays comprehensive instance information for an application:
+- Autoscaling status (enabled/disabled, ASG name, capacity)
+- Instance details (ID, state, type)
+- IP addresses (Elastic IP, public IP, private IP, IPv6)
+- Load balancer health (target group attachment and health status)
+- All instance tags
+
+**Options:**
+- `--environment, -e` - Environment name (default: Mix.env())
+
+**Example:**
+```bash
+mix deploy_ex.instance.status my_app -e prod
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Autoscaling: Enabled
+  Group: my-app-asg-prod
+  Desired: 2 | Min: 1 | Max: 5
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Instances (2):
+
+  My App-prod-0
+  ├─ Instance ID: i-0abc123def456
+  ├─ State: running
+  ├─ Type: t3.small
+  ├─ Public IP: 54.123.45.67
+  ├─ Private IP: 10.0.1.100
+  ├─ Target Group: my-app-tg-prod - healthy
+  └─ Tags:
+     ├─ Environment: prod
+     ├─ InstanceGroup: my_app
+     └─ ManagedBy: DeployEx
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
 #### View Autoscaling Status
 ```bash
 mix deploy_ex.autoscale.status <app_name>
@@ -498,6 +546,51 @@ mix deploy_ex.autoscale.scale my_app 0
 - AWS rejects values outside this range
 - Terraform ignores `desired_capacity` drift (allows dynamic scaling)
 
+#### Trigger Instance Refresh
+```bash
+mix deploy_ex.autoscale.refresh <app_name> [options]
+```
+
+Triggers an instance refresh to replace all instances with new ones. New instances will run cloud-init and pull the current release from S3.
+
+**Options:**
+- `--min-healthy-percentage` - Minimum percentage of healthy instances during refresh (default: 90)
+- `--instance-warmup` - Seconds to wait for instance warmup (default: 300)
+- `--skip-matching` - Skip instances that already match the desired configuration
+- `--environment, -e` - Environment name (default: Mix.env())
+
+**Example:**
+```bash
+# Refresh all instances
+mix deploy_ex.autoscale.refresh my_app
+
+# Refresh with lower availability requirement
+mix deploy_ex.autoscale.refresh my_app --min-healthy-percentage 50
+```
+
+#### Check Instance Refresh Status
+```bash
+mix deploy_ex.autoscale.refresh_status <app_name> [options]
+```
+
+Shows the status of instance refreshes for an autoscaling group.
+
+**Options:**
+- `--environment, -e` - Environment name (default: Mix.env())
+
+**Example:**
+```bash
+mix deploy_ex.autoscale.refresh_status my_app
+
+Instance Refresh Status for my-app-asg-dev
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Refresh ID: abc123-def456
+Status: InProgress
+Progress: 50%
+Instances to update: 2
+Started: 2024-01-15T10:30:00Z
+```
+
 ### Autoscaling Instance Setup
 
 Autoscaled instances receive full setup automatically via user-data and Lambda:
@@ -549,6 +642,241 @@ mix deploy_ex.ssh my_app --index 2 --iex
 - `--list` - Shows all instances with indices and IPs
 - `--index N` - Connects to instance at index N (0-based)
 - No flag - Prompts for selection or connects to random instance with `-s`
+
+## QA Nodes
+
+QA nodes are standalone EC2 instances that can be spun up with a specific git SHA release for testing purposes, independent of any Auto Scaling Group or Terraform-managed infrastructure. They're ideal for:
+
+- Testing specific commits before merging
+- A/B testing different versions
+- Staging environments for QA review
+- Debugging production issues with a specific release
+
+### Quick Start
+
+```bash
+# Create a QA node with a specific SHA
+mix deploy_ex.qa.create my_app --sha abc1234
+
+# List all QA nodes
+mix deploy_ex.qa.list
+
+# Deploy a different SHA to existing QA node
+mix deploy_ex.qa.deploy my_app --sha def5678
+
+# Attach to load balancer for traffic testing
+mix deploy_ex.qa.attach_lb my_app
+
+# Get SSH connection info
+mix deploy_ex.qa.ssh my_app
+
+# Destroy when done
+mix deploy_ex.qa.destroy my_app
+```
+
+### QA Node Commands
+
+#### Create a QA Node
+```bash
+mix deploy_ex.qa.create <app_name> --sha <git_sha> [options]
+```
+
+**Options:**
+- `--sha, -s` - Target git SHA (required)
+- `--instance-type` - EC2 instance type (default: t3.small)
+- `--skip-setup` - Skip Ansible setup after creation
+- `--skip-deploy` - Skip deployment after setup
+- `--attach-lb` - Attach to load balancer after deployment
+- `--force, -f` - Replace existing QA node without prompting
+- `--quiet, -q` - Suppress output messages
+
+**Example:**
+```bash
+# Create with all defaults
+mix deploy_ex.qa.create my_app --sha abc1234
+
+# Create and attach to load balancer
+mix deploy_ex.qa.create my_app --sha abc1234 --attach-lb
+
+# Create without setup/deploy (just provision instance)
+mix deploy_ex.qa.create my_app --sha abc1234 --skip-setup --skip-deploy
+```
+
+#### Destroy QA Nodes
+```bash
+mix deploy_ex.qa.destroy <app_name> [options]
+mix deploy_ex.qa.destroy --instance-id <id>
+mix deploy_ex.qa.destroy --all
+```
+
+**Options:**
+- `--instance-id, -i` - Destroy by specific instance ID
+- `--all` - Destroy all QA nodes
+- `--force, -f` - Skip confirmation prompt
+- `--quiet, -q` - Suppress output messages
+
+#### List QA Nodes
+```bash
+mix deploy_ex.qa.list [options]
+```
+
+**Options:**
+- `--app, -a` - Filter by app name
+- `--json` - Output as JSON
+- `--quiet, -q` - Minimal output
+
+**Example output:**
+```
+QA Nodes:
+--------------------------------------------------------------------------------
+my_app
+  Instance ID: i-0abc123def456
+  SHA: abc1234
+  State: running
+  Public IP: 54.123.45.67
+  IPv6: 2600:1f18:...
+  LB Attached: no
+  Created: 2024-01-15T10:30:00Z
+--------------------------------------------------------------------------------
+Total: 1 QA node(s)
+```
+
+#### Deploy to QA Node
+```bash
+mix deploy_ex.qa.deploy <app_name> --sha <git_sha> [options]
+```
+
+Deploy a different release SHA to an existing QA node without recreating it.
+
+**Options:**
+- `--sha, -s` - Target git SHA (required)
+- `--quiet, -q` - Suppress output messages
+
+#### Attach to Load Balancer
+```bash
+mix deploy_ex.qa.attach_lb <app_name> [options]
+```
+
+Attach a QA node to the app's load balancer target groups to receive production traffic.
+
+**Options:**
+- `--target-group` - Specific target group ARN (default: auto-discover)
+- `--port` - Port to register (default: 4000)
+- `--wait` - Wait for health check to pass
+- `--quiet, -q` - Suppress output messages
+
+#### Detach from Load Balancer
+```bash
+mix deploy_ex.qa.detach_lb <app_name> [options]
+```
+
+Remove a QA node from load balancer target groups.
+
+**Options:**
+- `--target-group` - Specific target group ARN (default: all attached)
+- `--quiet, -q` - Suppress output messages
+
+#### SSH to QA Node
+```bash
+mix deploy_ex.qa.ssh <app_name> [options]
+```
+
+Get SSH connection info for a QA node.
+
+**Options:**
+- `--short, -s` - Output command only (for eval)
+- `--root` - Connect as root
+- `--log` - View application logs
+- `--iex` - Connect to remote IEx
+- `--quiet, -q` - Suppress output
+
+**Example:**
+```bash
+# Get SSH command
+mix deploy_ex.qa.ssh my_app
+
+# Connect directly
+eval "$(mix deploy_ex.qa.ssh my_app -s)"
+
+# View logs
+eval "$(mix deploy_ex.qa.ssh my_app -s --log)"
+
+# Connect to IEx
+eval "$(mix deploy_ex.qa.ssh my_app -s --iex)"
+```
+
+#### Check Health Status
+```bash
+mix deploy_ex.qa.health [app_name] [options]
+```
+
+Check load balancer health status for QA nodes.
+
+**Options:**
+- `--all` - Check health for all apps (not just QA nodes)
+- `--watch, -w` - Continuously monitor (refresh every 5s)
+- `--json` - Output as JSON
+- `--quiet, -q` - Minimal output
+
+**Example output:**
+```
+Load Balancer Health Status
+===========================
+
+Target Group: my-app-tg-dev
+  ✓ my-app-dev-0 (i-0abc123) - healthy
+  ✓ my-app-dev-1 (i-0def456) - healthy
+  ✗ my-app-qa-abc123 (i-0ghi789) [QA] - unhealthy
+    Reason: Target.FailedHealthChecks
+
+Summary: 2 healthy, 1 unhealthy
+```
+
+#### Cleanup Orphaned QA Nodes
+```bash
+mix deploy_ex.qa.cleanup [options]
+```
+
+Detect and clean up orphaned QA nodes (S3 state without instance, or instance without S3 state).
+
+**Options:**
+- `--dry-run` - Show what would be cleaned up without taking action
+- `--force, -f` - Skip confirmation prompt
+- `--quiet, -q` - Suppress output messages
+
+### How QA Nodes Work
+
+**State Management:**
+- QA node state is stored in S3 at `qa-nodes/{app_name}/state.json`
+- State includes instance ID, target SHA, IPs, and load balancer attachment status
+- State is always verified against AWS before operations
+
+**Infrastructure Discovery:**
+- QA nodes use the same security group, subnet, and IAM profile as production instances
+- AMI is auto-discovered (latest Debian 13)
+- No Terraform state dependency - uses AWS APIs directly
+
+**Ansible Integration:**
+- QA nodes are tagged with `QaNode: true` and `InstanceGroup: {app_name}`
+- Normal `mix ansible.deploy` excludes QA nodes by default
+- Use `--include-qa` flag to include QA nodes in bulk operations
+- QA nodes can be targeted individually via `--limit` flag
+
+**Load Balancer:**
+- QA nodes can be attached to existing target groups
+- Useful for A/B testing or gradual rollouts
+- Health checks work the same as production instances
+
+### QA Node Tags
+
+QA nodes are tagged with:
+- `Name`: `{app_name}-qa-{short_sha}-{timestamp}`
+- `Group`: Same as production (for clustering)
+- `InstanceGroup`: `{app_name}` (for Ansible targeting)
+- `QaNode`: `true` (for filtering)
+- `TargetSha`: Full git SHA
+- `ManagedBy`: `DeployEx`
+- `SetupComplete`: `true/false`
 
 ## Ansible Options
 - `inventory` (alias: `e`) - [Ansible inventories](https://docs.ansible.com/ansible/latest/inventory_guide/intro_inventory.html)

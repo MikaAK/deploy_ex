@@ -3,7 +3,8 @@ defmodule DeployEx.Config do
 
   def iac_tool, do: Application.get_env(@app, :iac_tool) || "terraform"
 
-  def env, do: Application.get_env(@app, :env) || "dev"
+  @default_env to_string(Mix.env())
+  def env, do: Application.get_env(@app, :env) || @default_env
   def aws_region, do: Application.get_env(@app, :aws_region) || "us-west-2"
 
   def aws_log_region, do: Application.get_env(@app, :aws_log_region) || "us-west-2"
@@ -33,6 +34,11 @@ defmodule DeployEx.Config do
   def aws_resource_group do
     Application.get_env(@app, :aws_resource_group) ||
       "#{DeployEx.Utils.upper_title_case(DeployExHelpers.project_name())} Backend"
+  end
+
+  def aws_project_name do
+    Application.get_env(@app, :aws_project_name) ||
+      DeployExHelpers.kebab_project_name()
   end
 
   def terraform_folder_path, do: Path.join(deploy_folder(), "terraform")

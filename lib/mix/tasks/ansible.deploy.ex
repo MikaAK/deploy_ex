@@ -30,7 +30,8 @@ defmodule Mix.Tasks.Ansible.Deploy do
   - `copy-json-env-file` - Copy environment file and load into host environments
   - `only-local-release` - Only deploy if there's a local release available
   - `parallel` - Maximum number of concurrent ansible deploys (default: #{@playbook_max_concurrency})
-  - `target-sha` - Maximum number of concurrent ansible deploys (default: #{@playbook_max_concurrency})
+  - `target-sha` - Deploy a specific release SHA instead of latest
+  - `include-qa` - Include QA nodes in deploy (default: excluded)
   - `quiet` - Suppress output messages
   """
 
@@ -94,7 +95,8 @@ defmodule Mix.Tasks.Ansible.Deploy do
         copy_json_env_file: :string,
         parallel: :integer,
         only_local_release: :boolean,
-        target_sha: :string
+        target_sha: :string,
+        include_qa: :boolean
       ]
     )
 
@@ -105,6 +107,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
     ["ansible-playbook", host_playbook]
       |> add_copy_env_file_flag(opts)
       |> add_target_release_sha(opts)
+      |> exclude_qa_nodes(opts)
   end
 
   defp add_copy_env_file_flag(command_list, opts) do
@@ -128,6 +131,14 @@ defmodule Mix.Tasks.Ansible.Deploy do
       command_list ++ ["--extra-vars \"target_release_sha=#{opts[:target_sha]}\""]
     else
       command_list
+    end
+  end
+
+  defp exclude_qa_nodes(command_list, opts) do
+    if opts[:include_qa] do
+      command_list
+    else
+      command_list ++ ["--limit", "'!qa_true'"]
     end
   end
 

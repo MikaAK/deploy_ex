@@ -27,14 +27,29 @@ defmodule Mix.Tasks.DeployEx do
     {"deploy_ex.ssh", "SSH into a specific app's remote node"},
     {"deploy_ex.ssh.authorize", "Add or remove ssh authorization to the internal network for specific IPs"},
     {"deploy_ex.download_file", "Downloads a file from a remote server using SCP"},
+    {"deploy_ex.find_nodes", "Find EC2 instances by tags"},
     {"deploy_ex.list_app_release_history", "Lists the latest releases for a specific app via SSH"},
     {"deploy_ex.list_available_releases", "Lists all available releases uploaded to the release bucket"},
     {"deploy_ex.view_current_release", "Shows the current (latest) release for a specific app via SSH"},
+    {"deploy_ex.instance_status", "Shows the status of an EC2 instance"},
     {"deploy_ex.test", "Runs mix.release for apps that have changed"},
 
     # Autoscaling Commands
     {"deploy_ex.autoscale.status", "Displays autoscaling group status (instance count, limits, policies)"},
     {"deploy_ex.autoscale.scale", "Manually sets desired capacity of an autoscaling group"},
+    {"deploy_ex.autoscale.refresh", "Triggers an instance refresh to recreate autoscaling instances"},
+    {"deploy_ex.autoscale.refresh_status", "Shows the status of instance refreshes for an autoscaling group"},
+
+    # QA Node Commands
+    {"deploy_ex.qa.create", "Creates a QA node with a specific git SHA"},
+    {"deploy_ex.qa.destroy", "Destroys a QA node"},
+    {"deploy_ex.qa.list", "Lists all active QA nodes"},
+    {"deploy_ex.qa.deploy", "Deploys a specific SHA to an existing QA node"},
+    {"deploy_ex.qa.attach_lb", "Attaches a QA node to the app's load balancer"},
+    {"deploy_ex.qa.detach_lb", "Detaches a QA node from the load balancer"},
+    {"deploy_ex.qa.ssh", "Get SSH connection info for a QA node"},
+    {"deploy_ex.qa.health", "Check load balancer health status for QA nodes"},
+    {"deploy_ex.qa.cleanup", "Cleans up orphaned QA nodes"},
 
     # Ansible Commands
     {"ansible.build", "Builds ansible files into your repository"},
@@ -47,8 +62,12 @@ defmodule Mix.Tasks.DeployEx do
     {"terraform.apply", "Deploys to terraform resources using ansible"},
     {"terraform.build", "Builds/Updates terraform files or adds it to your project"},
     {"terraform.create_state_bucket", "Creates a bucket within S3 to host the terraform state file"},
+    {"terraform.create_state_lock_table", "Creates a DynamoDB table for Terraform state locking"},
+    {"terraform.create_ebs_snapshot", "Creates an EBS snapshot from a volume"},
+    {"terraform.delete_ebs_snapshot", "Deletes an EBS snapshot"},
     {"terraform.drop", "Destroys all resources built by terraform"},
     {"terraform.drop_state_bucket", "Drops the S3 bucket used to host the Terraform state file"},
+    {"terraform.drop_state_lock_table", "Drops the DynamoDB table used for Terraform state locking"},
     {"terraform.dump_database", "Dumps a database from RDS through a jump server"},
     {"terraform.generate_pem", "Extracts the PEM file and key name from the Terraform state"},
     {"terraform.init", "Runs terraform init"},
