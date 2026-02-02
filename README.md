@@ -17,44 +17,45 @@ Under the default commands you will gain the following services (all of which ca
 - [Postgres](https://postgresql.org/)
 
 ## Legend
-- [Package Installation](https://github.com/MikaAK/deploy_ex#installation)
-- [Basic TL;DR Installation](https://github.com/MikaAK/deploy_ex#tldr-installation)
-  - [Usage with Github Actions](https://github.com/MikaAK/deploy_ex#usage-with-github-actions)
-  - [Usage with Deploy Node](https://github.com/MikaAK/deploy_ex#usage-with-deploy-node)
-  - [Changes Over Time](https://github.com/MikaAK/deploy_ex#changes-over-time)
-  - [Multiple Phoenix Apps](https://github.com/MikaAK/deploy_ex#multiple-phoenix-apps)
-- [Commands](https://github.com/MikaAK/deploy_ex#commands)
-- [Univiersal Options](https://github.com/MikaAK/deploy_ex#universial-options)
-- [Terraform Variables](https://github.com/MikaAK/deploy_ex#terraform-variables)
-- [Autoscaling](https://github.com/MikaAK/deploy_ex#autoscaling)
-  - [Configuration](https://github.com/MikaAK/deploy_ex#autoscaling-configuration)
-  - [How It Works](https://github.com/MikaAK/deploy_ex#how-autoscaling-works)
-  - [Deployment Strategies](https://github.com/MikaAK/deploy_ex#autoscaling-deployment-strategies)
-  - [Commands](https://github.com/MikaAK/deploy_ex#autoscaling-commands)
-  - [Instance Setup](https://github.com/MikaAK/deploy_ex#autoscaling-instance-setup)
-  - [Connecting to Instances](https://github.com/MikaAK/deploy_ex#connecting-to-autoscaled-instances)
-- [QA Nodes](https://github.com/MikaAK/deploy_ex#qa-nodes)
-  - [Quick Start](https://github.com/MikaAK/deploy_ex#quick-start-1)
-  - [QA Node Commands](https://github.com/MikaAK/deploy_ex#qa-node-commands)
-  - [How QA Nodes Work](https://github.com/MikaAK/deploy_ex#how-qa-nodes-work)
-  - [QA Node Tags](https://github.com/MikaAK/deploy_ex#qa-node-tags)
-- [Connecting to Your Nodes](https://github.com/MikaAK/deploy_ex#connecting-to-your-nodes)
-  - [Authorizing for SSH](https://github.com/MikaAK/deploy_ex#authorizing-for-ssh)
-  - [Connecting to Node as Root](https://github.com/MikaAK/deploy_ex#connection-to-node-as-root)
-  - [Connecting to App Logs](https://github.com/MikaAK/deploy_ex#connecting-to-app-logs)
-  - [Connecting to Remote IEx](https://github.com/MikaAK/deploy_ex#connecting-to-remote-iex)
-  - [Writing a utility command](https://github.com/MikaAK/deploy_ex#writing-a-utility-command)
-- [Monitoring](https://github.com/MikaAK/deploy_ex#monitoring)
-  - [Setting up Grafana UI](https://github.com/MikaAK/deploy_ex#setting-up-grafana-ui)
-  - [Setting up Loki for Logging](https://github.com/MikaAK/deploy_ex#setting-up-loki-for-logging)
-  - [Setting up Prometheus for Metrics](https://github.com/MikaAK/deploy_ex#setting-up-prometheus-for-metrics)
-  - [Setting up Sentry for Error Capturing (WIP)](https://github.com/MikaAK/deploy_ex#setting-up-sentry-for-error-capturing)
-- [Extra Utilities](https://github.com/MikaAK/deploy_ex#extra-utilities)
-  - [Github Action](https://github.com/MikaAK/deploy_ex#github-action)
-  - [Clustering](https://github.com/MikaAK/deploy_ex#clustering)
-- [Credits](https://github.com/MikaAK/deploy_ex#credits)
-- [Troubleshooting](https://github.com/MikaAK/deploy_ex#troubleshooting)
-- [Goals](https://github.com/MikaAK/deploy_ex#goals)
+- [Package Installation](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#installation)
+- [Basic TL;DR Installation](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#tldr-installation)
+  - [Usage with Github Actions](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#usage-with-github-actions)
+  - [Usage with Deploy Node](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#usage-with-deploy-node)
+  - [Changes Over Time](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#changes-over-time)
+  - [Multiple Phoenix Apps](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#multiple-phoenix-apps)
+- [Commands](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#commands)
+- [Univiersal Options](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#universial-options)
+- [Terraform Variables](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#terraform-variables)
+- [Autoscaling](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#autoscaling)
+  - [Configuration](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#autoscaling-configuration)
+  - [How It Works](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#how-autoscaling-works)
+  - [Deployment Strategies](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#autoscaling-deployment-strategies)
+  - [Commands](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#autoscaling-commands)
+  - [Instance Setup](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#autoscaling-instance-setup)
+  - [Connecting to Instances](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#connecting-to-autoscaled-instances)
+- [QA Nodes](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#qa-nodes)
+  - [Quick Start](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#quick-start-1)
+  - [QA Node Commands](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#qa-node-commands)
+  - [How QA Nodes Work](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#how-qa-nodes-work)
+  - [QA Node Tags](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#qa-node-tags)
+  - [Commands with QA Support](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#commands-with-qa-support)
+- [Connecting to Your Nodes](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#connecting-to-your-nodes)
+  - [Authorizing for SSH](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#authorizing-for-ssh)
+  - [Connecting to Node as Root](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#connection-to-node-as-root)
+  - [Connecting to App Logs](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#connecting-to-app-logs)
+  - [Connecting to Remote IEx](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#connecting-to-remote-iex)
+  - [Writing a utility command](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#writing-a-utility-command)
+- [Monitoring](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#monitoring)
+  - [Setting up Grafana UI](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#setting-up-grafana-ui)
+  - [Setting up Loki for Logging](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#setting-up-loki-for-logging)
+  - [Setting up Prometheus for Metrics](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#setting-up-prometheus-for-metrics)
+  - [Setting up Sentry for Error Capturing (WIP)](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#setting-up-sentry-for-error-capturing)
+- [Extra Utilities](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#extra-utilities)
+  - [Github Action](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#github-action)
+  - [Clustering](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#clustering)
+- [Credits](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#credits)
+- [Troubleshooting](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#troubleshooting)
+- [Goals](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#goals)
 
 ## Installation
 
@@ -198,12 +199,18 @@ env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
 - [x] `mix ansible.build` - Adds ansible files to the project, or rebuilds them
 - [x] `mix ansible.ping` - Pings ansible nodes to see if they can connect
 - [x] `mix ansible.setup` - Runs basic setup on the ansible nodes
-- [x] `mix ansible.deploy` - Deploys to your nodes via ansible from uploaded S3 releases
+- [x] `mix ansible.deploy` - Deploys to your nodes via ansible from uploaded S3 releases (use `--qa` to target only QA nodes, `--include-qa` to include QA nodes)
 - [x] `mix ansible.rollback` - Rollback to a prior release
 - [x] `mix deploy_ex.list_available_releases` - Lists all available releases in the configured AWS S3 release bucket
 - [x] `mix deploy_ex.list_app_release_history` - Shows the release history for a specific app by SSHing into the node
 - [x] `mix deploy_ex.view_current_release` - Shows the current (latest) release for a specific app by SSHing into the node
 - [x] `mix deploy_ex.instance.status` - Displays detailed instance status including autoscaling, IPs, load balancer health, and tags
+- [x] `mix deploy_ex.instance.health` - Shows EC2 instance health status with system and instance checks
+- [x] `mix deploy_ex.load_balancer.health` - Shows load balancer target group health status
+- [x] `mix deploy_ex.find_nodes` - Find EC2 instances by app name or tags
+- [x] `mix deploy_ex.download_file` - Download a file from a remote instance via SCP
+- [x] `mix deploy_ex.release` - Build and optionally upload releases
+- [x] `mix deploy_ex.install_migration_script` - Install database migration script for releases
 
 ## Universial Options
 Most of these are available on any command in DeployEx
@@ -684,11 +691,17 @@ mix deploy_ex.qa.create <app_name> --sha <git_sha> [options]
 **Options:**
 - `--sha, -s` - Target git SHA (required)
 - `--instance-type` - EC2 instance type (default: t3.small)
+- `--skip-ami` - Skip app AMI lookup and use base AMI (runs full setup)
 - `--skip-setup` - Skip Ansible setup after creation
 - `--skip-deploy` - Skip deployment after setup
 - `--attach-lb` - Attach to load balancer after deployment
 - `--force, -f` - Replace existing QA node without prompting
 - `--quiet, -q` - Suppress output messages
+
+**AMI Behavior:**
+- By default, uses the app's pre-configured AMI if available (faster, skips setup)
+- With `--skip-ami`, uses base Debian AMI and runs full Ansible setup
+- Release is auto-deployed via cloud-init user-data script
 
 **Example:**
 ```bash
@@ -847,19 +860,22 @@ Detect and clean up orphaned QA nodes (S3 state without instance, or instance wi
 ### How QA Nodes Work
 
 **State Management:**
-- QA node state is stored in S3 at `qa-nodes/{app_name}/state.json`
+- QA node state is stored in S3 at `qa-nodes/{app_name}/{instance_id}.json`
+- Supports multiple QA nodes per app simultaneously
 - State includes instance ID, target SHA, IPs, and load balancer attachment status
 - State is always verified against AWS before operations
 
 **Infrastructure Discovery:**
 - QA nodes use the same security group, subnet, and IAM profile as production instances
-- AMI is auto-discovered (latest Debian 13)
+- AMI is auto-discovered: first checks for app-specific AMI (tagged with `App`, `Environment`, `ManagedBy: DeployEx`), falls back to base Debian AMI
 - No Terraform state dependency - uses AWS APIs directly
+- Cloud-init automatically deploys the target SHA on boot
 
 **Ansible Integration:**
 - QA nodes are tagged with `QaNode: true` and `InstanceGroup: {app_name}`
 - Normal `mix ansible.deploy` excludes QA nodes by default
-- Use `--include-qa` flag to include QA nodes in bulk operations
+- Use `--qa` flag to target only QA nodes: `mix ansible.deploy --only my_app --qa`
+- Use `--include-qa` flag to include QA nodes along with production nodes
 - QA nodes can be targeted individually via `--limit` flag
 
 **Load Balancer:**
@@ -877,6 +893,31 @@ QA nodes are tagged with:
 - `TargetSha`: Full git SHA
 - `ManagedBy`: `DeployEx`
 - `SetupComplete`: `true/false`
+
+### Commands with QA Support
+
+Several commands support QA-specific flags:
+
+```bash
+# Deploy only to QA nodes
+mix ansible.deploy --only my_app --qa
+
+# Deploy to both production and QA nodes
+mix ansible.deploy --only my_app --include-qa
+
+# Run setup on QA nodes too
+mix ansible.setup --only my_app --include-qa
+
+# Check health of QA instances only
+mix deploy_ex.instance.health --qa
+
+# SSH to a QA node
+mix deploy_ex.ssh my_app --qa
+```
+
+**Flag Summary:**
+- `--qa` - Target only QA nodes (excludes production)
+- `--include-qa` - Include QA nodes along with production nodes
 
 ## Ansible Options
 - `inventory` (alias: `e`) - [Ansible inventories](https://docs.ansible.com/ansible/latest/inventory_guide/intro_inventory.html)
