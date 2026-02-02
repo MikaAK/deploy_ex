@@ -1295,13 +1295,12 @@ possible without his help!!
 
 ## Goals
 - [x] Deploy Rollbacks
-- [ ] Environment seperation (staging/prod)
 - [ ] Canary Deploys
 - [ ] Automated IP Whitelist removal lambda (from `mix deploy_ex.ssh.authorize`)
 - [ ] Sentry Integration
 - [ ] Vault Integration
 - [ ] Static way to setup redis from apps
-- [ ] Subnet a-z dispersal in networking layer
-- [ ] S3 Backed Terraform State
+- [x] Subnet a-z dispersal in networking layer
+- [x] S3 Backed Terraform State
   - [x] Needs a command run before to generate bucket
 - [ ] Automated Terraform & Ansible install on command runs

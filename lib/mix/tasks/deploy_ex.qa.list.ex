@@ -57,16 +57,18 @@ defmodule Mix.Tasks.DeployEx.Qa.List do
     with {:ok, app_names} <- DeployEx.QaNode.list_all_qa_states(opts) do
       qa_nodes = app_names
       |> maybe_filter_by_app(opts[:app])
-      |> Enum.map(fn app_name ->
-        case DeployEx.QaNode.fetch_qa_state(app_name, opts) do
-          {:ok, qa_node} when not is_nil(qa_node) ->
-            case DeployEx.QaNode.verify_instance_exists(qa_node) do
-              {:ok, verified} -> verified
-              _ -> qa_node
-            end
+      |> Enum.flat_map(fn app_name ->
+        case DeployEx.QaNode.fetch_all_qa_states_for_app(app_name, opts) do
+          {:ok, states} ->
+            Enum.map(states, fn qa_node ->
+              case DeployEx.QaNode.verify_instance_exists(qa_node) do
+                {:ok, verified} when not is_nil(verified) -> verified
+                _ -> nil
+              end
+            end)
 
           _ ->
-            nil
+            []
         end
       end)
       |> Enum.reject(&is_nil/1)

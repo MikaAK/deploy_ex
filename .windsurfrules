@@ -1,0 +1,11 @@
+DeployEx Windsurf Rules
+- This repository is an Elixir library for AWS deploy automation using Terraform and Ansible.
+- Prefer DeployEx.Config for configuration; do not call Mix.env at runtime.
+- Use ErrorMessage for errors and return {:ok, _} / {:error, ErrorMessage}.
+- Use DeployEx.Utils for shell commands and consistent logging.
+- ExAws requests must include region and tag resources with Group, Environment, ManagedBy.
+- Use === and !== for comparisons plus Enum.empty? and is_nil where appropriate.
+- Avoid one or two letter variable names unless they are standard in OTP.
+- Do not use Application.put_env in tests.
+- Avoid mocking libraries; prefer real modules and fixtures.
+- Treat warnings as errors and keep output clean.

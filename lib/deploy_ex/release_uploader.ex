@@ -3,8 +3,12 @@ defmodule DeployEx.ReleaseUploader do
 
   @type opts :: [
     aws_release_bucket: String.t,
-    aws_region: String.t
+    aws_region: String.t,
+    qa_release: boolean
   ]
+
+  @qa_tag_key "qa"
+  @qa_tag_value "true"
 
   def lastest_app_release(remote_releases, app_names) when is_list(app_names) do
     app_names
@@ -67,11 +71,53 @@ defmodule DeployEx.ReleaseUploader do
   end
 
   def upload_release(%State{local_file: local_file, name: remote_file_path}, opts) do
-    AwsManager.upload(
-      local_file,
-      opts[:aws_region],
-      opts[:aws_release_bucket],
-      remote_file_path
-    )
+    case AwsManager.upload(
+           local_file,
+           opts[:aws_region],
+           opts[:aws_release_bucket],
+           remote_file_path
+         ) do
+      {:ok, _} = res ->
+        with :ok <- maybe_tag_release(remote_file_path, opts) do
+          res
+        end
+
+      :ok ->
+        with :ok <- maybe_tag_release(remote_file_path, opts) do
+          {:ok, :done}
+        end
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  def get_git_branch do
+    case System.shell("git rev-parse --abbrev-ref HEAD") do
+      {branch, 0} -> {:ok, String.trim_trailing(branch, "\n")}
+
+      {output, code} ->
+        {:error, ErrorMessage.failed_dependency(
+          "couldn't get the git branch",
+          %{code: code, output: output}
+        )}
+    end
+  end
+
+  defp maybe_tag_release(_remote_file_path, %{qa_release: false}), do: :ok
+  defp maybe_tag_release(_remote_file_path, %{qa_release: nil}), do: :ok
+
+  defp maybe_tag_release(remote_file_path, %{qa_release: true} = opts) do
+    opts[:aws_region]
+      |> AwsManager.tag_object(
+        opts[:aws_release_bucket],
+        remote_file_path,
+        %{@qa_tag_key => @qa_tag_value}
+      )
+      |> case do
+        :ok -> :ok
+        {:ok, _} -> :ok
+        {:error, _} = error -> error
+      end
   end
 end

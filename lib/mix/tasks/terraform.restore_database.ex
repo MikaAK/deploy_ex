@@ -32,6 +32,9 @@ defmodule Mix.Tasks.Terraform.RestoreDatabase do
   - `--jobs` - Number of parallel jobs for restore (custom format only)
   - `--resource-group` - Specify a custom resource group name (default: "<ProjectName> Backend")
   - `--pem` - Specify a custom pem file
+  - `--backend` - State backend: "s3" or "local" (default: from config)
+  - `--bucket` - S3 bucket for state (default: from config)
+  - `--state-region` - AWS region for state bucket (default: from config)
   """
 
   def run(args) do
@@ -74,7 +77,7 @@ defmodule Mix.Tasks.Terraform.RestoreDatabase do
 
   defp parse_args(args) do
     OptionParser.parse!(args,
-      aliases: [d: :directory, s: :schema_only, p: :local_port, l: :local, p: :pem],
+      aliases: [d: :directory, s: :schema_only, p: :local_port, l: :local, p: :pem, b: :backend],
       switches: [
         directory: :string,
         local: :boolean,
@@ -83,9 +86,26 @@ defmodule Mix.Tasks.Terraform.RestoreDatabase do
         clean: :boolean,
         jobs: :integer,
         resource_group: :string,
-        pem: :string
+        pem: :string,
+        backend: :string,
+        bucket: :string,
+        state_region: :string
       ]
     )
+  end
+
+  defp build_state_opts(opts) do
+    state_opts = []
+
+    state_opts = if opts[:backend] do
+      Keyword.put(state_opts, :backend, String.to_existing_atom(opts[:backend]))
+    else
+      state_opts
+    end
+
+    state_opts = if opts[:bucket], do: Keyword.put(state_opts, :bucket, opts[:bucket]), else: state_opts
+    state_opts = if opts[:state_region], do: Keyword.put(state_opts, :region, opts[:state_region]), else: state_opts
+    state_opts
   end
 
   defp parse_extra_args([database_name, dump_file | _]) do
@@ -134,8 +154,9 @@ defmodule Mix.Tasks.Terraform.RestoreDatabase do
         local: true
       }}
     else
+      state_opts = build_state_opts(opts)
       with {:ok, db_info} <- AwsDatabase.get_database_info(database_name, false),
-           {:ok, password} <- AwsDatabase.get_database_password(db_info, opts[:directory]) do
+           {:ok, password} <- AwsDatabase.get_database_password(db_info, opts[:directory], state_opts) do
         {:ok, Map.merge(db_info, %{
           password: password,
           local: false

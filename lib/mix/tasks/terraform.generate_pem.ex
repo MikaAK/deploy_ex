@@ -2,6 +2,13 @@
 defmodule Mix.Tasks.Terraform.GeneratePem do
   @moduledoc """
   Extracts the PEM file and key name from the Terraform state and saves it to a file.
+
+  ## Options
+  - `--directory` - Terraform directory path (used for local backend and output)
+  - `--output-file` - Path to save the PEM file (default: <key_name>.pem)
+  - `--backend` - State backend: "s3" or "local" (default: from config)
+  - `--bucket` - S3 bucket for state (default: from config)
+  - `--region` - AWS region (default: from config)
   """
 
   alias DeployEx.TerraformState
@@ -24,8 +31,11 @@ defmodule Mix.Tasks.Terraform.GeneratePem do
   """
   def run(args) do
     opts = args |> parse_args() |> Keyword.put_new(:directory, @terraform_default_path)
+    state_opts = build_state_opts(opts)
 
-    with {:ok, state} <- TerraformState.read_state(opts[:directory]),
+    maybe_start_aws_apps(state_opts[:backend])
+
+    with {:ok, state} <- TerraformState.read_state(opts[:directory], state_opts),
          {:ok, private_key} <- TerraformState.get_resource_attribute(state, "tls_private_key", "key_pair", "private_key_pem"),
          {:ok, key_name} <- TerraformState.get_resource_attribute(state, "aws_key_pair", "key_pair", "key_name") do
 
@@ -56,15 +66,40 @@ defmodule Mix.Tasks.Terraform.GeneratePem do
 
   defp parse_args(args) do
     {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [d: :directory, o: :output_file],
+      aliases: [d: :directory, o: :output_file, b: :backend],
       switches: [
         directory: :string,
-        output_file: :string
+        output_file: :string,
+        backend: :string,
+        bucket: :string,
+        region: :string
       ]
     )
 
     opts
   end
+
+  defp build_state_opts(opts) do
+    state_opts = []
+
+    state_opts = if opts[:backend] do
+      Keyword.put(state_opts, :backend, String.to_existing_atom(opts[:backend]))
+    else
+      state_opts
+    end
+
+    state_opts = if opts[:bucket], do: Keyword.put(state_opts, :bucket, opts[:bucket]), else: state_opts
+    state_opts = if opts[:region], do: Keyword.put(state_opts, :region, opts[:region]), else: state_opts
+    state_opts
+  end
+
+  defp maybe_start_aws_apps(:s3) do
+    Application.ensure_all_started(:hackney)
+    Application.ensure_all_started(:telemetry)
+    Application.ensure_all_started(:ex_aws)
+  end
+
+  defp maybe_start_aws_apps(_), do: :ok
 
   defp save_pem_file(private_key, output_file) do
     File.write!(output_file, private_key)

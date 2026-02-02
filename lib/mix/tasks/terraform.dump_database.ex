@@ -25,6 +25,9 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
   - `--format` - Output format (default: custom, options: custom|text)
   - `--resource-group` - Specify a custom resource group name (default: "<ProjectName> Backend")
   - `--pem` - Specify a custom pem file
+  - `--backend` - State backend: "s3" or "local" (default: from config)
+  - `--bucket` - S3 bucket for state (default: from config)
+  - `--region` - AWS region (default: from config)
 
   ## Format Options
   The `--format` flag accepts two values:
@@ -54,12 +57,14 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
     {opts, extra_args} = parse_args(args)
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
     {machine_opts, opts} = Keyword.split(opts, [:resource_group])
+    {state_opts, opts} = Keyword.split(opts, [:backend, :bucket, :region])
+    state_opts = normalize_state_opts(state_opts)
 
     with :ok <- check_pg_dump_installed(),
          :ok <- DeployExHelpers.check_in_umbrella(),
          database_name when not is_nil(database_name) <- List.first(extra_args) || show_database_selection(),
          {:ok, db_info} <- AwsDatabase.get_database_info(database_name, opts[:identifier]),
-         {:ok, password} <- AwsDatabase.get_database_password(db_info, opts[:directory]),
+         {:ok, password} <- AwsDatabase.get_database_password(db_info, opts[:directory], state_opts),
          {:ok, {jump_server_ip, jump_server_ipv6}} <- AwsMachine.find_jump_server(DeployExHelpers.project_name(), machine_opts),
          {:ok, local_port} <- get_local_port(opts[:local_port]),
          {host, port} <- AwsDatabase.parse_endpoint(db_info.endpoint),
@@ -94,7 +99,7 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
 
   defp parse_args(args) do
     OptionParser.parse!(args,
-      aliases: [d: :directory, o: :output, s: :schema_only, p: :local_port, i: :identifier, f: :format, p: :pem],
+      aliases: [d: :directory, o: :output, s: :schema_only, p: :local_port, i: :identifier, f: :format, p: :pem, b: :backend],
       switches: [
         directory: :string,
         output: :string,
@@ -103,9 +108,20 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
         identifier: :string,
         format: :string,
         resource_group: :string,
-        pem: :string
+        pem: :string,
+        backend: :string,
+        bucket: :string,
+        region: :string
       ]
     )
+  end
+
+  defp normalize_state_opts(opts) do
+    if opts[:backend] do
+      Keyword.put(opts, :backend, String.to_existing_atom(opts[:backend]))
+    else
+      opts
+    end
   end
 
   defp check_pg_dump_installed do

@@ -1,9 +1,11 @@
 defmodule DeployEx.TerraformState do
   @moduledoc """
   Handles reading Terraform state files and extracting values.
+  Supports both local state files and S3 backend.
   """
 
   @terraform_state_filename "terraform.tfstate"
+  @terraform_state_key "terraform.tfstate"
 
   @doc """
   Reads the Terraform state file and parses it into a map.
@@ -12,7 +14,16 @@ defmodule DeployEx.TerraformState do
       iex> DeployEx.TerraformState.read_state("/path/to/terraform")
       {:ok, %{"version" => 4, "resources" => [...], "outputs" => {...}}}
   """
-  def read_state(directory) do
+  def read_state(directory, opts \\ []) do
+    backend = opts[:backend] || DeployEx.Config.terraform_backend()
+
+    case backend do
+      :local -> read_local_state(directory)
+      :s3 -> read_s3_state(opts)
+    end
+  end
+
+  defp read_local_state(directory) do
     state_path = Path.join(directory, @terraform_state_filename)
 
     if File.exists?(state_path) do
@@ -22,6 +33,26 @@ defmodule DeployEx.TerraformState do
       end
     else
       {:error, "Terraform state file not found: #{state_path}"}
+    end
+  end
+
+  defp read_s3_state(opts) do
+    bucket = opts[:bucket] || DeployEx.Config.aws_release_state_bucket()
+    key = opts[:key] || @terraform_state_key
+    region = opts[:region] || DeployEx.Config.aws_region()
+
+    case ExAws.S3.get_object(bucket, key) |> ExAws.request(region: region) do
+      {:ok, %{body: body}} ->
+        Jason.decode(body)
+
+      {:error, {:http_error, 404, _}} ->
+        {:error, "Terraform state not found in S3: s3://#{bucket}/#{key}"}
+
+      {:error, {:http_error, 403, _}} ->
+        {:error, "Access denied to S3 bucket: #{bucket}"}
+
+      {:error, error} ->
+        {:error, "Failed to read Terraform state from S3: #{inspect(error)}"}
     end
   end
 
@@ -92,8 +123,9 @@ defmodule DeployEx.TerraformState do
 
   def get_app_display_name(app_name, opts \\ []) do
     terraform_dir = opts[:terraform_dir] || DeployEx.Config.terraform_folder_path()
+    state_opts = Keyword.take(opts, [:backend, :bucket, :region])
 
-    with {:ok, state} <- read_state(terraform_dir) do
+    with {:ok, state} <- read_state(terraform_dir, state_opts) do
       snake_app_name = String.replace(app_name, "-", "_")
 
       case find_instance_display_name(state, snake_app_name) do

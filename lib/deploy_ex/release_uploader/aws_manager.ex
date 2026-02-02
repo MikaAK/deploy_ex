@@ -15,6 +15,13 @@ defmodule DeployEx.ReleaseUploader.AwsManager do
       |> handle_response
   end
 
+  def tag_object(region, bucket, object_key, tags) do
+    bucket
+      |> ExAws.S3.put_object_tagging(object_key, tags)
+      |> ExAws.request(region: region)
+      |> handle_response
+  end
+
   defp handle_response({:ok, %{body: body}}), do: {:ok, body}
   defp handle_response({:ok, :done}), do: :ok
 

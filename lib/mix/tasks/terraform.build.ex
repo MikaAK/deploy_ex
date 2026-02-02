@@ -60,6 +60,8 @@ defmodule Mix.Tasks.Terraform.Build do
         aws_release_state_bucket: opts[:aws_release_state_bucket],
         aws_release_state_lock_table: opts[:aws_release_state_lock_table],
 
+        terraform_backend: DeployEx.Config.terraform_backend(),
+
         pem_app_name: "#{DeployExHelpers.kebab_project_name()}-#{random_bytes}",
         app_name: DeployExHelpers.underscored_project_name(),
         kebab_app_name: DeployExHelpers.kebab_project_name(),

@@ -21,6 +21,7 @@ defmodule Mix.Tasks.DeployEx.Upload do
 
   - `aws-region` - Region for aws (default: `#{Config.aws_region()}`)
   - `aws-bucket` - Region for aws (default: `#{Config.aws_release_bucket()}`)
+  - `qa` - Marks the release as a QA release
   """
 
   def run(args) do
@@ -33,6 +34,7 @@ defmodule Mix.Tasks.DeployEx.Upload do
       |> Keyword.put_new(:aws_release_bucket, Config.aws_release_bucket())
       |> Keyword.put_new(:aws_region, Config.aws_region())
       |> Keyword.put_new(:parallel, @max_upload_concurrency)
+      |> then(&Keyword.put(&1, :qa_release, qa_release?(&1)))
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, local_releases} <- ReleaseUploader.fetch_all_local_releases(),
@@ -64,12 +66,30 @@ defmodule Mix.Tasks.DeployEx.Upload do
         quiet: :boolean,
         aws_region: :string,
         aws_release_bucket: :string,
-        parallel: :integer
+        parallel: :integer,
+        qa: :boolean
       ]
     )
 
     opts
   end
+
+  defp qa_release?(opts) do
+    opts[:qa] === true or qa_branch?(git_branch_name())
+  end
+
+  defp git_branch_name do
+    case ReleaseUploader.get_git_branch() do
+      {:ok, branch_name} -> branch_name
+      {:error, _} -> nil
+    end
+  end
+
+  defp qa_branch?(branch_name) when is_binary(branch_name) do
+    String.starts_with?(branch_name, "qa/") or String.starts_with?(branch_name, "qa-")
+  end
+
+  defp qa_branch?(_branch_name), do: false
 
   def already_uploaded?(%ReleaseUploader.State{
     remote_file: remote_file,

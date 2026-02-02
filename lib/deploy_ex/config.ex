@@ -60,6 +60,8 @@ defmodule DeployEx.Config do
   def terraform_folder_path, do: Path.join(deploy_folder(), "terraform")
   def ansible_folder_path, do: Path.join(deploy_folder(), "ansible")
 
+  def terraform_backend, do: Application.get_env(@app, :terraform_backend, :s3)
+
   def terraform_default_args(command) do
     result = @app
       |> Application.get_env(:terraform_default_args, [])

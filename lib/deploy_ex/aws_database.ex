@@ -109,9 +109,14 @@ defmodule DeployEx.AwsDatabase do
   @doc """
   Gets the database password from Terraform state.
   Returns {:ok, password} or {:error, reason}
+
+  ## Options
+  - `:backend` - State backend: `:s3` or `:local` (default: from config)
+  - `:bucket` - S3 bucket for state (default: from config)
+  - `:region` - AWS region (default: from config)
   """
-  def get_database_password(db_info, terraform_dir) do
-    with {:ok, state} <- DeployEx.TerraformState.read_state(terraform_dir),
+  def get_database_password(db_info, terraform_dir, opts \\ []) do
+    with {:ok, state} <- DeployEx.TerraformState.read_state(terraform_dir, opts),
          {:ok, password} <- DeployEx.TerraformState.get_resource_attribute_by_tag(
            state,
            "aws_db_instance",

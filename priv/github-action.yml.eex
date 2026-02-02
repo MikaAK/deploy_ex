@@ -93,7 +93,13 @@ jobs:
           env RELEASE_BUILD=true $(./.github/github-action-secrets-to-env.sh env.json) mix deploy_ex.release
 
       - name: Upload S3 Releases
-        run: mix deploy_ex.upload -l
+        run: |
+          branch_name="${GITHUB_REF#refs/heads/}"
+          if [[ "$branch_name" == qa/* || "$branch_name" == qa-* ]]; then
+            mix deploy_ex.upload -l --qa
+          else
+            mix deploy_ex.upload -l
+          fi
 
       - name: Add PEM File From Secrets
         run: |
