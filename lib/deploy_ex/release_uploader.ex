@@ -104,20 +104,30 @@ defmodule DeployEx.ReleaseUploader do
     end
   end
 
-  defp maybe_tag_release(_remote_file_path, %{qa_release: false}), do: :ok
-  defp maybe_tag_release(_remote_file_path, %{qa_release: nil}), do: :ok
+  defp maybe_tag_release(remote_file_path, opts) when is_map(opts) do
+    maybe_tag_release(remote_file_path, Map.to_list(opts))
+  end
 
-  defp maybe_tag_release(remote_file_path, %{qa_release: true} = opts) do
-    opts[:aws_region]
-      |> AwsManager.tag_object(
-        opts[:aws_release_bucket],
-        remote_file_path,
-        %{@qa_tag_key => @qa_tag_value}
-      )
-      |> case do
-        :ok -> :ok
-        {:ok, _} -> :ok
-        {:error, _} = error -> error
-      end
+  defp maybe_tag_release(remote_file_path, opts) when is_list(opts) do
+    case Keyword.get(opts, :qa_release) do
+      true ->
+        aws_region = Keyword.get(opts, :aws_region)
+        aws_release_bucket = Keyword.get(opts, :aws_release_bucket)
+
+        aws_region
+          |> AwsManager.tag_object(
+            aws_release_bucket,
+            remote_file_path,
+            %{@qa_tag_key => @qa_tag_value}
+          )
+          |> case do
+            :ok -> :ok
+            {:ok, _} -> :ok
+            {:error, _} = error -> error
+          end
+
+      _ ->
+        :ok
+    end
   end
 end
