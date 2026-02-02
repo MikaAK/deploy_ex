@@ -2,7 +2,13 @@ defmodule DeployEx.AwsSecurityGroup do
   def find_security_group(opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
     project_name = opts[:project_name] || DeployEx.Config.aws_project_name()
-    sg_prefix = "#{project_name}-sg"
+    environment = opts[:environment] || DeployEx.Config.env()
+
+    sg_prefix = if DeployEx.Config.aws_names_include_env?() do
+      "#{project_name}-#{environment}-sg"
+    else
+      "#{project_name}-sg"
+    end
 
     with {:ok, security_groups} <- describe_security_groups(region) do
       matching = security_groups

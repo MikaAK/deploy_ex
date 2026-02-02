@@ -57,6 +57,10 @@ defmodule DeployEx.Config do
     Application.get_env(@app, :aws_base_ami_owner, "136693071363")
   end
 
+  def aws_names_include_env? do
+    Application.get_env(@app, :aws_names_include_env, false)
+  end
+
   def terraform_folder_path, do: Path.join(deploy_folder(), "terraform")
   def ansible_folder_path, do: Path.join(deploy_folder(), "ansible")
 
