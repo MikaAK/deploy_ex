@@ -56,7 +56,8 @@ defmodule Mix.Tasks.Ansible.Setup do
         |> Enum.map(&Path.relative_to(&1, relative_directory))
         |> DeployExHelpers.filter_only_or_except(opts[:only], opts[:except])
         |> Task.async_stream(fn setup_file ->
-          qa_limit = if opts[:include_qa], do: "", else: "--limit '!qa_true'"
+          has_custom_limit = String.contains?(ansible_args, "--limit")
+          qa_limit = if opts[:include_qa] === true or has_custom_limit, do: "", else: "--limit '!qa_true'"
           DeployEx.Utils.run_command(
             "ansible-playbook #{setup_file} #{ansible_args} #{qa_limit}",
             opts[:directory]

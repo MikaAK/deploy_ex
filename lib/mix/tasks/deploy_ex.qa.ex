@@ -27,7 +27,6 @@ defmodule Mix.Tasks.DeployEx.Qa do
     {"ssh", "Get SSH connection info for a QA node"},
     {"attach_lb", "Attaches a QA node to the app's load balancer"},
     {"detach_lb", "Detaches a QA node from the load balancer"},
-    {"health", "Check load balancer health status for QA nodes"},
     {"cleanup", "Cleans up orphaned QA nodes"}
   ]
 

@@ -1,11 +1,21 @@
-# Pulls debian image from AWS AMI
-data "aws_ami" "debian-13" {
+# Pulls base image from AWS AMI
+data "aws_ami" "base" {
   most_recent = true
-  owners      = ["136693071363"]
+  owners      = ["<%= DeployEx.Config.aws_base_ami_owner() %>"]
 
   filter {
     name   = "name"
-    values = ["debian-13*amd64*"]
+    values = ["<%= DeployEx.Config.aws_base_ami_name() %>-*"]
+  }
+
+  filter {
+    name   = "architecture"
+    values = ["<%= DeployEx.Config.aws_base_ami_architecture() %>"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
   }
 }
 
@@ -24,8 +34,7 @@ module "ec2_instance" {
   instance_availability_zone = try(each.value.instance_availability_zone, null)
   instance_ami               = coalesce(
     try(each.value.instance_ami, null),
-    # "ADD AMI HASH WHEN YOU GET ONE",
-    data.aws_ami.debian-13.id
+    data.aws_ami.base.id
   )
 
   instance_ebs_primary_size          = try(each.value.ebs.primary_size, null)

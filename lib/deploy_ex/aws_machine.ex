@@ -13,23 +13,31 @@ defmodule DeployEx.AwsMachine do
       |> handle_describe_response
   end
 
-  def wait_for_started(region \\ DeployEx.Config.aws_region(), instance_ids) do
-    with {:ok, instances} <- find_instances_by_id(region, instance_ids) do
-      cond do
-        Enum.all?(instances, &instance_started?/1) ->
-          :ok
+  def wait_for_started(region \\ DeployEx.Config.aws_region(), instance_ids, retries \\ 10) do
+    case find_instances_by_id(region, instance_ids) do
+      {:ok, instances} ->
+        cond do
+          Enum.all?(instances, &instance_started?/1) ->
+            :ok
 
-        Enum.any?(instances, &(instance_pending?(&1) or instance_stopped?(&1))) ->
-          Process.sleep(500)
+          Enum.any?(instances, &(instance_pending?(&1) or instance_stopped?(&1))) ->
+            Process.sleep(500)
 
-          wait_for_started(region, instance_ids)
+            wait_for_started(region, instance_ids, retries)
 
-        true ->
-          {:error, ErrorMessage.failed_dependency(
-            "instance not started but not pending either",
-            %{instance_ids: instance_ids}
-          )}
-      end
+          true ->
+            {:error, ErrorMessage.failed_dependency(
+              "instance not started but not pending either",
+              %{instance_ids: instance_ids}
+            )}
+        end
+
+      {:error, %ErrorMessage{code: :not_found}} when retries > 0 ->
+        Process.sleep(1000)
+        wait_for_started(region, instance_ids, retries - 1)
+
+      error ->
+        error
     end
   end
 

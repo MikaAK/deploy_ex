@@ -112,12 +112,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
     directory = @ansible_default_path
     playbook = "playbooks/#{qa_node.app_name}.yaml"
 
-    command = [
-      "ansible-playbook",
-      playbook,
-      "--limit", "'#{qa_node.instance_name}'",
-      "--extra-vars", "\"target_release_sha=#{sha}\""
-    ] |> Enum.join(" ")
+    command = "ansible-playbook #{playbook} --limit '#{qa_node.instance_name},' --extra-vars 'target_release_sha=#{sha}'"
 
     case DeployEx.Utils.run_command(command, directory) do
       {:ok, _} -> :ok
@@ -128,7 +123,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
   defp update_qa_state_sha(qa_node, sha, opts) do
     updated = %{qa_node | target_sha: sha}
 
-    case DeployEx.QaNode.save_qa_state(qa_node.app_name, updated, opts) do
+    case DeployEx.QaNode.save_qa_state(updated, opts) do
       {:ok, :saved} -> {:ok, updated}
       error -> error
     end

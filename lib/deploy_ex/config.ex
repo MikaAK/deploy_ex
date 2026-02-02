@@ -41,6 +41,22 @@ defmodule DeployEx.Config do
       DeployExHelpers.kebab_project_name()
   end
 
+  def aws_iam_instance_profile do
+    Application.get_env(@app, :aws_iam_instance_profile)
+  end
+
+  def aws_base_ami_name do
+    Application.get_env(@app, :aws_base_ami_name, "debian-13")
+  end
+
+  def aws_base_ami_architecture do
+    Application.get_env(@app, :aws_base_ami_architecture, "x86_64")
+  end
+
+  def aws_base_ami_owner do
+    Application.get_env(@app, :aws_base_ami_owner, "136693071363")
+  end
+
   def terraform_folder_path, do: Path.join(deploy_folder(), "terraform")
   def ansible_folder_path, do: Path.join(deploy_folder(), "ansible")
 

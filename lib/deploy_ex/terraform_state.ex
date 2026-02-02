@@ -89,4 +89,55 @@ defmodule DeployEx.TerraformState do
       _ -> {:error, "Invalid Terraform state format"}
     end
   end
+
+  def get_app_display_name(app_name, opts \\ []) do
+    terraform_dir = opts[:terraform_dir] || DeployEx.Config.terraform_folder_path()
+
+    with {:ok, state} <- read_state(terraform_dir) do
+      snake_app_name = String.replace(app_name, "-", "_")
+
+      case find_instance_display_name(state, snake_app_name) do
+        {:ok, name} -> {:ok, name}
+        {:error, _} -> {:ok, default_display_name(app_name)}
+      end
+    else
+      {:error, _} -> {:ok, default_display_name(app_name)}
+    end
+  end
+
+  defp find_instance_display_name(state, app_name) do
+    case get_in(state, ["resources"]) do
+      resources when is_list(resources) ->
+        result = Enum.find_value(resources, fn resource ->
+          if resource["type"] === "aws_instance" and resource["module"] =~ app_name do
+            instances = resource["instances"] || []
+            Enum.find_value(instances, fn instance ->
+              get_in(instance, ["attributes", "tags", "Name"])
+            end)
+          end
+        end)
+
+        case result do
+          nil -> {:error, "Instance not found for app: #{app_name}"}
+          name -> {:ok, extract_base_name(name)}
+        end
+
+      _ -> {:error, "Invalid Terraform state format"}
+    end
+  end
+
+  defp extract_base_name(instance_name) do
+    instance_name
+    |> String.split("-")
+    |> Enum.take_while(fn part -> not String.match?(part, ~r/^\d+$/) end)
+    |> Enum.join("-")
+    |> String.trim("-")
+  end
+
+  defp default_display_name(app_name) do
+    app_name
+    |> String.replace("_", " ")
+    |> String.split()
+    |> Enum.map_join(" ", &String.capitalize/1)
+  end
 end

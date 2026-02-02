@@ -45,13 +45,13 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
       with :ok <- validate_app_name(app_name),
            {:ok, full_sha} <- validate_and_find_sha(app_name, sha, opts),
-           :ok <- check_existing_qa_node(app_name, opts),
-           {:ok, infra} <- gather_infrastructure(opts),
+           {:ok, infra} <- gather_infrastructure(app_name, opts),
            {:ok, qa_node} <- create_qa_node(app_name, full_sha, infra, opts),
            :ok <- wait_for_instance(qa_node, opts),
            {:ok, qa_node} <- save_and_refresh_state(qa_node, opts),
-           :ok <- maybe_run_setup(qa_node, opts),
-           :ok <- maybe_run_deploy(qa_node, full_sha, opts),
+           :ok <- wait_for_ssh_ready(qa_node),
+           :ok <- maybe_run_setup(qa_node, infra, opts),
+           :ok <- maybe_wait_for_deploy(qa_node, infra, opts),
            {:ok, qa_node} <- maybe_attach_lb(qa_node, opts) do
         output_success(qa_node, opts)
       else
@@ -68,6 +68,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
         instance_type: :string,
         skip_setup: :boolean,
         skip_deploy: :boolean,
+        skip_ami: :boolean,
         attach_lb: :boolean,
         force: :boolean,
         quiet: :boolean,
@@ -121,36 +122,36 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     end
   end
 
+  defp gather_infrastructure(app_name, opts) do
+    Mix.shell().info([:faint, "Gathering infrastructure details from AWS..."])
 
-  defp check_existing_qa_node(app_name, opts) do
-    case DeployEx.QaNode.fetch_qa_state(app_name) do
-      {:ok, nil} ->
-        :ok
+    infra_opts = if opts[:skip_ami] do
+      opts
+    else
+      Keyword.put(opts, :app_name, app_name)
+    end
 
-      {:ok, existing} ->
-        if opts[:force] do
-          Mix.shell().info([:yellow, "Destroying existing QA node #{existing.instance_id}..."])
-          DeployEx.QaNode.terminate_qa_node(existing)
-          :ok
+    case DeployEx.AwsInfrastructure.gather_infrastructure(infra_opts) do
+      {:ok, infra} ->
+        if opts[:skip_ami] do
+          {:ok, Map.put(infra, :using_app_ami, false)}
         else
-          {:error, ErrorMessage.conflict(
-            "QA node already exists for #{app_name}. Use --force to replace.",
-            %{instance_id: existing.instance_id, sha: existing.target_sha}
-          )}
+          if infra.ami_id do
+            Mix.shell().info([:green, "  ✓ ", :reset, "Using app AMI: ", :cyan, infra.ami_id, :reset, " (setup will be skipped)"])
+            {:ok, Map.put(infra, :using_app_ami, true)}
+          else
+            Mix.shell().info([:yellow, "  ⚠ ", :reset, "No app AMI found, using base AMI"])
+            {:ok, Map.put(infra, :using_app_ami, false)}
+          end
         end
 
-      {:error, _} = error ->
+      error ->
         error
     end
   end
 
-  defp gather_infrastructure(opts) do
-    Mix.shell().info("Gathering infrastructure details from AWS...")
-    DeployEx.AwsInfrastructure.gather_infrastructure(opts)
-  end
-
   defp create_qa_node(app_name, sha, infra, opts) do
-    Mix.shell().info("Creating QA node for #{app_name} with SHA #{String.slice(sha, 0, 7)}...")
+    Mix.shell().info([:cyan, "Creating QA node for ", :bright, app_name, :reset, :cyan, " with SHA ", :yellow, String.slice(sha, 0, 7), :reset, "..."])
 
     params = %{
       ami_id: infra.ami_id,
@@ -165,31 +166,66 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
 
   defp wait_for_instance(qa_node, _opts) do
-    Mix.shell().info("Waiting for instance #{qa_node.instance_id} to start...")
+    Mix.shell().info([:faint, "Waiting for instance ", :reset, qa_node.instance_id, :faint, " to start..."])
     DeployEx.AwsMachine.wait_for_started([qa_node.instance_id])
   end
 
+  defp wait_for_ssh_ready(qa_node) do
+    Mix.shell().info([:faint, "Waiting for SSH to be ready on ", :reset, :cyan, qa_node.public_ip, :reset, :faint, "..."])
+    wait_for_ssh(qa_node.public_ip)
+  end
+
   defp save_and_refresh_state(qa_node, opts) do
-    with {:ok, :saved} <- DeployEx.QaNode.save_qa_state(qa_node.app_name, qa_node, opts),
-         {:ok, refreshed} <- DeployEx.QaNode.verify_instance_exists(qa_node) do
-      {:ok, refreshed}
+    Mix.shell().info([:faint, "Saving QA state to S3..."])
+
+    case DeployEx.QaNode.save_qa_state(qa_node, opts) do
+      {:ok, :saved} ->
+        Mix.shell().info([:green, "  ✓ ", :reset, "QA state saved"])
+        DeployEx.QaNode.verify_instance_exists(qa_node)
+
+      {:error, error} ->
+        Mix.shell().error("Failed to save QA state: #{inspect(error)}")
+        {:error, error}
     end
   end
 
-  defp maybe_run_setup(_qa_node, %{skip_setup: true}), do: :ok
-  defp maybe_run_setup(qa_node, opts) do
-    Mix.shell().info("Running Ansible setup for #{qa_node.instance_name}...")
+  defp maybe_run_setup(_qa_node, _infra, %{skip_setup: true}), do: :ok
+  defp maybe_run_setup(_qa_node, %{using_app_ami: true}, _opts) do
+    Mix.shell().info([:green, "  ✓ ", :reset, "Skipping setup (using pre-configured AMI)"])
+    :ok
+  end
+  defp maybe_run_setup(qa_node, _infra, opts) do
+    Mix.shell().info([:faint, "Waiting for SSH to be ready on ", :reset, :cyan, qa_node.instance_name, :reset, :faint, "..."])
+    wait_for_ssh(qa_node.public_ip)
+    Mix.shell().info([:cyan, "Running Ansible setup for ", :bright, qa_node.instance_name, :reset, "..."])
     run_ansible_setup(qa_node, opts)
   end
 
-  defp maybe_run_deploy(_qa_node, _sha, %{skip_deploy: true}), do: :ok
-  defp maybe_run_deploy(qa_node, sha, opts) do
-    Mix.shell().info("Deploying SHA #{String.slice(sha, 0, 7)} to #{qa_node.instance_name}...")
+  defp wait_for_ssh(ip, retries \\ 30) do
+    case System.cmd("nc", ["-z", "-w", "5", ip, "22"], stderr_to_stdout: true) do
+      {_, 0} -> :ok
+      _ when retries > 0 ->
+        Process.sleep(5000)
+        wait_for_ssh(ip, retries - 1)
+      _ -> :ok
+    end
+  end
+
+  defp maybe_wait_for_deploy(_qa_node, _infra, %{skip_deploy: true}), do: :ok
+  defp maybe_wait_for_deploy(qa_node, %{using_app_ami: true}, _opts) do
+    Mix.shell().info([:faint, "Waiting for cloud-init to deploy release..."])
+    wait_for_ssh(qa_node.public_ip)
+    Mix.shell().info([:green, "  ✓ ", :reset, "Release deployed via cloud-init"])
+    :ok
+  end
+  defp maybe_wait_for_deploy(qa_node, _infra, opts) do
+    sha = qa_node.target_sha
+    Mix.shell().info([:cyan, "Deploying SHA ", :yellow, String.slice(sha, 0, 7), :reset, :cyan, " to ", :bright, qa_node.instance_name, :reset, "..."])
     run_ansible_deploy(qa_node, sha, opts)
   end
 
   defp maybe_attach_lb(qa_node, %{attach_lb: true} = opts) do
-    Mix.shell().info("Attaching to load balancer...")
+    Mix.shell().info([:faint, "Attaching to load balancer..."])
 
     with {:ok, target_groups} <- DeployEx.AwsLoadBalancer.find_target_groups_by_app(qa_node.app_name, opts) do
       if Enum.empty?(target_groups) do
@@ -207,11 +243,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     directory = @ansible_default_path
     setup_playbook = "setup/#{qa_node.app_name}.yaml"
 
-    command = [
-      "ansible-playbook",
-      setup_playbook,
-      "--limit", "'#{qa_node.instance_name}'"
-    ] |> Enum.join(" ")
+    command = "ansible-playbook #{setup_playbook} --limit '#{qa_node.instance_name},'"
 
     case DeployEx.Utils.run_command(command, directory) do
       {:ok, _} -> :ok
@@ -223,12 +255,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     directory = @ansible_default_path
     playbook = "playbooks/#{qa_node.app_name}.yaml"
 
-    command = [
-      "ansible-playbook",
-      playbook,
-      "--limit", "'#{qa_node.instance_name}'",
-      "--extra-vars", "\"target_release_sha=#{sha}\""
-    ] |> Enum.join(" ")
+    command = "ansible-playbook #{playbook} --limit '#{qa_node.instance_name},' --extra-vars 'target_release_sha=#{sha}'"
 
     case DeployEx.Utils.run_command(command, directory) do
       {:ok, _} -> :ok

@@ -62,14 +62,12 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
   defp find_qa_nodes_to_destroy(_extra_args, %{all: true} = opts) do
     case DeployEx.QaNode.list_all_qa_states(opts) do
       {:ok, app_names} ->
-        app_names
-        |> Enum.map(fn app_name ->
-          case DeployEx.QaNode.fetch_qa_state(app_name, opts) do
-            {:ok, qa_node} when not is_nil(qa_node) -> qa_node
-            _ -> nil
+        Enum.flat_map(app_names, fn app_name ->
+          case DeployEx.QaNode.find_qa_nodes_for_app(app_name, opts) do
+            {:ok, nodes} -> nodes
+            _ -> []
           end
         end)
-        |> Enum.reject(&is_nil/1)
 
       {:error, _} ->
         []
@@ -79,14 +77,12 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
   defp find_qa_nodes_to_destroy(_extra_args, %{instance_id: instance_id} = opts) when not is_nil(instance_id) do
     case DeployEx.QaNode.list_all_qa_states(opts) do
       {:ok, app_names} ->
-        app_names
-        |> Enum.map(fn app_name ->
-          case DeployEx.QaNode.fetch_qa_state(app_name, opts) do
-            {:ok, %{instance_id: ^instance_id} = qa_node} -> qa_node
-            _ -> nil
+        Enum.flat_map(app_names, fn app_name ->
+          case DeployEx.QaNode.find_qa_nodes_for_app(app_name, opts) do
+            {:ok, nodes} -> Enum.filter(nodes, &(&1.instance_id === instance_id))
+            _ -> []
           end
         end)
-        |> Enum.reject(&is_nil/1)
 
       {:error, _} ->
         []
@@ -96,8 +92,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
   defp find_qa_nodes_to_destroy(extra_args, opts) do
     case extra_args do
       [app_name | _] ->
-        case DeployEx.QaNode.fetch_qa_state(app_name, opts) do
-          {:ok, qa_node} when not is_nil(qa_node) -> [qa_node]
+        case DeployEx.QaNode.find_qa_nodes_for_app(app_name, opts) do
+          {:ok, nodes} -> nodes
           _ -> []
         end
 
@@ -111,7 +107,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
 
     Enum.each(nodes, fn qa_node ->
       Mix.shell().info([
-        "  - ", :cyan, qa_node.app_name, :reset,
+        "  - ", :cyan, qa_node.instance_name || qa_node.app_name, :reset,
         " (", qa_node.instance_id, ", SHA: ", String.slice(qa_node.target_sha || "", 0, 7), ")"
       ])
     end)
@@ -123,17 +119,17 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
 
   defp destroy_qa_node(qa_node, opts) do
     unless opts[:quiet] do
-      Mix.shell().info("Destroying #{qa_node.app_name} (#{qa_node.instance_id})...")
+      Mix.shell().info("Destroying #{qa_node.instance_name || qa_node.app_name} (#{qa_node.instance_id})...")
     end
 
     case DeployEx.QaNode.terminate_qa_node(qa_node, opts) do
       :ok ->
         unless opts[:quiet] do
-          Mix.shell().info([:green, "  ✓ Destroyed #{qa_node.instance_id}"])
+          Mix.shell().info([:green, "  ✓ Destroyed #{qa_node.instance_name || qa_node.instance_id}"])
         end
 
       {:error, error} ->
-        Mix.shell().error("  ✗ Failed to destroy #{qa_node.instance_id}: #{ErrorMessage.to_string(error)}")
+        Mix.shell().error("  ✗ Failed to destroy #{qa_node.instance_name || qa_node.instance_id}: #{ErrorMessage.to_string(error)}")
     end
   end
 end

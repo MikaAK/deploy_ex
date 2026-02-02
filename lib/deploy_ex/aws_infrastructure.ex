@@ -22,7 +22,9 @@ defmodule DeployEx.AwsInfrastructure do
   def find_key_pair_name(opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
     project_name = opts[:project_name] || DeployEx.Config.aws_project_name()
-    key_pattern = ~r/^#{Regex.escape(project_name)}-.*key-pair/
+    environment = DeployEx.Config.env()
+    base_name = project_name |> String.replace("-#{environment}", "") |> String.replace("_#{environment}", "")
+    key_pattern = ~r/^#{Regex.escape(base_name)}-.*key-pair/
 
     with {:ok, key_pairs} <- describe_key_pairs(region) do
       matching = key_pairs
@@ -50,9 +52,60 @@ defmodule DeployEx.AwsInfrastructure do
   end
 
   def find_iam_instance_profile(opts \\ []) do
-    project_name = opts[:project_name] || DeployEx.Config.aws_project_name()
-    expected_name = "#{project_name}-instance-profile"
-    {:ok, expected_name}
+    case opts[:iam_instance_profile] || DeployEx.Config.aws_iam_instance_profile() do
+      nil ->
+        environment = DeployEx.Config.env()
+        default_name = "deploy-ex-ec2-instance-profile-#{environment}"
+
+        with {:ok, profiles} <- list_instance_profiles() do
+          if default_name in profiles do
+            {:ok, default_name}
+          else
+            {:error, ErrorMessage.not_found(
+              "IAM instance profile '#{default_name}' not found. " <>
+              "Configure :aws_iam_instance_profile in deploy_ex config.",
+              %{available: profiles}
+            )}
+          end
+        end
+      profile_name ->
+        {:ok, profile_name}
+    end
+  end
+
+  defp list_instance_profiles do
+    %ExAws.Operation.Query{
+      path: "/",
+      params: %{"Action" => "ListInstanceProfiles", "Version" => "2010-05-08"},
+      service: :iam,
+      action: :list_instance_profiles
+    }
+    |> ExAws.request()
+    |> handle_instance_profiles_response()
+  end
+
+  defp handle_instance_profiles_response({:ok, %{body: body}}) do
+    case XmlToMap.naive_map(body) do
+      %{"ListInstanceProfilesResponse" => %{"ListInstanceProfilesResult" => %{"InstanceProfiles" => %{"member" => profiles}}}} when is_list(profiles) ->
+        names = Enum.map(profiles, & &1["InstanceProfileName"])
+        {:ok, names}
+
+      %{"ListInstanceProfilesResponse" => %{"ListInstanceProfilesResult" => %{"InstanceProfiles" => %{"member" => profile}}}} ->
+        {:ok, [profile["InstanceProfileName"]]}
+
+      %{"ListInstanceProfilesResponse" => %{"ListInstanceProfilesResult" => %{"InstanceProfiles" => nil}}} ->
+        {:ok, []}
+
+      structure ->
+        {:error, ErrorMessage.bad_request("couldn't parse instance profiles response", %{structure: structure})}
+    end
+  end
+
+  defp handle_instance_profiles_response({:error, {:http_error, status_code, %{body: body}}}) do
+    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+      "error fetching IAM instance profiles",
+      %{error_body: body}
+    ])}
   end
 
   def find_vpc_id(opts \\ []) do
@@ -65,13 +118,40 @@ defmodule DeployEx.AwsInfrastructure do
   end
 
   def find_latest_ami(opts \\ []) do
+    app_name = opts[:app_name]
     region = opts[:region] || DeployEx.Config.aws_region()
+    environment = opts[:environment] || DeployEx.Config.env()
+
+    case app_name && find_app_ami(app_name, environment, region) do
+      {:ok, ami_id} -> {:ok, ami_id}
+      _ -> find_base_ami(region)
+    end
+  end
+
+  defp find_app_ami(app_name, environment, region) do
+    ExAws.EC2.describe_images(
+      owners: ["self"],
+      filters: [
+        "tag:App": [app_name],
+        "tag:Environment": [to_string(environment)],
+        "tag:ManagedBy": ["DeployEx"],
+        state: ["available"]
+      ]
+    )
+    |> ExAws.request(region: region)
+    |> handle_images_response()
+  end
+
+  defp find_base_ami(region) do
+    base_ami_name = DeployEx.Config.aws_base_ami_name()
+    architecture = DeployEx.Config.aws_base_ami_architecture()
+    owner = DeployEx.Config.aws_base_ami_owner()
 
     ExAws.EC2.describe_images(
-      owners: ["136693071363"],
+      owners: [owner],
       filters: [
-        name: ["debian-13-*"],
-        architecture: ["x86_64"],
+        name: ["#{base_ami_name}-*"],
+        architecture: [architecture],
         "virtualization-type": ["hvm"]
       ]
     )
@@ -83,10 +163,8 @@ defmodule DeployEx.AwsInfrastructure do
     with {:ok, security_group} <- DeployEx.AwsSecurityGroup.find_security_group(opts),
          {:ok, subnet_ids} <- find_subnet_ids(Keyword.put(opts, :vpc_id, security_group.vpc_id)),
          {:ok, key_pair_name} <- find_key_pair_name(opts),
+         {:ok, iam_instance_profile} <- find_iam_instance_profile(opts),
          {:ok, ami_id} <- find_latest_ami(opts) do
-      resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
-      iam_instance_profile = "#{kebab_case(resource_group)}-instance-profile"
-
       {:ok, %{
         security_group_id: security_group.id,
         vpc_id: security_group.vpc_id,
@@ -218,10 +296,4 @@ defmodule DeployEx.AwsInfrastructure do
     ])}
   end
 
-  defp kebab_case(string) do
-    string
-    |> String.replace("_", "-")
-    |> String.replace(" ", "-")
-    |> String.downcase()
-  end
 end

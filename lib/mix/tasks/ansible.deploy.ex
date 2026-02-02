@@ -32,6 +32,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
   - `parallel` - Maximum number of concurrent ansible deploys (default: #{@playbook_max_concurrency})
   - `target-sha` - Deploy a specific release SHA instead of latest
   - `include-qa` - Include QA nodes in deploy (default: excluded)
+  - `qa` - Target only QA nodes (excludes non-QA nodes)
   - `quiet` - Suppress output messages
   """
 
@@ -96,7 +97,8 @@ defmodule Mix.Tasks.Ansible.Deploy do
         parallel: :integer,
         only_local_release: :boolean,
         target_sha: :string,
-        include_qa: :boolean
+        include_qa: :boolean,
+        qa: :boolean
       ]
     )
 
@@ -135,10 +137,14 @@ defmodule Mix.Tasks.Ansible.Deploy do
   end
 
   defp exclude_qa_nodes(command_list, opts) do
-    if opts[:include_qa] do
-      command_list
-    else
-      command_list ++ ["--limit", "'!qa_true'"]
+    has_custom_limit = Enum.any?(command_list, &String.contains?(&1, "--limit"))
+    cond do
+      opts[:qa] === true ->
+        command_list ++ ["--limit", "'qa_true'"]
+      opts[:include_qa] === true or has_custom_limit ->
+        command_list
+      true ->
+        command_list ++ ["--limit", "'!qa_true'"]
     end
   end
 
