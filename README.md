@@ -132,7 +132,8 @@ config :deploy_ex,
   aws_log_bucket: "#{String.replace(DeployExHelpers.underscored_project_name(), "_", "-")}-backend-logs-#{env()}",
   aws_release_bucket: "#{String.replace(DeployExHelpers.underscored_project_name(), "_", "-")}-elixir-deploys-{env}"
   aws_release_state_bucket: "#{String.replace(DeployExHelpers.underscored_project_name(), "_", "-")}-release-state-#{env}"
-  deploy_folder: "./deploys"
+  deploy_folder: "./deploys",
+  aws_names_include_env: false
 ```
 
 **Configuration Options:**
@@ -142,6 +143,7 @@ config :deploy_ex,
 - `aws_release_bucket` - S3 bucket for release artifacts
 - `aws_release_state_bucket` - S3 bucket for release state
 - `deploy_folder` - Local folder for deployment files (default: `"./deploys"`)
+- `aws_names_include_env` - Whether AWS resource names include the environment (e.g., `myapp-prod-sg` vs `myapp-sg`). Set to `true` if your Terraform creates resources with environment in the name. (default: `false`)
 
 ### Usage with Github Actions
 ***Note: This doesn't work properly with branch protections, to do
