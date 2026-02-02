@@ -153,10 +153,10 @@ defmodule DeployEx.AwsMachine do
         {:ok, item}
 
       %{"DescribeInstancesResponse" => %{"reservationSet" => %{"item" => items}}} when is_list(items) ->
-        {:ok, Enum.map(items, fn %{"instancesSet" => %{"item" => item}} -> item end)}
+        {:ok, Enum.flat_map(items, &extract_instances_from_reservation/1)}
 
       %{"DescribeInstancesResponse" => %{"reservationSet" => %{"item" => item}}} ->
-        {:ok, [item["instancesSet"]["item"]]}
+        {:ok, extract_instances_from_reservation(item)}
 
       %{"DescribeInstancesResponse" => %{"reservationSet" => nil}} ->
         {:ok, []}
@@ -168,6 +168,9 @@ defmodule DeployEx.AwsMachine do
         )}
     end
   end
+
+  defp extract_instances_from_reservation(%{"instancesSet" => %{"item" => items}}) when is_list(items), do: items
+  defp extract_instances_from_reservation(%{"instancesSet" => %{"item" => item}}), do: [item]
 
   defp filter_by_tag(instances, tag_name, tag_value) do
     Enum.filter(instances, fn instance ->
