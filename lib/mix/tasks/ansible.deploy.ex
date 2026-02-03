@@ -109,6 +109,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
     ["ansible-playbook", host_playbook]
       |> add_copy_env_file_flag(opts)
       |> add_target_release_sha(opts)
+      |> add_release_prefix_vars(opts)
       |> exclude_qa_nodes(opts)
   end
 
@@ -135,6 +136,12 @@ defmodule Mix.Tasks.Ansible.Deploy do
       command_list
     end
   end
+
+  defp add_release_prefix_vars(command_list, %{qa: true}) do
+    command_list ++ ["--extra-vars \"release_prefix=qa release_state_prefix=release-state/qa\""]
+  end
+
+  defp add_release_prefix_vars(command_list, _opts), do: command_list
 
   defp exclude_qa_nodes(command_list, opts) do
     has_custom_limit = Enum.any?(command_list, &String.contains?(&1, "--limit"))

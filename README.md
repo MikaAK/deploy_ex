@@ -879,6 +879,8 @@ Detect and clean up orphaned QA nodes (S3 state without instance, or instance wi
 - Use `--qa` flag to target only QA nodes: `mix ansible.deploy --only my_app --qa`
 - Use `--include-qa` flag to include QA nodes along with production nodes
 - QA nodes can be targeted individually via `--limit` flag
+- QA releases are stored under `qa/{app_name}/` in the release bucket
+- QA release state is stored under `release-state/qa/{app_name}/`
 
 **Load Balancer:**
 - QA nodes can be attached to existing target groups

@@ -4,16 +4,19 @@ defmodule DeployEx.ReleaseUploader do
   @type opts :: [
     aws_release_bucket: String.t,
     aws_region: String.t,
-    qa_release: boolean
+    qa_release: boolean,
+    release_prefix: String.t
   ]
 
   @qa_tag_key "qa"
   @qa_tag_value "true"
 
-  def lastest_app_release(remote_releases, app_names) when is_list(app_names) do
+  def lastest_app_release(remote_releases, app_name_or_names, opts \\ [])
+
+  def lastest_app_release(remote_releases, app_names, opts) when is_list(app_names) do
     app_names
       |> Enum.map(fn app_name ->
-        with {:ok, release_name} <- lastest_app_release(remote_releases, app_name) do
+        with {:ok, release_name} <- lastest_app_release(remote_releases, app_name, opts) do
           {:ok, {app_name, release_name}}
         end
       end)
@@ -24,8 +27,10 @@ defmodule DeployEx.ReleaseUploader do
       end)
   end
 
-  def lastest_app_release(remote_releases, app_name) do
-    case State.lastest_remote_app_release(remote_releases, app_name) do
+  def lastest_app_release(remote_releases, app_name, opts) do
+    release_prefix = release_prefix(opts)
+
+    case State.lastest_remote_app_release(remote_releases, app_name, release_prefix) do
       {_timestamp, _sha, file_name} -> {:ok, file_name}
       nil ->
         {:error, ErrorMessage.not_found(
@@ -35,9 +40,9 @@ defmodule DeployEx.ReleaseUploader do
     end
   end
 
-  defdelegate build_state(local_releases, remote_release, git_sha),
-    to: State,
-    as: :build
+  def build_state(local_releases, remote_release, git_sha, opts \\ []) do
+    State.build(local_releases, remote_release, git_sha, opts)
+  end
 
   defdelegate filter_changed_releases(release_uploader_states),
     to: UpdateValidator,
@@ -128,6 +133,17 @@ defmodule DeployEx.ReleaseUploader do
 
       _ ->
         :ok
+    end
+  end
+
+  defp release_prefix(opts) when is_map(opts) do
+    release_prefix(Map.to_list(opts))
+  end
+
+  defp release_prefix(opts) when is_list(opts) do
+    case Keyword.get(opts, :release_prefix) do
+      prefix when is_binary(prefix) and prefix !== "" -> prefix
+      _ -> if Keyword.get(opts, :qa_release) === true, do: "qa", else: nil
     end
   end
 end

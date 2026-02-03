@@ -9,9 +9,9 @@
       ansible.builtin.script:
         cmd: >
           {% if target_release_sha | length > 0 %}
-            find_aws_release_by_sha.sh {{ bucket_name }} {{ app_name }} {{ target_release_sha }}
+            find_aws_release_by_sha.sh {{ bucket_name }} {{ app_name }} {{ release_prefix }} {{ target_release_sha }}
           {% else %}
-            latest_aws_release.sh {{ bucket_name }} {{ app_name }}
+            latest_aws_release.sh {{ bucket_name }} {{ app_name }} {{ release_prefix }}
           {% endif %}
       register: aws_file_name
 
@@ -53,7 +53,7 @@
       amazon.aws.aws_s3:
         bucket: "{{ bucket_name }}"
         mode: get
-        object: "release-state/{{ app_name }}/current_release.txt"
+        object: "{{ release_state_prefix }}/{{ app_name }}/current_release.txt"
         dest: /tmp/current_release.txt
       register: current_release_fetch
       ignore_errors: true
@@ -76,7 +76,7 @@
       amazon.aws.aws_s3:
         bucket: "{{ bucket_name }}"
         mode: get
-        object: "release-state/{{ app_name }}/release_history.txt"
+        object: "{{ release_state_prefix }}/{{ app_name }}/release_history.txt"
         dest: /tmp/release_history.txt
       register: release_history_fetch
       ignore_errors: true
@@ -102,7 +102,7 @@
       amazon.aws.aws_s3:
         bucket: "{{ bucket_name }}"
         mode: put
-        object: "release-state/{{ app_name }}/current_release.txt"
+        object: "{{ release_state_prefix }}/{{ app_name }}/current_release.txt"
         src: /tmp/current_release.txt
       when: release_changed | bool
 
@@ -110,7 +110,7 @@
       amazon.aws.aws_s3:
         bucket: "{{ bucket_name }}"
         mode: put
-        object: "release-state/{{ app_name }}/release_history.txt"
+        object: "{{ release_state_prefix }}/{{ app_name }}/release_history.txt"
         src: /tmp/release_history.txt
       when: release_changed | bool
 

@@ -41,7 +41,7 @@ defmodule Mix.Tasks.DeployEx.Upload do
          {:ok, remote_releases} <- ReleaseUploader.fetch_all_remote_releases(opts),
          {:ok, git_sha} <- ReleaseUploader.get_git_sha() do
       {has_previous_upload_release_cands, no_prio_upload_release_cands} = local_releases
-        |> ReleaseUploader.build_state(remote_releases, git_sha)
+        |> ReleaseUploader.build_state(remote_releases, git_sha, opts)
         |> Enum.reject(&already_uploaded?/1)
         |> Enum.split_with(&(&1.last_sha))
 

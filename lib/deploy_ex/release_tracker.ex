@@ -1,12 +1,12 @@
 defmodule DeployEx.ReleaseTracker do
   @release_state_prefix "release-state"
 
-  def current_release_key(app_name) do
-    "#{@release_state_prefix}/#{app_name}/current_release.txt"
+  def current_release_key(app_name, opts \\ []) do
+    "#{release_state_prefix(opts)}/#{app_name}/current_release.txt"
   end
 
-  def release_history_key(app_name) do
-    "#{@release_state_prefix}/#{app_name}/release_history.txt"
+  def release_history_key(app_name, opts \\ []) do
+    "#{release_state_prefix(opts)}/#{app_name}/release_history.txt"
   end
 
   def fetch_current_release(app_name, opts \\ []) do
@@ -14,7 +14,7 @@ defmodule DeployEx.ReleaseTracker do
     bucket = opts[:bucket] || DeployEx.Config.aws_release_bucket()
 
     bucket
-    |> ExAws.S3.get_object(current_release_key(app_name))
+    |> ExAws.S3.get_object(current_release_key(app_name, opts))
     |> ExAws.request(region: region)
     |> handle_get_response()
   end
@@ -24,7 +24,7 @@ defmodule DeployEx.ReleaseTracker do
     bucket = opts[:bucket] || DeployEx.Config.aws_release_bucket()
 
     bucket
-    |> ExAws.S3.get_object(release_history_key(app_name))
+    |> ExAws.S3.get_object(release_history_key(app_name, opts))
     |> ExAws.request(region: region)
     |> handle_get_response()
   end
@@ -35,7 +35,7 @@ defmodule DeployEx.ReleaseTracker do
 
     with {:ok, _} <- append_to_release_history(app_name, release_name, opts) do
       bucket
-      |> ExAws.S3.put_object(current_release_key(app_name), "#{release_name}\n")
+      |> ExAws.S3.put_object(current_release_key(app_name, opts), "#{release_name}\n")
       |> ExAws.request(region: region)
       |> handle_put_response()
     end
@@ -54,7 +54,7 @@ defmodule DeployEx.ReleaseTracker do
       |> String.trim_leading("\n")
 
     bucket
-    |> ExAws.S3.put_object(release_history_key(app_name), new_history)
+    |> ExAws.S3.put_object(release_history_key(app_name, opts), new_history)
     |> ExAws.request(region: region)
     |> handle_put_response()
   end
@@ -92,5 +92,29 @@ defmodule DeployEx.ReleaseTracker do
 
   defp handle_put_response({:error, error}) when is_binary(error) do
     {:error, ErrorMessage.failed_dependency("aws failure: #{error}")}
+  end
+
+  defp release_state_prefix(opts) when is_map(opts) do
+    release_state_prefix(Map.to_list(opts))
+  end
+
+  defp release_state_prefix(opts) when is_list(opts) do
+    case Keyword.get(opts, :release_state_prefix) do
+      prefix when is_binary(prefix) and prefix !== "" -> prefix
+      _ -> build_release_state_prefix(opts)
+    end
+  end
+
+  defp build_release_state_prefix(opts) do
+    release_prefix = case Keyword.get(opts, :release_prefix) do
+      prefix when is_binary(prefix) and prefix !== "" -> prefix
+      _ -> if Keyword.get(opts, :qa_release) === true, do: "qa", else: nil
+    end
+
+    case release_prefix do
+      nil -> @release_state_prefix
+      "" -> @release_state_prefix
+      prefix -> "#{@release_state_prefix}/#{prefix}"
+    end
   end
 end

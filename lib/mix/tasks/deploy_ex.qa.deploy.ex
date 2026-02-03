@@ -83,12 +83,20 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
 
     case DeployEx.ReleaseUploader.fetch_all_remote_releases(fetch_opts) do
       {:ok, releases} ->
-        app_releases = Enum.filter(releases, &String.contains?(&1, app_name))
-        matching = Enum.find(app_releases, &String.contains?(&1, sha))
+        {qa_match, qa_releases} = find_release_match(releases, app_name, sha, "qa")
 
-        case matching do
+        {matching_release, candidate_releases} = case qa_match do
           nil ->
-            suggestions = DeployExHelpers.format_release_suggestions(app_releases, sha)
+            {fallback_match, fallback_releases} = find_release_match(releases, app_name, sha, nil)
+            {fallback_match, qa_releases ++ fallback_releases}
+
+          _ ->
+            {qa_match, qa_releases}
+        end
+
+        case matching_release do
+          nil ->
+            suggestions = DeployExHelpers.format_release_suggestions(candidate_releases, sha)
             {:error, ErrorMessage.not_found("no release found matching SHA '#{sha}' for app '#{app_name}'", %{suggestions: suggestions})}
 
           release ->
@@ -112,13 +120,25 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
     directory = @ansible_default_path
     playbook = "playbooks/#{qa_node.app_name}.yaml"
 
-    command = "ansible-playbook #{playbook} --limit '#{qa_node.instance_name},' --extra-vars 'target_release_sha=#{sha}'"
+    command = "ansible-playbook #{playbook} --limit '#{qa_node.instance_name},' --extra-vars 'target_release_sha=#{sha} release_prefix=qa release_state_prefix=release-state/qa'"
 
     case DeployEx.Utils.run_command(command, directory) do
       {:ok, _} -> :ok
       {:error, error} -> {:error, ErrorMessage.failed_dependency("ansible deploy failed", %{error: error})}
     end
   end
+
+  defp find_release_match(releases, app_name, sha, release_prefix) do
+    path_prefix = release_path_prefix(app_name, release_prefix)
+    app_releases = Enum.filter(releases, &String.starts_with?(&1, path_prefix))
+    matching = Enum.find(app_releases, &String.contains?(&1, sha))
+
+    {matching, app_releases}
+  end
+
+  defp release_path_prefix(app_name, nil), do: "#{app_name}/"
+  defp release_path_prefix(app_name, ""), do: "#{app_name}/"
+  defp release_path_prefix(app_name, release_prefix), do: "#{release_prefix}/#{app_name}/"
 
   defp update_qa_state_sha(qa_node, sha, opts) do
     updated = %{qa_node | target_sha: sha}

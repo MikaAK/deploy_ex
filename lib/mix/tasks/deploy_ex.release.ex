@@ -53,6 +53,7 @@ defmodule Mix.Tasks.DeployEx.Release do
     opts = opts
       |> Keyword.put(:only, Keyword.get_values(opts, :only))
       |> Keyword.put(:except, Keyword.get_values(opts, :except))
+      |> Keyword.put(:qa_release, qa_release?())
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
@@ -73,7 +74,7 @@ defmodule Mix.Tasks.DeployEx.Release do
       |> Keyword.keys
       |> Enum.map(&to_string/1)
       |> DeployExHelpers.filter_only_or_except(opts[:only], opts[:except])
-      |> ReleaseUploader.build_state(remote_releases, git_sha)
+      |> ReleaseUploader.build_state(remote_releases, git_sha, opts)
       |> Enum.reject(&Mix.Tasks.DeployEx.Upload.already_uploaded?/1)
       |> split_releases_and_run_release_commands(opts)
   end
@@ -95,6 +96,23 @@ defmodule Mix.Tasks.DeployEx.Release do
 
     opts
   end
+
+  defp qa_release? do
+    qa_branch?(git_branch_name())
+  end
+
+  defp git_branch_name do
+    case ReleaseUploader.get_git_branch() do
+      {:ok, branch_name} -> branch_name
+      {:error, _} -> nil
+    end
+  end
+
+  defp qa_branch?(branch_name) when is_binary(branch_name) do
+    String.starts_with?(branch_name, "qa/") or String.starts_with?(branch_name, "qa-")
+  end
+
+  defp qa_branch?(_branch_name), do: false
 
   defp split_releases_and_run_release_commands(release_states, opts) do
     with {
