@@ -130,10 +130,46 @@
       dest: /etc/systemd/user.conf
       group: root
 
-  - name: Stop redis service
+  - name: Stop redis-server service when redis stack is enabled
+    systemd:
+      name: redis-server
+      state: stopped
+    when: redis_stack_enabled
+
+  - name: Disable redis-server service when redis stack is enabled
+    systemd:
+      name: redis-server
+      enabled: false
+    when: redis_stack_enabled
+
+  - name: Check if redis.service is a symlink
+    stat:
+      path: /etc/systemd/system/redis.service
+    register: redis_service_unit
+    when: redis_stack_enabled
+
+  - name: Remove redis.service symlink when redis stack is enabled
+    file:
+      path: /etc/systemd/system/redis.service
+      state: absent
+    when:
+      - redis_stack_enabled
+      - redis_service_unit.stat.exists | default(false)
+      - redis_service_unit.stat.islnk | default(false)
+
+  - name: Mask redis-server service when redis stack is enabled
+    systemd:
+      name: redis-server
+      masked: true
+    when: redis_stack_enabled
+
+  - name: Stop and disable redis alias service when redis stack is enabled
     systemd:
       name: redis
       state: stopped
+      enabled: false
+    failed_when: false
+    when: redis_stack_enabled
 
   - name: Start redis service
     systemd:
@@ -141,15 +177,11 @@
       state: started
     when: not redis_stack_enabled
 
-  - name: Enable redis stack service
+  - name: Reload, Enable & Stop redis stack service
     systemd:
       name: redis-stack
+      daemon_reload: true
       enabled: true
-    when: redis_stack_enabled
-
-  - name: Stop redis stack service
-    systemd:
-      name: redis-stack
       state: stopped
     when: redis_stack_enabled
 
@@ -176,13 +208,13 @@
       name: unzip
       update_cache: true
 
-  - name: Download redis_exporter {{ redis_exporter_version }}
+  - name: Download redis-exporter {{ redis_exporter_version }}
     unarchive:
       src: https://github.com/oliver006/redis_exporter/releases/download/{{ redis_exporter_version }}/redis_exporter-{{ redis_exporter_version }}.linux-amd64.tar.gz
       dest: /tmp
       remote_src: true
 
-  - name: Copy redis install from /tmp to /opt
+  - name: Copy redis-exporter install from /tmp to /opt
     copy:
       src: /tmp/redis_exporter-{{ redis_exporter_version }}.linux-amd64/
       dest: /opt/redis_exporter/
@@ -198,6 +230,7 @@
   - name: Enable redis-exporter service
     systemd:
       name: redis-exporter
+      daemon_reload: true
       enabled: true
 
   - name: Start redis-exporter service

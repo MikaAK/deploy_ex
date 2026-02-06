@@ -740,10 +740,14 @@ resource "aws_autoscaling_policy" "cpu_target_templates" {
 resource "aws_autoscaling_schedule" "template_switch" {
   for_each = local.autoscaling_template_schedules
 
-  scheduled_action_name  = "${local.kebab_instance_name}-${each.value.template_key}-${each.value.schedule.name}-${var.environment}"
+  scheduled_action_name  = "${local.kebab_instance_name}-${each.value.template_key}-${each.value.schedule.name}-${substr(sha1(each.value.schedule.recurrence), 0, 8)}-${var.environment}"
   autoscaling_group_name = aws_autoscaling_group.ec2_asg_templates[each.value.template_key].name
   recurrence             = each.value.schedule.recurrence
   time_zone              = try(each.value.schedule.time_zone, null)
+
+  lifecycle {
+    create_before_destroy = true
+  }
 
   min_size = coalesce(
     try(each.value.schedule.changes.min_size, null),
@@ -775,10 +779,14 @@ resource "aws_autoscaling_schedule" "template_switch_disable_others" {
     }
   ]...) : {}
 
-  scheduled_action_name  = "${local.kebab_instance_name}-${each.value.other_template_key}-off-${each.value.schedule_entry.schedule.name}-${var.environment}"
+  scheduled_action_name  = "${local.kebab_instance_name}-${each.value.other_template_key}-off-${each.value.schedule_entry.schedule.name}-${substr(sha1(local.autoscaling_template_enable_schedules_disable_other_recurrence[each.value.schedule_key]), 0, 8)}-${var.environment}"
   autoscaling_group_name = aws_autoscaling_group.ec2_asg_templates[each.value.other_template_key].name
   recurrence             = local.autoscaling_template_enable_schedules_disable_other_recurrence[each.value.schedule_key]
   time_zone              = try(each.value.schedule_entry.schedule.time_zone, null)
+
+  lifecycle {
+    create_before_destroy = true
+  }
 
   min_size         = 0
   max_size         = 0

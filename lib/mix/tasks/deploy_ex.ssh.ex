@@ -98,7 +98,8 @@ defmodule Mix.Tasks.DeployEx.Ssh do
         resource_group: :string,
         index: :integer,
         list: :boolean,
-        qa: :boolean
+        qa: :boolean,
+        instance_id: :keep
       ]
     )
   end
@@ -122,8 +123,10 @@ defmodule Mix.Tasks.DeployEx.Ssh do
   end
 
   defp run_app_mode(app_params, machine_opts, opts) do
-    with {:ok, app_name} <- DeployExHelpers.find_project_name(app_params),
-         {:ok, instance_ips} <- DeployEx.AwsMachine.find_instance_ips(DeployExHelpers.project_name(), app_name, machine_opts) do
+    instance_ids = Keyword.get_values(opts, :instance_id)
+
+    with {:ok, app_name} <- find_app_name_or_default(app_params, instance_ids),
+         {:ok, instance_ips} <- find_instance_ips_for_app_or_instance_ids(app_name, instance_ids, machine_opts) do
       if opts[:list] do
         list_instances(app_name, instance_ips)
       else
@@ -132,6 +135,32 @@ defmodule Mix.Tasks.DeployEx.Ssh do
       end
     else
       {:error, e} -> Mix.raise(to_string(e))
+    end
+  end
+
+  defp find_app_name_or_default(app_params, []) do
+    DeployExHelpers.find_project_name(app_params)
+  end
+
+  defp find_app_name_or_default(_app_params, instance_ids) when is_list(instance_ids) do
+    {:ok, nil}
+  end
+
+  defp find_instance_ips_for_app_or_instance_ids(app_name, [], machine_opts) do
+    machine_opts = Keyword.put(machine_opts, :exclude_qa_nodes, true)
+    DeployEx.AwsMachine.find_instance_ips(DeployExHelpers.project_name(), app_name, machine_opts)
+  end
+
+  defp find_instance_ips_for_app_or_instance_ids(_app_name, instance_ids, machine_opts) do
+    region = machine_opts[:region] || DeployEx.Config.aws_region()
+
+    with {:ok, instances} <- DeployEx.AwsMachine.find_instances_by_id(region, instance_ids) do
+      instance_ips =
+        instances
+        |> Enum.map(fn instance -> instance["ipv6Address"] || instance["ipAddress"] end)
+        |> Enum.reject(&is_nil/1)
+
+      {:ok, instance_ips}
     end
   end
 

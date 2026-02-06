@@ -214,13 +214,15 @@ defmodule DeployEx.AwsMachine do
           instance_data
             |> Map.put("InstanceGroupTag", tags["InstanceGroup"])
             |> Map.put("NameTag", tags["Name"])
+            |> Map.put("QaNodeTag", tags["QaNode"])
         end)
         |> Stream.reject(&is_nil(&1["InstanceGroupTag"]))
         |> Stream.filter(&(&1["instanceState"]["name"] === "running"))
         |> Enum.group_by(&(&1["InstanceGroupTag"]), &%{
           name: &1["NameTag"],
           ip: &1["ipAddress"],
-          ipv6: &1["ipv6Address"]
+          ipv6: &1["ipv6Address"],
+          qa_node?: &1["QaNodeTag"] === "true"
         })}
     end
   end
@@ -234,7 +236,15 @@ defmodule DeployEx.AwsMachine do
             %{app_names: Map.keys(instance_groups)}
           )}
 
-        instances -> {:ok, instances}
+        instances ->
+          instances =
+            if opts[:exclude_qa_nodes] === true do
+              Enum.reject(instances, & &1.qa_node?)
+            else
+              instances
+            end
+
+          {:ok, instances}
       end
     end
   end

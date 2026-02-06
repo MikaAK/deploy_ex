@@ -28,7 +28,7 @@ defmodule DeployEx.MixProject do
       {:ex_aws_dynamo, "~> 4.2"},
       {:ex_aws_ec2, "~> 2.0"},
       {:ex_aws_rds, "~> 2.0"},
-      {:ex_aws_elastic_load_balancing, "~> 2.0"},
+      {:ex_aws_elastic_load_balancing, "~> 3.0"},
       {:configparser_ex, ">= 4.0.0"},
       {:elixir_xml_to_map, "~> 3.0", override: true},
       {:exexec, "~> 0.2"},
