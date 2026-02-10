@@ -13,68 +13,102 @@ write_files:
     content: |
       #!/usr/bin/env bash
       set -euo pipefail
-      
-      exec > >(tee /var/log/deploy-app.log|logger -t deploy-app -s 2>/dev/console) 2>&1
-      
+
+      # Log to both file and console
+      exec > >(tee -a /var/log/deploy-app.log) 2>&1
+
       APP_NAME="${app_name}"
       ENVIRONMENT="${environment}"
-      BUCKET_NAME="$${APP_NAME}-elixir-deploys-$${ENVIRONMENT}"
+      BUCKET_NAME="cfx-deploys-$${ENVIRONMENT}"
       APP_PORT="${app_port}"
-      RELEASE_STATE_KEY="release-state/$${APP_NAME}/current_release.txt"
-      
+
       echo "Starting deployment for $${APP_NAME} in $${ENVIRONMENT}"
-      
-      # Try to get current release from S3 release state
-      echo "Checking for current release in S3 release state..."
-      CURRENT_RELEASE=""
-      if aws s3 cp "s3://$${BUCKET_NAME}/$${RELEASE_STATE_KEY}" /tmp/current_release.txt 2>/dev/null; then
-        CURRENT_RELEASE=$(cat /tmp/current_release.txt | tr -d '\n')
-        echo "Found current release from S3 state: $${CURRENT_RELEASE}"
+
+      # Check for pre-existing state from AMI (for debugging autoscale issues)
+      echo "=== Pre-deployment state check ==="
+      if [ -d "/srv/$${APP_NAME}" ]; then
+        echo "WARNING: Found existing /srv/$${APP_NAME} directory (likely from AMI)"
+        ls -la /srv/$${APP_NAME}/ 2>/dev/null | head -5 || true
+        if [ -f "/srv/current_release.txt" ]; then
+          echo "Previous release: $(cat /srv/current_release.txt)"
+        fi
       fi
-      
-      # If no release state exists, find latest release in S3
-      if [ -z "$${CURRENT_RELEASE}" ]; then
-        echo "No release state found, finding latest release in S3..."
-        CURRENT_RELEASE=$(aws s3 ls $${BUCKET_NAME}/$${APP_NAME} --recursive | awk '{print $4}' | sort -r | head -n 1)
+
+      if systemctl is-enabled --quiet $${APP_NAME} 2>/dev/null; then
+        echo "WARNING: Service $${APP_NAME} is enabled (likely from AMI)"
       fi
-      
-      if [ -z "$${CURRENT_RELEASE}" ]; then
+      echo "=== End state check ==="
+
+      # Wait for basic network
+      for i in {1..60}; do
+        if ping -c1 -W1 1.1.1.1 >/dev/null 2>&1; then
+          echo "Network OK"
+          break
+        fi
+        echo "Waiting for network... ($i/60)"
+        sleep 2
+      done
+
+      # Wait for IMDS (credentials) to be available
+      for i in {1..60}; do
+        if curl -fsS --max-time 2 http://169.254.169.254/latest/meta-data/ >/dev/null; then
+          echo "IMDS OK"
+          break
+        fi
+        echo "Waiting for IMDS... ($i/60)"
+        sleep 2
+      done
+
+      # Find latest release in S3
+      echo "Finding latest release in S3..."
+      LATEST_RELEASE=$(aws s3 ls $${BUCKET_NAME}/$${APP_NAME} --recursive | awk '{print $4}' | sort -r | head -n 1)
+
+      if [ -z "$${LATEST_RELEASE}" ]; then
         echo "ERROR: No releases found in s3://$${BUCKET_NAME}/$${APP_NAME}"
         exit 1
       fi
-      
-      echo "Deploying release: $${CURRENT_RELEASE}"
-      
+
+      echo "Found latest release: $${LATEST_RELEASE}"
+
       # Create directories
       mkdir -p /srv/$${APP_NAME}
       mkdir -p /srv/unpack-directory
-      
+
       # Download release
       echo "Downloading release from S3..."
-      aws s3 cp "s3://$${BUCKET_NAME}/$${CURRENT_RELEASE}" /srv/$${CURRENT_RELEASE##*/}
-      
+      aws s3 cp "s3://$${BUCKET_NAME}/$${LATEST_RELEASE}" /srv/$${LATEST_RELEASE##*/}
+
+      # Track release history
+      if [ -f /srv/current_release.txt ]; then
+        cat /srv/current_release.txt >> /srv/release_history.txt || touch /srv/release_history.txt
+      fi
+      echo "$${LATEST_RELEASE##*/}" > /srv/current_release.txt
+
       # Extract release
       echo "Extracting release..."
-      tar -xzf /srv/$${CURRENT_RELEASE##*/} -C /srv/unpack-directory
-      
-      # Stop existing service if running
+      tar -xzf /srv/$${LATEST_RELEASE##*/} -C /srv/unpack-directory
+
+      # Stop existing service if running (may have been started from AMI)
       if systemctl is-active --quiet $${APP_NAME}; then
         echo "Stopping existing $${APP_NAME} service..."
         systemctl stop $${APP_NAME} || true
       fi
-      
-      # Replace app directory
+
+      # Clean up any existing app directory (may contain stale code from AMI)
+      if [ -d "/srv/$${APP_NAME}" ]; then
+        echo "Removing existing /srv/$${APP_NAME} (stale code from AMI)"
+      fi
       rm -rf /srv/$${APP_NAME}
       mv /srv/unpack-directory /srv/$${APP_NAME}
       chmod -R 755 /srv/$${APP_NAME}
-      
+
       # Create systemd service
       echo "Creating systemd service..."
       cat > /etc/systemd/system/$${APP_NAME}.service <<EOF
       [Unit]
       Description=$${APP_NAME} service
       After=network.target
-      
+
       [Service]
       Type=simple
       User=root
@@ -88,17 +122,17 @@ write_files:
       SyslogIdentifier=$${APP_NAME}
       RemainAfterExit=no
       LimitNOFILE=1000000
-      
+
       [Install]
       WantedBy=multi-user.target
       EOF
-      
+
       # Enable and start service
       echo "Starting $${APP_NAME} service..."
       systemctl daemon-reload
       systemctl enable $${APP_NAME}
       systemctl start $${APP_NAME}
-      
+
       echo "Deployment complete!"
       systemctl status $${APP_NAME} --no-pager || true
 
@@ -108,39 +142,39 @@ write_files:
     content: |
       #!/usr/bin/env bash
       set -euo pipefail
-      
+
       exec > >(tee /var/log/trigger-setup.log|logger -t trigger-setup -s 2>/dev/console) 2>&1
-      
+
       INSTANCE_ID=$(ec2-metadata --instance-id | cut -d " " -f 2)
       REGION=$(ec2-metadata --availability-zone | cut -d " " -f 2 | sed 's/[a-z]$//')
-      
+
       echo "Checking if setup is needed for instance $${INSTANCE_ID}..."
-      
+
       # Check SetupComplete tag
       SETUP_COMPLETE=$(aws ec2 describe-tags \
         --region "$${REGION}" \
         --filters "Name=resource-id,Values=$${INSTANCE_ID}" "Name=key,Values=SetupComplete" \
         --query "Tags[0].Value" \
         --output text 2>/dev/null || echo "false")
-      
+
       if [ "$${SETUP_COMPLETE}" = "true" ]; then
         echo "Instance already setup (from AMI), skipping GitHub Actions trigger"
         exit 0
       fi
-      
+
       echo "Instance needs setup, triggering GitHub Actions workflow..."
-      
+
       # Trigger GitHub Actions workflow
       # Note: GITHUB_TOKEN must be set in environment or SSM
       GITHUB_TOKEN="${github_token}"
       GITHUB_REPO="${github_repo}"
-      
+
       if [ -z "$${GITHUB_TOKEN}" ] || [ "$${GITHUB_TOKEN}" = "null" ]; then
         echo "WARNING: No GitHub token provided, skipping workflow trigger"
         echo "Setup will be handled by scheduled workflow within 15 minutes"
         exit 0
       fi
-      
+
       curl -X POST \
         -H "Accept: application/vnd.github+json" \
         -H "Authorization: Bearer $${GITHUB_TOKEN}" \
@@ -156,9 +190,9 @@ write_files:
     content: |
       #!/usr/bin/env bash
       set -euo pipefail
-      
+
       exec > >(tee /var/log/prepare-ebs-volume.log|logger -t prepare-ebs -s 2>/dev/console) 2>&1
-      
+
       prepare_ebs_volume() {
         local VOL_ID="$${1:-}"
         local MP="$${2:-/data}"
@@ -176,7 +210,7 @@ write_files:
           [ -e "$${BYID}" ] && break
           sleep 1
         done
-        
+
         if [ ! -e "$${BYID}" ]; then
           echo "[data-disk] $${BYID} not found after waiting; exiting (nofail)."
           return 0
@@ -250,7 +284,7 @@ write_files:
 
         echo "[data-disk] Done. Mounted $${TARGET} ($${FSTYPE}) on $${MP}."
       }
-      
+
       # Run with volume_id from template
       prepare_ebs_volume "${volume_id}" "/data"
 

@@ -33,9 +33,10 @@ defmodule Mix.Tasks.DeployEx.Qa do
   def run(args) do
     {opts, _extra_args} = parse_args(args)
 
-    case opts[:command] do
-      nil -> print_overview()
-      command -> print_command_help(command)
+    if is_nil(opts[:command]) do
+      print_overview()
+    else
+      print_command_help(opts[:command])
     end
   end
 

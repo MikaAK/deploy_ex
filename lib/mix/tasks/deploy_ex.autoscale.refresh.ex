@@ -8,9 +8,6 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Refresh do
   Triggers an instance refresh on an Auto Scaling Group to replace all instances
   with new ones. New instances will run cloud-init and pull the current release from S3.
 
-  This uses the "launch before terminating" strategy, meaning new instances are
-  launched and must pass health checks before old instances are terminated.
-
   ## Usage
 
       mix deploy_ex.autoscale.refresh <app_name>
@@ -18,20 +15,31 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Refresh do
   ## Examples
 
       mix deploy_ex.autoscale.refresh my_app
-      mix deploy_ex.autoscale.refresh my_app --min-healthy-percentage 90
+      mix deploy_ex.autoscale.refresh my_app --availability launch-first
+      mix deploy_ex.autoscale.refresh my_app --availability terminate-first
+      mix deploy_ex.autoscale.refresh my_app --min-healthy-percentage 90 --max-healthy-percentage 100
       mix deploy_ex.autoscale.refresh my_app --wait
 
   ## Options
 
   - `--environment` or `-e` - Environment name (default: Mix.env())
-  - `--min-healthy-percentage` - Minimum healthy instances during refresh (default: 100)
+  - `--strategy` or `-s` - Refresh strategy: Rolling (default) or ReplaceRootVolume
+  - `--availability` or `-a` - Instance replacement availability behavior:
+    - `launch-first` - Launch new instances before terminating old ones (min: 100%, max: 110%)
+    - `terminate-first` - Terminate old instances before launching new ones (min: 90%, max: 100%)
+  - `--min-healthy-percentage` - Minimum healthy instances during refresh (overrides --availability)
+  - `--max-healthy-percentage` - Maximum healthy instances during refresh (overrides --availability)
   - `--instance-warmup` - Seconds to wait for instance warmup (default: 300)
   - `--wait` or `-w` - Wait for refresh to complete
   - `--skip-matching` - Skip instances that already match the launch template
   """
 
-  @default_min_healthy_percentage 100
   @default_instance_warmup 300
+
+  @availability_presets %{
+    "launch-first" => %{min_healthy_percentage: 100, max_healthy_percentage: 110},
+    "terminate-first" => %{min_healthy_percentage: 90, max_healthy_percentage: 100}
+  }
 
   def run(args) do
     Application.ensure_all_started(:hackney)
@@ -39,10 +47,13 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Refresh do
     Application.ensure_all_started(:ex_aws)
 
     {opts, remaining_args} = OptionParser.parse!(args,
-      aliases: [e: :environment, w: :wait],
+      aliases: [e: :environment, w: :wait, s: :strategy, a: :availability],
       switches: [
         environment: :string,
+        strategy: :string,
+        availability: :string,
         min_healthy_percentage: :integer,
+        max_healthy_percentage: :integer,
         instance_warmup: :integer,
         wait: :boolean,
         skip_matching: :boolean
@@ -55,15 +66,21 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Refresh do
     end
 
     environment = Keyword.get(opts, :environment, Mix.env() |> to_string())
-    min_healthy = Keyword.get(opts, :min_healthy_percentage, @default_min_healthy_percentage)
+    strategy = Keyword.get(opts, :strategy, "Rolling")
+    availability = Keyword.get(opts, :availability)
     instance_warmup = Keyword.get(opts, :instance_warmup, @default_instance_warmup)
     skip_matching = Keyword.get(opts, :skip_matching)
+
+    availability_defaults = resolve_availability(availability)
+    min_healthy = Keyword.get(opts, :min_healthy_percentage, availability_defaults.min_healthy_percentage)
+    max_healthy = Keyword.get(opts, :max_healthy_percentage, availability_defaults.max_healthy_percentage)
 
     with :ok <- DeployExHelpers.check_in_umbrella() do
       Mix.shell().info([:blue, "Starting instance refresh for #{app_name}..."])
 
       preferences = %{
         min_healthy_percentage: min_healthy,
+        max_healthy_percentage: max_healthy,
         instance_warmup: instance_warmup,
         skip_matching: skip_matching
       }
@@ -71,11 +88,11 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Refresh do
       case AwsAutoscaling.find_asg_by_prefix(app_name, environment) do
         {:ok, []} ->
           asg_name = AwsAutoscaling.build_asg_name(app_name, environment)
-          start_refresh_for_asg(asg_name, app_name, preferences, opts)
+          start_refresh_for_asg(asg_name, app_name, preferences, strategy, opts)
 
         {:ok, asgs} ->
           Enum.each(asgs, fn asg ->
-            start_refresh_for_asg(asg.name, app_name, preferences, opts)
+            start_refresh_for_asg(asg.name, app_name, preferences, strategy, opts)
           end)
 
         {:error, error} ->
@@ -84,15 +101,17 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Refresh do
     end
   end
 
-  defp start_refresh_for_asg(asg_name, app_name, preferences, opts) do
+  defp start_refresh_for_asg(asg_name, app_name, preferences, strategy, opts) do
     Mix.shell().info([
       "\n  ASG: ", :bright, asg_name, :reset, "\n",
-      "  Strategy: ", :bright, "Launch before terminating", :reset, "\n",
+      "  Strategy: ", :bright, strategy, :reset, "\n",
+      "  Availability: ", :bright, availability_label(preferences), :reset, "\n",
       "  Min healthy: ", :bright, "#{preferences.min_healthy_percentage}%", :reset, "\n",
+      "  Max healthy: ", :bright, "#{preferences.max_healthy_percentage}%", :reset, "\n",
       "  Instance warmup: ", :bright, "#{preferences.instance_warmup}s", :reset
     ])
 
-    case AwsAutoscaling.start_instance_refresh(asg_name, preferences) do
+    case AwsAutoscaling.start_instance_refresh(asg_name, preferences, strategy: strategy) do
       {:ok, refresh_id} ->
         Mix.shell().info([
           :green, "\n✓ Instance refresh started successfully.\n",
@@ -126,6 +145,20 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Refresh do
         ])
     end
   end
+
+  defp resolve_availability(nil), do: %{min_healthy_percentage: 100, max_healthy_percentage: 110}
+  defp resolve_availability(name) do
+    case Map.fetch(@availability_presets, name) do
+      {:ok, preset} -> preset
+      :error -> Mix.raise("Invalid --availability value '#{name}'. Must be one of: #{@availability_presets |> Map.keys() |> Enum.join(", ")}")
+    end
+  end
+
+  defp availability_label(%{min_healthy_percentage: min, max_healthy_percentage: max}) when min >= 100 and max > 100 do
+    "Launch before terminating"
+  end
+
+  defp availability_label(_preferences), do: "Terminate and launch"
 
   defp wait_for_refresh(asg_name, refresh_id) do
     Mix.shell().info([:yellow, "\nWaiting for instance refresh to complete..."])

@@ -111,9 +111,12 @@ defmodule Mix.Tasks.DeployEx.Qa.AttachLb do
       DeployEx.AwsLoadBalancer.wait_for_healthy(tg.arn, qa_node.instance_id, 300_000, opts)
     end)
 
-    case Enum.find(results, &match?({:error, _}, &1)) do
-      nil -> :ok
-      error -> error
+    error = Enum.find(results, &match?({:error, _}, &1))
+
+    if is_nil(error) do
+      :ok
+    else
+      error
     end
   end
 end

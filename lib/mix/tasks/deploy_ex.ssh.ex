@@ -219,11 +219,12 @@ defmodule Mix.Tasks.DeployEx.Ssh do
   defp connect_to_qa_host(qa_instances, pem_file_path, opts) do
     {name, ip} = cond do
       opts[:index] !== nil ->
-        case Enum.at(qa_instances, opts[:index]) do
-          nil ->
-            Mix.raise("Instance index #{opts[:index]} not found. Available: 0..#{length(qa_instances) - 1}")
-          instance ->
-            instance
+        instance = Enum.at(qa_instances, opts[:index])
+
+        if is_nil(instance) do
+          Mix.raise("Instance index #{opts[:index]} not found. Available: 0..#{length(qa_instances) - 1}")
+        else
+          instance
         end
 
       opts[:short] ->
@@ -253,11 +254,12 @@ defmodule Mix.Tasks.DeployEx.Ssh do
   defp connect_to_host(app_name, instance_ips, pem_file_path, opts) do
     instance_ip = cond do
       opts[:index] !== nil ->
-        case Enum.at(instance_ips, opts[:index]) do
-          nil ->
-            Mix.raise("Instance index #{opts[:index]} not found. Available: 0..#{length(instance_ips) - 1}")
-          ip ->
-            ip
+        instance_ip = Enum.at(instance_ips, opts[:index])
+
+        if is_nil(instance_ip) do
+          Mix.raise("Instance index #{opts[:index]} not found. Available: 0..#{length(instance_ips) - 1}")
+        else
+          instance_ip
         end
 
       opts[:short] ->

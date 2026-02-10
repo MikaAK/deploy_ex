@@ -125,9 +125,10 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
   end
 
   defp check_pg_dump_installed do
-    case System.find_executable("pg_dump") do
-      nil -> {:error, "pg_dump not found. Please install PostgreSQL client tools"}
-      _path -> :ok
+    if is_nil(System.find_executable("pg_dump")) do
+      {:error, "pg_dump not found. Please install PostgreSQL client tools"}
+    else
+      :ok
     end
   end
 

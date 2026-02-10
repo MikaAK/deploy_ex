@@ -19,6 +19,27 @@ defmodule DeployEx.AwsAutoscaling do
     |> handle_describe_asg_response()
   end
 
+  def update_auto_scaling_group(asg_name, params, opts \\ []) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+
+    request_params = %{
+      "Action" => "UpdateAutoScalingGroup",
+      "AutoScalingGroupName" => asg_name,
+      "Version" => "2011-01-01"
+    }
+    |> maybe_add_param("MinSize", params[:min_size])
+    |> maybe_add_param("MaxSize", params[:max_size])
+    |> maybe_add_param("DesiredCapacity", params[:desired_capacity])
+
+    %ExAws.Operation.Query{
+      path: "/",
+      params: request_params,
+      service: :autoscaling
+    }
+    |> ExAws.request(region: region)
+    |> handle_update_asg_response()
+  end
+
   def set_desired_capacity(asg_name, desired_capacity, opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
 
@@ -36,24 +57,34 @@ defmodule DeployEx.AwsAutoscaling do
     |> handle_set_capacity_response()
   end
 
+  @valid_strategies ["Rolling", "ReplaceRootVolume"]
+
   def start_instance_refresh(asg_name, preferences \\ %{}, opts \\ []) do
-    region = opts[:region] || DeployEx.Config.aws_region()
+    strategy = opts[:strategy] || "Rolling"
 
-    params = %{
-      "Action" => "StartInstanceRefresh",
-      "AutoScalingGroupName" => asg_name,
-      "Strategy" => "Rolling",
-      "Version" => "2011-01-01"
-    }
-    |> add_preferences(preferences)
+    if strategy not in @valid_strategies do
+      {:error, ErrorMessage.bad_request(
+        "invalid strategy '#{strategy}', must be one of: #{Enum.join(@valid_strategies, ", ")}"
+      )}
+    else
+      region = opts[:region] || DeployEx.Config.aws_region()
 
-    %ExAws.Operation.Query{
-      path: "/",
-      params: params,
-      service: :autoscaling
-    }
-    |> ExAws.request(region: region)
-    |> handle_start_refresh_response()
+      params = %{
+        "Action" => "StartInstanceRefresh",
+        "AutoScalingGroupName" => asg_name,
+        "Strategy" => strategy,
+        "Version" => "2011-01-01"
+      }
+      |> add_preferences(preferences)
+
+      %ExAws.Operation.Query{
+        path: "/",
+        params: params,
+        service: :autoscaling
+      }
+      |> ExAws.request(region: region)
+      |> handle_start_refresh_response()
+    end
   end
 
   def describe_instance_refreshes(asg_name, opts \\ []) do
@@ -108,19 +139,28 @@ defmodule DeployEx.AwsAutoscaling do
     region = opts[:region] || DeployEx.Config.aws_region()
     prefix = app_name |> String.replace("_", "-") |> Kernel.<>("-asg-")
 
+    fetch_all_asgs(region, prefix, environment)
+  end
+
+  defp fetch_all_asgs(region, prefix, environment, next_token \\ nil, acc \\ []) do
+    params = %{
+      "Action" => "DescribeAutoScalingGroups",
+      "Version" => "2011-01-01"
+    }
+    |> maybe_add_param("NextToken", next_token)
+
     %ExAws.Operation.Query{
       path: "/",
-      params: %{
-        "Action" => "DescribeAutoScalingGroups",
-        "Version" => "2011-01-01"
-      },
+      params: params,
       service: :autoscaling
     }
     |> ExAws.request(region: region)
     |> case do
       {:ok, %{body: body}} ->
         case parse_xml(body) do
-          %{"DescribeAutoScalingGroupsResponse" => %{"DescribeAutoScalingGroupsResult" => %{"AutoScalingGroups" => groups}}} ->
+          %{"DescribeAutoScalingGroupsResponse" => %{"DescribeAutoScalingGroupsResult" => result}} ->
+            groups = result["AutoScalingGroups"]
+
             matching = groups
             |> extract_list("member")
             |> Enum.filter(fn asg ->
@@ -129,10 +169,16 @@ defmodule DeployEx.AwsAutoscaling do
             end)
             |> Enum.map(&parse_asg/1)
 
-            {:ok, matching}
+            all_matching = acc ++ matching
+
+            if is_nil(result["NextToken"]) do
+              {:ok, all_matching}
+            else
+              fetch_all_asgs(region, prefix, environment, result["NextToken"], all_matching)
+            end
 
           _ ->
-            {:ok, []}
+            {:ok, acc}
         end
 
       {:error, error} ->
@@ -143,6 +189,7 @@ defmodule DeployEx.AwsAutoscaling do
   defp add_preferences(params, preferences) do
     params
     |> maybe_add_param("Preferences.MinHealthyPercentage", preferences[:min_healthy_percentage])
+    |> maybe_add_param("Preferences.MaxHealthyPercentage", preferences[:max_healthy_percentage])
     |> maybe_add_param("Preferences.InstanceWarmup", preferences[:instance_warmup])
     |> maybe_add_param("Preferences.SkipMatching", preferences[:skip_matching])
   end
@@ -177,6 +224,16 @@ defmodule DeployEx.AwsAutoscaling do
   end
 
   defp handle_describe_asg_response({:error, error}) do
+    {:error, ErrorMessage.failed_dependency("AWS request failed", %{error: inspect(error)})}
+  end
+
+  defp handle_update_asg_response({:ok, _}), do: :ok
+
+  defp handle_update_asg_response({:error, {:http_error, status, %{body: body}}}) do
+    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["AWS error", %{body: body}])}
+  end
+
+  defp handle_update_asg_response({:error, error}) do
     {:error, ErrorMessage.failed_dependency("AWS request failed", %{error: inspect(error)})}
   end
 
@@ -244,6 +301,14 @@ defmodule DeployEx.AwsAutoscaling do
     end
   end
 
+  defp handle_describe_refreshes_response({:error, {:http_error, 400, %{body: body}}}) do
+    if String.contains?(body, "not found") do
+      {:error, ErrorMessage.not_found("autoscaling group not found")}
+    else
+      {:error, ErrorMessage.bad_request("AWS error", %{body: body})}
+    end
+  end
+
   defp handle_describe_refreshes_response({:error, {:http_error, status, %{body: body}}}) do
     {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["AWS error", %{body: body}])}
   end
@@ -297,7 +362,9 @@ defmodule DeployEx.AwsAutoscaling do
       instance_id: instance["InstanceId"],
       lifecycle_state: instance["LifecycleState"],
       health_status: instance["HealthStatus"],
-      availability_zone: instance["AvailabilityZone"]
+      availability_zone: instance["AvailabilityZone"],
+      instance_type: instance["InstanceType"],
+      launch_template_version: get_in(instance, ["LaunchTemplate", "Version"])
     }
   end
 

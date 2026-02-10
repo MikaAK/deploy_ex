@@ -77,10 +77,10 @@ defmodule Mix.Tasks.DeployEx.Qa.Cleanup do
           case DeployEx.QaNode.fetch_all_qa_states_for_app(app_name, opts) do
             {:ok, states} ->
               Enum.reduce(states, [], fn state, acc ->
-                case state.instance_id do
-                  nil -> acc
-                  instance_id ->
-                    case DeployEx.AwsMachine.find_instances_by_id([instance_id]) do
+                if is_nil(state.instance_id) do
+                  acc
+                else
+                    case DeployEx.AwsMachine.find_instances_by_id([state.instance_id]) do
                       {:ok, [instance]} ->
                         if instance["instanceState"]["name"] === "terminated" do
                           [{app_name, state, "terminated"} | acc]

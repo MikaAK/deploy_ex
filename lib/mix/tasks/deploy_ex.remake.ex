@@ -58,12 +58,17 @@ defmodule Mix.Tasks.DeployEx.Remake do
   end
 
   defp run_command(command, args) do
-    case command.run(args) do
-      nil -> :ok
-      :ok -> :ok
-      [:ok] -> :ok
-      {:error, _} = res -> res
-      e -> {:error, e}
+    result = command.run(args)
+
+    if is_nil(result) do
+      :ok
+    else
+      case result do
+        :ok -> :ok
+        [:ok] -> :ok
+        {:error, _} = res -> res
+        e -> {:error, e}
+      end
     end
   end
 

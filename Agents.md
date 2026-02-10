@@ -10,6 +10,7 @@ DeployEx is an Elixir library that generates and manages AWS infrastructure with
 - ExAws requests must include region and follow tagging conventions (Group, Environment, ManagedBy).
 - Update README when CLI flags, config, or user-facing behavior changes.
 - Use `DeployEx.Config.aws_names_include_env?()` when building AWS resource name prefixes that may or may not include the environment (e.g., security groups, buckets).
+- Prefer `if is_nil(value) do ... else ... end` over `case value do nil -> ... _ -> ... end` for nil checks.
 
 ## Key locations
 - lib/deploy_ex: core AWS and release logic.

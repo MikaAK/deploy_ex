@@ -104,25 +104,24 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
       {:ok, releases} ->
         {qa_match, qa_releases} = find_release_match(releases, app_name, sha, "qa")
 
-        {matching_release, candidate_releases} = case qa_match do
-          nil ->
+        {matching_release, candidate_releases} = if is_nil(qa_match) do
             {fallback_match, fallback_releases} = find_release_match(releases, app_name, sha, nil)
             {fallback_match, qa_releases ++ fallback_releases}
-
-          _ ->
+          else
             {qa_match, qa_releases}
-        end
+          end
 
-        case matching_release do
-          nil ->
-            suggestions = DeployExHelpers.format_release_suggestions(candidate_releases, sha)
-            {:error, ErrorMessage.not_found("no release found matching SHA '#{sha}' for app '#{app_name}'", %{suggestions: suggestions})}
+        if is_nil(matching_release) do
+          suggestions = DeployExHelpers.format_release_suggestions(candidate_releases, sha)
+          {:error, ErrorMessage.not_found("no release found matching SHA '#{sha}' for app '#{app_name}'", %{suggestions: suggestions})}
+        else
+          full_sha = DeployExHelpers.extract_sha_from_release(matching_release)
 
-          release ->
-            case DeployExHelpers.extract_sha_from_release(release) do
-              nil -> {:error, ErrorMessage.bad_request("couldn't extract SHA from release name")}
-              full_sha -> {:ok, full_sha}
-            end
+          if is_nil(full_sha) do
+            {:error, ErrorMessage.bad_request("couldn't extract SHA from release name")}
+          else
+            {:ok, full_sha}
+          end
         end
 
       {:error, _} = error ->

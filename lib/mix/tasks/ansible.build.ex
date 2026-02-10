@@ -139,12 +139,17 @@ defmodule Mix.Tasks.Ansible.Build do
     if File.exists?(credentials_file) do
       credentials_content = File.read!(credentials_file)
 
-      case Regex.named_captures(@aws_credentials_regex, credentials_content) do
-        nil -> {:error, ErrorMessage.not_found("couldn't parse credentials in file at ~/.aws/credentials")}
+      captures = Regex.named_captures(@aws_credentials_regex, credentials_content)
+
+      if is_nil(captures) do
+        {:error, ErrorMessage.not_found("couldn't parse credentials in file at ~/.aws/credentials")}
+      else
         %{
           "access_key" => access_key,
           "secret_key" => secret_access_key
-        } -> {:ok, {access_key, secret_access_key}}
+        } = captures
+
+        {:ok, {access_key, secret_access_key}}
       end
     else
       {:error, ErrorMessage.not_found("couldn't find credentials file at ~/.aws/credentials")}

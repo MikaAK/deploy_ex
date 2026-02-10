@@ -17,20 +17,8 @@
         instance_id: "{{ instance_id_result.content }}"
         aws_region: "{{ region_result.content }}"
 
-    - name: Check if instance is a QA node
-      command: >
-        aws ec2 describe-tags
-        --region {{ aws_region }}
-        --filters "Name=resource-id,Values={{ instance_id }}" "Name=key,Values=QaNode"
-        --query 'Tags[0].Value'
-        --output text
-      register: qa_node_check
-      changed_when: false
-
-    - name: Skip AMI creation for QA nodes
-      debug:
-        msg: "Skipping AMI creation - this is a QA node"
-      when: qa_node_check.stdout == "true"
+    - name: Clean cloud-init state so it re-runs on new instances
+      command: cloud-init clean --logs
 
     - name: Create AMI from current instance
       command: >
@@ -49,12 +37,10 @@
         ]'
         --no-reboot
       register: ami_creation_result
-      when: qa_node_check.stdout != "true"
 
     - name: Parse AMI ID from result
       set_fact:
         new_ami_id: "{{ (ami_creation_result.stdout | from_json).ImageId }}"
-      when: qa_node_check.stdout != "true"
 
     - name: Store AMI ID in SSM Parameter Store
       command: >
@@ -65,7 +51,6 @@
         --type String
         --overwrite
         --description "Latest AMI for {{ app_name }} in {{ env }}"
-      when: qa_node_check.stdout != "true"
 
     - name: Wait for AMI to be available (async, non-blocking)
       command: >
@@ -75,12 +60,10 @@
       async: 1800
       poll: 0
       register: ami_wait_task
-      when: qa_node_check.stdout != "true"
 
     - name: Log AMI creation success
       debug:
         msg: "Created AMI {{ new_ami_id }} for {{ app_name }}-{{ env }}. AMI will be available in ~5-10 minutes."
-      when: qa_node_check.stdout != "true"
 
     - name: Cleanup old AMIs (keep last 3)
       shell: |
@@ -97,11 +80,10 @@
           done
       register: cleanup_result
       ignore_errors: yes
-      when: qa_node_check.stdout != "true"
 
     - name: Log cleanup result
       debug:
         msg: "{{ cleanup_result.stdout_lines }}"
-      when: qa_node_check.stdout != "true" and cleanup_result.stdout_lines | length > 0
+      when: cleanup_result.stdout_lines | length > 0
 
   become: true

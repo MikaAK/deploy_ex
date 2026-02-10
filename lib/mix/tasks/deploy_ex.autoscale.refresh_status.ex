@@ -68,14 +68,10 @@ defmodule Mix.Tasks.DeployEx.Autoscale.RefreshStatus do
         display_refreshes(refreshes, asg_name, show_all)
 
       {:error, %ErrorMessage{code: :not_found}} ->
-        Mix.shell().error([
-          :red, "\nError: Autoscaling group '#{asg_name}' not found.\n"
-        ])
+        Mix.raise("Autoscaling group '#{asg_name}' not found")
 
       {:error, error} ->
-        Mix.shell().error([
-          :red, "\nError fetching refresh status: #{inspect(error)}\n"
-        ])
+        Mix.raise("Error fetching refresh status: #{inspect(error)}")
     end
   end
 
@@ -100,7 +96,19 @@ defmodule Mix.Tasks.DeployEx.Autoscale.RefreshStatus do
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
       ])
 
+      instances = fetch_asg_instances(asg_name)
+
+      active_refreshes = Enum.filter(refreshes_to_show, fn r ->
+        r.status in ["Pending", "InProgress"]
+      end)
+
+      warming_instance_ids = extract_warming_instance_ids(active_refreshes)
+
       Enum.each(refreshes_to_show, &display_refresh/1)
+
+      if not Enum.empty?(active_refreshes) and not Enum.empty?(instances) do
+        display_instances(instances, warming_instance_ids)
+      end
 
       Mix.shell().info([
         :green,
@@ -144,16 +152,73 @@ defmodule Mix.Tasks.DeployEx.Autoscale.RefreshStatus do
     end
   end
 
-  defp recent_refresh?(refresh) do
-    case refresh.end_time do
-      nil -> true
-      end_time ->
-        case DateTime.from_iso8601(end_time) do
-          {:ok, dt, _} ->
-            DateTime.diff(DateTime.utc_now(), dt, :hour) < 24
+  defp fetch_asg_instances(asg_name) do
+    case AwsAutoscaling.describe_auto_scaling_group(asg_name) do
+      {:ok, asg} -> asg.instances
+      _ -> []
+    end
+  end
 
-          _ -> false
-        end
+  defp extract_warming_instance_ids(active_refreshes) do
+    active_refreshes
+    |> Enum.flat_map(fn refresh ->
+      if is_nil(refresh.status_reason) do
+        []
+      else
+        Regex.scan(~r/i-[0-9a-f]+/, refresh.status_reason) |> List.flatten()
+      end
+    end)
+    |> MapSet.new()
+  end
+
+  defp display_instances(instances, warming_instance_ids) do
+    Mix.shell().info([
+      "\n  ", :bright, "Instances:", :reset
+    ])
+
+    instances
+    |> Enum.sort_by(& &1.lifecycle_state)
+    |> Enum.each(fn instance ->
+      warming? = MapSet.member?(warming_instance_ids, instance.instance_id)
+
+      state_color = cond do
+        String.starts_with?(instance.lifecycle_state, "Terminating") -> :red
+        warming? -> :cyan
+        instance.lifecycle_state === "InService" -> :green
+        String.starts_with?(instance.lifecycle_state, "Pending") -> :cyan
+        true -> :yellow
+      end
+
+      label = cond do
+        String.starts_with?(instance.lifecycle_state, "Terminating") -> " [spinning down]"
+        warming? -> " [warming up]"
+        String.starts_with?(instance.lifecycle_state, "Pending") -> " [launching]"
+        true -> ""
+      end
+
+      type_info = if instance.instance_type, do: " #{instance.instance_type}", else: ""
+
+      Mix.shell().info([
+        "    ", state_color, "● ", :reset,
+        instance.instance_id,
+        :faint, " (", instance.lifecycle_state, " / ", instance.health_status || "Unknown", ")", :reset,
+        :faint, type_info, :reset,
+        :faint, " ", instance.availability_zone || "", :reset,
+        state_color, label, :reset
+      ])
+    end)
+  end
+
+  defp recent_refresh?(refresh) do
+    if is_nil(refresh.end_time) do
+      true
+    else
+      case DateTime.from_iso8601(refresh.end_time) do
+        {:ok, dt, _} ->
+          DateTime.diff(DateTime.utc_now(), dt, :hour) < 24
+
+        _ -> false
+      end
     end
   end
 
