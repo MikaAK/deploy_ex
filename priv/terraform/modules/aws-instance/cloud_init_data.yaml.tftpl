@@ -19,7 +19,7 @@ write_files:
 
       APP_NAME="${app_name}"
       ENVIRONMENT="${environment}"
-      BUCKET_NAME="cfx-deploys-$${ENVIRONMENT}"
+      BUCKET_NAME="${bucket_name}"
       APP_PORT="${app_port}"
 
       echo "Starting deployment for $${APP_NAME} in $${ENVIRONMENT}"
@@ -135,6 +135,43 @@ write_files:
 
       echo "Deployment complete!"
       systemctl status $${APP_NAME} --no-pager || true
+
+  - path: /usr/local/sbin/associate-eip.sh
+    permissions: '0755'
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      exec > >(tee -a /var/log/associate-eip.log) 2>&1
+
+      EIP_ALLOCATION_ID="${eip_allocation_id}"
+
+      if [ -z "$${EIP_ALLOCATION_ID}" ]; then
+        echo "[eip] No EIP allocation ID provided; skipping."
+        exit 0
+      fi
+
+      for i in {1..60}; do
+        if curl -fsS --max-time 2 http://169.254.169.254/latest/meta-data/ >/dev/null; then
+          echo "[eip] IMDS OK"
+          break
+        fi
+        echo "[eip] Waiting for IMDS... ($i/60)"
+        sleep 2
+      done
+
+      INSTANCE_ID=$(curl -fsS http://169.254.169.254/latest/meta-data/instance-id)
+      REGION=$(curl -fsS http://169.254.169.254/latest/meta-data/placement/region)
+
+      echo "[eip] Associating EIP $${EIP_ALLOCATION_ID} with instance $${INSTANCE_ID} in $${REGION}..."
+      aws ec2 associate-address \
+        --region "$${REGION}" \
+        --instance-id "$${INSTANCE_ID}" \
+        --allocation-id "$${EIP_ALLOCATION_ID}" \
+        --allow-reassociation \
+        && echo "[eip] EIP associated successfully" \
+        || echo "[eip] Failed to associate EIP"
 
   - path: /usr/local/sbin/trigger-github-setup.sh
     permissions: '0755'
@@ -290,5 +327,6 @@ write_files:
 
 runcmd:
   - /usr/local/sbin/prepare-ebs-volume.sh
+  - /usr/local/sbin/associate-eip.sh
   - /usr/local/sbin/trigger-github-setup.sh
   - /usr/local/sbin/deploy-app.sh

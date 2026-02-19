@@ -42,10 +42,11 @@ module "ec2_instance" {
   instance_ebs_secondary_snapshot_id = try(each.value.ebs.secondary_snapshot_id, null)
 
 
-  enable_eip        = try(each.value.enable_eip, null)
-  enable_ebs        = try(each.value.ebs.enable_secondary, null)
-  enable_elb        = try(each.value.load_balancer.enable, null)
-  enable_elb_https  = try(each.value.load_balancer.enable_https, null)
+  enable_eip                            = try(each.value.enable_eip, null)
+  preserve_eip_for_single_instance_asg  = try(each.value.preserve_eip_for_single_instance_asg, null)
+  enable_ebs                            = try(each.value.ebs.enable_secondary, null)
+  enable_elb                            = try(each.value.load_balancer.enable, null)
+  enable_elb_https                      = try(each.value.load_balancer.enable_https, null)
 
   disable_public_ip = try(each.value.disable_public_ip, null)
   disable_ipv6      = try(var.disable_ipv6, each.value.disable_ipv6, null)
@@ -71,6 +72,8 @@ module "ec2_instance" {
   autoscaling_ignore_capacity_changes      = try(each.value.autoscaling.ignore_capacity_changes, null)
   autoscaling_switch_disable_delay_minutes = try(each.value.autoscaling.switch_disable_delay_minutes, null)
   autoscaling_templates                    = try(each.value.autoscaling.templates, null)
+
+  release_bucket_name = aws_s3_bucket.bucket["releases"].id
 
   app_port       = try(each.value.app_port, null)
   use_latest_ami = try(each.value.use_latest_ami, null)

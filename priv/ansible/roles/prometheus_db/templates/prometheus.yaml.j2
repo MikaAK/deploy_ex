@@ -25,8 +25,8 @@ scrape_configs:
             values:
               - {{ env }}
     relabel_configs:
-      - source_labels:
-          - '__meta_ec2_tag_Name'
-          - '__meta_ec2_instance_id'
-        separator: ' - '
+      - source_labels: [__meta_ec2_tag_Name]
         target_label: 'instance'
+
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: 'instance_id'

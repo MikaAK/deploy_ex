@@ -166,12 +166,14 @@ resource "aws_instance" "ec2_instance" {
 
   user_data_replace_on_change = true
   user_data = templatefile("${path.module}/cloud_init_data.yaml.tftpl", {
-    app_name     = local.snake_instance_name
-    environment  = var.environment
-    app_port     = var.app_port
-    volume_id    = var.enable_ebs ? aws_ebs_volume.ec2_ebs[count.index].id : ""
-    github_token = var.github_token
-    github_repo  = var.github_repo
+    app_name          = local.snake_instance_name
+    environment       = var.environment
+    app_port          = var.app_port
+    bucket_name       = var.release_bucket_name
+    volume_id         = var.enable_ebs ? aws_ebs_volume.ec2_ebs[count.index].id : ""
+    eip_allocation_id = ""
+    github_token      = var.github_token
+    github_repo       = var.github_repo
   })
 
   tags = merge({
@@ -242,6 +244,21 @@ resource "aws_eip_association" "ec2_eip_association" {
 
   instance_id   = aws_instance.ec2_instance[count.index].id
   allocation_id = aws_eip.ec2_eip[count.index].id
+}
+
+resource "aws_eip" "asg_preserved_eip" {
+  count = var.enable_autoscaling && var.preserve_eip_for_single_instance_asg ? 1 : 0
+
+  domain = "vpc"
+  tags = merge({
+    Name          = "${local.kebab_instance_name}-asg-eip-${var.environment}"
+    InstanceGroup = local.snake_instance_name
+    Group         = var.resource_group
+    Environment   = var.environment
+    Vendor        = "Self"
+    Type          = "Self Made"
+    ManagedBy     = "DeployEx"
+  }, var.tags)
 }
 
 ### Elastic LB Start ###
@@ -384,7 +401,7 @@ data "aws_instances" "autoscaling_instances" {
 resource "aws_launch_template" "ec2_lt" {
   count = var.enable_autoscaling && !local.use_autoscaling_templates ? 1 : 0
 
-  name_prefix   = "${local.kebab_instance_name}-lt-"
+  name_prefix   = "${local.kebab_instance_name}-lt-${var.environment}-"
   image_id      = local.selected_ami
   instance_type = var.instance_type
   key_name      = var.key_pair_key_name
@@ -447,12 +464,14 @@ resource "aws_launch_template" "ec2_lt" {
     templatefile(
       "${path.module}/cloud_init_data.yaml.tftpl",
       {
-        app_name     = local.snake_instance_name
-        environment  = var.environment
-        app_port     = var.app_port
-        volume_id    = "" # Autoscaling instances handle volume attachment separately
-        github_token = var.github_token
-        github_repo  = var.github_repo
+        app_name          = local.snake_instance_name
+        environment       = var.environment
+        app_port          = var.app_port
+        bucket_name       = var.release_bucket_name
+        volume_id         = "" # Autoscaling instances handle volume attachment separately
+        eip_allocation_id = var.preserve_eip_for_single_instance_asg ? aws_eip.asg_preserved_eip[0].id : ""
+        github_token      = var.github_token
+        github_repo       = var.github_repo
       }
     )
   )
@@ -605,12 +624,14 @@ resource "aws_launch_template" "ec2_lt_templates" {
     templatefile(
       "${path.module}/cloud_init_data.yaml.tftpl",
       {
-        app_name     = local.snake_instance_name
-        environment  = var.environment
-        app_port     = var.app_port
-        volume_id    = ""
-        github_token = var.github_token
-        github_repo  = var.github_repo
+        app_name          = local.snake_instance_name
+        environment       = var.environment
+        app_port          = var.app_port
+        bucket_name       = var.release_bucket_name
+        volume_id         = ""
+        eip_allocation_id = var.preserve_eip_for_single_instance_asg ? aws_eip.asg_preserved_eip[0].id : ""
+        github_token      = var.github_token
+        github_repo       = var.github_repo
       }
     )
   )

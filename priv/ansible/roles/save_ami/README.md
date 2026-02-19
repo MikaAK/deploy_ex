@@ -72,7 +72,7 @@ All instances (autoscaling and regular) can boot from pre-configured AMIs instea
 
 ```yaml
 app_name: ""        # Application name (required)
-environment: ""     # Environment (dev/staging/prod, required)
+env: ""     # Environment (dev/staging/prod, required)
 ```
 
 ## IAM Permissions Required

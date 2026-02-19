@@ -116,6 +116,8 @@ variable "<%= @app_name %>_project" {
     disable_ipv6      = optional(bool)
     disable_public_ip = optional(bool)
 
+    preserve_eip_for_single_instance_asg = optional(bool)
+
     load_balancer = optional(object({
       enable       = optional(bool)
       enable_https = optional(bool)
@@ -175,6 +177,9 @@ variable "<%= @app_name %>_project" {
         })))
       })))
     }))
+
+    app_port       = optional(number)
+    use_latest_ami = optional(bool)
 
     tags = optional(map(string))
   }))

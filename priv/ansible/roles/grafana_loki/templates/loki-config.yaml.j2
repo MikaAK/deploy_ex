@@ -33,7 +33,7 @@ storage_config:
   tsdb_shipper:
     active_index_directory: /data/loki/index
     cache_location: /data/loki/index_cache
-,   cache_ttl: 24h
+    cache_ttl: 24h
   aws:
     bucketnames: {{ loki_logger_s3_bucket_name }}
     endpoint: s3.{{ loki_logger_s3_region }}.amazonaws.com

@@ -63,6 +63,13 @@ variable "enable_eip" {
   nullable    = false
 }
 
+variable "preserve_eip_for_single_instance_asg" {
+  description = "When enabled with autoscaling, creates an EIP and auto-associates it on instance launch for single-instance ASGs"
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "tags" {
   description = "Tags to add to the various resources"
   type        = map(any)
@@ -307,6 +314,12 @@ variable "autoscaling_templates" {
   }))
   default  = null
   nullable = true
+}
+
+variable "release_bucket_name" {
+  description = "Name of the S3 bucket containing release artifacts"
+  type        = string
+  nullable    = false
 }
 
 variable "app_port" {
