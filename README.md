@@ -23,6 +23,7 @@ Under the default commands you will gain the following services (all of which ca
   - [Usage with Deploy Node](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#usage-with-deploy-node)
   - [Changes Over Time](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#changes-over-time)
   - [Multiple Phoenix Apps](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#multiple-phoenix-apps)
+- [Redeploy Config](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#redeploy-config)
 - [Commands](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#commands)
 - [Univiersal Options](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#universial-options)
 - [Terraform Variables](https://github.com/MikaAK/deploy_ex?tab=readme-ov-file#terraform-variables)
@@ -145,6 +146,65 @@ config :deploy_ex,
 - `deploy_folder` - Local folder for deployment files (default: `"./deploys"`)
 - `aws_names_include_env` - Whether AWS resource names include the environment (e.g., `myapp-prod-sg` vs `myapp-sg`). Set to `true` if your Terraform creates resources with environment in the name. (default: `false`)
 
+### Redeploy Config
+
+You can control which file changes trigger a redeploy for each app within a release using the `redeploy_config` option under the `:deploy_ex` key in your release configuration. This is useful when a release bundles multiple apps but you only want certain file changes to trigger a rebuild.
+
+Patterns are regex strings (or `~r` sigils) matched against file paths from `git diff --name-only`. Paths are relative to the repo root (e.g. `apps/my_app/lib/my_app.ex`), with no leading `/`.
+
+#### Whitelist
+
+Only redeploy when changed files match at least one whitelist pattern. All other changes (including config, root `mix.exs`, and dependency changes) are ignored for that app.
+
+```elixir
+releases: [
+  my_web: [
+    steps: [:assemble, :tar],
+    deploy_ex: [
+      redeploy_config: [my_service: [
+        whitelist: [
+          ~r/apps\/my_service\/lib\/my_service\.ex$/,
+          ~r/apps\/my_service\/lib\/my_service\/critical_module\.ex$/
+        ]
+      ]]
+    ],
+    applications: [my_web: :permanent, my_service: :permanent]
+  ]
+]
+```
+
+In this example, the `my_web` release will only be rebuilt due to `my_service` changes if `my_service.ex` or `critical_module.ex` changed. Changes to other files inside `my_service` are ignored. The `my_web` app itself (which has no redeploy_config) still triggers on any change normally.
+
+#### Blacklist
+
+Ignore file changes matching blacklist patterns. If **all** changed files for an app match the blacklist, no redeploy is triggered for that app. If any non-blacklisted files also changed, normal redeploy logic applies. Dependency changes (mix.lock) still trigger redeployment.
+
+```elixir
+releases: [
+  my_web: [
+    steps: [:assemble, :tar],
+    deploy_ex: [
+      redeploy_config: [my_service: [
+        blacklist: [
+          ~r/apps\/my_service\/test\//,
+          ~r/\.md$/
+        ]
+      ]]
+    ],
+    applications: [my_web: :permanent, my_service: :permanent]
+  ]
+]
+```
+
+In this example, test file and markdown changes inside `my_service` are ignored. Any other file change in `my_service` still triggers a redeploy.
+
+#### Key Behaviors
+
+- **Per-app scoping**: Each app within a release can have its own whitelist or blacklist. Apps without config use default behavior (any change triggers redeploy).
+- **Whitelist suppresses dependency changes**: When an app has a whitelist, hex dependency changes (`mix.lock`) will not trigger a redeploy for that app.
+- **Blacklist preserves dependency changes**: Hex dependency changes still trigger a redeploy for blacklisted apps.
+- **Patterns are regexes**: Use `~r` sigils or string patterns (compiled via `Regex.compile!/1`).
+
 ### Usage with Github Actions
 ***Note: This doesn't work properly with branch protections, to do
 so you'll need to modify the GH action to bypass branch protections***
@@ -183,36 +243,82 @@ env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
 ```
 
 ## Commands
-- [x] `mix deploy_ex.full_setup` - Runs all the commands to initialize and setup your project
-- [x] `mix deploy_ex.full_drop` - Runs all the commands to drop and remove the `./deploy` folder
-- [x] `mix deploy_ex.upload` - Deploys your `mix release` to s3
-- [x] `mix deploy_ex.install_github_action` - Deploys your `mix release` to s3
-- [x] `mix deploy_ex.ssh` - Gets the ssh command for a specific node
-- [x] `mix deploy_ex.remake` - Replaces a node and redoes setup before deploying the latest code
-- [x] `mix deploy_ex.stop_app` - Stops the systemd service for an app, stops it without shutting down the server
-- [x] `mix deploy_ex.start_app` - Starts the systemd service for an app,
-- [x] `mix deploy_ex.restart_app` - Restarts the systemd service for an app
-- [x] `mix deploy_ex.restart_machine` - Stops and starts the aws instance potentially moving the hardware to a different machine in the cloud
-- [x] `mix terraform.build` - Add the terraform files to project, or rebuilds them
-- [x] `mix terraform.apply` - Applies terraform changes
-- [x] `mix terraform.refresh` - Refreshes terraform state to pull new IPs and sync with AWS
-- [x] `mix terraform.replace` - Replaces a resource within terraform, has fuzzy matching nodes (uses AWS API for instance discovery)
-- [x] `mix terraform.drop` - Destroys all terraform built resources
-- [x] `mix ansible.build` - Adds ansible files to the project, or rebuilds them
-- [x] `mix ansible.ping` - Pings ansible nodes to see if they can connect
-- [x] `mix ansible.setup` - Runs basic setup on the ansible nodes
-- [x] `mix ansible.deploy` - Deploys to your nodes via ansible from uploaded S3 releases (use `--qa` to target only QA nodes, `--include-qa` to include QA nodes)
-- [x] `mix ansible.rollback` - Rollback to a prior release
-- [x] `mix deploy_ex.list_available_releases` - Lists all available releases in the configured AWS S3 release bucket
-- [x] `mix deploy_ex.list_app_release_history` - Shows the release history for a specific app by SSHing into the node
-- [x] `mix deploy_ex.view_current_release` - Shows the current (latest) release for a specific app by SSHing into the node
-- [x] `mix deploy_ex.instance.status` - Displays detailed instance status including autoscaling, IPs, load balancer health, and tags
-- [x] `mix deploy_ex.instance.health` - Shows EC2 instance health status with system and instance checks
-- [x] `mix deploy_ex.load_balancer.health` - Shows load balancer target group health status
-- [x] `mix deploy_ex.find_nodes` - Find EC2 instances by app name or tags
-- [x] `mix deploy_ex.download_file` - Download a file from a remote instance via SCP
-- [x] `mix deploy_ex.release` - Build and optionally upload releases
-- [x] `mix deploy_ex.install_migration_script` - Install database migration script for releases
+
+### DeployEx Core
+- `mix deploy_ex` - Lists all available deploy_ex commands
+- `mix deploy_ex.full_setup` - Performs complete infrastructure and application setup using Terraform and Ansible
+- `mix deploy_ex.full_drop` - Completely removes DeployEx configuration and files from the project
+- `mix deploy_ex.install_github_action` - Installs GitHub Actions for automated infrastructure and deployment management
+- `mix deploy_ex.install_migration_script` - Installs migration scripts for running Ecto migrations in releases
+- `mix deploy_ex.release` - Builds releases for applications with detected changes
+- `mix deploy_ex.upload` - Uploads your release folder to Amazon S3
+
+### Application Management
+- `mix deploy_ex.restart_app` - Restarts a specific application's systemd service
+- `mix deploy_ex.restart_machine` - Restarts EC2 instances for a specific application
+- `mix deploy_ex.remake` - Replaces and redeploys a specific application node
+- `mix deploy_ex.stop_app` - Stops a specific application's systemd service
+- `mix deploy_ex.start_app` - Starts a specific application's systemd service
+
+### Connectivity & Inspection
+- `mix deploy_ex.ssh` - SSH into a specific app's remote node
+- `mix deploy_ex.ssh.authorize` - Add or remove SSH authorization to the internal network for specific IPs
+- `mix deploy_ex.download_file` - Downloads a file from a remote server using SCP
+- `mix deploy_ex.find_nodes` - Find EC2 instances by tags
+- `mix deploy_ex.select_node` - Select an EC2 instance and output its instance ID
+
+### Release Information
+- `mix deploy_ex.list_app_release_history` - Lists the release history for a specific app from S3
+- `mix deploy_ex.list_available_releases` - Lists all available releases uploaded to the release bucket
+- `mix deploy_ex.view_current_release` - Shows the current (latest) release for a specific app from S3
+
+### Instance & Load Balancer Health
+- `mix deploy_ex.instance.status` - Displays instance status for an application
+- `mix deploy_ex.instance.health` - Shows health status of EC2 instances
+- `mix deploy_ex.load_balancer.health` - Check load balancer health status for all instances
+
+### Autoscaling
+- `mix deploy_ex.autoscale.status` - Displays autoscaling group status for an application
+- `mix deploy_ex.autoscale.scale` - Manually set desired capacity of an autoscaling group
+- `mix deploy_ex.autoscale.refresh` - Triggers an instance refresh to recreate autoscaling instances
+- `mix deploy_ex.autoscale.refresh_status` - Shows the status of instance refreshes for an autoscaling group
+
+### QA Nodes
+- `mix deploy_ex.qa` - Overview of QA node commands and usage
+- `mix deploy_ex.qa.create` - Creates a new QA node with a specific SHA
+- `mix deploy_ex.qa.destroy` - Destroys a QA node
+- `mix deploy_ex.qa.list` - Lists all active QA nodes
+- `mix deploy_ex.qa.deploy` - Deploys a specific SHA to an existing QA node
+- `mix deploy_ex.qa.attach_lb` - Attaches a QA node to the app's load balancer
+- `mix deploy_ex.qa.detach_lb` - Detaches a QA node from the load balancer
+- `mix deploy_ex.qa.cleanup` - Cleans up orphaned QA nodes
+
+### Ansible
+- `mix ansible.build` - Builds ansible files into your repository
+- `mix ansible.deploy` - Deploys to ansible hosts (use `--qa` for QA-only, `--include-qa` to include QA nodes)
+- `mix ansible.ping` - Pings all configured Ansible hosts
+- `mix ansible.rollback` - Rolls back an ansible host to a previous SHA
+- `mix ansible.setup` - Initial setup and configuration of Ansible hosts
+
+### Terraform
+- `mix terraform.apply` - Applies terraform changes to provision AWS infrastructure
+- `mix terraform.build` - Builds/Updates terraform files or adds it to your project
+- `mix terraform.init` - Initializes terraform in the project directory
+- `mix terraform.plan` - Shows terraform's potential changes if you were to apply
+- `mix terraform.output` - Displays terraform output values
+- `mix terraform.refresh` - Refreshes terraform state to sync with actual AWS resources
+- `mix terraform.replace` - Runs terraform replace with a node
+- `mix terraform.drop` - Destroys all resources built by terraform
+- `mix terraform.generate_pem` - Extracts the PEM file from Terraform state and saves it locally
+- `mix terraform.show_password` - Shows passwords for databases in the cluster
+- `mix terraform.dump_database` - Dumps a database from RDS through a jump server
+- `mix terraform.restore_database` - Restores a database dump to either RDS or local PostgreSQL
+- `mix terraform.create_ebs_snapshot` - Creates an EBS snapshot for a specified app
+- `mix terraform.delete_ebs_snapshot` - Deletes EBS snapshots for a specified app or by snapshot IDs
+- `mix terraform.create_state_bucket` - Creates a bucket within S3 to host the terraform state file
+- `mix terraform.create_state_lock_table` - Creates a DynamoDB table for Terraform state locking
+- `mix terraform.drop_state_bucket` - Drops the S3 bucket used to host the Terraform state file
+- `mix terraform.drop_state_lock_table` - Drops the DynamoDB table used for Terraform state locking
 
 ## Universial Options
 Most of these are available on any command in DeployEx

@@ -1,5 +1,5 @@
 defmodule DeployEx.ReleaseUploader.UpdateValidator do
-  alias DeployEx.ReleaseUploader.UpdateValidator.{MixDepsTreeParser, MixLockFileDiffParser}
+  alias DeployEx.ReleaseUploader.{RedeployConfig, UpdateValidator.MixDepsTreeParser, UpdateValidator.MixLockFileDiffParser}
 
   @max_git_diff_concurrency 2
 
@@ -131,15 +131,18 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
     app_name: release_app_name,
     sha: current_sha,
     last_sha: last_sha,
-    release_apps: release_apps
+    release_apps: release_apps,
+    redeploy_config: redeploy_config
   }, file_diffs_by_sha_tuple) do
     file_diffs = Map.get(file_diffs_by_sha_tuple, {current_sha, last_sha}) || []
 
     Enum.any?(file_diffs) && Enum.any?(release_apps, fn app_name ->
-      root_mix_exs_change? = Enum.any?(file_diffs, &(&1 === "mix.exs"))
-      code_change? = Enum.any?(file_diffs, &file_part_of_app(&1, app_name))
-      config_change? = Enum.any?(file_diffs, &config_file?(&1))
-      rel_file_change? = Enum.any?(file_diffs, &rel_file?(&1))
+      filtered_diffs = RedeployConfig.filter_file_diffs(file_diffs, app_name, redeploy_config)
+
+      root_mix_exs_change? = Enum.any?(filtered_diffs, &(&1 === "mix.exs"))
+      code_change? = Enum.any?(filtered_diffs, &file_part_of_app(&1, app_name))
+      config_change? = Enum.any?(filtered_diffs, &config_file?(&1))
+      rel_file_change? = Enum.any?(filtered_diffs, &rel_file?(&1))
 
       changes = if config_change?, do: ["config"], else: []
       changes = if root_mix_exs_change?, do: ["root mix.exs" | changes], else: changes
@@ -194,22 +197,27 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
     app_name: release_app_name,
     sha: current_sha,
     last_sha: last_sha,
-    release_apps: release_apps
+    release_apps: release_apps,
+    redeploy_config: redeploy_config
   }, dep_changes_by_sha_tuple, app_dep_tree) do
     dep_changes = Map.get(dep_changes_by_sha_tuple, {current_sha, last_sha}) || []
 
     Enum.any?(release_apps, fn app_name ->
-      dep_changes? = Enum.any?(app_dep_tree[app_name] || [], fn app_dep_name ->
-        Enum.any?(dep_changes, &(&1 === app_dep_name))
-      end)
+      if RedeployConfig.has_whitelist?(app_name, redeploy_config) do
+        false
+      else
+        dep_changes? = Enum.any?(app_dep_tree[app_name] || [], fn app_dep_name ->
+          Enum.any?(dep_changes, &(&1 === app_dep_name))
+        end)
 
-      if dep_changes? do
-        IO.puts(to_string(IO.ANSI.format([
-          :green, "* #{release_app_app_name_string(release_app_name, app_name)} has dependency changes"
-        ])))
+        if dep_changes? do
+          IO.puts(to_string(IO.ANSI.format([
+            :green, "* #{release_app_app_name_string(release_app_name, app_name)} has dependency changes"
+          ])))
+        end
+
+        dep_changes?
       end
-
-      dep_changes?
     end)
   end
 
@@ -217,12 +225,14 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
     app_name: release_app_name,
     sha: current_sha,
     last_sha: last_sha,
-    release_apps: release_apps
+    release_apps: release_apps,
+    redeploy_config: redeploy_config
   }, file_diffs_by_sha_tuple, app_dep_tree) do
     Enum.any?(release_apps, fn app_name ->
       file_diffs = Map.get(file_diffs_by_sha_tuple, {current_sha, last_sha}) || []
+      filtered_diffs = RedeployConfig.filter_file_diffs(file_diffs, app_name, redeploy_config)
       app_deps = app_dep_tree[app_name] || []
-      changed_apps = Enum.map(file_diffs, &String.replace(&1, ~r/^apps\/([a-z0-9_]+)\/.*/, "\\1"))
+      changed_apps = Enum.map(filtered_diffs, &String.replace(&1, ~r/^apps\/([a-z0-9_]+)\/.*/, "\\1"))
 
       local_dep_changes? = Enum.any?(changed_apps) and Enum.any?(changed_apps, &(&1 in app_deps))
 

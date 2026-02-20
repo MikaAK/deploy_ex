@@ -3,9 +3,20 @@ defmodule Mix.Tasks.Terraform.Output do
 
   @terraform_default_path DeployEx.Config.terraform_folder_path()
 
-  @shortdoc "Gets terraform output"
+  @shortdoc "Displays terraform output values"
   @moduledoc """
-  Gets the results from terraform.output command
+  Displays output values from the Terraform state, such as instance IPs, database endpoints, and other
+  configured outputs.
+
+  ## Example
+  ```bash
+  mix terraform.output
+  mix terraform.output --short
+  ```
+
+  ## Options
+  - `directory` - Terraform directory path (default: #{@terraform_default_path})
+  - `short` - Output as JSON for scripting (alias: `s`)
   """
 
   def run(args) do

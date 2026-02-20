@@ -3,9 +3,18 @@ defmodule Mix.Tasks.Terraform.Refresh do
 
   @terraform_default_path DeployEx.Config.terraform_folder_path()
 
-  @shortdoc "Refreshes terraform and fetches new public ips for example if they've changed"
+  @shortdoc "Refreshes terraform state to sync with actual AWS resources"
   @moduledoc """
-  Refreshes terraform and fetches new public ips for example if they've changed
+  Refreshes the Terraform state to sync with actual AWS resources. Useful when
+  instance IPs or other attributes have changed outside of Terraform.
+
+  ## Example
+  ```bash
+  mix terraform.refresh
+  ```
+
+  ## Options
+  - `directory` - Terraform directory path (default: #{@terraform_default_path})
   """
 
   def run(args) do

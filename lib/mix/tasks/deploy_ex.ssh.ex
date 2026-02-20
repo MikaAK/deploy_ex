@@ -3,7 +3,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
   @terraform_default_path DeployEx.Config.terraform_folder_path()
 
-  @shortdoc "Ssh into a specific apps remote node"
+  @shortdoc "SSH into a specific app's remote node"
   @moduledoc """
   Establishes an SSH connection to a remote application node.
 

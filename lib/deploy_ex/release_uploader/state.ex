@@ -1,10 +1,11 @@
 defmodule DeployEx.ReleaseUploader.State do
   @enforce_keys [:local_file, :sha, :app_name]
-  defstruct @enforce_keys ++ [:name, :last_sha, :remote_file, :release_apps]
+  defstruct @enforce_keys ++ [:name, :last_sha, :remote_file, :release_apps, :redeploy_config]
 
 
   def build(local_releases, remote_releases, git_sha, opts \\ []) do
     {:ok, release_apps_map} = DeployExHelpers.release_apps_by_release_name()
+    {:ok, redeploy_config_map} = DeployExHelpers.redeploy_config_by_release_name()
     release_prefix = release_prefix(opts)
 
     Enum.map(local_releases, fn release_file_path ->
@@ -18,7 +19,8 @@ defmodule DeployEx.ReleaseUploader.State do
         name: remote_file_name_for_release(release_file_path, git_sha, release_prefix),
         remote_file: remote_file,
         last_sha: last_sha_from_remote_file(remote_releases, app_name, release_prefix),
-        release_apps: release_apps_map[String.to_atom(app_name)]
+        release_apps: release_apps_map[String.to_atom(app_name)],
+        redeploy_config: redeploy_config_map[String.to_atom(app_name)] || %{}
       }
     end)
   end

@@ -3,9 +3,19 @@ defmodule Mix.Tasks.Terraform.Init do
 
   @terraform_default_path DeployEx.Config.terraform_folder_path()
 
-  @shortdoc "Runs terraform init"
+  @shortdoc "Initializes terraform in the project directory"
   @moduledoc """
-  Runs terraform init
+  Runs `terraform init` to initialize the working directory containing Terraform configuration files.
+
+  ## Example
+  ```bash
+  mix terraform.init
+  mix terraform.init --upgrade
+  ```
+
+  ## Options
+  - `directory` - Terraform directory path (default: #{@terraform_default_path})
+  - `upgrade` - Upgrade modules and plugins (alias: `u`)
   """
 
   def run(args) do

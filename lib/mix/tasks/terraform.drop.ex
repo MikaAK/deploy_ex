@@ -5,7 +5,21 @@ defmodule Mix.Tasks.Terraform.Drop do
 
   @shortdoc "Destroys all resources built by terraform"
   @moduledoc """
-  Destroys all resources built by terraform
+  Destroys all AWS infrastructure resources managed by Terraform.
+
+  This is a destructive operation that will tear down all provisioned resources
+  including EC2 instances, load balancers, security groups, and other infrastructure.
+
+  ## Example
+  ```bash
+  mix terraform.drop
+  mix terraform.drop --auto-approve
+  ```
+
+  ## Options
+  - `directory` - Terraform directory path (default: #{@terraform_default_path})
+  - `auto_approve` - Skip confirmation prompts (alias: `y`)
+  - `target` - Target specific app resources (can be used multiple times)
   """
 
   def run(args) do

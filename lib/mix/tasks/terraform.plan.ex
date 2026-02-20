@@ -3,16 +3,21 @@ defmodule Mix.Tasks.Terraform.Plan do
 
   @terraform_default_path DeployEx.Config.terraform_folder_path()
 
-  @shortdoc "Shows terraforms potential changes if you were to apply"
+  @shortdoc "Shows terraform's potential changes if you were to apply"
   @moduledoc """
-  Deploys with terraform to AWS
+  Runs `terraform plan` to preview infrastructure changes without applying them.
+
+  ## Example
+  ```bash
+  mix terraform.plan
+  mix terraform.plan --target my_app
+  ```
 
   ## Options
-  - `directory` - Set the directory for terraform (defaults to #{@terraform_default_path})
-  - `force` - Force create things without asking
-  - `quiet` - Don't output messages
-  - `auto_approve` - Automatically say yes when applying
-  - `var-file` - Set a specific variables file
+  - `directory` - Terraform directory path (default: #{@terraform_default_path})
+  - `quiet` - Suppress output messages
+  - `var-file` - Path to a Terraform variables file
+  - `target` - Target specific app resources (can be used multiple times)
   """
 
   def run(args) do

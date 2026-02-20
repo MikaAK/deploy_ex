@@ -3,16 +3,24 @@ defmodule Mix.Tasks.Terraform.Apply do
 
   @terraform_default_path DeployEx.Config.terraform_folder_path()
 
-  @shortdoc "Deploys to terraform resources using ansible"
+  @shortdoc "Applies terraform changes to provision AWS infrastructure"
   @moduledoc """
-  Deploys with terraform to AWS
+  Applies terraform changes to provision or update AWS infrastructure.
+
+  ## Example
+  ```bash
+  mix terraform.apply
+  mix terraform.apply --auto-approve
+  mix terraform.apply --target my_app
+  ```
 
   ## Options
-  - `directory` - Set the directory for terraform (defaults to #{@terraform_default_path})
-  - `force` - Force create things without asking
-  - `quiet` - Don't output messages
-  - `auto_approve` - Automatically say yes when applying
-  - `var-file` - Set a specific variables file
+  - `directory` - Terraform directory path (default: #{@terraform_default_path})
+  - `force` - Force apply without asking
+  - `quiet` - Suppress output messages
+  - `auto_approve` - Skip confirmation prompts (alias: `y`)
+  - `var-file` - Path to a Terraform variables file
+  - `target` - Target specific app resources (can be used multiple times)
   """
 
   def run(args) do

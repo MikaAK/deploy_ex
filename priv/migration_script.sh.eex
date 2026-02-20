@@ -1,3 +1,47 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-/srv/<%= @app_name %>/bin/<%= @app_name %> rpc "Ecto.Migrator.run(<%= @repo %>, Path.join(:code.priv_dir(:<%= @migration_app %>), <%= migration_path %>), :up, all: true)"
+COMMAND="${1:-migrate}"
+APP_BIN="/srv/<%= @app_name %>/bin/<%= @app_name %>"
+
+case "$COMMAND" in
+  migrate)
+    $APP_BIN eval "
+      <%= for app <- @apps do %>
+      Application.load(:<%= app %>)<%= end %>
+
+      <%= inspect(@apps) %>
+      |> Enum.flat_map(fn app ->
+        case Application.fetch_env(app, :ecto_repos) do
+          {:ok, repos} -> repos
+          :error -> []
+        end
+      end)
+      |> Enum.each(fn repo ->
+        {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :up, all: true))
+      end)
+    "
+    ;;
+  rollback)
+    VERSION="${2:?Usage: $0 rollback VERSION}"
+    $APP_BIN eval "
+      <%= for app <- @apps do %>
+      Application.load(:<%= app %>)<%= end %>
+
+      <%= inspect(@apps) %>
+      |> Enum.flat_map(fn app ->
+        case Application.fetch_env(app, :ecto_repos) do
+          {:ok, repos} -> repos
+          :error -> []
+        end
+      end)
+      |> Enum.each(fn repo ->
+        {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :down, to: $VERSION))
+      end)
+    "
+    ;;
+  *)
+    echo "Usage: $0 {migrate|rollback VERSION}"
+    exit 1
+    ;;
+esac

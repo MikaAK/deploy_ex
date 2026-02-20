@@ -1,5 +1,8 @@
 
 defmodule Mix.Tasks.Terraform.GeneratePem do
+  use Mix.Task
+
+  @shortdoc "Extracts the PEM file from Terraform state and saves it locally"
   @moduledoc """
   Extracts the PEM file and key name from the Terraform state and saves it to a file.
 

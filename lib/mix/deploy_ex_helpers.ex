@@ -14,6 +14,16 @@ defmodule DeployExHelpers do
     end
   end
 
+  def redeploy_config_by_release_name do
+    with {:ok, releases} <- fetch_mix_releases() do
+      {:ok, Enum.map(releases, fn {key, opts} ->
+        deploy_ex_opts = opts[:deploy_ex] || []
+
+        {key, DeployEx.ReleaseUploader.RedeployConfig.from_keyword(deploy_ex_opts[:redeploy_config])}
+      end)}
+    end
+  end
+
   def project_name, do: Mix.Project.get() |> Module.split |> hd
   def underscored_project_name, do: Macro.underscore(project_name())
   def kebab_project_name, do: String.replace(underscored_project_name(), "_", "-")

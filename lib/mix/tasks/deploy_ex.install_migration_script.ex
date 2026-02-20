@@ -1,71 +1,60 @@
 defmodule Mix.Tasks.DeployEx.InstallMigrationScript do
   use Mix.Task
 
-  @terraform_default_path DeployEx.Config.terraform_folder_path()
+  @scripts_default_path Path.join(DeployEx.Config.deploy_folder(), "scripts")
+  @migration_script_template_path DeployExHelpers.priv_file("migration_script.sh.eex")
 
-  @github_action_path "./.github/workflows/deploy-ex-release.yml"
-  @github_action_template_path DeployExHelpers.priv_file("github-action.yml.eex")
-
-  @github_action_scripts_paths [{
-    DeployExHelpers.priv_file("github-action-maybe-commit-terraform-changes.sh"),
-    "./.github/github-action-maybe-commit-terraform-changes.sh"
-  }, {
-    DeployExHelpers.priv_file("github-action-secrets-to-env.sh"),
-    "./.github/github-action-secrets-to-env.sh"
-  }]
-
-  @shortdoc "Installs a migration script for managing database migrations during deployment"
+  @shortdoc "Installs migration scripts for running Ecto migrations in releases"
   @moduledoc """
-  Installs a script that helps manage database migrations during the deployment process.
-  This script ensures migrations are run safely and consistently across all database nodes.
+  Generates shell scripts for running Ecto database migrations in release deployments.
 
-  The migration script handles:
-  - Checking if migrations are needed
-  - Running migrations in the correct order
-  - Handling rollbacks if migrations fail
-  - Coordinating migrations across multiple database nodes
-  - Logging migration results
+  For each configured release, a migration script is generated that uses
+  `Ecto.Migrator.with_repo/3` to safely run migrations via `bin/<app> eval`.
+  The scripts discover `:ecto_repos` from each application at runtime.
+
+  Each generated script supports two commands:
+  - `migrate` - Runs all pending migrations (default)
+  - `rollback VERSION` - Rolls back to the given migration version
 
   ## Example
   ```bash
   mix deploy_ex.install_migration_script
+
+  # Then on the server:
+  ./deploys/scripts/migrate-my_app.sh migrate
+  ./deploys/scripts/migrate-my_app.sh rollback 20240101120000
   ```
 
   ## Options
-  - `force` - Overwrite existing migration script if present (alias: `f`)
+  - `force` - Overwrite existing migration scripts if present (alias: `f`)
   - `quiet` - Suppress output messages (alias: `q`)
-  - `pem_directory` - Custom directory containing SSH keys (alias: `d`)
-  - `pem` - SSH key file (alias: `p`)
+  - `directory` - Output directory for scripts (default: `./deploys/scripts`) (alias: `d`)
   """
 
   def run(args) do
     opts = args
-      |> parse_args
-      |> Keyword.put_new(:pem_directory, @terraform_default_path)
+      |> parse_args()
+      |> Keyword.put_new(:directory, @scripts_default_path)
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
-         {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
-         {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:pem_directory], opts[:pem]) do
-      @github_action_path |> Path.dirname |> File.mkdir_p!
+         {:ok, releases} <- DeployExHelpers.release_apps_by_release_name() do
+      File.mkdir_p!(opts[:directory])
 
-      DeployExHelpers.write_template(
-        @github_action_template_path,
-        @github_action_path,
-        %{
-          app_names: releases |> Keyword.keys |> Enum.map(&to_string/1),
-          pem_file_path: pem_file_path
-        },
-        opts
-      )
+      Enum.each(releases, fn {release_name, apps} ->
+        app_name = to_string(release_name)
+        output_path = Path.join(opts[:directory], "migrate-#{app_name}.sh")
 
-      Enum.each(@github_action_scripts_paths, fn {input_path, output_path} ->
-        DeployExHelpers.check_file_exists!(input_path)
-
-        DeployExHelpers.write_file(
+        DeployExHelpers.write_template(
+          @migration_script_template_path,
           output_path,
-          File.read!(input_path),
+          %{
+            app_name: app_name,
+            apps: Enum.map(apps, &String.to_atom/1)
+          },
           opts
         )
+
+        File.chmod!(output_path, 0o755)
       end)
     else
       {:error, e} -> Mix.raise(to_string(e))
@@ -74,12 +63,11 @@ defmodule Mix.Tasks.DeployEx.InstallMigrationScript do
 
   defp parse_args(args) do
     {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quit, d: :pem_directory, p: :pem],
+      aliases: [f: :force, q: :quiet, d: :directory],
       switches: [
         force: :boolean,
         quiet: :boolean,
-        pem_directory: :boolean,
-        pem: :string
+        directory: :string
       ]
     )
 
