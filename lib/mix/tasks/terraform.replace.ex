@@ -26,9 +26,6 @@ defmodule Mix.Tasks.Terraform.Replace do
   """
 
   def run(args) do
-    Application.ensure_all_started(:hackney)
-    Application.ensure_all_started(:ex_aws)
-
     {opts, extra_args} = parse_args(args)
 
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
@@ -43,7 +40,7 @@ defmodule Mix.Tasks.Terraform.Replace do
   end
 
   defp match_instance_and_replace(opts, args, extra_args) do
-    case DeployEx.AwsMachine.fetch_instance_node_numbers(region: opts[:region], resource_group: opts[:resource_group]) do
+    case DeployEx.Terraform.instances(opts[:directory]) do
       {:error, e} -> Mix.raise(to_string(e))
 
       {:ok, instances} ->

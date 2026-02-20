@@ -73,6 +73,10 @@ defmodule DeployEx.AwsMachine do
     instance["instanceState"]["name"] === "stopped"
   end
 
+  defp instance_terminated?(instance) do
+    instance["instanceState"]["name"] in ["terminated", "shutting-down"]
+  end
+
   defp instance_running_or_pending?(instance) do
     instance["instanceState"]["name"] in ["pending", "running", "starting"]
   end
@@ -401,7 +405,7 @@ defmodule DeployEx.AwsMachine do
       filtered = filter_instances_by_tags(instances, resource_group_filter(opts))
 
       instance_nodes = filtered
-      |> Enum.filter(&instance_running_or_pending?/1)
+      |> Enum.reject(&instance_terminated?/1)
       |> Enum.map(fn instance ->
         tags = get_instance_tags(instance)
         instance_group = tags["InstanceGroup"]

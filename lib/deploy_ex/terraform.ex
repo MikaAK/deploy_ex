@@ -97,9 +97,10 @@ defmodule DeployEx.Terraform do
 
   def instances(terraform_directory) do
     with {:ok, output} <- list_state(terraform_directory) do
-      output
-        |> String.split("\n")
-        |> Enum.filter(&(&1 =~ ~r/module.ec2_instance.*ec2_instance/))
+      lines = String.split(output, "\n")
+
+      ec2_instances = lines
+        |> Enum.filter(&(&1 =~ ~r/module\.ec2_instance.*aws_instance\.ec2_instance/))
         |> Enum.map(fn resource ->
           case Regex.run(
             ~r/module\.ec2_instance\["(.*?)"\]\.aws_instance\.ec2_instance\[(.*)\]/,
@@ -109,7 +110,21 @@ defmodule DeployEx.Terraform do
             _ -> Mix.raise("Error decoding node numbers from resource: #{resource}")
           end
         end)
-        |> then(&{:ok, &1})
+
+      asg_instances = lines
+        |> Enum.filter(&(&1 =~ ~r/module\.ec2_instance.*aws_autoscaling_group\.ec2_asg/))
+        |> Enum.map(fn resource ->
+          case Regex.run(
+            ~r/module\.ec2_instance\["(.*?)"\]\.aws_autoscaling_group\.ec2_asg/,
+            resource
+          ) do
+            [_, node] -> {node, nil}
+            _ -> Mix.raise("Error decoding ASG from resource: #{resource}")
+          end
+        end)
+        |> Enum.uniq()
+
+      {:ok, ec2_instances ++ asg_instances}
     end
   end
 
