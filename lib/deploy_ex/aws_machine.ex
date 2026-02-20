@@ -401,6 +401,7 @@ defmodule DeployEx.AwsMachine do
       filtered = filter_instances_by_tags(instances, resource_group_filter(opts))
 
       instance_nodes = filtered
+      |> Enum.filter(&instance_running_or_pending?/1)
       |> Enum.map(fn instance ->
         tags = get_instance_tags(instance)
         instance_group = tags["InstanceGroup"]

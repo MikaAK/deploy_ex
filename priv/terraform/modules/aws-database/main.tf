@@ -2,7 +2,8 @@ locals {
   db_identifier          = lower(replace(format("%s_%s_%s", var.name, "db", var.environment), " ", "_"))
   db_identifier_kebab    = lower(replace(format("%s-%s-%s", var.name, "db", var.environment), " ", "-"))
   db_subnet_name         = format("%s-%s", local.db_identifier_kebab, "subnet")
-  db_parameter_name      = format("%s-%s", local.db_identifier_kebab, "params")
+  db_major_version       = floor(data.aws_rds_engine_version.rds_postgres.version)
+  db_parameter_name      = format("%s-%s-%s", local.db_identifier_kebab, "params", local.db_major_version)
   db_snapshot_identifier = format("%s-final-%s", local.db_identifier_kebab, random_integer.rds_snapshot_postfix.result)
 }
 
@@ -40,7 +41,7 @@ resource "aws_db_subnet_group" "rds_subnet_group" {
 
 resource "aws_db_parameter_group" "rds_database_parameter_group" {
   name   = local.db_parameter_name
-  family = "${data.aws_rds_engine_version.rds_postgres.engine}${floor(data.aws_rds_engine_version.rds_postgres.version)}"
+  family = "${data.aws_rds_engine_version.rds_postgres.engine}${local.db_major_version}"
 
   description = format("%s %s Database Parameter Group", var.resource_group, var.environment)
 
@@ -56,6 +57,10 @@ resource "aws_db_parameter_group" "rds_database_parameter_group" {
     Vendor      = "Postgres"
     Type        = "Database"
   }, var.tags)
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 ### Snapshot Identifier ###
@@ -90,7 +95,8 @@ resource "aws_db_instance" "rds_database" {
   password = random_password.rds_database_password.result
 
   # Parameter Groups
-  parameter_group_name = aws_db_parameter_group.rds_database_parameter_group.name
+  parameter_group_name       = aws_db_parameter_group.rds_database_parameter_group.name
+  allow_major_version_upgrade = true
 
   # Backup Configuration
   final_snapshot_identifier = local.db_snapshot_identifier

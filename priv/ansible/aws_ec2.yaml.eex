@@ -24,5 +24,6 @@ keyed_groups:
 
 
 compose:
-  ansible_host: public_ip_address
+  ansible_host: network_interfaces[0].ipv6_addresses[0].ipv6_address | default(public_ip_address, true)
+
 

@@ -1316,6 +1316,47 @@ possible without his help!!
 </details>
 
 <details>
+  <summary>RDS major version upgrade (e.g. Postgres 16 → 18)</summary>
+
+  DeployEx's RDS module includes `allow_major_version_upgrade = true` and a
+  `create_before_destroy` lifecycle on the parameter group, so most major-version
+  upgrades work with a single `mix terraform.apply`. However, if Terraform tries
+  to change both the engine version **and** the parameter group family in the same
+  apply, AWS will reject it because a `postgres18` parameter group cannot be
+  applied to an instance still running `postgres16`.
+
+  **Fix — two-step apply:**
+
+  1. **Step 1: Upgrade the engine only.**
+     In your `deploys/terraform/modules/aws-database/main.tf` (or the generated
+     copy), temporarily comment out the custom parameter group reference and add
+     `apply_immediately`:
+
+     ```hcl
+     # parameter_group_name       = aws_db_parameter_group.rds_database_parameter_group.name
+     allow_major_version_upgrade = true
+     apply_immediately           = true
+     ```
+
+     Run `mix terraform.apply`. This upgrades the engine and lets AWS assign the
+     default parameter group. The upgrade can take **10–20+ minutes**.
+
+  2. **Step 2: Re-attach the custom parameter group.**
+     Once the upgrade completes, uncomment `parameter_group_name` and remove
+     `apply_immediately` (or set it to `false`):
+
+     ```hcl
+     parameter_group_name        = aws_db_parameter_group.rds_database_parameter_group.name
+     allow_major_version_upgrade = true
+     ```
+
+     Run `mix terraform.apply` again. Terraform will create the new
+     version-suffixed parameter group (e.g. `my-app-db-dev-params-18`) and attach
+     it to the upgraded instance, then delete the old one.
+
+</details>
+
+<details>
   <summary>How can I replace a broken node??</summary>
 
   All we have to do is run `mix terraform replace <app_name>` if it's a specific services node

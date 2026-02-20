@@ -98,10 +98,11 @@ defmodule Mix.Tasks.Terraform.Replace do
   defp get_instances_from_args(instances, [instance_name], opts) do
     node_num = opts[:node]
 
-    selected_instances = Enum.filter(instances, fn
-      {name, ^node_num} -> name =~ instance_name
-      {name, _} -> name =~ instance_name
-    end)
+    selected_instances = if is_nil(node_num) do
+      Enum.filter(instances, fn {name, _} -> name =~ instance_name end)
+    else
+      Enum.filter(instances, fn {name, num} -> name =~ instance_name and num === node_num end)
+    end
 
     if length(selected_instances) > 1 and !opts[:all] do
       Mix.raise("""
