@@ -1,5 +1,38 @@
 defmodule DeployEx.AwsSecurityGroup do
   def find_security_group(opts \\ []) do
+    security_group_id = opts[:security_group_id] || DeployEx.Config.aws_security_group_id()
+
+    if is_nil(security_group_id) do
+      find_security_group_by_prefix(opts)
+    else
+      find_security_group_by_id(security_group_id, opts)
+    end
+  end
+
+  defp find_security_group_by_id(security_group_id, opts) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+
+    with {:ok, security_groups} <- describe_security_groups(region) do
+      matching = Enum.find(security_groups, fn sg ->
+        sg["groupId"] === security_group_id or
+          sg["groupName"] === security_group_id or
+          String.starts_with?(sg["groupName"] || "", security_group_id)
+      end)
+
+      case matching do
+        nil ->
+          {:error, ErrorMessage.not_found(
+            "security group #{security_group_id} not found",
+            %{security_group_id: security_group_id}
+          )}
+
+        sg ->
+          {:ok, %{id: sg["groupId"], vpc_id: sg["vpcId"], name: sg["groupName"]}}
+      end
+    end
+  end
+
+  defp find_security_group_by_prefix(opts) do
     region = opts[:region] || DeployEx.Config.aws_region()
     project_name = opts[:project_name] || DeployEx.Config.aws_project_name()
     environment = opts[:environment] || DeployEx.Config.env()

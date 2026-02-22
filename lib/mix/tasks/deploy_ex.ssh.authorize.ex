@@ -34,6 +34,7 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
   - `remove` (`-r`) - Remove authorization instead of adding it
   - `ip` - Specific IP address to whitelist (defaults to current device's IP)
   - `region` - AWS region (defaults to configured region)
+  - `security_group_id` - AWS security group ID to use (bypasses auto-detection)
   """
 
   def run(args) do
@@ -42,7 +43,7 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
     opts = parse_args(args)
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
-         {:ok, security_group_id} <- DeployEx.AwsSecurityGroup.find_security_group_id(region: opts[:region]),
+         {:ok, security_group_id} <- DeployEx.AwsSecurityGroup.find_security_group_id(region: opts[:region], security_group_id: opts[:security_group_id]),
          :ok <- add_or_remove_whitelist(opts, security_group_id) do
       :ok
     else
@@ -58,7 +59,8 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
         quiet: :boolean,
         remove: :boolean,
         ip: :string,
-        region: :string
+        region: :string,
+        security_group_id: :string
       ]
     )
 

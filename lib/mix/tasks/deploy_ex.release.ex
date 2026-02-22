@@ -249,7 +249,7 @@ defmodule Mix.Tasks.DeployEx.Release do
           :green, " for ", :reset, app_name
         ])
 
-        Mix.Task.run("do", ["--app", app_name, "mix", "esbuild", build_config_name(:esbuild, app_name_atom), "--minify"])
+        Mix.Task.run("do", ["--app", app_name, "esbuild", build_config_name(:esbuild, app_name_atom), "--minify"])
       end
     end
 
@@ -260,7 +260,7 @@ defmodule Mix.Tasks.DeployEx.Release do
           :green, " for ", :reset, app_name
         ])
 
-        Mix.Task.run("do", ["--app", app_name, "mix", "sass", build_config_name(:dart_sass, app_name_atom)])
+        Mix.Task.run("do", ["--app", app_name, "sass", build_config_name(:dart_sass, app_name_atom)])
       end
     end
 
@@ -270,7 +270,7 @@ defmodule Mix.Tasks.DeployEx.Release do
         :green, " for ", :reset, app_name
       ])
 
-      Mix.Task.run("do", ["--app", app_name, "mix", "tailwind", build_config_name(:tailwind, app_name_atom), "--minify"])
+      Mix.Task.run("do", ["--app", app_name, "tailwind", build_config_name(:tailwind, app_name_atom), "--minify"])
     end
 
     Mix.shell().info([
@@ -278,7 +278,7 @@ defmodule Mix.Tasks.DeployEx.Release do
       :green, " for ", :reset, app_name
     ])
 
-    Mix.Task.run("do", ["--app", app_name, "mix", "phx.digest"])
+    Mix.Task.run("do", ["--app", app_name, "phx.digest"])
   end
 
   defp build_config_name(build_app, app_name) do

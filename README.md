@@ -144,6 +144,7 @@ config :deploy_ex,
 - `aws_release_bucket` - S3 bucket for release artifacts
 - `aws_release_state_bucket` - S3 bucket for release state
 - `deploy_folder` - Local folder for deployment files (default: `"./deploys"`)
+- `aws_security_group_id` - Explicit AWS security group ID to use instead of auto-detecting by name prefix. Useful when your security group naming doesn't follow the `<project>-sg` convention. (default: `nil`)
 - `aws_names_include_env` - Whether AWS resource names include the environment (e.g., `myapp-prod-sg` vs `myapp-sg`). Set to `true` if your Terraform creates resources with environment in the name. (default: `false`)
 
 ### Redeploy Config
