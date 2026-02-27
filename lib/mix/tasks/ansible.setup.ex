@@ -2,7 +2,8 @@ defmodule Mix.Tasks.Ansible.Setup do
   use Mix.Task
 
   @ansible_default_path DeployEx.Config.ansible_folder_path()
-  @default_setup_max_concurrency 4
+  @setup_timeout :timer.minutes(30)
+  @setup_max_concurrency 4
 
   @shortdoc "Initial setup and configuration of Ansible hosts"
   @moduledoc """
@@ -30,6 +31,7 @@ defmodule Mix.Tasks.Ansible.Setup do
   - `only` - Only setup specified apps (can be used multiple times)
   - `except` - Skip setup for specified apps (can be used multiple times)
   - `include-qa` - Include QA nodes in setup (default: excluded)
+  - `no-tui` - Disable TUI progress display
   - `quiet` - Suppress output messages
   """
 
@@ -39,34 +41,64 @@ defmodule Mix.Tasks.Ansible.Setup do
       opts = args
         |> parse_args
         |> Keyword.put_new(:directory, @ansible_default_path)
-        |> Keyword.put_new(:parallel, @default_setup_max_concurrency)
+        |> Keyword.put_new(:parallel, @setup_max_concurrency)
 
       opts = opts
         |> Keyword.put(:only, Keyword.get_values(opts, :only))
         |> Keyword.put(:except, Keyword.get_values(opts, :except))
 
-      ansible_args = DeployEx.Ansible.parse_args(args)
+      ansible_args = args
+        |> DeployEx.Ansible.parse_args()
+        |> then(fn
+          "" -> []
+          arg -> [arg]
+        end)
 
       DeployExHelpers.check_file_exists!(Path.join(opts[:directory], "aws_ec2.yaml"))
+
+      DeployEx.TUI.setup_no_tui(opts)
+
       relative_directory = String.replace(Path.absname(opts[:directory]), "#{File.cwd!()}/", "")
 
-      opts[:directory]
+      setup_files = opts[:directory]
         |> Path.join("setup/*.yaml")
         |> Path.wildcard
         |> Enum.map(&Path.relative_to(&1, relative_directory))
         |> DeployExHelpers.filter_only_or_except(opts[:only], opts[:except])
-        |> Task.async_stream(fn setup_file ->
-          has_custom_limit = String.contains?(ansible_args, "--limit")
-          qa_limit = if opts[:include_qa] === true or has_custom_limit, do: "", else: "--limit '!qa_true'"
-          DeployEx.Utils.run_command(
-            "ansible-playbook #{setup_file} #{ansible_args} #{qa_limit}",
-            opts[:directory]
-          )
-        end, max_concurrency: opts[:parallel], timeout: :timer.minutes(30))
-        |> Stream.run
 
-      Mix.shell().info([:green, "Finished setting up nodes"])
+      if Enum.empty?(setup_files) do
+        Mix.shell().info([:yellow, "Nothing to setup"])
+      else
+        run_fn = fn setup_file, line_callback ->
+          command = build_setup_command(setup_file, ansible_args, opts)
+          DeployEx.Utils.run_command_streaming(command, opts[:directory], line_callback)
+        end
+
+        res = DeployEx.TUI.DeployProgress.run(setup_files, run_fn,
+          max_concurrency: opts[:parallel],
+          timeout: @setup_timeout
+        )
+
+        case res do
+          {:ok, _} -> :ok
+
+          {:error, [head | tail]} ->
+            Enum.each(tail, &Mix.shell().error(to_string(&1)))
+            Mix.raise(to_string(head))
+
+          {:error, error} ->
+            Mix.raise(to_string(error))
+        end
+      end
     end
+  end
+
+  defp build_setup_command(setup_file, ansible_args, opts) do
+    has_custom_limit = Enum.any?(ansible_args, &String.contains?(&1, "--limit"))
+    qa_limit = if opts[:include_qa] === true or has_custom_limit, do: [], else: ["--limit", "'!qa_true'"]
+
+    (["ansible-playbook", setup_file] ++ ansible_args ++ qa_limit)
+    |> Enum.join(" ")
   end
 
   defp parse_args(args) do
@@ -78,7 +110,9 @@ defmodule Mix.Tasks.Ansible.Setup do
         except: :keep,
         force: :boolean,
         quiet: :boolean,
-        include_qa: :boolean
+        parallel: :integer,
+        include_qa: :boolean,
+        no_tui: :boolean
       ]
     )
 
