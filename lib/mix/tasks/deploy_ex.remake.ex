@@ -27,26 +27,41 @@ defmodule Mix.Tasks.DeployEx.Remake do
   """
 
   def run(args) do
-    {opts, node_name, _} = OptionParser.parse(args, switches: [no_deploy: :boolean])
+    {opts, node_name, _} = OptionParser.parse(args, switches: [no_deploy: :boolean, no_tui: :boolean])
+
+    DeployEx.TUI.setup_no_tui(opts)
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
-         {:ok, node_name} <- check_for_node_name(node_name),
-         :ok <- run_command(Terraform.Replace, args),
-         _ <- Process.sleep(:timer.seconds(5)),
-         args_without_name = node_name_as_only_arg(node_name, args),
-         :ok <- run_command(Ansible.Setup, args_without_name),
-         :ok <- maybe_redeploy(args_without_name, opts) do
-      :ok
+         {:ok, node_name} <- check_for_node_name(node_name) do
+      args_without_name = node_name_as_only_arg(node_name, args)
+
+      steps = [
+        {"Replacing #{node_name} via Terraform", fn ->
+          run_command(Terraform.Replace, args)
+        end},
+        {"Waiting for new node to initialize", fn ->
+          Process.sleep(:timer.seconds(5))
+          :ok
+        end},
+        {"Running Ansible setup for #{node_name}", fn ->
+          run_command(Ansible.Setup, args_without_name)
+        end}
+      ]
+
+      steps = if opts[:no_deploy] do
+        steps
+      else
+        steps ++ [{"Deploying #{node_name} via Ansible", fn ->
+          run_command(Ansible.Deploy, args_without_name)
+        end}]
+      end
+
+      case DeployEx.TUI.Progress.run_steps(steps, title: "Remake #{node_name}") do
+        :ok -> :ok
+        {:error, error} -> Mix.raise(to_string(error))
+      end
     else
       {:error, e} -> Mix.raise(e)
-    end
-  end
-
-  defp maybe_redeploy(args_without_name, opts) do
-    if opts[:no_deploy] do
-      :ok
-    else
-      run_command(Ansible.Deploy, args_without_name)
     end
   end
 

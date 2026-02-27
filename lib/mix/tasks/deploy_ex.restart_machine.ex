@@ -52,14 +52,38 @@ defmodule Mix.Tasks.DeployEx.RestartMachine do
         aws_region: :string,
         resource_group: :string,
         force: :boolean,
-        quiet: :boolean
+        quiet: :boolean,
+        no_tui: :boolean
       ]
     )
 
+    DeployEx.TUI.setup_no_tui(opts)
+
     with {:ok, app_name} <- DeployExHelpers.find_project_name(node_name_args),
-         {:ok, instances} <- DeployEx.AwsMachine.fetch_instance_ids_by_tags([{"InstanceGroup", app_name}], region: opts[:aws_region], resource_group: opts[:resource_group]),
-         :ok <- restart_instances(instances, choose_instances(instances)) do
-      :ok
+         {:ok, instances} <- DeployEx.AwsMachine.fetch_instance_ids_by_tags([{"InstanceGroup", app_name}], region: opts[:aws_region], resource_group: opts[:resource_group]) do
+      instance_names = choose_instances(instances)
+      instance_ids = Enum.map(instance_names, &instances[&1])
+      names_label = Enum.join(instance_names, ", ")
+
+      steps = [
+        {"Stopping instances: #{names_label}", fn ->
+          DeployEx.AwsMachine.stop(instance_ids)
+        end},
+        {"Waiting for instances to stop...", fn ->
+          DeployEx.AwsMachine.wait_for_stopped(instance_ids)
+        end},
+        {"Starting instances: #{names_label}", fn ->
+          DeployEx.AwsMachine.start(instance_ids)
+        end},
+        {"Waiting for instances to start...", fn ->
+          DeployEx.AwsMachine.wait_for_started(instance_ids)
+        end}
+      ]
+
+      case DeployEx.TUI.Progress.run_steps(steps, title: "Restarting #{names_label}") do
+        :ok -> :ok
+        {:error, error} -> Mix.raise(to_string(error))
+      end
     else
       {:error, e} -> Mix.raise(to_string(e))
     end
@@ -67,46 +91,5 @@ defmodule Mix.Tasks.DeployEx.RestartMachine do
 
   defp choose_instances(instances) do
     DeployExHelpers.prompt_for_choice(Map.keys(instances), true)
-  end
-
-  defp restart_instances(instances, instance_names) do
-    instance_ids = Enum.map(instance_names, &instances[&1])
-
-    with :ok <- stop_instances(instances, instance_ids),
-         :ok <- wait_for_stopped(instances, instance_ids),
-         {:ok, _} <- DeployEx.AwsMachine.start(instance_ids) do
-      wait_for_started(instances, instance_ids)
-    end
-  end
-
-  defp stop_instances(instances, instance_ids) do
-    with {:ok, _} <- DeployEx.AwsMachine.stop(instance_ids) do
-      Mix.shell().info([:yellow, "Stopping instances initiated for #{instance_names_from_ids(instances, instance_ids)}..."])
-
-      :ok
-    end
-  end
-
-  defp wait_for_stopped(instances, instance_ids) do
-    Mix.shell().info([:yellow, "Waiting for instances to stop #{instance_names_from_ids(instances, instance_ids)}..."])
-
-    with :ok <- DeployEx.AwsMachine.wait_for_stopped(instance_ids) do
-      Mix.shell().info([:green, "Instances stopped successfully"])
-    end
-  end
-
-  defp wait_for_started(instances, instance_ids) do
-    Mix.shell().info([:yellow, "Start instances initiated..."])
-    Mix.shell().info([:yellow, "Waiting for instances to start #{instance_names_from_ids(instances, instance_ids)}..."])
-
-    with :ok <- DeployEx.AwsMachine.wait_for_started(instance_ids) do
-      Mix.shell().info([:green, "Instances started successfully"])
-    end
-  end
-
-  defp instance_names_from_ids(instances_map, instance_ids) do
-    instances_map
-      |> Map.filter(fn {_instance_name, instance_id} -> instance_id in instance_ids end)
-      |> Map.keys
   end
 end

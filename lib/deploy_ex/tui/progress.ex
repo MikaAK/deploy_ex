@@ -37,21 +37,21 @@ defmodule DeployEx.TUI.Progress do
   defp run_steps_tui(steps, opts) do
     title = Keyword.get(opts, :title, "Progress")
 
-    ExRatatui.run(fn terminal ->
+    {result, completed_steps} = ExRatatui.run(fn terminal ->
       {width, height} = ExRatatui.terminal_size()
       total = length(steps)
 
-      result = steps
+      {result, completed} = steps
         |> Enum.with_index()
-        |> Enum.reduce_while(:ok, fn {{label, fun}, index}, _acc ->
+        |> Enum.reduce_while({:ok, []}, fn {{label, fun}, index}, {_status, completed} ->
           ratio = index / total
           draw_progress(terminal, width, height, title, label, ratio, total, index)
           Process.sleep(50)
 
           case fun.() do
-            :ok -> {:cont, :ok}
-            {:ok, _} -> {:cont, :ok}
-            {:error, _} = error -> {:halt, error}
+            :ok -> {:cont, {:ok, [{label, :ok} | completed]}}
+            {:ok, _} -> {:cont, {:ok, [{label, :ok} | completed]}}
+            {:error, _} = error -> {:halt, {error, [{label, :failed} | completed]}}
           end
         end)
 
@@ -59,15 +59,51 @@ defmodule DeployEx.TUI.Progress do
         :ok ->
           draw_progress(terminal, width, height, title, "Complete!", 1.0, total, total)
           Process.sleep(500)
-          :ok
+          {:ok, Enum.reverse(completed)}
 
         {:error, _} = error ->
           draw_error(terminal, width, height, title, "Failed", error)
           Process.sleep(1500)
-          error
+          {error, Enum.reverse(completed)}
       end
     end)
+
+    print_steps_after_tui(title, completed_steps, result)
+
+    result
   end
+
+  defp print_steps_after_tui(title, completed_steps, result) do
+    status_label = if result === :ok, do: "OK", else: "FAILED"
+    header_color = if result === :ok, do: :green, else: :red
+
+    Mix.shell().info([
+      header_color, "\n#{String.duplicate("=", 60)}",
+      header_color, "\n#{title} [#{status_label}]",
+      header_color, "\n#{String.duplicate("=", 60)}", :reset
+    ])
+
+    Enum.each(completed_steps, fn {label, status} ->
+      case status do
+        :ok -> Mix.shell().info([:green, "  ✓ ", :reset, label])
+        :failed -> Mix.shell().info([:red, "  ✗ ", :reset, label])
+      end
+    end)
+
+    case result do
+      {:error, error} ->
+        Mix.shell().error("\n  Error: #{format_step_error(error)}")
+      _ ->
+        :ok
+    end
+
+    Mix.shell().info("")
+  end
+
+  defp format_step_error({:error, %ErrorMessage{} = error}), do: ErrorMessage.to_string(error)
+  defp format_step_error({:error, error}) when is_binary(error), do: error
+  defp format_step_error({:error, error}), do: inspect(error)
+  defp format_step_error(error), do: inspect(error)
 
   @spec run_stream(String.t(), (pid() -> term()), keyword()) :: term()
   def run_stream(title, work_fn, opts \\ []) do

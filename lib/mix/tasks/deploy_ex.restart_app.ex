@@ -40,23 +40,28 @@ defmodule Mix.Tasks.DeployEx.RestartApp do
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
     {machine_opts, opts} = Keyword.split(opts, [:resource_group])
 
-    with {:ok, app_name} <- DeployExHelpers.find_project_name(node_name_args),
-         _ = Mix.shell().info([:yellow, "Restarting #{app_name} systemd service"]),
-         :ok <- restart_service(app_name, opts, machine_opts) do
-      Mix.shell().info([:green, "Restarted #{app_name} systemd service successfully"])
+    DeployEx.TUI.setup_no_tui(opts)
+
+    with {:ok, app_name} <- DeployExHelpers.find_project_name(node_name_args) do
+      steps = [
+        {"Restarting #{app_name} systemd service", fn ->
+          DeployExHelpers.run_ssh_command(
+            opts[:directory],
+            opts[:pem],
+            app_name,
+            DeployEx.SystemDController.restart_service(app_name),
+            machine_opts
+          )
+        end}
+      ]
+
+      case DeployEx.TUI.Progress.run_steps(steps, title: "Restart #{app_name}") do
+        :ok -> :ok
+        {:error, error} -> Mix.raise(to_string(error))
+      end
     else
       {:error, e} -> Mix.raise(to_string(e))
     end
-  end
-
-  defp restart_service(app_name, opts, machine_opts) do
-    DeployExHelpers.run_ssh_command(
-      opts[:directory],
-      opts[:pem],
-      app_name,
-      DeployEx.SystemDController.restart_service(app_name),
-      machine_opts
-    )
   end
 
   defp parse_args(args) do
@@ -67,7 +72,8 @@ defmodule Mix.Tasks.DeployEx.RestartApp do
         force: :boolean,
         quiet: :boolean,
         pem: :string,
-        resource_group: :string
+        resource_group: :string,
+        no_tui: :boolean
       ]
     )
   end

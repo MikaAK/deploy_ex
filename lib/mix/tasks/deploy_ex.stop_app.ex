@@ -37,23 +37,28 @@ defmodule Mix.Tasks.DeployEx.StopApp do
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
     {machine_opts, opts} = Keyword.split(opts, [:resource_group])
 
-    with {:ok, app_name} <- DeployExHelpers.find_project_name(node_name_args),
-         _ = Mix.shell().info([:yellow, "Stopping #{app_name} systemd service"]),
-         :ok <- stop_service(app_name, opts, machine_opts) do
-      Mix.shell().info([:green, "Stopped #{app_name} systemd service successfully"])
+    DeployEx.TUI.setup_no_tui(opts)
+
+    with {:ok, app_name} <- DeployExHelpers.find_project_name(node_name_args) do
+      steps = [
+        {"Stopping #{app_name} systemd service", fn ->
+          DeployExHelpers.run_ssh_command(
+            opts[:directory],
+            opts[:pem],
+            app_name,
+            DeployEx.SystemDController.stop_service(app_name),
+            machine_opts
+          )
+        end}
+      ]
+
+      case DeployEx.TUI.Progress.run_steps(steps, title: "Stop #{app_name}") do
+        :ok -> :ok
+        {:error, error} -> Mix.raise(to_string(error))
+      end
     else
       {:error, e} -> Mix.raise(to_string(e))
     end
-  end
-
-  defp stop_service(app_name, opts, machine_opts) do
-    DeployExHelpers.run_ssh_command(
-      opts[:directory],
-      opts[:pem],
-      app_name,
-      DeployEx.SystemDController.stop_service(app_name),
-      machine_opts
-    )
   end
 
   defp parse_args(args) do
@@ -64,7 +69,8 @@ defmodule Mix.Tasks.DeployEx.StopApp do
         force: :boolean,
         quiet: :boolean,
         pem: :string,
-        resource_group: :string
+        resource_group: :string,
+        no_tui: :boolean
       ]
     )
   end
