@@ -28,6 +28,7 @@ jobs:
       env:
         MIX_ENV: prod
         CI: true
+        DEPLOY_EX_TUI_ENABLED: false
         AWS_ACCESS_KEY_ID: ${{ secrets.DEPLOY_EX_AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.DEPLOY_EX_AWS_SECRET_ACCESS_KEY }}
 

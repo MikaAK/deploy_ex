@@ -8,6 +8,9 @@ config :ex_aws, :hackney_opts,
   follow_redirect: true,
   recv_timeout: 30_000
 
+config :deploy_ex,
+  tui_enabled: System.get_env("DEPLOY_EX_TUI_ENABLED", "true") !== "false"
+
 if System.get_env("CI") in ["true", true] do
   config :erlexec,
     root: true,

@@ -65,6 +65,8 @@ defmodule DeployEx.Config do
     Application.get_env(@app, :aws_names_include_env, false)
   end
 
+  def tui_enabled?, do: Application.get_env(@app, :tui_enabled, true)
+
   def terraform_folder_path, do: Path.join(deploy_folder(), "terraform")
   def ansible_folder_path, do: Path.join(deploy_folder(), "ansible")
 

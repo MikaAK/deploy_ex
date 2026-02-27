@@ -228,23 +228,10 @@ defmodule DeployExHelpers do
   end
 
   def prompt_for_choice(choices, select_all?) do
-    Enum.each(Enum.with_index(choices), fn {value, i} -> Mix.shell().info("#{i}) #{value}") end)
-
-    prompt = "Make a selection between 0 and #{length(choices) - 1}"
-    prompt = if select_all?, do: "#{prompt}, or type a to select all:", else: prompt
-
-    value = prompt |> Mix.shell().prompt() |> String.trim()
-
-    cond do
-      value === "" -> prompt_for_choice(choices, select_all?)
-
-      value === "a" -> choices
-
-      String.to_integer(value) in Range.new(0, length(choices) - 1) ->
-        value |> String.to_integer |> then(&[Enum.at(choices, &1)])
-
-      true -> prompt_for_choice(choices, select_all?)
-    end
+    DeployEx.TUI.Select.run(choices,
+      allow_all: select_all?,
+      title: "Select an option"
+    )
   end
 
   def prompt_for_instance_choice(instance_details, select_all? \\ true) do

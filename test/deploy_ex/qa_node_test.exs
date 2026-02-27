@@ -178,10 +178,10 @@ defmodule DeployEx.QaNodeTest do
     end
   end
 
-  describe "qa_state_key/1" do
+  describe "qa_state_key/2" do
     test "builds correct S3 key path" do
-      assert QaNode.qa_state_key("my_app") === "qa-nodes/my_app/state.json"
-      assert QaNode.qa_state_key("another_app") === "qa-nodes/another_app/state.json"
+      assert QaNode.qa_state_key("my_app", "i-abc123") === "qa-nodes/my_app/i-abc123.json"
+      assert QaNode.qa_state_key("another_app", "i-def456") === "qa-nodes/another_app/i-def456.json"
     end
   end
 

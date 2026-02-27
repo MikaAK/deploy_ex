@@ -96,6 +96,50 @@ defmodule DeployEx.Utils do
     end
   end
 
+  def run_command_streaming(command, directory, line_callback, extra_opts \\ []) do
+    force_color = if DeployEx.TUI.enabled?(), do: ~c"true", else: ~c"false"
+
+    env = [{~c"ANSIBLE_FORCE_COLOR", force_color} | Enum.map(System.get_env(), fn {k, v} ->
+      {String.to_charlist(k), String.to_charlist(v)}
+    end)]
+
+    port = Port.open({:spawn_executable, "/bin/sh"}, [
+      :binary, :exit_status, :stderr_to_stdout, :use_stdio,
+      args: ["-c", command],
+      cd: Keyword.get(extra_opts, :cd, directory),
+      env: env
+    ])
+
+    stream_port_output(port, line_callback, "")
+  end
+
+  defp stream_port_output(port, callback, buffer) do
+    receive do
+      {^port, {:data, data}} ->
+        new_buffer = buffer <> data
+        {lines, remaining} = split_buffer_lines(new_buffer)
+        Enum.each(lines, callback)
+        stream_port_output(port, callback, remaining)
+
+      {^port, {:exit_status, 0}} ->
+        if buffer !== "", do: callback.(buffer)
+        :ok
+
+      {^port, {:exit_status, code}} ->
+        if buffer !== "", do: callback.(buffer)
+        {:error, ErrorMessage.internal_server_error("command failed", %{code: code})}
+    end
+  end
+
+  defp split_buffer_lines(buffer) do
+    case String.split(buffer, "\n") do
+      [only] -> {[], only}
+      parts ->
+        {lines, [remaining]} = Enum.split(parts, -1)
+        {lines, remaining}
+    end
+  end
+
   def run_command_with_input(command, directory) do
     if root_user?() do
       Exexec.start_link(

@@ -284,6 +284,18 @@ env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
 - `mix deploy_ex.autoscale.refresh` - Triggers an instance refresh to recreate autoscaling instances
 - `mix deploy_ex.autoscale.refresh_status` - Shows the status of instance refreshes for an autoscaling group
 
+### Grafana
+- `mix deploy_ex.grafana.install_dashboard` - Installs a Grafana dashboard via the HTTP API from a local file or grafana.com ID
+
+### Load Testing (k6)
+- `mix deploy_ex.load_test` - Overview of k6 load testing commands and usage
+- `mix deploy_ex.load_test.init` - Scaffolds k6 test scripts for an app
+- `mix deploy_ex.load_test.create_instance` - Creates a k6 runner EC2 instance
+- `mix deploy_ex.load_test.destroy_instance` - Destroys a k6 runner instance
+- `mix deploy_ex.load_test.list` - Lists all active k6 runner instances
+- `mix deploy_ex.load_test.upload` - Uploads k6 scripts to a runner
+- `mix deploy_ex.load_test.exec` - Executes a k6 test on a runner
+
 ### QA Nodes
 - `mix deploy_ex.qa` - Overview of QA node commands and usage
 - `mix deploy_ex.qa.create` - Creates a new QA node with a specific SHA
@@ -1095,6 +1107,55 @@ end
 ```
 
 
+## Load Testing (k6)
+
+DeployEx provides built-in k6 load testing infrastructure using ephemeral EC2 runner instances. Test results are pushed to Prometheus via remote write and visualized in Grafana.
+
+### Quick Start
+
+```bash
+# 1. Scaffold test scripts
+mix deploy_ex.load_test.init my_app
+
+# 2. Create a k6 runner instance
+mix deploy_ex.load_test.create_instance
+
+# 3. Upload scripts to the runner
+mix deploy_ex.load_test.upload my_app
+
+# 4. Run the load test
+mix deploy_ex.load_test.exec my_app --target-url http://my-app:4000
+
+# 5. Install the k6 Grafana dashboard
+mix deploy_ex.grafana.install_dashboard --id 19665
+
+# 6. Destroy the runner when done
+mix deploy_ex.load_test.destroy_instance
+```
+
+### k6 Script Convention
+
+Scripts are stored in `deploys/k6/scripts/<app_name>/`. The `init` command creates a template `load_test.js` with configurable stages and a `TARGET_URL` environment variable.
+
+### Runner Management
+
+Runners are standalone EC2 instances with k6 pre-installed via cloud-init. State is stored in S3 at `k6-runners/{instance_id}.json`. Commands automatically check for existing runners before creating new ones.
+
+```bash
+# Create with custom instance type
+mix deploy_ex.load_test.create_instance --instance-type t3.medium
+
+# List active runners
+mix deploy_ex.load_test.list
+
+# Destroy all runners
+mix deploy_ex.load_test.destroy_instance --all --force
+```
+
+### Prometheus Remote Write
+
+The Prometheus service template includes `--web.enable-remote-write-receiver` by default, enabling k6 to push metrics directly. The exec command configures k6 to write to `http://10.0.1.40:9090/api/v1/write` by default, customizable with `--prometheus-url`.
+
 ## Monitoring
 Out of the box, deploy_ex will generate Prometheus, Grafana UI, Grafana Loki and Sentry (WIP) into the application
 
@@ -1118,6 +1179,34 @@ If `prometheus_db` not deployed you can run `mix ansible.setup --only prometheus
 By default it will generate with an elastic IP
 that can be used to access it. To add a custom domain go to `deploys/ansible/roles/grafana_ui/defaults/main.yaml` and swap the `grafana_ui_domain` to the domain of your choosing, and point an `A` record to the Elastic IP
 
+
+### Installing Grafana Dashboards
+
+You can install any Grafana dashboard on your remote Grafana node via the HTTP API. The command auto-discovers the Grafana node, sets up an SSH tunnel, and imports the dashboard.
+
+```bash
+# Install from a local JSON file
+mix deploy_ex.grafana.install_dashboard --file path/to/dashboard.json
+
+# Install from grafana.com by dashboard ID
+mix deploy_ex.grafana.install_dashboard --id 19665
+
+# With custom Grafana credentials
+mix deploy_ex.grafana.install_dashboard --id 19665 --user admin --password mypassword
+
+# With manual Grafana IP (skips EC2 discovery)
+mix deploy_ex.grafana.install_dashboard --file dashboard.json --grafana-ip 54.123.45.67
+```
+
+**Options:**
+- `--file, -f` - Path to a local dashboard JSON file
+- `--id` - Grafana.com dashboard ID (downloads latest revision)
+- `--grafana-ip` - Manual Grafana node IP (skips EC2 auto-discovery)
+- `--grafana-port` - Grafana port (default: 80)
+- `--user` - Grafana admin username (default: admin)
+- `--password` - Grafana admin password (default: admin)
+- `--resource-group` - AWS resource group for node discovery
+- `--pem` - Path to PEM file for SSH tunnel
 
 ### Setting up Sentry for Error Capturing
 (WIP)

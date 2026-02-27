@@ -56,31 +56,43 @@ defmodule Mix.Tasks.Ansible.Deploy do
 
       DeployExHelpers.check_file_exists!(Path.join(opts[:directory], "aws_ec2.yaml"))
 
-      res = opts[:directory]
+      DeployEx.TUI.setup_no_tui(opts)
+
+      playbooks = opts[:directory]
         |> Path.join("playbooks/*.yaml")
         |> Path.wildcard
         |> Enum.map(&strip_directory(&1, opts[:directory]))
         |> DeployExHelpers.filter_only_or_except(opts[:only], opts[:except])
         |> reject_playbook_without_local_release(opts[:only_local_release])
         |> reject_playbook_without_mix_exs_release
-        |> Task.async_stream(fn host_playbook ->
-          host_playbook
+
+      if Enum.empty?(playbooks) do
+        Mix.shell().info([:yellow, "Nothing to deploy"])
+      else
+        run_fn = fn host_playbook, line_callback ->
+          command = host_playbook
             |> build_ansible_playbook_command(opts)
             |> Kernel.++(ansible_args)
             |> Enum.join(" ")
-            |> DeployEx.Utils.run_command(opts[:directory])
-        end, max_concurrency: opts[:parallel], timeout: @playbook_timeout)
-        |> DeployEx.Utils.reduce_status_tuples
 
-      case res do
-        {:ok, []} -> Mix.shell().info([:yellow, "Nothing to deploy"])
+          DeployEx.Utils.run_command_streaming(command, opts[:directory], line_callback)
+        end
 
-        {:error, [h | tail]} ->
-          Enum.each(tail, &Mix.shell().error(to_string(&1)))
+        res = DeployEx.TUI.DeployProgress.run(playbooks, run_fn,
+          max_concurrency: opts[:parallel],
+          timeout: @playbook_timeout
+        )
 
-          Mix.raise(to_string(h))
+        case res do
+          {:ok, _} -> :ok
 
-        _ -> :ok
+          {:error, [head | tail]} ->
+            Enum.each(tail, &Mix.shell().error(to_string(&1)))
+            Mix.raise(to_string(head))
+
+          {:error, error} ->
+            Mix.raise(to_string(error))
+        end
       end
     end
   end
@@ -98,7 +110,8 @@ defmodule Mix.Tasks.Ansible.Deploy do
         only_local_release: :boolean,
         target_sha: :string,
         include_qa: :boolean,
-        qa: :boolean
+        qa: :boolean,
+        no_tui: :boolean
       ]
     )
 

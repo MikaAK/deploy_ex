@@ -27,26 +27,47 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
          :ok <- DeployExHelpers.ensure_ansible_installed() do
       {opts, extra_args} = parse_args(args)
 
+      DeployEx.TUI.setup_no_tui(opts)
+
       app_name = case extra_args do
         [name | _] -> name
         [] -> Mix.raise("App name is required. Usage: mix deploy_ex.qa.deploy <app_name> --sha <sha>")
       end
 
       sha = opts[:sha] || Mix.raise("--sha option is required")
+      total_steps = 4
 
-      with {:ok, qa_node} <- fetch_and_verify_qa_node(app_name, opts),
-           {:ok, full_sha} <- validate_and_find_sha(app_name, sha, opts),
-           :ok <- run_ansible_deploy(qa_node, full_sha, opts),
-           {:ok, _updated} <- update_qa_state_sha(qa_node, full_sha, opts) do
-        unless opts[:quiet] do
-          Mix.shell().info([
-            :green, "\n✓ Deployed SHA ", :cyan, String.slice(full_sha, 0, 7),
-            :green, " to QA node ", :cyan, qa_node.instance_name, :reset
-          ])
+      result = DeployEx.TUI.Progress.run_stream(
+        "QA Deploy: #{app_name}",
+        fn tui_pid ->
+          run_deploy_pipeline(tui_pid, app_name, sha, opts, total_steps)
         end
-      else
+      )
+
+      case result do
+        {:ok, {qa_node, full_sha}} ->
+          unless opts[:quiet] do
+            Mix.shell().info([
+              :green, "\n✓ Deployed SHA ", :cyan, String.slice(full_sha, 0, 7),
+              :green, " to QA node ", :cyan, qa_node.instance_name, :reset
+            ])
+          end
+
         {:error, error} -> Mix.raise(ErrorMessage.to_string(error))
       end
+    end
+  end
+
+  defp run_deploy_pipeline(tui_pid, app_name, sha, opts, total) do
+    progress = fn step, label ->
+      DeployEx.TUI.Progress.update_progress(tui_pid, step / total, label)
+    end
+
+    with {:ok, qa_node} <- (progress.(1, "Fetching QA node..."); fetch_and_verify_qa_node(app_name, opts)),
+         {:ok, full_sha} <- (progress.(2, "Validating SHA..."); validate_and_find_sha(app_name, sha, opts)),
+         :ok <- (progress.(3, "Running ansible deploy..."); run_ansible_deploy(qa_node, full_sha, opts)),
+         {:ok, _updated} <- (progress.(4, "Updating QA state..."); update_qa_state_sha(qa_node, full_sha, opts)) do
+      {:ok, {qa_node, full_sha}}
     end
   end
 
@@ -57,7 +78,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
         sha: :string,
         quiet: :boolean,
         aws_region: :string,
-        aws_release_bucket: :string
+        aws_release_bucket: :string,
+        no_tui: :boolean
       ]
     )
   end

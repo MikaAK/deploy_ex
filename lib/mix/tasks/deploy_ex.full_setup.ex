@@ -57,14 +57,11 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
       if is_nil(result) do
         opts = parse_args(args)
 
-        if !opts[:skip_setup] do
-          Mix.shell().info([
-            :green, "* sleeping for ", :reset,
-            @time_between_pre_post |> div(1000) |> to_string,
-            :green, " seconds to allow setup"
-          ])
+        DeployEx.TUI.setup_no_tui(opts)
 
-          Process.sleep(@time_between_pre_post)
+        unless opts[:skip_setup] do
+          wait_seconds = div(@time_between_pre_post, 1000)
+          run_setup_countdown(wait_seconds)
         end
 
         ping_and_run_post_setup(args)
@@ -79,7 +76,8 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
       aliases: [k: :skip_deploy, p: :skip_setup],
       switches: [
         skip_setup: :boolean,
-        skip_deploy: :boolean
+        skip_deploy: :boolean,
+        no_tui: :boolean
       ]
     )
 
@@ -112,12 +110,23 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
   end
 
   defp run_setup(opts, args) do
-    if !opts[:skip_setup] do
+    unless opts[:skip_setup] do
       Mix.shell().info([
         :green, "* running instance setup"
       ])
 
       Ansible.Setup.run(args)
     end
+  end
+
+  defp run_setup_countdown(total_seconds) do
+    steps = Enum.map(1..total_seconds, fn second ->
+      {"Waiting for servers to initialize (#{second}/#{total_seconds}s)...", fn ->
+        Process.sleep(1000)
+        :ok
+      end}
+    end)
+
+    DeployEx.TUI.Progress.run_steps(steps, title: "Server Initialization")
   end
 end

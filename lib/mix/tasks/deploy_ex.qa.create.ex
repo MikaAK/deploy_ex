@@ -36,6 +36,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     with :ok <- DeployExHelpers.check_in_umbrella() do
       {opts, extra_args} = parse_args(args)
 
+      DeployEx.TUI.setup_no_tui(opts)
+
       app_name = case extra_args do
         [name | _] -> name
         [] -> Mix.raise("App name is required. Usage: mix deploy_ex.qa.create <app_name> --sha <sha>")
@@ -43,20 +45,37 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
       sha = opts[:sha] || Mix.raise("--sha option is required")
 
-      with :ok <- validate_app_name(app_name),
-           {:ok, full_sha} <- validate_and_find_sha(app_name, sha, opts),
-           {:ok, infra} <- gather_infrastructure(app_name, opts),
-           {:ok, qa_node} <- create_qa_node(app_name, full_sha, infra, opts),
-           :ok <- wait_for_instance(qa_node, opts),
-           {:ok, qa_node} <- save_and_refresh_state(qa_node, opts),
-           :ok <- wait_for_ssh_ready(qa_node),
-           :ok <- maybe_run_setup(qa_node, infra, opts),
-           :ok <- maybe_wait_for_deploy(qa_node, infra, opts),
-           {:ok, qa_node} <- maybe_attach_lb(qa_node, opts) do
-        output_success(qa_node, opts)
-      else
+      total_steps = 9
+
+      result = DeployEx.TUI.Progress.run_stream(
+        "QA Node: #{app_name}",
+        fn tui_pid ->
+          run_qa_pipeline(tui_pid, app_name, sha, opts, total_steps)
+        end
+      )
+
+      case result do
+        {:ok, qa_node} -> output_success(qa_node, opts)
         {:error, error} -> Mix.raise(ErrorMessage.to_string(error))
       end
+    end
+  end
+
+  defp run_qa_pipeline(tui_pid, app_name, sha, opts, total) do
+    progress = fn step, label ->
+      DeployEx.TUI.Progress.update_progress(tui_pid, step / total, label)
+    end
+
+    with :ok <- (progress.(1, "Validating app name..."); validate_app_name(app_name)),
+         {:ok, full_sha} <- (progress.(2, "Validating SHA..."); validate_and_find_sha(app_name, sha, opts)),
+         {:ok, infra} <- (progress.(3, "Gathering infrastructure..."); gather_infrastructure(app_name, opts)),
+         {:ok, qa_node} <- (progress.(4, "Creating QA node..."); create_qa_node(app_name, full_sha, infra, opts)),
+         :ok <- (progress.(5, "Waiting for instance to start..."); wait_for_instance(qa_node, opts)),
+         {:ok, qa_node} <- (progress.(6, "Saving QA state..."); save_and_refresh_state(qa_node, opts)),
+         :ok <- (progress.(7, "Waiting for SSH..."); wait_for_ssh_ready(qa_node)),
+         :ok <- (progress.(8, "Running setup & deploy..."); maybe_run_setup(qa_node, infra, opts); maybe_wait_for_deploy(qa_node, infra, opts)),
+         {:ok, qa_node} <- (progress.(9, "Attaching load balancer..."); maybe_attach_lb(qa_node, opts)) do
+      {:ok, qa_node}
     end
   end
 
@@ -73,7 +92,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
         force: :boolean,
         quiet: :boolean,
         aws_region: :string,
-        aws_release_bucket: :string
+        aws_release_bucket: :string,
+        no_tui: :boolean
       ]
     )
   end

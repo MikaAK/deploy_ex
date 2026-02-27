@@ -35,7 +35,8 @@ defmodule DeployEx.MixProject do
       {:erlexec, "~> 2.0", override: true},
       {:req, "~> 0.3"},
       {:hackney, "~> 1.18"},
-      {:sweet_xml, "~> 0.7"}
+      {:sweet_xml, "~> 0.7"},
+      {:ex_ratatui, "~> 0.4"}
     ]
   end
 end

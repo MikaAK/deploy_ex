@@ -56,9 +56,12 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Refresh do
         max_healthy_percentage: :integer,
         instance_warmup: :integer,
         wait: :boolean,
-        skip_matching: :boolean
+        skip_matching: :boolean,
+        no_tui: :boolean
       ]
     )
+
+    DeployEx.TUI.setup_no_tui(opts)
 
     app_name = case remaining_args do
       [name | _] -> name
@@ -161,35 +164,37 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Refresh do
   defp availability_label(_preferences), do: "Terminate and launch"
 
   defp wait_for_refresh(asg_name, refresh_id) do
-    Mix.shell().info([:yellow, "\nWaiting for instance refresh to complete..."])
-
-    Stream.interval(10_000)
-    |> Enum.reduce_while(:pending, fn _, _ ->
-      case AwsAutoscaling.describe_instance_refreshes(asg_name, refresh_ids: [refresh_id]) do
-        {:ok, [%{status: "Successful"} | _]} ->
-          Mix.shell().info([:green, "\n✓ Instance refresh completed successfully!"])
-          {:halt, :ok}
-
-        {:ok, [%{status: "Failed", status_reason: reason} | _]} ->
-          Mix.shell().error([:red, "\n✗ Instance refresh failed: #{reason}"])
-          {:halt, {:error, reason}}
-
-        {:ok, [%{status: "Cancelled"} | _]} ->
-          Mix.shell().info([:yellow, "\n⚠ Instance refresh was cancelled."])
-          {:halt, :cancelled}
-
-        {:ok, [%{status: status, percentage_complete: percent} | _]} ->
-          Mix.shell().info([:blue, "  Progress: #{percent || 0}% (#{status})"])
-          {:cont, :pending}
-
-        {:ok, []} ->
-          Mix.shell().error([:red, "\nRefresh not found"])
-          {:halt, {:error, "Refresh not found"}}
-
-        {:error, error} ->
-          Mix.shell().error([:red, "\nError checking refresh status: #{inspect(error)}"])
-          {:halt, {:error, error}}
+    DeployEx.TUI.Progress.run_stream(
+      "Instance Refresh",
+      fn caller ->
+        poll_refresh_status(asg_name, refresh_id, caller)
       end
-    end)
+    )
+  end
+
+  defp poll_refresh_status(asg_name, refresh_id, tui_pid) do
+    case AwsAutoscaling.describe_instance_refreshes(asg_name, refresh_ids: [refresh_id]) do
+      {:ok, [%{status: "Successful"} | _]} ->
+        DeployEx.TUI.Progress.update_progress(tui_pid, 1.0, "Instance refresh completed successfully!")
+        :ok
+
+      {:ok, [%{status: "Failed", status_reason: reason} | _]} ->
+        {:error, ErrorMessage.internal_server_error("Instance refresh failed: #{reason}")}
+
+      {:ok, [%{status: "Cancelled"} | _]} ->
+        {:error, ErrorMessage.internal_server_error("Instance refresh was cancelled")}
+
+      {:ok, [%{status: status, percentage_complete: percent} | _]} ->
+        ratio = (percent || 0) / 100
+        DeployEx.TUI.Progress.update_progress(tui_pid, ratio, "#{status} (#{percent || 0}%)")
+        Process.sleep(10_000)
+        poll_refresh_status(asg_name, refresh_id, tui_pid)
+
+      {:ok, []} ->
+        {:error, ErrorMessage.not_found("Refresh not found")}
+
+      {:error, error} ->
+        {:error, error}
+    end
   end
 end
