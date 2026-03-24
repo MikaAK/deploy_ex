@@ -18,9 +18,14 @@ scrape_configs:
         job: systemd-journal
 
     relabel_configs:
+{% if app_name is defined %}
+      - target_label: service
+        replacement: '{{ app_name }}'
+{% else %}
       - source_labels: [__journal__systemd_unit]
         target_label: service
         regex: '(?P<service>[^\.]+)\.service'
+{% endif %}
 
       - source_labels: [__journal__hostname]
         target_label: instance_id

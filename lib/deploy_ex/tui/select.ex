@@ -10,6 +10,7 @@ defmodule DeployEx.TUI.Select do
 
   @spec run(list(String.t()), keyword()) :: list(String.t())
   def run(choices, opts \\ [])
+  def run([], _opts), do: []
   def run([choice], _opts), do: [choice]
 
   def run(choices, opts) when is_list(choices) do
@@ -72,7 +73,7 @@ defmodule DeployEx.TUI.Select do
         loop(terminal, %{state | selected: new_selected}, width, height)
 
       %ExRatatui.Event.Key{code: "down", kind: "press"} ->
-        max_index = length(state.choices) - 1
+        max_index = max(length(state.choices) - 1, 0)
         new_selected = min(state.selected + 1, max_index)
         loop(terminal, %{state | selected: new_selected}, width, height)
 
