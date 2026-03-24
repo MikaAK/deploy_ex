@@ -105,6 +105,23 @@ defmodule DeployEx.AwsMachine do
     end
   end
 
+  def find_instance_ids_by_app_name(app_name, opts \\ []) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+    resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
+
+    with {:ok, instances} <- fetch_instances_by_tag(region, "Group", resource_group) do
+      matching = Enum.filter(instances, fn instance ->
+        instance_group = instance |> get_instance_tags() |> Map.get("InstanceGroup")
+        instance_group && instance_group =~ app_name
+      end)
+
+      case matching do
+        [] -> {:error, ErrorMessage.not_found("no instances found matching #{app_name}")}
+        found -> {:ok, instances_to_id_map(found)}
+      end
+    end
+  end
+
   defp instances_to_id_map(instances) do
     Map.new(instances, &{find_instance_name(&1), &1["instanceId"]})
   end

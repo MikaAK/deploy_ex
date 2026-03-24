@@ -45,6 +45,26 @@ defmodule DeployEx.TUI.Select do
     end
   end
 
+  @spec run_in_terminal(ExRatatui.terminal_ref(), list(String.t()), keyword()) :: list(String.t())
+  def run_in_terminal(_terminal_ref, [], _opts), do: []
+  def run_in_terminal(_terminal_ref, [choice], _opts), do: [choice]
+
+  def run_in_terminal(terminal, choices, opts) when is_list(choices) do
+    allow_all = Keyword.get(opts, :allow_all, false)
+    title = Keyword.get(opts, :title, "Select an option")
+    {width, height} = ExRatatui.terminal_size()
+
+    initial_state = %{
+      choices: choices,
+      selected: 0,
+      allow_all: allow_all,
+      title: title,
+      result: nil
+    }
+
+    loop(terminal, initial_state, width, height)
+  end
+
   defp run_tui(choices, opts) do
     allow_all = Keyword.get(opts, :allow_all, false)
     title = Keyword.get(opts, :title, "Select an option")

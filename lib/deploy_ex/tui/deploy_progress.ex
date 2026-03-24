@@ -67,29 +67,39 @@ defmodule DeployEx.TUI.DeployProgress do
           |> DeployEx.Utils.reduce_status_tuples()
       end)
 
-      deploy_loop(terminal, width, height, initial_states, task)
+      deploy_loop(terminal, width, height, initial_states, task, false)
     end)
     |> print_logs_after_tui()
   end
 
-  defp deploy_loop(terminal, width, height, states, task) do
-    draw_deploy_status(terminal, width, height, states)
+  defp deploy_loop(terminal, width, height, states, task, cancelling) do
+    draw_deploy_status(terminal, width, height, states, cancelling)
 
     case ExRatatui.poll_event(100) do
       %ExRatatui.Event.Resize{width: new_width, height: new_height} ->
-        deploy_loop(terminal, new_width, new_height, states, task)
+        deploy_loop(terminal, new_width, new_height, states, task, cancelling)
+
+      %ExRatatui.Event.Key{code: "c", kind: "press", modifiers: ["ctrl"]} when not cancelling ->
+        deploy_loop(terminal, width, height, states, task, true)
+
+      %ExRatatui.Event.Key{code: "c", kind: "press", modifiers: ["ctrl"]} when cancelling ->
+        case Task.shutdown(task, 5_000) do
+          nil -> Task.shutdown(task, :brutal_kill)
+          _ -> :ok
+        end
+        {{:error, :cancelled}, states}
 
       _ ->
         states = drain_messages(states)
 
         case Task.yield(task, 0) do
           {:ok, result} ->
-            draw_deploy_status(terminal, width, height, states)
+            draw_deploy_status(terminal, width, height, states, cancelling)
             Process.sleep(1000)
             {result, states}
 
           nil ->
-            deploy_loop(terminal, width, height, states, task)
+            deploy_loop(terminal, width, height, states, task, cancelling)
         end
     end
   end
@@ -171,7 +181,7 @@ defmodule DeployEx.TUI.DeployProgress do
   defp format_error(error) when is_binary(error), do: error
   defp format_error(error), do: inspect(error)
 
-  defp draw_deploy_status(terminal, width, height, states) do
+  defp draw_deploy_status(terminal, width, height, states, cancelling) do
     area = %Rect{x: 0, y: 0, width: width, height: height}
 
     [header_area, content_area, footer_area] = Layout.split(area, :vertical, [
@@ -188,8 +198,14 @@ defmodule DeployEx.TUI.DeployProgress do
       style: %Style{fg: :cyan, modifiers: [:bold]}
     }
 
+    footer_text = if cancelling do
+      " Press Ctrl-C again to cancel all deployments"
+    else
+      " Waiting for all deployments to complete..."
+    end
+
     footer = %Widgets.Paragraph{
-      text: " Waiting for all deployments to complete...",
+      text: footer_text,
       style: %Style{fg: :white, modifiers: [:dim]}
     }
 

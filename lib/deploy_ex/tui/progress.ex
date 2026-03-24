@@ -36,36 +36,11 @@ defmodule DeployEx.TUI.Progress do
 
   defp run_steps_tui(steps, opts) do
     title = Keyword.get(opts, :title, "Progress")
+    total = length(steps)
 
     {result, completed_steps} = ExRatatui.run(fn terminal ->
       {width, height} = ExRatatui.terminal_size()
-      total = length(steps)
-
-      {result, completed} = steps
-        |> Enum.with_index()
-        |> Enum.reduce_while({:ok, []}, fn {{label, fun}, index}, {_status, completed} ->
-          ratio = index / total
-          draw_progress(terminal, width, height, title, label, ratio, total, index)
-          Process.sleep(50)
-
-          case fun.() do
-            :ok -> {:cont, {:ok, [{label, :ok} | completed]}}
-            {:ok, _} -> {:cont, {:ok, [{label, :ok} | completed]}}
-            {:error, _} = error -> {:halt, {error, [{label, :failed} | completed]}}
-          end
-        end)
-
-      case result do
-        :ok ->
-          draw_progress(terminal, width, height, title, "Complete!", 1.0, total, total)
-          Process.sleep(500)
-          {:ok, Enum.reverse(completed)}
-
-        {:error, _} = error ->
-          draw_error(terminal, width, height, title, "Failed", error)
-          Process.sleep(1500)
-          {error, Enum.reverse(completed)}
-      end
+      execute_steps(terminal, width, height, title, steps, total, 0, [])
     end)
 
     print_steps_after_tui(title, completed_steps, result)
@@ -73,9 +48,62 @@ defmodule DeployEx.TUI.Progress do
     result
   end
 
+  defp execute_steps(terminal, width, height, title, [], total, _index, completed) do
+    draw_progress(terminal, width, height, title, "Complete!", 1.0, total, total)
+    Process.sleep(500)
+    {:ok, Enum.reverse(completed)}
+  end
+
+  defp execute_steps(terminal, width, height, title, [{label, fun} | rest], total, index, completed) do
+    ratio = index / total
+    task = Task.async(fun)
+
+    case await_step(terminal, width, height, title, label, ratio, total, index, task, false) do
+      {:ok, new_width, new_height} ->
+        execute_steps(terminal, new_width, new_height, title, rest, total, index + 1, [{label, :ok} | completed])
+
+      {:cancelled, _new_width, _new_height} ->
+        {{:error, :cancelled}, Enum.reverse([{label, :cancelled} | completed])}
+
+      {{:error, _} = error, new_width, new_height} ->
+        draw_error(terminal, new_width, new_height, title, "Failed", error)
+        Process.sleep(1500)
+        {error, Enum.reverse([{label, :failed} | completed])}
+    end
+  end
+
+  defp await_step(terminal, width, height, title, label, ratio, total, index, task, cancelling?) do
+    display_label = if cancelling?, do: label <> "  [Ctrl-C again to cancel]", else: label
+    draw_progress(terminal, width, height, title, display_label, ratio, total, index)
+
+    case ExRatatui.poll_event(50) do
+      %ExRatatui.Event.Resize{width: new_width, height: new_height} ->
+        await_step(terminal, new_width, new_height, title, label, ratio, total, index, task, cancelling?)
+
+      %ExRatatui.Event.Key{code: "c", kind: "press", modifiers: ["ctrl"]} when not cancelling? ->
+        await_step(terminal, width, height, title, label, ratio, total, index, task, true)
+
+      %ExRatatui.Event.Key{code: "c", kind: "press", modifiers: ["ctrl"]} when cancelling? ->
+        Task.shutdown(task, :brutal_kill)
+        {:cancelled, width, height}
+
+      _ ->
+        case Task.yield(task, 0) do
+          {:ok, :ok} -> {:ok, width, height}
+          {:ok, {:ok, _}} -> {:ok, width, height}
+          {:ok, {:error, _} = error} -> {error, width, height}
+          {:exit, reason} -> {{:error, reason}, width, height}
+          nil -> await_step(terminal, width, height, title, label, ratio, total, index, task, cancelling?)
+        end
+    end
+  end
+
   defp print_steps_after_tui(title, completed_steps, result) do
-    status_label = if result === :ok, do: "OK", else: "FAILED"
-    header_color = if result === :ok, do: :green, else: :red
+    {status_label, header_color} = case result do
+      :ok -> {"OK", :green}
+      {:error, :cancelled} -> {"CANCELLED", :yellow}
+      _ -> {"FAILED", :red}
+    end
 
     Mix.shell().info([
       header_color, "\n#{String.duplicate("=", 60)}",
@@ -87,14 +115,14 @@ defmodule DeployEx.TUI.Progress do
       case status do
         :ok -> Mix.shell().info([:green, "  ✓ ", :reset, label])
         :failed -> Mix.shell().info([:red, "  ✗ ", :reset, label])
+        :cancelled -> Mix.shell().info([:yellow, "  ○ ", :reset, label])
       end
     end)
 
     case result do
-      {:error, error} ->
-        Mix.shell().error("\n  Error: #{format_step_error(error)}")
-      _ ->
-        :ok
+      {:error, :cancelled} -> :ok
+      {:error, error} -> Mix.shell().error("\n  Error: #{format_step_error(error)}")
+      _ -> :ok
     end
 
     Mix.shell().info("")
@@ -149,7 +177,8 @@ defmodule DeployEx.TUI.Progress do
         ratio: 0.0,
         label: "Starting...",
         status: :running,
-        result: nil
+        result: nil,
+        cancelling: false
       }
 
       worker = spawn_link(fn ->
@@ -166,13 +195,17 @@ defmodule DeployEx.TUI.Progress do
   end
 
   defp stream_loop(terminal, width, height, title, state, worker, opts) do
-    draw_progress(terminal, width, height, title, state.label, state.ratio, 100, round(state.ratio * 100))
+    display_label = if state.cancelling, do: state.label <> "  [Ctrl-C again to cancel]", else: state.label
+    draw_progress(terminal, width, height, title, display_label, state.ratio, 100, round(state.ratio * 100))
 
     case ExRatatui.poll_event(50) do
       %ExRatatui.Event.Resize{width: new_width, height: new_height} ->
         stream_loop(terminal, new_width, new_height, title, state, worker, opts)
 
-      %ExRatatui.Event.Key{code: "c", kind: "press", modifiers: ["ctrl"]} ->
+      %ExRatatui.Event.Key{code: "c", kind: "press", modifiers: ["ctrl"]} when not state.cancelling ->
+        stream_loop(terminal, width, height, title, %{state | cancelling: true}, worker, opts)
+
+      %ExRatatui.Event.Key{code: "c", kind: "press", modifiers: ["ctrl"]} when state.cancelling ->
         Process.exit(worker, :kill)
         {:error, :cancelled}
 

@@ -60,29 +60,34 @@ defmodule Mix.Tasks.DeployEx.RestartMachine do
     DeployEx.TUI.setup_no_tui(opts)
 
     with {:ok, app_name} <- DeployExHelpers.find_project_name(node_name_args),
-         {:ok, instances} <- DeployEx.AwsMachine.fetch_instance_ids_by_tags([{"InstanceGroup", app_name}], region: opts[:aws_region], resource_group: opts[:resource_group]) do
+         {:ok, instances} <- DeployEx.AwsMachine.find_instance_ids_by_app_name(app_name, region: opts[:aws_region], resource_group: opts[:resource_group]) do
       instance_names = choose_instances(instances)
-      instance_ids = Enum.map(instance_names, &instances[&1])
-      names_label = Enum.join(instance_names, ", ")
 
-      steps = [
-        {"Stopping instances: #{names_label}", fn ->
-          DeployEx.AwsMachine.stop(instance_ids)
-        end},
-        {"Waiting for instances to stop...", fn ->
-          DeployEx.AwsMachine.wait_for_stopped(instance_ids)
-        end},
-        {"Starting instances: #{names_label}", fn ->
-          DeployEx.AwsMachine.start(instance_ids)
-        end},
-        {"Waiting for instances to start...", fn ->
-          DeployEx.AwsMachine.wait_for_started(instance_ids)
-        end}
-      ]
+      if Enum.empty?(instance_names) do
+        Mix.shell().info("No instances selected")
+      else
+        instance_ids = Enum.map(instance_names, &instances[&1])
+        names_label = Enum.join(instance_names, ", ")
 
-      case DeployEx.TUI.Progress.run_steps(steps, title: "Restarting #{names_label}") do
-        :ok -> :ok
-        {:error, error} -> Mix.raise(to_string(error))
+        steps = [
+          {"Stopping instances: #{names_label}", fn ->
+            DeployEx.AwsMachine.stop(instance_ids)
+          end},
+          {"Waiting for instances to stop...", fn ->
+            DeployEx.AwsMachine.wait_for_stopped(instance_ids)
+          end},
+          {"Starting instances: #{names_label}", fn ->
+            DeployEx.AwsMachine.start(instance_ids)
+          end},
+          {"Waiting for instances to start...", fn ->
+            DeployEx.AwsMachine.wait_for_started(instance_ids)
+          end}
+        ]
+
+        case DeployEx.TUI.Progress.run_steps(steps, title: "Restarting #{names_label}") do
+          :ok -> :ok
+          {:error, error} -> Mix.raise(to_string(error))
+        end
       end
     else
       {:error, e} -> Mix.raise(to_string(e))
