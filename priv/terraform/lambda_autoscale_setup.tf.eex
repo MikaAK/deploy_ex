@@ -1,0 +1,107 @@
+# Lambda function for instance setup via SSM
+# Created when enable_lambda_setup is true (works for both static and autoscaling instances)
+
+resource "aws_sns_topic" "instance_setup" {
+  count = var.enable_lambda_setup ? 1 : 0
+  name  = "deploy-ex-instance-setup-${var.environment}"
+}
+
+resource "aws_iam_role" "lambda_instance_setup" {
+  count = var.enable_lambda_setup ? 1 : 0
+  name  = "deploy-ex-lambda-instance-setup-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "lambda.amazonaws.com"
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "lambda_instance_setup" {
+  count = var.enable_lambda_setup ? 1 : 0
+  name  = "deploy-ex-lambda-instance-setup-policy"
+  role  = aws_iam_role.lambda_instance_setup[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:SendCommand",
+          "ssm:GetCommandInvocation",
+          "ssm:DescribeInstanceInformation"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeInstances",
+          "ec2:DescribeInstanceStatus"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+data "archive_file" "lambda_instance_setup" {
+  count       = var.enable_lambda_setup ? 1 : 0
+  type        = "zip"
+  source_file = "${path.module}/lambda/autoscale_setup_handler.py"
+  output_path = "${path.module}/lambda/instance_setup_handler.zip"
+}
+
+resource "aws_lambda_function" "instance_setup" {
+  count            = var.enable_lambda_setup ? 1 : 0
+  filename         = data.archive_file.lambda_instance_setup[0].output_path
+  function_name    = "deploy-ex-instance-setup-${var.environment}"
+  role             = aws_iam_role.lambda_instance_setup[0].arn
+  handler          = "autoscale_setup_handler.lambda_handler"
+  source_code_hash = data.archive_file.lambda_instance_setup[0].output_base64sha256
+  runtime          = "python3.11"
+  timeout          = 900  # 15 minutes
+
+  environment {
+    variables = {
+      ENVIRONMENT       = var.environment
+      DEPLOY_EX_VERSION = var.lambda_setup_deploy_ex_version
+      ANSIBLE_ROLES     = jsonencode(var.lambda_setup_ansible_roles)
+    }
+  }
+}
+
+resource "aws_sns_topic_subscription" "lambda_instance_setup" {
+  count     = var.enable_lambda_setup ? 1 : 0
+  topic_arn = aws_sns_topic.instance_setup[0].arn
+  protocol  = "lambda"
+  endpoint  = aws_lambda_function.instance_setup[0].arn
+}
+
+resource "aws_lambda_permission" "sns_invoke" {
+  count         = var.enable_lambda_setup ? 1 : 0
+  statement_id  = "AllowExecutionFromSNS"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.instance_setup[0].function_name
+  principal     = "sns.amazonaws.com"
+  source_arn    = aws_sns_topic.instance_setup[0].arn
+}
+
+output "instance_setup_sns_topic_arn" {
+  value = var.enable_lambda_setup ? aws_sns_topic.instance_setup[0].arn : null
+}
