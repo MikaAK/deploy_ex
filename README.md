@@ -3,7 +3,8 @@
 
 *Important: This requires [Terraform](https://terraform.io) and [Ansible](https://www.ansible.com/) to be installed to use the commands*
 
-This library allows you to add deployment to your umbrella application using AWS EC2, Ansible and Terraform
+This library allows you to add deployment to your Elixir application using AWS EC2, Ansible and Terraform.
+It supports both umbrella projects and standard single-app projects
 
 By default it uses `t3.nano` nodes but this can be changed in `./deploys/terraform/modules/aws-instance/variables.tf`
 Once the files are generated, you can manage all files yourself, and we'll attempt to inject the variables in upon
@@ -86,8 +87,8 @@ remote machines
 All releases in the app must have a `:tar` step at the end of their `steps`
 
 ## TL;DR Installation
-Make sure you have your `releases` configured in your root `mix.exs`. This command will only
-function in the root of an umbrella app.
+Make sure you have your `releases` configured in your root `mix.exs`. For single-app projects
+without an explicit `releases` key, deploy_ex will synthesize one from your `:app` name.
 
 By default nodes will be generated for prometheus, grafana ui, grafana loki and sentry. To turn this
 off pass the options when calling `deploy_ex.full_setup`, `terraform.build` or `ansible.build`:
@@ -232,7 +233,7 @@ Because the terraform and ansible files are generated directly into your applica
 You can make changes to ansible and terraform files as you see fit. In the case of terraform, it will automatically
 inject the apps into your variables file despite changes to the file. If you change terraform, make sure to run `mix terraform.apply`
 
-### Multiple Phoenix Apps
+### Multiple Phoenix Apps (Umbrella Only)
 In order to have multiple phoenix apps in the umbrella supported, we need to configure our
 `:dart_sass`, `:tailwind` and `:esbuild` to support multiple apps by changing the key from default
 to the key of each app and setting the proper `cd` and `NODE_PATH`
@@ -1245,7 +1246,7 @@ of the github action file that gets generated.
 By default the github action will not redeploy unchanged applications, it will run a diff in git to determine changes and only
 change on the following conditions:
 - Code change in the app
-- Code change in a related umbrella app
+- Code change in a related umbrella app (umbrella projects only)
 - Dependency changes in mix.lock
 - The release hasn't been uploaded to S3 already
 
