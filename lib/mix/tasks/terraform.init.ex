@@ -23,7 +23,7 @@ defmodule Mix.Tasks.Terraform.Init do
       |> parse_args
       |> Keyword.put_new(:directory, @terraform_default_path)
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          :ok <- run_terraform_init(args, opts) do
       :ok
     else

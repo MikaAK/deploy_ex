@@ -68,7 +68,7 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
     {machine_opts, opts} = Keyword.split(opts, [:resource_group])
 
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_valid_project() do
       if opts[:qa] do
         app_name = List.first(app_params)
         run_qa_mode(app_name, machine_opts, opts)

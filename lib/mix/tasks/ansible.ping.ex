@@ -20,7 +20,7 @@ defmodule Mix.Tasks.Ansible.Ping do
   def run(args) do
     ansible_args = DeployEx.Ansible.parse_args(args)
 
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_valid_project() do
       DeployExHelpers.check_file_exists!("./deploys/ansible/aws_ec2.yaml")
 
       DeployEx.Utils.run_command(

@@ -78,7 +78,7 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Refresh do
     min_healthy = Keyword.get(opts, :min_healthy_percentage, availability_defaults.min_healthy_percentage)
     max_healthy = Keyword.get(opts, :max_healthy_percentage, availability_defaults.max_healthy_percentage)
 
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_valid_project() do
       Mix.shell().info([:blue, "Starting instance refresh for #{app_name}..."])
 
       preferences = %{

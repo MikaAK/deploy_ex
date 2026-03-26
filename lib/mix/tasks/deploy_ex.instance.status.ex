@@ -43,7 +43,7 @@ defmodule Mix.Tasks.DeployEx.Instance.Status do
 
     environment = Keyword.get(opts, :environment, Mix.env() |> to_string())
 
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_valid_project() do
       Mix.shell().info([:blue, "Fetching instance status for #{app_name}..."])
 
       display_autoscaling_status(app_name, environment)

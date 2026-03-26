@@ -59,7 +59,7 @@ defmodule Mix.Tasks.Terraform.CreateEbsSnapshot do
     region = opts[:aws_region] || Config.aws_region()
     {machine_opts, opts} = Keyword.split(opts, [:resource_group])
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, app_name} <- DeployExHelpers.find_project_name(app_params),
          {:ok, instance_ips} <- AwsMachine.find_instance_ips(DeployExHelpers.project_name(), app_name, machine_opts),
          {:ok, instances} <- find_instances_by_ips(region, instance_ips),

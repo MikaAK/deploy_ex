@@ -56,7 +56,7 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Scale do
 
     environment = Keyword.get(opts, :environment, Mix.env() |> to_string())
 
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_valid_project() do
       Mix.shell().info([:blue, "Scaling #{app_name} to #{desired_capacity} instances..."])
 
       case AwsAutoscaling.find_asg_by_prefix(app_name, environment) do

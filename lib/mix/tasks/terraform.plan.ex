@@ -25,7 +25,7 @@ defmodule Mix.Tasks.Terraform.Plan do
       |> parse_args
       |> Keyword.put_new(:directory, @terraform_default_path)
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          :ok <- terraform_plan(args, opts) do
       :ok
     else

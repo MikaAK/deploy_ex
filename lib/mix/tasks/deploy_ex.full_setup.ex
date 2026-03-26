@@ -51,7 +51,7 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
   @time_between_pre_post :timer.seconds(10)
 
   def run(args) do
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_valid_project() do
       result = run_commands(@pre_setup_commands, args)
 
       if is_nil(result) do

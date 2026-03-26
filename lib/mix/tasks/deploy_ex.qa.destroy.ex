@@ -24,7 +24,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
     Application.ensure_all_started(:hackney)
     Application.ensure_all_started(:ex_aws)
 
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_valid_project() do
       {opts, extra_args} = parse_args(args)
 
       qa_nodes = find_qa_nodes_to_destroy(extra_args, opts)

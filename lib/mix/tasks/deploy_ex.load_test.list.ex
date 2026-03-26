@@ -21,7 +21,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.List do
     Application.ensure_all_started(:telemetry)
     Application.ensure_all_started(:ex_aws)
 
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_valid_project() do
       opts = parse_args(args)
 
       case list_runners(opts) do

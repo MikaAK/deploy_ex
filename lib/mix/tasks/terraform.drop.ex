@@ -27,7 +27,7 @@ defmodule Mix.Tasks.Terraform.Drop do
       |> parse_args
       |> Keyword.put_new(:directory, @terraform_default_path)
 
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_valid_project() do
       cmd = "destroy #{DeployEx.Terraform.parse_args(args, :destroy)}"
       cmd = if opts[:auto_approve], do: "#{cmd} --auto-approve", else: cmd
 

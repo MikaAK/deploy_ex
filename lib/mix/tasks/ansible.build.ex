@@ -43,7 +43,7 @@ defmodule Mix.Tasks.Ansible.Build do
       |> Keyword.put_new(:aws_release_bucket, Config.aws_release_bucket())
       |> Keyword.put_new(:aws_region, Config.aws_region())
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          :ok <- ensure_ansible_directory_exists(opts[:directory], opts),
          :ok <- create_ansible_hosts_file(opts),
          :ok <- create_ansible_config_file(opts),

@@ -36,7 +36,7 @@ defmodule Mix.Tasks.DeployEx.InstallMigrationScript do
       |> parse_args()
       |> Keyword.put_new(:directory, @scripts_default_path)
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, releases} <- DeployExHelpers.release_apps_by_release_name() do
       File.mkdir_p!(opts[:directory])
 

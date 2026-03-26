@@ -72,7 +72,7 @@ defmodule Mix.Tasks.Terraform.DeleteEbsSnapshot do
     region = opts[:aws_region] || Config.aws_region()
     {machine_opts, opts} = Keyword.split(opts, [:resource_group])
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, snapshots_to_delete} <- determine_snapshots_to_delete(region, app_params, machine_opts, opts),
          :ok <- confirm_deletion(snapshots_to_delete, opts),
          {:ok, deleted_snapshots} <- delete_snapshots(region, snapshots_to_delete) do

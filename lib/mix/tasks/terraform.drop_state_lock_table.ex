@@ -19,7 +19,7 @@ defmodule Mix.Tasks.Terraform.DropStateLockTable do
     Application.ensure_all_started(:telemetry)
     Application.ensure_all_started(:ex_aws)
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, tables} <- AwsDynamodb.list_tables() do
       table_name = DeployEx.Config.aws_release_state_lock_table()
       region = DeployEx.Config.aws_region()

@@ -54,7 +54,7 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
       |> parse_args
       |> Keyword.put_new(:pem_directory, @terraform_default_path)
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
          {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:pem_directory], opts[:pem]) do
       @github_action_path |> Path.dirname |> File.mkdir_p!

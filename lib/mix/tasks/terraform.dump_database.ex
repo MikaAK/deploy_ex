@@ -61,7 +61,7 @@ defmodule Mix.Tasks.Terraform.DumpDatabase do
     state_opts = normalize_state_opts(state_opts)
 
     with :ok <- check_pg_dump_installed(),
-         :ok <- DeployExHelpers.check_in_umbrella(),
+         :ok <- DeployExHelpers.check_valid_project(),
          database_name when not is_nil(database_name) <- List.first(extra_args) || show_database_selection(),
          {:ok, db_info} <- AwsDatabase.get_database_info(database_name, opts[:identifier]),
          {:ok, password} <- AwsDatabase.get_database_password(db_info, opts[:directory], state_opts),
