@@ -67,6 +67,8 @@ defmodule DeployEx.Config do
 
   def tui_enabled?, do: Application.get_env(@app, :tui_enabled, true)
 
+  def llm_provider, do: Application.get_env(@app, :llm_provider)
+
   def terraform_folder_path, do: Path.join(deploy_folder(), "terraform")
   def ansible_folder_path, do: Path.join(deploy_folder(), "ansible")
 

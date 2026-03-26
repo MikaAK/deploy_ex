@@ -147,6 +147,7 @@ config :deploy_ex,
 - `deploy_folder` - Local folder for deployment files (default: `"./deploys"`)
 - `aws_security_group_id` - Explicit AWS security group ID to use instead of auto-detecting by name prefix. Useful when your security group naming doesn't follow the `<project>-sg` convention. (default: `nil`)
 - `aws_names_include_env` - Whether AWS resource names include the environment (e.g., `myapp-prod-sg` vs `myapp-sg`). Set to `true` if your Terraform creates resources with environment in the name. (default: `false`)
+- `llm_provider` - LLM provider for `--llm-merge` in `mix deploy_ex.upgrade_priv`. Requires `{:langchain, "~> 0.6"}` in your deps. Example: `{LangChain.ChatModels.ChatAnthropic, model: "claude-sonnet-4-6"}` (default: `nil`)
 
 ### Redeploy Config
 
@@ -229,9 +230,39 @@ For more info see the [Github Actions Section](https://github.com/MikaAK/deploy_
 
 
 ### Changes over time
-Because the terraform and ansible files are generated directly into your application, you own these files.
-You can make changes to ansible and terraform files as you see fit. In the case of terraform, it will automatically
-inject the apps into your variables file despite changes to the file. If you change terraform, make sure to run `mix terraform.apply`
+By default, deploy_ex's Terraform and Ansible templates live inside the dependency (`deps/deploy_ex/priv/`).
+All mix tasks read from there automatically — you don't need to copy anything out to get started.
+
+When you want to customize templates (add resources, tweak roles, rename files), export them:
+
+```bash
+mix deploy_ex.export_priv
+```
+
+This copies all priv templates into `./deploys/` and writes a `.deploy_ex_manifest.exs` tracking
+content hashes. From that point, tasks read from `./deploys/` instead of the dependency.
+
+After upgrading the `deploy_ex` dependency, sync upstream changes into your local copy:
+
+```bash
+mix deploy_ex.upgrade_priv
+```
+
+The upgrade categorizes each file:
+- **Unmodified** (you never touched it) — overwritten silently
+- **Modified** (you changed it) — backed up to `./deploys/.backup/<timestamp>/`, overwritten, diff printed
+- **New upstream** (didn't exist before) — copied in automatically
+
+To use LLM-assisted merging (detects renames, merges content intelligently):
+
+```bash
+mix deploy_ex.upgrade_priv --llm-merge
+```
+
+This requires `{:langchain, "~> 0.6"}` in your deps and an `:llm_provider` configured (see Available Configuration below).
+The LLM first plans the merge (detecting renames like `ec2.tf.eex` -> `my_ec2.tf.eex`), then merges file contents for conflicts.
+
+In the case of terraform, `mix terraform.build` will automatically inject apps into your variables file despite changes to the file. If you change terraform, make sure to run `mix terraform.apply`
 
 ### Multiple Phoenix Apps (Umbrella Only)
 In order to have multiple phoenix apps in the umbrella supported, we need to configure our
@@ -252,6 +283,8 @@ env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
 - `mix deploy_ex.full_drop` - Completely removes DeployEx configuration and files from the project
 - `mix deploy_ex.install_github_action` - Installs GitHub Actions for automated infrastructure and deployment management
 - `mix deploy_ex.install_migration_script` - Installs migration scripts for running Ecto migrations in releases
+- `mix deploy_ex.export_priv` - Exports priv templates to `./deploys/` for local customization
+- `mix deploy_ex.upgrade_priv` - Syncs upstream priv changes into `./deploys/` after upgrading deploy_ex
 - `mix deploy_ex.release` - Builds releases for applications with detected changes
 - `mix deploy_ex.upload` - Uploads your release folder to Amazon S3
 
