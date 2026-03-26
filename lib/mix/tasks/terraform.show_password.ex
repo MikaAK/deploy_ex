@@ -28,7 +28,7 @@ defmodule Mix.Tasks.Terraform.ShowPassword do
 
     maybe_start_aws_apps(state_opts[:backend])
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, state} <- DeployEx.TerraformState.read_state(directory, state_opts),
          database_name when not is_nil(database_name) <- List.first(extra_args) || show_database_selection(state),
          {:ok, password} <- DeployEx.TerraformState.get_resource_attribute_by_tag(

@@ -51,7 +51,7 @@ defmodule Mix.Tasks.DeployEx.DownloadFile do
     {opts, node_name_args} = parse_args(args)
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, [app_name, remote_path, local_path]} <- parse_node_name_args(node_name_args),
          {:ok, app_name} <- DeployExHelpers.find_project_name([app_name]),
          _ = Mix.shell().info([:yellow, "Downloading #{remote_path} from #{app_name}"]),

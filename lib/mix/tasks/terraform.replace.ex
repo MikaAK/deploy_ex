@@ -30,7 +30,7 @@ defmodule Mix.Tasks.Terraform.Replace do
 
     opts = Keyword.put_new(opts, :directory, @terraform_default_path)
 
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_valid_project() do
       if opts[:string] do
         terraform_apply_replace(opts[:string], DeployEx.Terraform.parse_args(args, :replace), opts)
       else

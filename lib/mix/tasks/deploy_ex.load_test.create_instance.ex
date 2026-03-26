@@ -27,7 +27,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
     Application.ensure_all_started(:telemetry)
     Application.ensure_all_started(:ex_aws)
 
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_valid_project() do
       {opts, _extra_args} = parse_args(args)
 
       with {:ok, _runner} <- maybe_reuse_or_create(opts) do

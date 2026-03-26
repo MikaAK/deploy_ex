@@ -18,7 +18,7 @@ defmodule Mix.Tasks.Terraform.DropStateBucket do
     Application.ensure_all_started(:telemetry)
     Application.ensure_all_started(:ex_aws)
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, buckets} <- AwsBucket.list_buckets() do
       bucket = DeployEx.Config.aws_release_state_bucket()
       region = DeployEx.Config.aws_region()

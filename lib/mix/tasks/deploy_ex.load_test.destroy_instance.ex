@@ -25,7 +25,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.DestroyInstance do
     Application.ensure_all_started(:telemetry)
     Application.ensure_all_started(:ex_aws)
 
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_valid_project() do
       {opts, _extra_args} = parse_args(args)
 
       runners = find_runners_to_destroy(opts)

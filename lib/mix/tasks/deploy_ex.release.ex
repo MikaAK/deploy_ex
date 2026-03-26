@@ -55,7 +55,7 @@ defmodule Mix.Tasks.DeployEx.Release do
       |> Keyword.put(:except, Keyword.get_values(opts, :except))
       |> Keyword.put(:qa_release, qa_release?())
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
          {:ok, remote_releases} <- ReleaseUploader.fetch_all_remote_releases(opts),
          {:ok, git_sha} <- ReleaseUploader.get_git_sha(),

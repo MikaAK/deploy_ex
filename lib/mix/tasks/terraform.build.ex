@@ -35,7 +35,7 @@ defmodule Mix.Tasks.Terraform.Build do
       |> Keyword.put_new(:env, Mix.env())
 
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
          :ok <- ensure_terraform_directory_exists(opts[:directory]) do
       random_bytes = 6 |> :crypto.strong_rand_bytes |> Base.encode32(padding: false)

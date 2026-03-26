@@ -30,7 +30,7 @@ defmodule Mix.Tasks.DeployEx.SelectNode do
 
     {opts, app_params} = parse_args(args)
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, instance_infos} <- fetch_instances(app_params, opts),
          {:ok, selected_instance} <- select_instance(instance_infos) do
       output_selected(selected_instance, opts)

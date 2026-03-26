@@ -24,7 +24,7 @@ defmodule Mix.Tasks.Terraform.Output do
       |> parse_args
       |> Keyword.put_new(:directory, @terraform_default_path)
 
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_valid_project() do
       cmd = "output #{DeployEx.Terraform.parse_args(args, :output)}"
 
       cmd = if opts[:short], do: "#{cmd} --json", else: cmd

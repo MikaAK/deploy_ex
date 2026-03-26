@@ -42,7 +42,7 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
 
     opts = parse_args(args)
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, security_group_id} <- DeployEx.AwsSecurityGroup.find_security_group_id(region: opts[:region], security_group_id: opts[:security_group_id]),
          :ok <- add_or_remove_whitelist(opts, security_group_id) do
       :ok

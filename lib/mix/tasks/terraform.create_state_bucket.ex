@@ -23,7 +23,7 @@ defmodule Mix.Tasks.Terraform.CreateStateBucket do
     # opts = Keyword.put_new(opts, :directory, @terraform_default_path)
     # {machine_opts, opts} = Keyword.split(opts, [:resource_group])
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, buckets} <- AwsBucket.list_buckets() do
       bucket = DeployEx.Config.aws_release_state_bucket()
       region = DeployEx.Config.aws_region()

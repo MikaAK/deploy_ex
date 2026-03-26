@@ -31,7 +31,7 @@ defmodule Mix.Tasks.DeployEx.Remake do
 
     DeployEx.TUI.setup_no_tui(opts)
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, node_name} <- check_for_node_name(node_name) do
       args_without_name = node_name_as_only_arg(node_name, args)
 

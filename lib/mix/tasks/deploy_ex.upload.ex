@@ -36,7 +36,7 @@ defmodule Mix.Tasks.DeployEx.Upload do
       |> Keyword.put_new(:parallel, @max_upload_concurrency)
       |> then(&Keyword.put(&1, :qa_release, qa_release?(&1)))
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, local_releases} <- ReleaseUploader.fetch_all_local_releases(),
          {:ok, remote_releases} <- ReleaseUploader.fetch_all_remote_releases(opts),
          {:ok, git_sha} <- ReleaseUploader.get_git_sha() do

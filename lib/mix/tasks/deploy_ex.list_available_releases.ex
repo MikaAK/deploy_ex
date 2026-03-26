@@ -18,7 +18,7 @@ defmodule Mix.Tasks.DeployEx.ListAvailableReleases do
     Application.ensure_all_started(:telemetry)
     Application.ensure_all_started(:ex_aws)
 
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_valid_project() do
       {opts, _extra_args} = parse_args(args)
       fetch_opts = [
         aws_release_bucket: DeployEx.Config.aws_release_bucket(),

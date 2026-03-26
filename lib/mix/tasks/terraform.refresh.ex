@@ -22,7 +22,7 @@ defmodule Mix.Tasks.Terraform.Refresh do
       |> parse_args
       |> Keyword.put_new(:directory, @terraform_default_path)
 
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_valid_project() do
       DeployEx.Terraform.run_command_with_input(
         "refresh #{DeployEx.Terraform.parse_args(args, :refresh)}",
         opts[:directory]

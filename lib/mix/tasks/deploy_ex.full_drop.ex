@@ -20,7 +20,7 @@ defmodule Mix.Tasks.DeployEx.FullDrop do
   """
 
   def run(args) do
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_valid_project() do
       DeployExHelpers.check_file_exists!("./deploys/terraform")
 
       with :ok <- Mix.Tasks.Terraform.Drop.run(args) do
