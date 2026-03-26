@@ -124,7 +124,7 @@ defmodule Mix.Tasks.Terraform.Build do
       File.mkdir_p!(directory)
 
       "terraform"
-        |> DeployExHelpers.priv_file()
+        |> DeployExHelpers.priv_folder()
         |> File.cp_r!(directory)
 
       directory
@@ -271,7 +271,7 @@ defmodule Mix.Tasks.Terraform.Build do
   end
 
   defp write_terraform_template_files(params, opts) do
-    terraform_path = DeployExHelpers.priv_file("terraform")
+    terraform_path = DeployExHelpers.priv_folder("terraform")
 
     terraform_path
       |> Path.join("*.eex")

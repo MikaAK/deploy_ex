@@ -2,7 +2,6 @@ defmodule Mix.Tasks.DeployEx.InstallMigrationScript do
   use Mix.Task
 
   @scripts_default_path Path.join(DeployEx.Config.deploy_folder(), "scripts")
-  @migration_script_template_path DeployExHelpers.priv_file("migration_script.sh.eex")
 
   @shortdoc "Installs migration scripts for running Ecto migrations in releases"
   @moduledoc """
@@ -36,6 +35,8 @@ defmodule Mix.Tasks.DeployEx.InstallMigrationScript do
       |> parse_args()
       |> Keyword.put_new(:directory, @scripts_default_path)
 
+    migration_script_template_path = DeployExHelpers.priv_folder("migration_script.sh.eex")
+
     with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, releases} <- DeployExHelpers.release_apps_by_release_name() do
       File.mkdir_p!(opts[:directory])
@@ -45,7 +46,7 @@ defmodule Mix.Tasks.DeployEx.InstallMigrationScript do
         output_path = Path.join(opts[:directory], "migrate-#{app_name}.sh")
 
         DeployExHelpers.write_template(
-          @migration_script_template_path,
+          migration_script_template_path,
           output_path,
           %{
             app_name: app_name,
