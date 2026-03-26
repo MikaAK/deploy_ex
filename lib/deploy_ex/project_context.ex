@@ -23,11 +23,8 @@ defmodule DeployEx.ProjectContext do
   @spec app_path(String.t(), module()) :: String.t() | nil
   def app_path(app_name, mix_project \\ Mix.Project) do
     case type(mix_project) do
-      :umbrella ->
-        Map.get(mix_project.apps_paths(), String.to_atom(app_name))
-
-      :single_app ->
-        File.cwd!()
+      :umbrella -> Map.get(mix_project.apps_paths(), String.to_atom(app_name))
+      :single_app -> File.cwd!()
     end
   end
 
