@@ -19,8 +19,17 @@ defmodule DeployEx.PrivManifest do
       {manifest, _bindings} = Code.eval_file(manifest_path)
       {:ok, manifest}
     else
-      {:error, ErrorMessage.not_found("manifest not found at #{manifest_path}, run mix deploy_ex.export_priv first")}
+      {:error,
+       ErrorMessage.not_found(
+         "manifest not found at #{manifest_path}, run mix deploy_ex.export_priv first"
+       )}
     end
+  rescue
+    e ->
+      {:error,
+       ErrorMessage.unprocessable_entity(
+         "#{__MODULE__}: manifest in #{deploy_folder} is corrupted, consider re-running mix deploy_ex.export_priv, error: #{inspect(e)}"
+       )}
   end
 
   @spec write(String.t(), manifest()) :: :ok | {:error, ErrorMessage.t()}
@@ -34,9 +43,14 @@ defmodule DeployEx.PrivManifest do
       |> IO.iodata_to_binary()
 
     case File.write(manifest_path, content) do
-      :ok -> :ok
+      :ok ->
+        :ok
+
       {:error, reason} ->
-        {:error, ErrorMessage.internal_server_error("#{__MODULE__}: failed to write manifest, error: #{inspect(reason)}")}
+        {:error,
+         ErrorMessage.internal_server_error(
+           "#{__MODULE__}: failed to write manifest, error: #{inspect(reason)}"
+         )}
     end
   end
 

@@ -45,30 +45,58 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
       backup_dir = Path.join([deploy_folder, ".backup", timestamp])
 
       {manifest, counts} =
-        Enum.reduce(priv_files, {manifest, %{new: 0, auto_updated: 0, backed_up: 0}}, fn priv_path, {acc_manifest, acc_counts} ->
-          relative_path = Path.relative_to(priv_path, priv_dir)
-          dest_path = Path.join(deploy_folder, relative_path)
-          upstream_content = File.read!(priv_path)
-          upstream_hash = DeployEx.PrivManifest.hash_content(upstream_content)
+        Enum.reduce(
+          priv_files,
+          {manifest, %{new: 0, auto_updated: 0, backed_up: 0}},
+          fn priv_path, {acc_manifest, acc_counts} ->
+            relative_path = Path.relative_to(priv_path, priv_dir)
+            dest_path = Path.join(deploy_folder, relative_path)
+            upstream_content = File.read!(priv_path)
+            upstream_hash = DeployEx.PrivManifest.hash_content(upstream_content)
 
-          {updated_manifest, counts_key} =
-            case DeployEx.PrivManifest.base_hash(acc_manifest, relative_path) do
-              {:error, _} ->
-                handle_new_file(dest_path, upstream_content, acc_manifest, relative_path, upstream_hash)
+            {updated_manifest, counts_key} =
+              case DeployEx.PrivManifest.base_hash(acc_manifest, relative_path) do
+                {:error, _} ->
+                  handle_new_file(
+                    dest_path,
+                    upstream_content,
+                    acc_manifest,
+                    relative_path,
+                    upstream_hash
+                  )
 
-              {:ok, base_hash} ->
-                user_content = if File.exists?(dest_path), do: File.read!(dest_path), else: upstream_content
-                user_hash = DeployEx.PrivManifest.hash_content(user_content)
+                {:ok, base_hash} ->
+                  user_content =
+                    if File.exists?(dest_path), do: File.read!(dest_path), else: upstream_content
 
-                if user_hash === base_hash do
-                  handle_unmodified_file(dest_path, upstream_content, acc_manifest, relative_path, upstream_hash)
-                else
-                  handle_modified_file(dest_path, priv_path, backup_dir, relative_path, user_content, upstream_content, acc_manifest, upstream_hash, opts)
-                end
-            end
+                  user_hash = DeployEx.PrivManifest.hash_content(user_content)
 
-          {updated_manifest, Map.update!(acc_counts, counts_key, &(&1 + 1))}
-        end)
+                  if user_hash === base_hash do
+                    handle_unmodified_file(
+                      dest_path,
+                      upstream_content,
+                      acc_manifest,
+                      relative_path,
+                      upstream_hash
+                    )
+                  else
+                    handle_modified_file(
+                      dest_path,
+                      priv_path,
+                      backup_dir,
+                      relative_path,
+                      user_content,
+                      upstream_content,
+                      acc_manifest,
+                      upstream_hash,
+                      opts
+                    )
+                  end
+              end
+
+            {updated_manifest, Map.update!(acc_counts, counts_key, &(&1 + 1))}
+          end
+        )
 
       DeployEx.PrivManifest.write(deploy_folder, manifest)
       print_summary(counts, backup_dir)
@@ -79,44 +107,85 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
 
   defp handle_new_file(dest_path, upstream_content, manifest, relative_path, upstream_hash) do
     File.mkdir_p!(Path.dirname(dest_path))
-    DeployExHelpers.write_file(dest_path, upstream_content, message: [:green, "* new ", :reset, dest_path], force: true)
+
+    DeployExHelpers.write_file(dest_path, upstream_content,
+      message: [:green, "* new ", :reset, dest_path],
+      force: true
+    )
+
     {DeployEx.PrivManifest.put_file(manifest, relative_path, upstream_hash), :new}
   end
 
   defp handle_unmodified_file(dest_path, upstream_content, manifest, relative_path, upstream_hash) do
     File.mkdir_p!(Path.dirname(dest_path))
-    DeployExHelpers.write_file(dest_path, upstream_content, message: [:green, "* auto-updated ", :reset, dest_path], force: true)
+
+    DeployExHelpers.write_file(dest_path, upstream_content,
+      message: [:green, "* auto-updated ", :reset, dest_path],
+      force: true
+    )
+
     {DeployEx.PrivManifest.put_file(manifest, relative_path, upstream_hash), :auto_updated}
   end
 
-  defp handle_modified_file(dest_path, priv_path, backup_dir, relative_path, user_content, upstream_content, manifest, upstream_hash, opts) do
+  defp handle_modified_file(
+         dest_path,
+         priv_path,
+         backup_dir,
+         relative_path,
+         user_content,
+         upstream_content,
+         manifest,
+         upstream_hash,
+         opts
+       ) do
     backup_path = Path.join(backup_dir, relative_path)
     File.mkdir_p!(Path.dirname(backup_path))
     File.write!(backup_path, user_content)
 
-    Mix.shell().info([:yellow, "* backed up ", :reset, dest_path, :yellow, " -> ", :reset, backup_path])
+    Mix.shell().info([
+      :yellow,
+      "* backed up ",
+      :reset,
+      dest_path,
+      :yellow,
+      " -> ",
+      :reset,
+      backup_path
+    ])
 
     if opts[:llm_merge] do
-      if Code.ensure_loaded?(DeployEx.LLMMerge) do
-        case apply(DeployEx.LLMMerge, :merge, [nil, user_content, upstream_content]) do
-          {:ok, merged} ->
-            File.mkdir_p!(Path.dirname(dest_path))
-            DeployExHelpers.write_file(dest_path, merged, message: [:green, "* llm-merged ", :reset, dest_path], force: true)
+      case DeployEx.LLMMerge.merge(nil, user_content, upstream_content) do
+        {:ok, merged} ->
+          File.mkdir_p!(Path.dirname(dest_path))
 
-          {:error, _reason} ->
-            File.mkdir_p!(Path.dirname(dest_path))
-            DeployExHelpers.write_file(dest_path, upstream_content, message: [:yellow, "* overwritten (llm merge failed) ", :reset, dest_path], force: true)
-            print_diff(backup_path, priv_path)
-        end
-      else
-        Mix.shell().info([:red, "* --llm-merge requires the langchain dependency. Add {:langchain, \"~> 0.6\"} to your deps."])
-        File.mkdir_p!(Path.dirname(dest_path))
-        DeployExHelpers.write_file(dest_path, upstream_content, message: [:yellow, "* overwritten ", :reset, dest_path], force: true)
-        print_diff(backup_path, priv_path)
+          DeployExHelpers.write_file(dest_path, merged,
+            message: [:green, "* llm-merged ", :reset, dest_path],
+            force: true
+          )
+
+        {:error, reason} ->
+          Mix.shell().info([
+            :yellow,
+            "* llm merge failed (#{inspect(reason)}), falling back to overwrite"
+          ])
+
+          File.mkdir_p!(Path.dirname(dest_path))
+
+          DeployExHelpers.write_file(dest_path, upstream_content,
+            message: [:yellow, "* overwritten ", :reset, dest_path],
+            force: true
+          )
+
+          print_diff(backup_path, priv_path)
       end
     else
       File.mkdir_p!(Path.dirname(dest_path))
-      DeployExHelpers.write_file(dest_path, upstream_content, message: [:yellow, "* overwritten ", :reset, dest_path], force: true)
+
+      DeployExHelpers.write_file(dest_path, upstream_content,
+        message: [:yellow, "* overwritten ", :reset, dest_path],
+        force: true
+      )
+
       print_diff(backup_path, priv_path)
     end
 
@@ -148,9 +217,10 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
   end
 
   defp parse_args(args) do
-    {opts, _} = OptionParser.parse!(args,
-      switches: [llm_merge: :boolean]
-    )
+    {opts, _} =
+      OptionParser.parse!(args,
+        switches: [llm_merge: :boolean]
+      )
 
     opts
   end

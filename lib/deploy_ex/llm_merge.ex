@@ -2,6 +2,13 @@ defmodule DeployEx.LLMMerge do
   @moduledoc """
   Optional LLM-assisted merge for deploy_ex priv file upgrades.
 
+  Performs a 2-way merge: the LLM receives the user's modified version and
+  the new upstream version, then produces a merged result that preserves
+  user customizations while incorporating upstream changes. The `base`
+  parameter is accepted for future 3-way merge support but is currently
+  unused (only the content hash is stored in the manifest, not the full
+  base content).
+
   Requires `langchain ~> 0.6` in your project's deps and an `:llm_provider`
   configured in your deploy_ex config:
 
