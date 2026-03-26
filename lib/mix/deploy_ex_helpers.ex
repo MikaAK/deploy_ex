@@ -5,51 +5,50 @@ defmodule DeployExHelpers do
 
   def release_apps_by_release_name do
     with {:ok, releases} <- fetch_mix_releases() do
-      {:ok,
-       Enum.map(releases, fn {key, opts} ->
-         {key,
-          opts[:applications]
-          |> Keyword.keys()
+      {:ok, Enum.map(releases, fn {key, opts} ->
+        {key, opts[:applications]
+          |> Keyword.keys
           |> Enum.map(&to_string/1)
           |> Enum.filter(&(&1 in DeployExHelpers.project_apps()))}
-       end)}
+      end)}
     end
   end
 
   def redeploy_config_by_release_name do
     with {:ok, releases} <- fetch_mix_releases() do
-      {:ok,
-       Enum.map(releases, fn {key, opts} ->
-         deploy_ex_opts = opts[:deploy_ex] || []
+      {:ok, Enum.map(releases, fn {key, opts} ->
+        deploy_ex_opts = opts[:deploy_ex] || []
 
-         {key,
-          DeployEx.ReleaseUploader.RedeployConfig.from_keyword(deploy_ex_opts[:redeploy_config])}
-       end)}
+        {key, DeployEx.ReleaseUploader.RedeployConfig.from_keyword(deploy_ex_opts[:redeploy_config])}
+      end)}
     end
   end
 
-  def project_name, do: Mix.Project.get() |> Module.split() |> hd
+  def project_name, do: Mix.Project.get() |> Module.split |> hd
   def underscored_project_name, do: Macro.underscore(project_name())
   def kebab_project_name, do: String.replace(underscored_project_name(), "_", "-")
   def title_case_project_name, do: DeployEx.Utils.upper_title_case(underscored_project_name())
 
   def check_valid_project, do: DeployEx.ProjectContext.check_valid_project()
 
-  def priv_file(priv_subdirectory) do
-    :deploy_ex
-    |> :code.priv_dir()
-    |> Path.join(priv_subdirectory)
+  def priv_folder(priv_subdirectory) do
+    local_path = Path.join(DeployEx.Config.deploy_folder(), priv_subdirectory)
+
+    if File.exists?(local_path) do
+      local_path
+    else
+      :deploy_ex |> :code.priv_dir() |> Path.join(priv_subdirectory)
+    end
   end
 
   def write_template(template_path, output_path, variables, opts) do
     output_file = EEx.eval_file(template_path, assigns: variables)
 
-    opts =
-      if File.exists?(output_path) do
-        [{:message, [:green, "* rewriting ", :reset, output_path]} | opts]
-      else
-        opts
-      end
+    opts = if File.exists?(output_path) do
+      [{:message, [:green, "* rewriting ", :reset, output_path]} | opts]
+    else
+      opts
+    end
 
     DeployExHelpers.write_file(output_path, output_file, opts)
   end
@@ -74,15 +73,10 @@ defmodule DeployExHelpers do
 
   def check_file_exists!(file_path) do
     if !File.exists?(file_path) do
-      raise to_string(
-              IO.ANSI.format([
-                :red,
-                "Cannot find ",
-                :bright,
-                "#{file_path}",
-                :reset
-              ])
-            )
+      raise to_string(IO.ANSI.format([
+        :red, "Cannot find ",
+        :bright, "#{file_path}", :reset
+      ]))
     end
   end
 
@@ -126,12 +120,10 @@ defmodule DeployExHelpers do
 
     cond do
       except_given? and only_given? ->
-        raise to_string(
-                IO.ANSI.format([
-                  :red,
-                  "Cannot specify both only and except arguments"
-                ])
-              )
+        raise to_string(IO.ANSI.format([
+          :red,
+          "Cannot specify both only and except arguments"
+        ]))
 
       only_given? ->
         app_name = Path.basename(playbook)
@@ -160,7 +152,7 @@ defmodule DeployExHelpers do
   end
 
   def find_project_name(releases, [app_name]) do
-    case releases |> Keyword.keys() |> Enum.find(&(to_string(&1) =~ app_name)) do
+    case releases |> Keyword.keys |> Enum.find(&(to_string(&1) =~ app_name)) do
       nil -> {:ok, app_name}
       app_name -> {:ok, to_string(app_name)}
     end
@@ -168,8 +160,7 @@ defmodule DeployExHelpers do
 
   def run_ssh_command_with_return(terraform_directory, pem, app_name, command, opts) do
     with {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(terraform_directory, pem),
-         {:ok, instance_details} <-
-           DeployEx.AwsMachine.find_instance_details(project_name(), app_name, opts) do
+         {:ok, instance_details} <- DeployEx.AwsMachine.find_instance_details(project_name(), app_name, opts) do
       pem_rsa_path = Path.join(@server_ssh_pem_path, "id_rsa")
 
       if not File.exists?(pem_rsa_path) do
@@ -180,14 +171,13 @@ defmodule DeployExHelpers do
       File.cp!(pem_file_path, pem_rsa_path)
       File.chmod!(pem_rsa_path, 0o600)
 
-      res =
-        instance_details
+      res = instance_details
         |> prompt_for_instance_choice(true)
         |> Enum.map(fn ip_address ->
           Mix.shell().info([:yellow, "Running '#{command}' on #{ip_address}"])
           DeployEx.SSH.run_command(ip_address, opts[:port] || 22, pem_rsa_path, command)
         end)
-        |> DeployEx.Utils.reduce_status_tuples()
+        |> DeployEx.Utils.reduce_status_tuples
 
       with {:error, [error]} <- res do
         {:error, error}
@@ -197,8 +187,7 @@ defmodule DeployExHelpers do
 
   def run_ssh_command(terraform_directory, pem, app_name, command, opts) do
     with {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(terraform_directory, pem),
-         {:ok, instance_details} <-
-           DeployEx.AwsMachine.find_instance_details(project_name(), app_name, opts) do
+         {:ok, instance_details} <- DeployEx.AwsMachine.find_instance_details(project_name(), app_name, opts) do
       pem_rsa_path = Path.join(@server_ssh_pem_path, "id_rsa")
 
       if not File.exists?(pem_rsa_path) do
@@ -210,15 +199,15 @@ defmodule DeployExHelpers do
       File.chmod!(pem_rsa_path, 0o600)
 
       instance_details
-      |> prompt_for_instance_choice(true)
-      |> Enum.reduce_while(:ok, fn instance_ip, :ok ->
-        Mix.shell().info([:yellow, "Running #{command} on #{instance_ip}"])
+        |> prompt_for_instance_choice(true)
+        |> Enum.reduce_while(:ok, fn instance_ip, :ok ->
+          Mix.shell().info([:yellow, "Running #{command} on #{instance_ip}"])
 
-        case DeployEx.SSH.run_command(instance_ip, opts[:port] || 22, pem_rsa_path, command) do
-          {:ok, _} -> {:cont, :ok}
-          {:error, _} = error -> {:halt, error}
-        end
-      end)
+          case DeployEx.SSH.run_command(instance_ip, opts[:port] || 22, pem_rsa_path, command) do
+            {:ok, _} -> {:cont, :ok}
+            {:error, _} = error -> {:halt, error}
+          end
+        end)
     end
   end
 
@@ -239,9 +228,9 @@ defmodule DeployExHelpers do
     ip_map = Map.new(instance_details, &{&1.name, &1.ipv6 || &1.ip})
 
     instance_details
-    |> Enum.map(& &1.name)
-    |> DeployExHelpers.prompt_for_choice(select_all?)
-    |> Enum.map(&ip_map[&1])
+      |> Enum.map(&(&1.name))
+      |> DeployExHelpers.prompt_for_choice(select_all?)
+      |> Enum.map(&ip_map[&1])
   end
 
   def find_similar_strings(items, target, opts \\ []) do
@@ -255,9 +244,7 @@ defmodule DeployExHelpers do
       distance = String.jaro_distance(target, extracted)
       {item, extracted, distance}
     end)
-    |> Enum.filter(fn {_, extracted, distance} ->
-      extracted !== "" and distance >= min_distance
-    end)
+    |> Enum.filter(fn {_, extracted, distance} -> extracted !== "" and distance >= min_distance end)
     |> Enum.sort_by(fn {_, _, distance} -> distance end, :desc)
     |> Enum.take(limit)
   end
@@ -289,7 +276,6 @@ defmodule DeployExHelpers do
   end
 
   defp humanize_timestamp(nil), do: "unknown date"
-
   defp humanize_timestamp(timestamp) do
     case Integer.parse(timestamp) do
       {unix_ts, _} ->
@@ -297,9 +283,7 @@ defmodule DeployExHelpers do
           {:ok, datetime} -> humanize_datetime(datetime)
           _ -> timestamp
         end
-
-      :error ->
-        timestamp
+      :error -> timestamp
     end
   end
 
@@ -324,20 +308,14 @@ defmodule DeployExHelpers do
       _ ->
         Mix.shell().info([:yellow, "Ansible not found, installing..."])
 
-        case System.cmd("pip3", ["install", "--user", "ansible", "boto3", "botocore"],
-               stderr_to_stdout: true
-             ) do
+        case System.cmd("pip3", ["install", "--user", "ansible", "boto3", "botocore"], stderr_to_stdout: true) do
           {_, 0} ->
             Mix.shell().info([:green, "✓ Ansible installed successfully"])
             :ok
 
           {error, _} ->
             Mix.shell().error("Failed to install ansible: #{error}")
-
-            Mix.shell().info(
-              "Please install ansible manually: pip3 install ansible boto3 botocore"
-            )
-
+            Mix.shell().info("Please install ansible manually: pip3 install ansible boto3 botocore")
             {:error, "Ansible installation failed"}
         end
     end

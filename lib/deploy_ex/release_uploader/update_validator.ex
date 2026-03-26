@@ -1,19 +1,14 @@
 defmodule DeployEx.ReleaseUploader.UpdateValidator do
-  alias DeployEx.ReleaseUploader.{
-    RedeployConfig,
-    UpdateValidator.MixDepsTreeParser,
-    UpdateValidator.MixLockFileDiffParser
-  }
+  alias DeployEx.ReleaseUploader.{RedeployConfig, UpdateValidator.MixDepsTreeParser, UpdateValidator.MixLockFileDiffParser}
 
   @max_git_diff_concurrency 2
 
   def filter_changed(release_states) do
     with {:ok, file_diffs_by_sha_tuple} <- load_file_diffs(release_states),
-         {:ok,
-          {
-            {invalid_release_states, release_states},
-            file_diffs_by_sha_tuple
-          }} <- split_invalid_releases(release_states, file_diffs_by_sha_tuple),
+         {:ok, {
+           {invalid_release_states, release_states},
+           file_diffs_by_sha_tuple
+         }} <- split_invalid_releases(release_states, file_diffs_by_sha_tuple),
          {:ok, dep_changes_by_sha_tuple} <- load_dep_changes(file_diffs_by_sha_tuple),
          {:ok, app_dep_tree} <- MixDepsTreeParser.load_app_dep_tree() do
       filter_changed(
@@ -27,80 +22,73 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
   end
 
   def filter_changed(
-        invalid_release_states,
-        release_states,
-        file_diffs_by_sha_tuple,
-        dep_changes_by_sha_tuple,
-        app_dep_tree
-      ) do
-    {never_uploaded_releases, release_states} =
-      Enum.split_with(
-        release_states,
-        &is_nil(&1.last_sha)
-      )
+    invalid_release_states,
+    release_states,
+    file_diffs_by_sha_tuple,
+    dep_changes_by_sha_tuple,
+    app_dep_tree
+  ) do
+    {never_uploaded_releases, release_states} = Enum.split_with(
+      release_states,
+      &is_nil(&1.last_sha)
+    )
 
-    {:ok,
-     never_uploaded_releases ++
-       invalid_release_states ++
-       Enum.filter(release_states, fn release_state ->
-         release_has_code_changes?(release_state, file_diffs_by_sha_tuple) or
-           release_has_local_dep_changes?(release_state, file_diffs_by_sha_tuple, app_dep_tree) or
-           release_has_dep_changes?(release_state, dep_changes_by_sha_tuple, app_dep_tree)
-       end)}
+    {:ok, never_uploaded_releases ++ invalid_release_states ++ Enum.filter(release_states, fn release_state ->
+      release_has_code_changes?(release_state, file_diffs_by_sha_tuple) or
+      release_has_local_dep_changes?(release_state, file_diffs_by_sha_tuple, app_dep_tree) or
+      release_has_dep_changes?(release_state, dep_changes_by_sha_tuple, app_dep_tree)
+    end)}
   end
 
   def split_invalid_releases(release_states, file_diffs_by_sha_tuple) do
-    split_release_states =
-      Enum.split_with(
-        release_states,
-        &uploaded_release_invalid?(&1, file_diffs_by_sha_tuple)
-      )
+    split_release_states = Enum.split_with(
+      release_states,
+      &uploaded_release_invalid?(&1, file_diffs_by_sha_tuple)
+    )
 
-    file_diffs_by_sha_tuple =
-      file_diffs_by_sha_tuple
+    file_diffs_by_sha_tuple = file_diffs_by_sha_tuple
       |> Enum.reject(fn
         {_, [:invalid]} -> true
         _ -> false
       end)
-      |> Map.new()
+      |> Map.new
 
     {:ok, {split_release_states, file_diffs_by_sha_tuple}}
   end
 
   def load_file_diffs(states) do
-    from_to_shas = states |> Enum.map(&{&1.sha, &1.last_sha}) |> Enum.uniq()
+    from_to_shas = states |> Enum.map(&{&1.sha, &1.last_sha}) |> Enum.uniq
 
     with {:ok, file_diffs} <- file_diffs_between(from_to_shas) do
       file_diffs
-      |> Enum.reject(fn
-        {_sha_tuple, [""]} -> true
-        {_sha_tuple, []} -> true
-        {_sha_tuple, _} -> false
-      end)
-      |> Map.new()
-      |> then(&{:ok, &1})
+        |> Enum.reject(fn
+          {_sha_tuple, [""]} -> true
+          {_sha_tuple, []} -> true
+          {_sha_tuple, _} -> false
+        end)
+        |> Map.new
+        |> then(&{:ok, &1})
     end
   end
 
   def load_dep_changes(file_diffs_by_sha_tuple) do
-    res =
-      file_diffs_by_sha_tuple
+    res = file_diffs_by_sha_tuple
       |> filter_file_diffs_for_deps_update
       |> Task.async_stream(
         &MixLockFileDiffParser.git_diff_mix_lock/1,
         max_concurrency: @max_git_diff_concurrency
       )
-      |> DeployEx.Utils.reduce_task_status_tuples()
+      |> DeployEx.Utils.reduce_task_status_tuples
 
     with {:ok, file_diffs_by_sha_tuple} <- res do
       file_diffs_by_sha_tuple
-      |> Enum.reject(fn
-        {_sha_tuple, [""]} -> true
-        {_sha_tuple, []} -> true
-        _ -> false
-      end)
-      |> Map.new()
-      |> then(&{:ok, &1})
+        |> Enum.reject(fn
+          {_sha_tuple, [""]} -> true
+          {_sha_tuple, []} -> true
+          _ -> false
+        end)
+        |> Map.new
+        |> then(&{:ok, &1})
     end
   end
 
@@ -112,78 +100,63 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
 
   defp file_diffs_between(from_to_shas) do
     from_to_shas
-    |> Task.async_stream(
-      fn {current_sha, last_sha} = sha_tuple ->
+      |> Task.async_stream(fn {current_sha, last_sha} = sha_tuple ->
         with {:ok, file_diffs} <- git_diff_files_between(current_sha, last_sha) do
           {:ok, {sha_tuple, file_diffs}}
         end
-      end,
-      max_concurrency: @max_git_diff_concurrency
-    )
-    |> DeployEx.Utils.reduce_task_status_tuples()
+      end, max_concurrency: @max_git_diff_concurrency)
+      |> DeployEx.Utils.reduce_task_status_tuples
   end
 
   defp git_diff_files_between(current_sha, last_sha) do
     case System.shell("git diff --name-only #{current_sha}..#{last_sha} --") do
-      {output, 0} ->
-        {:ok, output |> String.trim_trailing("\n") |> String.split("\n")}
+      {output, 0} -> {:ok, output |> String.trim_trailing("\n") |> String.split("\n")}
+      {"", 128} -> {:ok, [:invalid]}
 
-      {"", 128} ->
-        {:ok, [:invalid]}
-
-      {output, code} ->
-        {:error,
-         ErrorMessage.failed_dependency(
-           "couldn't run git diff --name-only",
-           %{output: output, code: code}
-         )}
+      {output, code} -> {:error, ErrorMessage.failed_dependency(
+        "couldn't run git diff --name-only",
+        %{output: output, code: code}
+      )}
     end
   end
 
-  defp uploaded_release_invalid?(
-         %DeployEx.ReleaseUploader.State{
-           sha: current_sha,
-           last_sha: last_sha
-         },
-         file_diffs_by_sha_tuple
-       ) do
+  defp uploaded_release_invalid?(%DeployEx.ReleaseUploader.State{
+    sha: current_sha,
+    last_sha: last_sha
+  }, file_diffs_by_sha_tuple) do
     Map.get(file_diffs_by_sha_tuple, {current_sha, last_sha}) === [:invalid]
   end
 
-  defp release_has_code_changes?(
-         %DeployEx.ReleaseUploader.State{
-           app_name: release_app_name,
-           sha: current_sha,
-           last_sha: last_sha,
-           release_apps: release_apps,
-           redeploy_config: redeploy_config
-         },
-         file_diffs_by_sha_tuple
-       ) do
+  defp release_has_code_changes?(%DeployEx.ReleaseUploader.State{
+    app_name: release_app_name,
+    sha: current_sha,
+    last_sha: last_sha,
+    release_apps: release_apps,
+    redeploy_config: redeploy_config
+  }, file_diffs_by_sha_tuple) do
     file_diffs = Map.get(file_diffs_by_sha_tuple, {current_sha, last_sha}) || []
 
-    Enum.any?(file_diffs) &&
-      Enum.any?(release_apps, fn app_name ->
-        filtered_diffs = RedeployConfig.filter_file_diffs(file_diffs, app_name, redeploy_config)
+    Enum.any?(file_diffs) && Enum.any?(release_apps, fn app_name ->
+      filtered_diffs = RedeployConfig.filter_file_diffs(file_diffs, app_name, redeploy_config)
 
-        root_mix_exs_change? = Enum.any?(filtered_diffs, &(&1 === "mix.exs"))
-        code_change? = Enum.any?(filtered_diffs, &file_part_of_app(&1, app_name))
-        config_change? = Enum.any?(filtered_diffs, &config_file?(&1))
-        rel_file_change? = Enum.any?(filtered_diffs, &rel_file?(&1))
+      root_mix_exs_change? = Enum.any?(filtered_diffs, &(&1 === "mix.exs"))
+      code_change? = Enum.any?(filtered_diffs, &file_part_of_app(&1, app_name))
+      config_change? = Enum.any?(filtered_diffs, &config_file?(&1))
+      rel_file_change? = Enum.any?(filtered_diffs, &rel_file?(&1))
 
-        changes = if config_change?, do: ["config"], else: []
-        changes = if root_mix_exs_change?, do: ["root mix.exs" | changes], else: changes
-        changes = if code_change?, do: ["code" | changes], else: changes
-        changes = if rel_file_change?, do: ["release file" | changes], else: changes
+      changes = if config_change?, do: ["config"], else: []
+      changes = if root_mix_exs_change?, do: ["root mix.exs" | changes], else: changes
+      changes = if code_change?, do: ["code" | changes], else: changes
+      changes = if rel_file_change?, do: ["release file" | changes], else: changes
 
-        changes? = Enum.any?(changes)
+      changes? = Enum.any?(changes)
 
-        if changes? do
-          log_app_change(changes, release_app_app_name_string(release_app_name, app_name))
-        end
+      if changes? do
+        log_app_change(changes, release_app_app_name_string(release_app_name, app_name))
+      end
 
-        changes?
-      end)
+      changes?
+    end)
   end
 
   def log_app_change([], _) do
@@ -191,42 +164,21 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
   end
 
   def log_app_change([change], app_name) do
-    IO.puts(
-      to_string(
-        IO.ANSI.format([
-          :green,
-          "* #{change} changes detected ",
-          :reset,
-          app_name
-        ])
-      )
-    )
+    IO.puts(to_string(IO.ANSI.format([
+      :green, "* #{change} changes detected ", :reset, app_name
+    ])))
   end
 
   def log_app_change([change_a, change_b], app_name) do
-    IO.puts(
-      to_string(
-        IO.ANSI.format([
-          :green,
-          "* #{change_a} & #{change_b} changes detected ",
-          :reset,
-          app_name
-        ])
-      )
-    )
+    IO.puts(to_string(IO.ANSI.format([
+      :green, "* #{change_a} & #{change_b} changes detected ", :reset, app_name
+    ])))
   end
 
   def log_app_change([change_a | changes], app_name) do
-    IO.puts(
-      to_string(
-        IO.ANSI.format([
-          :green,
-          "* #{Enum.join(changes, ", ")} & #{change_a} changes detected ",
-          :reset,
-          app_name
-        ])
-      )
-    )
+    IO.puts(to_string(IO.ANSI.format([
+      :green, "* #{Enum.join(changes, ", ")} & #{change_a} changes detected ", :reset, app_name
+    ])))
   end
 
   defp file_part_of_app(diff, app_name) do
@@ -242,37 +194,27 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
     diff =~ ~r/config\/[a-z0-9A-Z\.-_]+.exs/
   end
 
-  defp release_has_dep_changes?(
-         %DeployEx.ReleaseUploader.State{
-           app_name: release_app_name,
-           sha: current_sha,
-           last_sha: last_sha,
-           release_apps: release_apps,
-           redeploy_config: redeploy_config
-         },
-         dep_changes_by_sha_tuple,
-         app_dep_tree
-       ) do
+  defp release_has_dep_changes?(%DeployEx.ReleaseUploader.State{
+    app_name: release_app_name,
+    sha: current_sha,
+    last_sha: last_sha,
+    release_apps: release_apps,
+    redeploy_config: redeploy_config
+  }, dep_changes_by_sha_tuple, app_dep_tree) do
     dep_changes = Map.get(dep_changes_by_sha_tuple, {current_sha, last_sha}) || []
 
     Enum.any?(release_apps, fn app_name ->
       if RedeployConfig.has_whitelist?(app_name, redeploy_config) do
         false
       else
-        dep_changes? =
-          Enum.any?(app_dep_tree[app_name] || [], fn app_dep_name ->
-            Enum.any?(dep_changes, &(&1 === app_dep_name))
-          end)
+        dep_changes? = Enum.any?(app_dep_tree[app_name] || [], fn app_dep_name ->
+          Enum.any?(dep_changes, &(&1 === app_dep_name))
+        end)
 
         if dep_changes? do
-          IO.puts(
-            to_string(
-              IO.ANSI.format([
-                :green,
-                "* #{release_app_app_name_string(release_app_name, app_name)} has dependency changes"
-              ])
-            )
-          )
+          IO.puts(to_string(IO.ANSI.format([
+            :green, "* #{release_app_app_name_string(release_app_name, app_name)} has dependency changes"
+          ])))
         end
 
         dep_changes?
@@ -280,24 +222,18 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
     end)
   end
 
-  defp release_has_local_dep_changes?(
-         %DeployEx.ReleaseUploader.State{
-           app_name: release_app_name,
-           sha: current_sha,
-           last_sha: last_sha,
-           release_apps: release_apps,
-           redeploy_config: redeploy_config
-         },
-         file_diffs_by_sha_tuple,
-         app_dep_tree
-       ) do
+  defp release_has_local_dep_changes?(%DeployEx.ReleaseUploader.State{
+    app_name: release_app_name,
+    sha: current_sha,
+    last_sha: last_sha,
+    release_apps: release_apps,
+    redeploy_config: redeploy_config
+  }, file_diffs_by_sha_tuple, app_dep_tree) do
     Enum.any?(release_apps, fn app_name ->
       file_diffs = Map.get(file_diffs_by_sha_tuple, {current_sha, last_sha}) || []
       filtered_diffs = RedeployConfig.filter_file_diffs(file_diffs, app_name, redeploy_config)
       app_deps = app_dep_tree[app_name] || []
-
-      changed_apps =
-        filtered_diffs
+      changed_apps = filtered_diffs
         |> Enum.flat_map(fn diff ->
           case Regex.run(~r/^apps\/([a-z0-9_]+)\//, diff) do
             [_, extracted_app] ->
@@ -311,19 +247,14 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator do
               end
           end
         end)
-        |> Enum.uniq()
+        |> Enum.uniq
 
       local_dep_changes? = Enum.any?(changed_apps) and Enum.any?(changed_apps, &(&1 in app_deps))
 
       if local_dep_changes? do
-        IO.puts(
-          to_string(
-            IO.ANSI.format([
-              :green,
-              "* #{release_app_app_name_string(release_app_name, app_name)} has local dependency changes"
-            ])
-          )
-        )
+        IO.puts(to_string(IO.ANSI.format([
+          :green, "* #{release_app_app_name_string(release_app_name, app_name)} has local dependency changes"
+        ])))
       end
 
       local_dep_changes?
