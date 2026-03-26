@@ -91,7 +91,7 @@ defmodule Mix.Tasks.Ansible.Build do
       Mix.shell().info([:green, "* copying ansible into ", :reset, directory])
 
       "ansible"
-        |> DeployExHelpers.priv_file()
+        |> DeployExHelpers.priv_folder()
         |> File.cp_r!(directory)
 
       File.rm!(Path.join(directory, "group_vars/all.yaml.eex"))
@@ -168,7 +168,7 @@ defmodule Mix.Tasks.Ansible.Build do
       }
 
       DeployExHelpers.write_template(
-        DeployExHelpers.priv_file("ansible/group_vars/all.yaml.eex"),
+        DeployExHelpers.priv_folder("ansible/group_vars/all.yaml.eex"),
         opts[:group_vars_file],
         variables,
         opts
@@ -193,7 +193,7 @@ defmodule Mix.Tasks.Ansible.Build do
       }
 
       DeployExHelpers.write_template(
-        DeployExHelpers.priv_file("ansible/ansible.cfg.eex"),
+        DeployExHelpers.priv_folder("ansible/ansible.cfg.eex"),
         opts[:config_file],
         variables,
         opts
@@ -213,7 +213,7 @@ defmodule Mix.Tasks.Ansible.Build do
     }
 
     DeployExHelpers.write_template(
-      DeployExHelpers.priv_file("ansible/aws_ec2.yaml.eex"),
+      DeployExHelpers.priv_folder("ansible/aws_ec2.yaml.eex"),
       opts[:hosts_file],
       variables,
       opts
@@ -300,7 +300,7 @@ defmodule Mix.Tasks.Ansible.Build do
   end
 
   defp build_host_playbook(app_name, opts) do
-    host_playbook_template_path = DeployExHelpers.priv_file("ansible/app_playbook.yaml.eex")
+    host_playbook_template_path = DeployExHelpers.priv_folder("ansible/app_playbook.yaml.eex")
     host_playbook_path = Path.join(opts[:directory], "playbooks/#{app_name}.yaml")
 
     variables = %{
@@ -320,7 +320,7 @@ defmodule Mix.Tasks.Ansible.Build do
   end
 
   defp build_host_setup_playbook(app_name, opts) do
-    setup_playbook_path = DeployExHelpers.priv_file("ansible/app_setup_playbook.yaml.eex")
+    setup_playbook_path = DeployExHelpers.priv_folder("ansible/app_setup_playbook.yaml.eex")
     setup_host_playbook = Path.join(opts[:directory], "setup/#{app_name}.yaml")
 
     variables = %{

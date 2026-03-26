@@ -4,18 +4,7 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
   @terraform_default_path DeployEx.Config.terraform_folder_path()
 
   @github_action_path "./.github/workflows/deploy-ex-release.yml"
-  @github_action_template_path DeployExHelpers.priv_file("github-action.yml.eex")
-
   @github_action_setup_nodes_path "./.github/workflows/setup-new-nodes.yml"
-  @github_action_setup_nodes_template_path DeployExHelpers.priv_file("github-action-setup-nodes.yml.eex")
-
-  @github_action_scripts_paths [{
-    DeployExHelpers.priv_file("github-action-maybe-commit-terraform-changes.sh"),
-    "./.github/github-action-maybe-commit-terraform-changes.sh"
-  }, {
-    DeployExHelpers.priv_file("github-action-secrets-to-env.sh"),
-    "./.github/github-action-secrets-to-env.sh"
-  }]
   @shortdoc "Installs GitHub Actions for automated infrastructure and deployment management"
   @moduledoc """
   Installs GitHub Action workflows that automate infrastructure management and application deployment.
@@ -54,6 +43,15 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
       |> parse_args
       |> Keyword.put_new(:pem_directory, @terraform_default_path)
 
+    github_action_template_path = DeployExHelpers.priv_folder("github-action.yml.eex")
+    github_action_setup_nodes_template_path = DeployExHelpers.priv_folder("github-action-setup-nodes.yml.eex")
+    github_action_scripts_paths = [
+      {DeployExHelpers.priv_folder("github-action-maybe-commit-terraform-changes.sh"),
+       "./.github/github-action-maybe-commit-terraform-changes.sh"},
+      {DeployExHelpers.priv_folder("github-action-secrets-to-env.sh"),
+       "./.github/github-action-secrets-to-env.sh"}
+    ]
+
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
          {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:pem_directory], opts[:pem]) do
@@ -62,7 +60,7 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
       app_names = releases |> Keyword.keys |> Enum.map(&to_string/1)
 
       DeployExHelpers.write_template(
-        @github_action_template_path,
+        github_action_template_path,
         @github_action_path,
         %{
           app_names: app_names,
@@ -72,7 +70,7 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
       )
 
       DeployExHelpers.write_template(
-        @github_action_setup_nodes_template_path,
+        github_action_setup_nodes_template_path,
         @github_action_setup_nodes_path,
         %{
           app_names: app_names
@@ -80,7 +78,7 @@ defmodule Mix.Tasks.DeployEx.InstallGithubAction do
         opts
       )
 
-      Enum.each(@github_action_scripts_paths, fn {input_path, output_path} ->
+      Enum.each(github_action_scripts_paths, fn {input_path, output_path} ->
         DeployExHelpers.check_file_exists!(input_path)
 
         DeployExHelpers.write_file(

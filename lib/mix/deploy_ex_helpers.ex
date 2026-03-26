@@ -37,10 +37,14 @@ defmodule DeployExHelpers do
     end
   end
 
-  def priv_file(priv_subdirectory) do
-    :deploy_ex
-      |> :code.priv_dir
-      |> Path.join(priv_subdirectory)
+  def priv_folder(priv_subdirectory) do
+    local_path = Path.join(DeployEx.Config.deploy_folder(), priv_subdirectory)
+
+    if File.exists?(local_path) do
+      local_path
+    else
+      :deploy_ex |> :code.priv_dir() |> Path.join(priv_subdirectory)
+    end
   end
 
   def write_template(template_path, output_path, variables, opts) do
