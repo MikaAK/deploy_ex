@@ -36,13 +36,15 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
     with :ok <- DeployExHelpers.check_in_umbrella() do
       {opts, extra_args} = parse_args(args)
 
-      app_name = case extra_args do
-        [name | _] -> name
-        [] -> Mix.raise("App name is required: mix deploy_ex.load_test.exec <app_name>")
-      end
+      app_name =
+        case extra_args do
+          [name | _] -> name
+          [] -> Mix.raise("App name is required: mix deploy_ex.load_test.exec <app_name>")
+        end
 
       with {:ok, runner} <- find_runner(opts),
-           {:ok, pem_file} <- DeployEx.Terraform.find_pem_file(@terraform_default_path, opts[:pem]) do
+           {:ok, pem_file} <-
+             DeployEx.Terraform.find_pem_file(@terraform_default_path, opts[:pem]) do
         ip = runner.public_ip || runner.ipv6_address
 
         if is_nil(ip) do
@@ -55,12 +57,35 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
 
         unless opts[:quiet] do
           Mix.shell().info([
-            :cyan, "\nRunning k6 load test", :reset, "\n",
-            "  Runner:     ", :cyan, ip, :reset, "\n",
-            "  App:        ", :cyan, app_name, :reset, "\n",
-            "  Script:     ", :cyan, script, :reset, "\n",
-            "  Prometheus: ", :cyan, prometheus_url, :reset, "\n",
-            "  Target URL: ", :cyan, target_url || "(from script)", :reset, "\n",
+            :cyan,
+            "\nRunning k6 load test",
+            :reset,
+            "\n",
+            "  Runner:     ",
+            :cyan,
+            ip,
+            :reset,
+            "\n",
+            "  App:        ",
+            :cyan,
+            app_name,
+            :reset,
+            "\n",
+            "  Script:     ",
+            :cyan,
+            script,
+            :reset,
+            "\n",
+            "  Prometheus: ",
+            :cyan,
+            prometheus_url,
+            :reset,
+            "\n",
+            "  Target URL: ",
+            :cyan,
+            target_url || "(from script)",
+            :reset,
+            "\n",
             "\n"
           ])
         end
@@ -98,7 +123,10 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
             end
 
           {:ok, []} ->
-            {:error, ErrorMessage.not_found("no k6 runners found, create one with: mix deploy_ex.load_test.create_instance")}
+            {:error,
+             ErrorMessage.not_found(
+               "no k6 runners found, create one with: mix deploy_ex.load_test.create_instance"
+             )}
 
           error ->
             error
@@ -123,11 +151,12 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
       "K6_PROMETHEUS_RW_SERVER_URL=#{prometheus_url}/api/v1/write"
     ]
 
-    env_vars = if target_url do
-      ["TARGET_URL=#{target_url}" | env_vars]
-    else
-      env_vars
-    end
+    env_vars =
+      if target_url do
+        ["TARGET_URL=#{target_url}" | env_vars]
+      else
+        env_vars
+      end
 
     env_string = Enum.join(env_vars, " ")
 
@@ -137,18 +166,22 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
   defp run_k6_via_ssh(ip, pem_file, command) do
     abs_pem = Path.expand(pem_file)
 
-    port = Port.open({:spawn_executable, System.find_executable("ssh")}, [
-      :binary,
-      :exit_status,
-      :stderr_to_stdout,
-      args: [
-        "-i", abs_pem,
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=/dev/null",
-        "admin@#{ip}",
-        "sudo #{command}"
-      ]
-    ])
+    port =
+      Port.open({:spawn_executable, System.find_executable("ssh")}, [
+        :binary,
+        :exit_status,
+        :stderr_to_stdout,
+        args: [
+          "-i",
+          abs_pem,
+          "-o",
+          "StrictHostKeyChecking=no",
+          "-o",
+          "UserKnownHostsFile=/dev/null",
+          "admin@#{ip}",
+          "sudo #{command}"
+        ]
+      ])
 
     stream_output(port)
   end

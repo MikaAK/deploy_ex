@@ -41,15 +41,16 @@ defmodule Mix.Tasks.DeployEx.StartApp do
 
     with {:ok, app_name} <- DeployExHelpers.find_project_name(node_name_args) do
       steps = [
-        {"Starting #{app_name} systemd service", fn ->
-          DeployExHelpers.run_ssh_command(
-            opts[:directory],
-            opts[:pem],
-            app_name,
-            DeployEx.SystemDController.start_service(app_name),
-            machine_opts
-          )
-        end}
+        {"Starting #{app_name} systemd service",
+         fn ->
+           DeployExHelpers.run_ssh_command(
+             opts[:directory],
+             opts[:pem],
+             app_name,
+             DeployEx.SystemDController.start_service(app_name),
+             machine_opts
+           )
+         end}
       ]
 
       case DeployEx.TUI.Progress.run_steps(steps, title: "Start #{app_name}") do

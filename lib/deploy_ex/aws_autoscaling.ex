@@ -22,14 +22,15 @@ defmodule DeployEx.AwsAutoscaling do
   def update_auto_scaling_group(asg_name, params, opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
 
-    request_params = %{
-      "Action" => "UpdateAutoScalingGroup",
-      "AutoScalingGroupName" => asg_name,
-      "Version" => "2011-01-01"
-    }
-    |> maybe_add_param("MinSize", params[:min_size])
-    |> maybe_add_param("MaxSize", params[:max_size])
-    |> maybe_add_param("DesiredCapacity", params[:desired_capacity])
+    request_params =
+      %{
+        "Action" => "UpdateAutoScalingGroup",
+        "AutoScalingGroupName" => asg_name,
+        "Version" => "2011-01-01"
+      }
+      |> maybe_add_param("MinSize", params[:min_size])
+      |> maybe_add_param("MaxSize", params[:max_size])
+      |> maybe_add_param("DesiredCapacity", params[:desired_capacity])
 
     %ExAws.Operation.Query{
       path: "/",
@@ -63,19 +64,21 @@ defmodule DeployEx.AwsAutoscaling do
     strategy = opts[:strategy] || "Rolling"
 
     if strategy not in @valid_strategies do
-      {:error, ErrorMessage.bad_request(
-        "invalid strategy '#{strategy}', must be one of: #{Enum.join(@valid_strategies, ", ")}"
-      )}
+      {:error,
+       ErrorMessage.bad_request(
+         "invalid strategy '#{strategy}', must be one of: #{Enum.join(@valid_strategies, ", ")}"
+       )}
     else
       region = opts[:region] || DeployEx.Config.aws_region()
 
-      params = %{
-        "Action" => "StartInstanceRefresh",
-        "AutoScalingGroupName" => asg_name,
-        "Strategy" => strategy,
-        "Version" => "2011-01-01"
-      }
-      |> add_preferences(preferences)
+      params =
+        %{
+          "Action" => "StartInstanceRefresh",
+          "AutoScalingGroupName" => asg_name,
+          "Strategy" => strategy,
+          "Version" => "2011-01-01"
+        }
+        |> add_preferences(preferences)
 
       %ExAws.Operation.Query{
         path: "/",
@@ -91,12 +94,13 @@ defmodule DeployEx.AwsAutoscaling do
     region = opts[:region] || DeployEx.Config.aws_region()
     refresh_ids = opts[:refresh_ids] || []
 
-    params = %{
-      "Action" => "DescribeInstanceRefreshes",
-      "AutoScalingGroupName" => asg_name,
-      "Version" => "2011-01-01"
-    }
-    |> add_refresh_ids(refresh_ids)
+    params =
+      %{
+        "Action" => "DescribeInstanceRefreshes",
+        "AutoScalingGroupName" => asg_name,
+        "Version" => "2011-01-01"
+      }
+      |> add_refresh_ids(refresh_ids)
 
     %ExAws.Operation.Query{
       path: "/",
@@ -143,11 +147,12 @@ defmodule DeployEx.AwsAutoscaling do
   end
 
   defp fetch_all_asgs(region, prefix, environment, next_token \\ nil, acc \\ []) do
-    params = %{
-      "Action" => "DescribeAutoScalingGroups",
-      "Version" => "2011-01-01"
-    }
-    |> maybe_add_param("NextToken", next_token)
+    params =
+      %{
+        "Action" => "DescribeAutoScalingGroups",
+        "Version" => "2011-01-01"
+      }
+      |> maybe_add_param("NextToken", next_token)
 
     %ExAws.Operation.Query{
       path: "/",
@@ -161,13 +166,14 @@ defmodule DeployEx.AwsAutoscaling do
           %{"DescribeAutoScalingGroupsResponse" => %{"DescribeAutoScalingGroupsResult" => result}} ->
             groups = result["AutoScalingGroups"]
 
-            matching = groups
-            |> extract_list("member")
-            |> Enum.filter(fn asg ->
-              name = asg["AutoScalingGroupName"] || ""
-              String.starts_with?(name, prefix) and String.ends_with?(name, "-#{environment}")
-            end)
-            |> Enum.map(&parse_asg/1)
+            matching =
+              groups
+              |> extract_list("member")
+              |> Enum.filter(fn asg ->
+                name = asg["AutoScalingGroupName"] || ""
+                String.starts_with?(name, prefix) and String.ends_with?(name, "-#{environment}")
+              end)
+              |> Enum.map(&parse_asg/1)
 
             all_matching = acc ++ matching
 
@@ -198,6 +204,7 @@ defmodule DeployEx.AwsAutoscaling do
   defp maybe_add_param(params, key, value), do: Map.put(params, key, value)
 
   defp add_refresh_ids(params, []), do: params
+
   defp add_refresh_ids(params, refresh_ids) do
     refresh_ids
     |> Enum.with_index(1)
@@ -208,7 +215,11 @@ defmodule DeployEx.AwsAutoscaling do
 
   defp handle_describe_asg_response({:ok, %{body: body}}) do
     case parse_xml(body) do
-      %{"DescribeAutoScalingGroupsResponse" => %{"DescribeAutoScalingGroupsResult" => %{"AutoScalingGroups" => groups}}} ->
+      %{
+        "DescribeAutoScalingGroupsResponse" => %{
+          "DescribeAutoScalingGroupsResult" => %{"AutoScalingGroups" => groups}
+        }
+      } ->
         case extract_list(groups, "member") do
           [asg | _] -> {:ok, parse_asg(asg)}
           [] -> {:error, ErrorMessage.not_found("autoscaling group not found")}
@@ -220,7 +231,8 @@ defmodule DeployEx.AwsAutoscaling do
   end
 
   defp handle_describe_asg_response({:error, {:http_error, status, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["AWS error", %{body: body}])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["AWS error", %{body: body}])}
   end
 
   defp handle_describe_asg_response({:error, error}) do
@@ -230,7 +242,8 @@ defmodule DeployEx.AwsAutoscaling do
   defp handle_update_asg_response({:ok, _}), do: :ok
 
   defp handle_update_asg_response({:error, {:http_error, status, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["AWS error", %{body: body}])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["AWS error", %{body: body}])}
   end
 
   defp handle_update_asg_response({:error, error}) do
@@ -253,7 +266,8 @@ defmodule DeployEx.AwsAutoscaling do
   end
 
   defp handle_set_capacity_response({:error, {:http_error, status, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["AWS error", %{body: body}])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["AWS error", %{body: body}])}
   end
 
   defp handle_set_capacity_response({:error, error}) do
@@ -262,7 +276,11 @@ defmodule DeployEx.AwsAutoscaling do
 
   defp handle_start_refresh_response({:ok, %{body: body}}) do
     case parse_xml(body) do
-      %{"StartInstanceRefreshResponse" => %{"StartInstanceRefreshResult" => %{"InstanceRefreshId" => refresh_id}}} ->
+      %{
+        "StartInstanceRefreshResponse" => %{
+          "StartInstanceRefreshResult" => %{"InstanceRefreshId" => refresh_id}
+        }
+      } ->
         {:ok, refresh_id}
 
       _ ->
@@ -284,7 +302,8 @@ defmodule DeployEx.AwsAutoscaling do
   end
 
   defp handle_start_refresh_response({:error, {:http_error, status, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["AWS error", %{body: body}])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["AWS error", %{body: body}])}
   end
 
   defp handle_start_refresh_response({:error, error}) do
@@ -293,7 +312,11 @@ defmodule DeployEx.AwsAutoscaling do
 
   defp handle_describe_refreshes_response({:ok, %{body: body}}) do
     case parse_xml(body) do
-      %{"DescribeInstanceRefreshesResponse" => %{"DescribeInstanceRefreshesResult" => %{"InstanceRefreshes" => refreshes}}} ->
+      %{
+        "DescribeInstanceRefreshesResponse" => %{
+          "DescribeInstanceRefreshesResult" => %{"InstanceRefreshes" => refreshes}
+        }
+      } ->
         {:ok, extract_list(refreshes, "member") |> Enum.map(&parse_refresh/1)}
 
       _ ->
@@ -310,7 +333,8 @@ defmodule DeployEx.AwsAutoscaling do
   end
 
   defp handle_describe_refreshes_response({:error, {:http_error, status, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["AWS error", %{body: body}])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["AWS error", %{body: body}])}
   end
 
   defp handle_describe_refreshes_response({:error, error}) do
@@ -319,7 +343,11 @@ defmodule DeployEx.AwsAutoscaling do
 
   defp handle_describe_policies_response({:ok, %{body: body}}) do
     case parse_xml(body) do
-      %{"DescribePoliciesResponse" => %{"DescribePoliciesResult" => %{"ScalingPolicies" => policies}}} ->
+      %{
+        "DescribePoliciesResponse" => %{
+          "DescribePoliciesResult" => %{"ScalingPolicies" => policies}
+        }
+      } ->
         {:ok, extract_list(policies, "member") |> Enum.map(&parse_policy/1)}
 
       _ ->
@@ -328,7 +356,8 @@ defmodule DeployEx.AwsAutoscaling do
   end
 
   defp handle_describe_policies_response({:error, {:http_error, status, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["AWS error", %{body: body}])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["AWS error", %{body: body}])}
   end
 
   defp handle_describe_policies_response({:error, error}) do
@@ -389,10 +418,12 @@ defmodule DeployEx.AwsAutoscaling do
   end
 
   defp parse_target_tracking(nil), do: nil
+
   defp parse_target_tracking(config) do
     %{
       target_value: parse_float(config["TargetValue"]),
-      predefined_metric_type: get_in(config, ["PredefinedMetricSpecification", "PredefinedMetricType"])
+      predefined_metric_type:
+        get_in(config, ["PredefinedMetricSpecification", "PredefinedMetricType"])
     }
   end
 

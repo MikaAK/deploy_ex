@@ -27,15 +27,22 @@ defmodule Mix.Tasks.DeployEx.Autoscale.RefreshStatus do
     Application.ensure_all_started(:telemetry)
     Application.ensure_all_started(:ex_aws)
 
-    {opts, remaining_args} = OptionParser.parse!(args,
-      aliases: [e: :environment, a: :all],
-      switches: [environment: :string, all: :boolean]
-    )
+    {opts, remaining_args} =
+      OptionParser.parse!(args,
+        aliases: [e: :environment, a: :all],
+        switches: [environment: :string, all: :boolean]
+      )
 
-    app_name = case remaining_args do
-      [name | _] -> name
-      [] -> Mix.raise("Application name is required. Usage: mix deploy_ex.autoscale.refresh_status <app_name>")
-    end
+    app_name =
+      case remaining_args do
+        [name | _] ->
+          name
+
+        [] ->
+          Mix.raise(
+            "Application name is required. Usage: mix deploy_ex.autoscale.refresh_status <app_name>"
+          )
+      end
 
     environment = Keyword.get(opts, :environment, Mix.env() |> to_string())
     show_all = Keyword.get(opts, :all, false)
@@ -76,31 +83,38 @@ defmodule Mix.Tasks.DeployEx.Autoscale.RefreshStatus do
   end
 
   defp display_refreshes(refreshes, asg_name, show_all) do
-    refreshes_to_show = if show_all do
-      refreshes
-    else
-      Enum.filter(refreshes, fn r ->
-        r.status in ["Pending", "InProgress", "Cancelling"] or
-        recent_refresh?(r)
-      end)
-    end
+    refreshes_to_show =
+      if show_all do
+        refreshes
+      else
+        Enum.filter(refreshes, fn r ->
+          r.status in ["Pending", "InProgress", "Cancelling"] or
+            recent_refresh?(r)
+        end)
+      end
 
     if Enum.empty?(refreshes_to_show) do
       Mix.shell().info([:yellow, "\nNo active or recent instance refreshes for #{asg_name}."])
       Mix.shell().info("Use --all to see all historical refreshes.")
     else
       Mix.shell().info([
-        :green, "\n",
+        :green,
+        "\n",
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
-        :bright, "Instance Refreshes: ", :normal, asg_name, "\n",
+        :bright,
+        "Instance Refreshes: ",
+        :normal,
+        asg_name,
+        "\n",
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
       ])
 
       instances = fetch_asg_instances(asg_name)
 
-      active_refreshes = Enum.filter(refreshes_to_show, fn r ->
-        r.status in ["Pending", "InProgress"]
-      end)
+      active_refreshes =
+        Enum.filter(refreshes_to_show, fn r ->
+          r.status in ["Pending", "InProgress"]
+        end)
 
       warming_instance_ids = extract_warming_instance_ids(active_refreshes)
 
@@ -118,21 +132,31 @@ defmodule Mix.Tasks.DeployEx.Autoscale.RefreshStatus do
   end
 
   defp display_refresh(refresh) do
-    status_color = case refresh.status do
-      "Successful" -> :green
-      "Failed" -> :red
-      "Cancelled" -> :yellow
-      "InProgress" -> :cyan
-      "Pending" -> :blue
-      _ -> :reset
-    end
+    status_color =
+      case refresh.status do
+        "Successful" -> :green
+        "Failed" -> :red
+        "Cancelled" -> :yellow
+        "InProgress" -> :cyan
+        "Pending" -> :blue
+        _ -> :reset
+      end
 
     Mix.shell().info([
-      "\n", status_color, "● ", refresh.status, :reset, " - ", refresh.refresh_id
+      "\n",
+      status_color,
+      "● ",
+      refresh.status,
+      :reset,
+      " - ",
+      refresh.refresh_id
     ])
 
     Mix.shell().info([
-      "  Progress: ", :bright, "#{refresh.percentage_complete || 0}%", :reset
+      "  Progress: ",
+      :bright,
+      "#{refresh.percentage_complete || 0}%",
+      :reset
     ])
 
     if refresh.start_time do
@@ -173,7 +197,10 @@ defmodule Mix.Tasks.DeployEx.Autoscale.RefreshStatus do
 
   defp display_instances(instances, warming_instance_ids) do
     Mix.shell().info([
-      "\n  ", :bright, "Instances:", :reset
+      "\n  ",
+      :bright,
+      "Instances:",
+      :reset
     ])
 
     instances
@@ -181,30 +208,48 @@ defmodule Mix.Tasks.DeployEx.Autoscale.RefreshStatus do
     |> Enum.each(fn instance ->
       warming? = MapSet.member?(warming_instance_ids, instance.instance_id)
 
-      state_color = cond do
-        String.starts_with?(instance.lifecycle_state, "Terminating") -> :red
-        warming? -> :cyan
-        instance.lifecycle_state === "InService" -> :green
-        String.starts_with?(instance.lifecycle_state, "Pending") -> :cyan
-        true -> :yellow
-      end
+      state_color =
+        cond do
+          String.starts_with?(instance.lifecycle_state, "Terminating") -> :red
+          warming? -> :cyan
+          instance.lifecycle_state === "InService" -> :green
+          String.starts_with?(instance.lifecycle_state, "Pending") -> :cyan
+          true -> :yellow
+        end
 
-      label = cond do
-        String.starts_with?(instance.lifecycle_state, "Terminating") -> " [spinning down]"
-        warming? -> " [warming up]"
-        String.starts_with?(instance.lifecycle_state, "Pending") -> " [launching]"
-        true -> ""
-      end
+      label =
+        cond do
+          String.starts_with?(instance.lifecycle_state, "Terminating") -> " [spinning down]"
+          warming? -> " [warming up]"
+          String.starts_with?(instance.lifecycle_state, "Pending") -> " [launching]"
+          true -> ""
+        end
 
       type_info = if instance.instance_type, do: " #{instance.instance_type}", else: ""
 
       Mix.shell().info([
-        "    ", state_color, "● ", :reset,
+        "    ",
+        state_color,
+        "● ",
+        :reset,
         instance.instance_id,
-        :faint, " (", instance.lifecycle_state, " / ", instance.health_status || "Unknown", ")", :reset,
-        :faint, type_info, :reset,
-        :faint, " ", instance.availability_zone || "", :reset,
-        state_color, label, :reset
+        :faint,
+        " (",
+        instance.lifecycle_state,
+        " / ",
+        instance.health_status || "Unknown",
+        ")",
+        :reset,
+        :faint,
+        type_info,
+        :reset,
+        :faint,
+        " ",
+        instance.availability_zone || "",
+        :reset,
+        state_color,
+        label,
+        :reset
       ])
     end)
   end
@@ -217,7 +262,8 @@ defmodule Mix.Tasks.DeployEx.Autoscale.RefreshStatus do
         {:ok, dt, _} ->
           DateTime.diff(DateTime.utc_now(), dt, :hour) < 24
 
-        _ -> false
+        _ ->
+          false
       end
     end
   end

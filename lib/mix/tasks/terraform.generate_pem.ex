@@ -1,4 +1,3 @@
-
 defmodule Mix.Tasks.Terraform.GeneratePem do
   use Mix.Task
 
@@ -39,9 +38,15 @@ defmodule Mix.Tasks.Terraform.GeneratePem do
     maybe_start_aws_apps(state_opts[:backend])
 
     with {:ok, state} <- TerraformState.read_state(opts[:directory], state_opts),
-         {:ok, private_key} <- TerraformState.get_resource_attribute(state, "tls_private_key", "key_pair", "private_key_pem"),
-         {:ok, key_name} <- TerraformState.get_resource_attribute(state, "aws_key_pair", "key_pair", "key_name") do
-
+         {:ok, private_key} <-
+           TerraformState.get_resource_attribute(
+             state,
+             "tls_private_key",
+             "key_pair",
+             "private_key_pem"
+           ),
+         {:ok, key_name} <-
+           TerraformState.get_resource_attribute(state, "aws_key_pair", "key_pair", "key_name") do
       # If no output file is provided, default to `<key_name>.pem`
       output_file = Path.join(opts[:directory], opts[:output_file] || "#{key_name}.pem")
 
@@ -68,16 +73,17 @@ defmodule Mix.Tasks.Terraform.GeneratePem do
   end
 
   defp parse_args(args) do
-    {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [d: :directory, o: :output_file, b: :backend],
-      switches: [
-        directory: :string,
-        output_file: :string,
-        backend: :string,
-        bucket: :string,
-        region: :string
-      ]
-    )
+    {opts, _extra_args} =
+      OptionParser.parse!(args,
+        aliases: [d: :directory, o: :output_file, b: :backend],
+        switches: [
+          directory: :string,
+          output_file: :string,
+          backend: :string,
+          bucket: :string,
+          region: :string
+        ]
+      )
 
     opts
   end
@@ -85,14 +91,19 @@ defmodule Mix.Tasks.Terraform.GeneratePem do
   defp build_state_opts(opts) do
     state_opts = []
 
-    state_opts = if opts[:backend] do
-      Keyword.put(state_opts, :backend, String.to_existing_atom(opts[:backend]))
-    else
-      state_opts
-    end
+    state_opts =
+      if opts[:backend] do
+        Keyword.put(state_opts, :backend, String.to_existing_atom(opts[:backend]))
+      else
+        state_opts
+      end
 
-    state_opts = if opts[:bucket], do: Keyword.put(state_opts, :bucket, opts[:bucket]), else: state_opts
-    state_opts = if opts[:region], do: Keyword.put(state_opts, :region, opts[:region]), else: state_opts
+    state_opts =
+      if opts[:bucket], do: Keyword.put(state_opts, :bucket, opts[:bucket]), else: state_opts
+
+    state_opts =
+      if opts[:region], do: Keyword.put(state_opts, :region, opts[:region]), else: state_opts
+
     state_opts
   end
 
@@ -106,6 +117,7 @@ defmodule Mix.Tasks.Terraform.GeneratePem do
 
   defp save_pem_file(private_key, output_file) do
     File.write!(output_file, private_key)
-    File.chmod(output_file, 0o600)  # Secure the file (read/write owner only)
+    # Secure the file (read/write owner only)
+    File.chmod(output_file, 0o600)
   end
 end

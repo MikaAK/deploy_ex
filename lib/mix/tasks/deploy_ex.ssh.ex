@@ -82,7 +82,16 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
   defp parse_args(args) do
     OptionParser.parse!(args,
-      aliases: [f: :force, q: :quiet, d: :directory, s: :short, n: :log_count, p: :pem, i: :index, l: :list],
+      aliases: [
+        f: :force,
+        q: :quiet,
+        d: :directory,
+        s: :short,
+        n: :log_count,
+        p: :pem,
+        i: :index,
+        l: :list
+      ],
       switches: [
         directory: :string,
         force: :boolean,
@@ -126,7 +135,8 @@ defmodule Mix.Tasks.DeployEx.Ssh do
     instance_ids = Keyword.get_values(opts, :instance_id)
 
     with {:ok, app_name} <- find_app_name_or_default(app_params, instance_ids),
-         {:ok, instance_ips} <- find_instance_ips_for_app_or_instance_ids(app_name, instance_ids, machine_opts) do
+         {:ok, instance_ips} <-
+           find_instance_ips_for_app_or_instance_ids(app_name, instance_ids, machine_opts) do
       if opts[:list] do
         list_instances(app_name, instance_ips)
       else
@@ -170,9 +180,14 @@ defmodule Mix.Tasks.DeployEx.Ssh do
 
   defp list_instances(app_name, instance_ips) do
     Mix.shell().info([
-      :green, "\n",
+      :green,
+      "\n",
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
-      :bright, "Instances for: ", :normal, app_name, "\n",
+      :bright,
+      "Instances for: ",
+      :normal,
+      app_name,
+      "\n",
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     ])
 
@@ -180,23 +195,40 @@ defmodule Mix.Tasks.DeployEx.Ssh do
     |> Enum.with_index()
     |> Enum.each(fn {ip, index} ->
       Mix.shell().info([
-        :cyan, "  [#{index}] ", :reset, ip
+        :cyan,
+        "  [#{index}] ",
+        :reset,
+        ip
       ])
     end)
 
     Mix.shell().info([
-      :green, "\n",
+      :green,
+      "\n",
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
-      :reset, "Total instances: ", :bright, "#{length(instance_ips)}", :reset, "\n",
-      "Use ", :cyan, "--index N", :reset, " to connect to a specific instance\n"
+      :reset,
+      "Total instances: ",
+      :bright,
+      "#{length(instance_ips)}",
+      :reset,
+      "\n",
+      "Use ",
+      :cyan,
+      "--index N",
+      :reset,
+      " to connect to a specific instance\n"
     ])
   end
 
   defp list_qa_instances(qa_instances) do
     Mix.shell().info([
-      :green, "\n",
+      :green,
+      "\n",
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
-      :bright, "QA Nodes", :normal, "\n",
+      :bright,
+      "QA Nodes",
+      :normal,
+      "\n",
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     ])
 
@@ -204,37 +236,56 @@ defmodule Mix.Tasks.DeployEx.Ssh do
     |> Enum.with_index()
     |> Enum.each(fn {{name, ip}, index} ->
       Mix.shell().info([
-        :cyan, "  [#{index}] ", :reset, name, " (", ip, ")"
+        :cyan,
+        "  [#{index}] ",
+        :reset,
+        name,
+        " (",
+        ip,
+        ")"
       ])
     end)
 
     Mix.shell().info([
-      :green, "\n",
+      :green,
+      "\n",
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
-      :reset, "Total QA nodes: ", :bright, "#{length(qa_instances)}", :reset, "\n",
-      "Use ", :cyan, "--index N", :reset, " to connect to a specific instance\n"
+      :reset,
+      "Total QA nodes: ",
+      :bright,
+      "#{length(qa_instances)}",
+      :reset,
+      "\n",
+      "Use ",
+      :cyan,
+      "--index N",
+      :reset,
+      " to connect to a specific instance\n"
     ])
   end
 
   defp connect_to_qa_host(qa_instances, pem_file_path, opts) do
-    {name, ip} = cond do
-      opts[:index] !== nil ->
-        instance = Enum.at(qa_instances, opts[:index])
+    {name, ip} =
+      cond do
+        opts[:index] !== nil ->
+          instance = Enum.at(qa_instances, opts[:index])
 
-        if is_nil(instance) do
-          Mix.raise("Instance index #{opts[:index]} not found. Available: 0..#{length(qa_instances) - 1}")
-        else
-          instance
-        end
+          if is_nil(instance) do
+            Mix.raise(
+              "Instance index #{opts[:index]} not found. Available: 0..#{length(qa_instances) - 1}"
+            )
+          else
+            instance
+          end
 
-      opts[:short] ->
-        Enum.random(qa_instances)
+        opts[:short] ->
+          Enum.random(qa_instances)
 
-      true ->
-        choices = Enum.map(qa_instances, fn {name, ip} -> "#{name} (#{ip})" end)
-        [choice] = DeployExHelpers.prompt_for_choice(choices, false)
-        Enum.find(qa_instances, fn {name, ip} -> "#{name} (#{ip})" === choice end)
-    end
+        true ->
+          choices = Enum.map(qa_instances, fn {name, ip} -> "#{name} (#{ip})" end)
+          [choice] = DeployExHelpers.prompt_for_choice(choices, false)
+          Enum.find(qa_instances, fn {name, ip} -> "#{name} (#{ip})" === choice end)
+      end
 
     app_name = extract_app_name_from_qa_node(name)
     log_ssh_command(app_name, pem_file_path, ip, opts)
@@ -252,36 +303,39 @@ defmodule Mix.Tasks.DeployEx.Ssh do
   end
 
   defp connect_to_host(app_name, instance_ips, pem_file_path, opts) do
-    instance_ip = cond do
-      opts[:index] !== nil ->
-        instance_ip = Enum.at(instance_ips, opts[:index])
+    instance_ip =
+      cond do
+        opts[:index] !== nil ->
+          instance_ip = Enum.at(instance_ips, opts[:index])
 
-        if is_nil(instance_ip) do
-          Mix.raise("Instance index #{opts[:index]} not found. Available: 0..#{length(instance_ips) - 1}")
-        else
-          instance_ip
-        end
+          if is_nil(instance_ip) do
+            Mix.raise(
+              "Instance index #{opts[:index]} not found. Available: 0..#{length(instance_ips) - 1}"
+            )
+          else
+            instance_ip
+          end
 
-      opts[:short] ->
-        Enum.random(instance_ips)
+        opts[:short] ->
+          Enum.random(instance_ips)
 
-      true ->
-        DeployExHelpers.prompt_for_choice(instance_ips, false)
-    end
+        true ->
+          DeployExHelpers.prompt_for_choice(instance_ips, false)
+      end
 
     log_ssh_command(app_name, pem_file_path, instance_ip, opts)
 
-        # When using Rambo re-enable
-        # Mix.shell().info([
-        #   :green, "Attempting to connect to ",
-        #   :reset, app_name, :green, " at ",
-        #   :reset, ip, :green, " using pem file ",
-        #   :reset, pem_file_path
-        # ])
+    # When using Rambo re-enable
+    # Mix.shell().info([
+    #   :green, "Attempting to connect to ",
+    #   :reset, app_name, :green, " at ",
+    #   :reset, ip, :green, " using pem file ",
+    #   :reset, pem_file_path
+    # ])
 
-        # with {:error, e} <- DeployExHelpers.run_command_with_input("ssh -i #{pem_file_path} admin@#{ip}", "") do
-        #   Mix.shell().error(to_string(e))
-        # end
+    # with {:error, e} <- DeployExHelpers.run_command_with_input("ssh -i #{pem_file_path} admin@#{ip}", "") do
+    #   Mix.shell().error(to_string(e))
+    # end
   end
 
   defp log_ssh_command(app_name, pem_file_path, ip, opts) do
@@ -291,10 +345,17 @@ defmodule Mix.Tasks.DeployEx.Ssh do
       Mix.shell().info("ssh -i #{pem_file_path} admin@#{ip} #{command}")
     else
       Mix.shell().info([
-        :green, "Use the following comand to connect to ",
-        :reset, app_name || "Unknown", :green, " \"",
-        :reset, "ssh -i #{pem_file_path} admin@#{ip} ", command,
-        :green, "\""
+        :green,
+        "Use the following comand to connect to ",
+        :reset,
+        app_name || "Unknown",
+        :green,
+        " \"",
+        :reset,
+        "ssh -i #{pem_file_path} admin@#{ip} ",
+        command,
+        :green,
+        "\""
       ])
     end
   end

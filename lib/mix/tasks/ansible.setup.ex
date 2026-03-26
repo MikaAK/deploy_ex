@@ -38,16 +38,19 @@ defmodule Mix.Tasks.Ansible.Setup do
   def run(args) do
     with :ok <- DeployExHelpers.check_in_umbrella(),
          :ok <- DeployExHelpers.ensure_ansible_installed() do
-      opts = args
+      opts =
+        args
         |> parse_args
         |> Keyword.put_new(:directory, @ansible_default_path)
         |> Keyword.put_new(:parallel, @setup_max_concurrency)
 
-      opts = opts
+      opts =
+        opts
         |> Keyword.put(:only, Keyword.get_values(opts, :only))
         |> Keyword.put(:except, Keyword.get_values(opts, :except))
 
-      ansible_args = args
+      ansible_args =
+        args
         |> DeployEx.Ansible.parse_args()
         |> then(fn
           "" -> []
@@ -60,9 +63,10 @@ defmodule Mix.Tasks.Ansible.Setup do
 
       relative_directory = String.replace(Path.absname(opts[:directory]), "#{File.cwd!()}/", "")
 
-      setup_files = opts[:directory]
+      setup_files =
+        opts[:directory]
         |> Path.join("setup/*.yaml")
-        |> Path.wildcard
+        |> Path.wildcard()
         |> Enum.map(&Path.relative_to(&1, relative_directory))
         |> DeployExHelpers.filter_only_or_except(opts[:only], opts[:except])
 
@@ -74,13 +78,15 @@ defmodule Mix.Tasks.Ansible.Setup do
           DeployEx.Utils.run_command_streaming(command, opts[:directory], line_callback)
         end
 
-        res = DeployEx.TUI.DeployProgress.run(setup_files, run_fn,
-          max_concurrency: opts[:parallel],
-          timeout: @setup_timeout
-        )
+        res =
+          DeployEx.TUI.DeployProgress.run(setup_files, run_fn,
+            max_concurrency: opts[:parallel],
+            timeout: @setup_timeout
+          )
 
         case res do
-          {:ok, _} -> :ok
+          {:ok, _} ->
+            :ok
 
           {:error, [head | tail]} ->
             Enum.each(tail, &Mix.shell().error(to_string(&1)))
@@ -95,26 +101,29 @@ defmodule Mix.Tasks.Ansible.Setup do
 
   defp build_setup_command(setup_file, ansible_args, opts) do
     has_custom_limit = Enum.any?(ansible_args, &String.contains?(&1, "--limit"))
-    qa_limit = if opts[:include_qa] === true or has_custom_limit, do: [], else: ["--limit", "'!qa_true'"]
+
+    qa_limit =
+      if opts[:include_qa] === true or has_custom_limit, do: [], else: ["--limit", "'!qa_true'"]
 
     (["ansible-playbook", setup_file] ++ ansible_args ++ qa_limit)
     |> Enum.join(" ")
   end
 
   defp parse_args(args) do
-    {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quit, d: :directory],
-      switches: [
-        directory: :string,
-        only: :keep,
-        except: :keep,
-        force: :boolean,
-        quiet: :boolean,
-        parallel: :integer,
-        include_qa: :boolean,
-        no_tui: :boolean
-      ]
-    )
+    {opts, _extra_args} =
+      OptionParser.parse!(args,
+        aliases: [f: :force, q: :quit, d: :directory],
+        switches: [
+          directory: :string,
+          only: :keep,
+          except: :keep,
+          force: :boolean,
+          quiet: :boolean,
+          parallel: :integer,
+          include_qa: :boolean,
+          no_tui: :boolean
+        ]
+      )
 
     opts
   end

@@ -81,6 +81,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.DestroyInstance do
   end
 
   defp maybe_filter_by_instance_id(runners, nil), do: runners
+
   defp maybe_filter_by_instance_id(runners, instance_id) do
     Enum.filter(runners, &(&1.instance_id === instance_id))
   end
@@ -90,8 +91,13 @@ defmodule Mix.Tasks.DeployEx.LoadTest.DestroyInstance do
 
     Enum.each(runners, fn runner ->
       Mix.shell().info([
-        "  - ", :cyan, runner.instance_name || runner.instance_id, :reset,
-        " (", runner.instance_id, ")"
+        "  - ",
+        :cyan,
+        runner.instance_name || runner.instance_id,
+        :reset,
+        " (",
+        runner.instance_id,
+        ")"
       ])
     end)
 
@@ -112,7 +118,9 @@ defmodule Mix.Tasks.DeployEx.LoadTest.DestroyInstance do
         end
 
       {:error, error} ->
-        Mix.shell().error("  ✗ Failed to destroy #{runner.instance_name || runner.instance_id}: #{ErrorMessage.to_string(error)}")
+        Mix.shell().error(
+          "  ✗ Failed to destroy #{runner.instance_name || runner.instance_id}: #{ErrorMessage.to_string(error)}"
+        )
     end
   end
 end

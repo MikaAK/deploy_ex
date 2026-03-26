@@ -24,62 +24,58 @@ defmodule Mix.Tasks.Terraform.Build do
   """
 
   def run(args) do
-    opts = args
+    opts =
+      args
       |> parse_args
       |> Keyword.put_new(:directory, @terraform_default_path)
       |> Keyword.put_new(:aws_region, @default_aws_region)
       |> Keyword.put_new(:aws_release_bucket, @default_aws_release_bucket)
       |> Keyword.put_new(:aws_log_bucket, DeployEx.Config.aws_log_bucket())
       |> Keyword.put_new(:aws_release_state_bucket, DeployEx.Config.aws_release_state_bucket())
-      |> Keyword.put_new(:aws_release_state_lock_table, DeployEx.Config.aws_release_state_lock_table())
+      |> Keyword.put_new(
+        :aws_release_state_lock_table,
+        DeployEx.Config.aws_release_state_lock_table()
+      )
       |> Keyword.put_new(:env, Mix.env())
-
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
          :ok <- ensure_terraform_directory_exists(opts[:directory]) do
-      random_bytes = 6 |> :crypto.strong_rand_bytes |> Base.encode32(padding: false)
+      random_bytes = 6 |> :crypto.strong_rand_bytes() |> Base.encode32(padding: false)
 
-      terraform_app_releases_variables = releases
-        |> Keyword.keys
+      terraform_app_releases_variables =
+        releases
+        |> Keyword.keys()
         |> Enum.map_join(",\n\n", &(&1 |> to_string |> generate_terraform_release_variables()))
 
       params = %{
         directory: opts[:directory],
         environment: opts[:env],
-
         aws_region: opts[:aws_region],
         aws_release_bucket: opts[:aws_release_bucket],
-
         use_db: !opts[:no_database],
         db_password: !opts[:no_database] && generate_db_password(),
-
         release_bucket_name: opts[:aws_release_bucket],
         logging_bucket_name: opts[:aws_log_bucket],
-
         aws_release_state_bucket: opts[:aws_release_state_bucket],
         aws_release_state_lock_table: opts[:aws_release_state_lock_table],
-
         terraform_backend: DeployEx.Config.terraform_backend(),
-
         pem_app_name: "#{DeployExHelpers.kebab_project_name()}-#{random_bytes}",
         app_name: DeployExHelpers.underscored_project_name(),
         kebab_app_name: DeployExHelpers.kebab_project_name(),
-
         use_loki: !opts[:no_loki],
         use_grafana: !opts[:no_grafana],
         use_prometheus: !opts[:no_prometheus],
         use_redis: !opts[:no_redis],
         use_sentry: !opts[:no_sentry],
         use_database: !opts[:no_database],
-
         terraform_app_releases_variables: terraform_app_releases_variables,
         terraform_release_variables: terraform_app_releases_variables,
         terraform_redis_variables: terraform_redis_variables(opts),
         terraform_sentry_variables: terraform_sentry_variables(opts),
         terraform_grafana_variables: terraform_grafana_variables(opts),
         terraform_loki_variables: terraform_loki_variables(opts),
-        terraform_prometheus_variables: terraform_prometheus_variables(opts),
+        terraform_prometheus_variables: terraform_prometheus_variables(opts)
       }
 
       write_terraform_template_files(params, opts)
@@ -94,23 +90,24 @@ defmodule Mix.Tasks.Terraform.Build do
   end
 
   defp parse_args(args) do
-    {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quit, d: :directory, v: :verbose],
-      switches: [
-        directory: :string,
-        force: :boolean,
-        quiet: :boolean,
-        verbose: :boolean,
-        aws_region: :string,
-        env: :string,
-        no_database: :boolean,
-        no_loki: :boolean,
-        no_sentry: :boolean,
-        no_grafana: :boolean,
-        no_redis: :boolean,
-        no_prometheus: :boolean
-      ]
-    )
+    {opts, _extra_args} =
+      OptionParser.parse!(args,
+        aliases: [f: :force, q: :quit, d: :directory, v: :verbose],
+        switches: [
+          directory: :string,
+          force: :boolean,
+          quiet: :boolean,
+          verbose: :boolean,
+          aws_region: :string,
+          env: :string,
+          no_database: :boolean,
+          no_loki: :boolean,
+          no_sentry: :boolean,
+          no_grafana: :boolean,
+          no_redis: :boolean,
+          no_prometheus: :boolean
+        ]
+      )
 
     opts
   end
@@ -124,38 +121,41 @@ defmodule Mix.Tasks.Terraform.Build do
       File.mkdir_p!(directory)
 
       "terraform"
-        |> DeployExHelpers.priv_folder()
-        |> File.cp_r!(directory)
+      |> DeployExHelpers.priv_folder()
+      |> File.cp_r!(directory)
 
       directory
-        |> Path.join("**/*.eex")
-        |> Path.wildcard
-        |> Enum.map(&File.rm!/1)
+      |> Path.join("**/*.eex")
+      |> Path.wildcard()
+      |> Enum.map(&File.rm!/1)
 
       :ok
     end
   end
 
   defp generate_terraform_release_variables(release_name) do
-    String.trim_trailing("""
-        #{release_name} = {
-          name = "#{DeployEx.Utils.upper_title_case(release_name)}"
-          tags = {
-            Vendor = "Self"
-            Type   = "Self Made"
-          }
+    String.trim_trailing(
+      """
+          #{release_name} = {
+            name = "#{DeployEx.Utils.upper_title_case(release_name)}"
+            tags = {
+              Vendor = "Self"
+              Type   = "Self Made"
+            }
 
-          # Autoscaling Configuration (optional)
-          # Uncomment and configure to enable AWS Auto Scaling Groups
-          # autoscaling = {
-          #   enable             = true
-          #   min_size           = 1
-          #   max_size           = 5
-          #   desired_capacity   = 2
-          #   cpu_target_percent = 60
-          # }
-        }
-    """, "\n")
+            # Autoscaling Configuration (optional)
+            # Uncomment and configure to enable AWS Auto Scaling Groups
+            # autoscaling = {
+            #   enable             = true
+            #   min_size           = 1
+            #   max_size           = 5
+            #   desired_capacity   = 2
+            #   cpu_target_percent = 60
+            # }
+          }
+      """,
+      "\n"
+    )
   end
 
   defp terraform_redis_variables(opts) do
@@ -274,16 +274,16 @@ defmodule Mix.Tasks.Terraform.Build do
     terraform_path = DeployExHelpers.priv_folder("terraform")
 
     terraform_path
-      |> Path.join("*.eex")
-      |> Path.wildcard
-      |> Enum.map(fn template_file ->
-        template = EEx.eval_file(template_file, assigns: params)
+    |> Path.join("*.eex")
+    |> Path.wildcard()
+    |> Enum.map(fn template_file ->
+      template = EEx.eval_file(template_file, assigns: params)
 
-        template_file
-          |> String.replace(terraform_path, "")
-          |> String.replace(".eex", "")
-          |> then(&Path.join(params[:directory], &1))
-          |> DeployExHelpers.write_file(template, opts)
-      end)
+      template_file
+      |> String.replace(terraform_path, "")
+      |> String.replace(".eex", "")
+      |> then(&Path.join(params[:directory], &1))
+      |> DeployExHelpers.write_file(template, opts)
+    end)
   end
 end

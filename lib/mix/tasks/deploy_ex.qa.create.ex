@@ -38,21 +38,28 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
       DeployEx.TUI.setup_no_tui(opts)
 
-      app_name = case extra_args do
-        [name | _] -> name
-        [] -> Mix.raise("App name is required. Usage: mix deploy_ex.qa.create <app_name> --sha <sha>")
-      end
+      app_name =
+        case extra_args do
+          [name | _] ->
+            name
+
+          [] ->
+            Mix.raise(
+              "App name is required. Usage: mix deploy_ex.qa.create <app_name> --sha <sha>"
+            )
+        end
 
       sha = opts[:sha] || Mix.raise("--sha option is required")
 
       total_steps = 9
 
-      result = DeployEx.TUI.Progress.run_stream(
-        "QA Node: #{app_name}",
-        fn tui_pid ->
-          run_qa_pipeline(tui_pid, app_name, sha, opts, total_steps)
-        end
-      )
+      result =
+        DeployEx.TUI.Progress.run_stream(
+          "QA Node: #{app_name}",
+          fn tui_pid ->
+            run_qa_pipeline(tui_pid, app_name, sha, opts, total_steps)
+          end
+        )
 
       case result do
         {:ok, qa_node} -> output_success(qa_node, opts)
@@ -66,15 +73,52 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
       DeployEx.TUI.Progress.update_progress(tui_pid, step / total, label)
     end
 
-    with :ok <- (progress.(1, "Validating app name..."); validate_app_name(app_name)),
-         {:ok, full_sha} <- (progress.(2, "Validating SHA..."); validate_and_find_sha(app_name, sha, opts)),
-         {:ok, infra} <- (progress.(3, "Gathering infrastructure..."); gather_infrastructure(app_name, opts)),
-         {:ok, qa_node} <- (progress.(4, "Creating QA node..."); create_qa_node(app_name, full_sha, infra, opts)),
-         :ok <- (progress.(5, "Waiting for instance to start..."); wait_for_instance(qa_node, opts)),
-         {:ok, qa_node} <- (progress.(6, "Saving QA state..."); save_and_refresh_state(qa_node, opts)),
-         :ok <- (progress.(7, "Waiting for SSH..."); wait_for_ssh_ready(qa_node)),
-         :ok <- (progress.(8, "Running setup & deploy..."); maybe_run_setup(qa_node, infra, opts); maybe_wait_for_deploy(qa_node, infra, opts)),
-         {:ok, qa_node} <- (progress.(9, "Attaching load balancer..."); maybe_attach_lb(qa_node, opts)) do
+    with :ok <-
+           (
+             progress.(1, "Validating app name...")
+             validate_app_name(app_name)
+           ),
+         {:ok, full_sha} <-
+           (
+             progress.(2, "Validating SHA...")
+             validate_and_find_sha(app_name, sha, opts)
+           ),
+         {:ok, infra} <-
+           (
+             progress.(3, "Gathering infrastructure...")
+             gather_infrastructure(app_name, opts)
+           ),
+         {:ok, qa_node} <-
+           (
+             progress.(4, "Creating QA node...")
+             create_qa_node(app_name, full_sha, infra, opts)
+           ),
+         :ok <-
+           (
+             progress.(5, "Waiting for instance to start...")
+             wait_for_instance(qa_node, opts)
+           ),
+         {:ok, qa_node} <-
+           (
+             progress.(6, "Saving QA state...")
+             save_and_refresh_state(qa_node, opts)
+           ),
+         :ok <-
+           (
+             progress.(7, "Waiting for SSH...")
+             wait_for_ssh_ready(qa_node)
+           ),
+         :ok <-
+           (
+             progress.(8, "Running setup & deploy...")
+             maybe_run_setup(qa_node, infra, opts)
+             maybe_wait_for_deploy(qa_node, infra, opts)
+           ),
+         {:ok, qa_node} <-
+           (
+             progress.(9, "Attaching load balancer...")
+             maybe_attach_lb(qa_node, opts)
+           ) do
       {:ok, qa_node}
     end
   end
@@ -106,7 +150,10 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
         if app_name in release_names do
           :ok
         else
-          {:error, ErrorMessage.not_found("app '#{app_name}' not found in mix releases", %{available: release_names})}
+          {:error,
+           ErrorMessage.not_found("app '#{app_name}' not found in mix releases", %{
+             available: release_names
+           })}
         end
 
       {:error, e} ->
@@ -124,7 +171,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
       {:ok, releases} ->
         {qa_match, qa_releases} = find_release_match(releases, app_name, sha, "qa")
 
-        {matching_release, candidate_releases} = if is_nil(qa_match) do
+        {matching_release, candidate_releases} =
+          if is_nil(qa_match) do
             {fallback_match, fallback_releases} = find_release_match(releases, app_name, sha, nil)
             {fallback_match, qa_releases ++ fallback_releases}
           else
@@ -133,7 +181,12 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
         if is_nil(matching_release) do
           suggestions = DeployExHelpers.format_release_suggestions(candidate_releases, sha)
-          {:error, ErrorMessage.not_found("no release found matching SHA '#{sha}' for app '#{app_name}'", %{suggestions: suggestions})}
+
+          {:error,
+           ErrorMessage.not_found(
+             "no release found matching SHA '#{sha}' for app '#{app_name}'",
+             %{suggestions: suggestions}
+           )}
         else
           full_sha = DeployExHelpers.extract_sha_from_release(matching_release)
 
@@ -152,11 +205,12 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   defp gather_infrastructure(app_name, opts) do
     Mix.shell().info([:faint, "Gathering infrastructure details from AWS..."])
 
-    infra_opts = if opts[:skip_ami] do
-      opts
-    else
-      Keyword.put(opts, :app_name, app_name)
-    end
+    infra_opts =
+      if opts[:skip_ami] do
+        opts
+      else
+        Keyword.put(opts, :app_name, app_name)
+      end
 
     case DeployEx.AwsInfrastructure.gather_infrastructure(infra_opts) do
       {:ok, infra} ->
@@ -164,7 +218,17 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
           {:ok, Map.put(infra, :using_app_ami, false)}
         else
           if infra.ami_id do
-            Mix.shell().info([:green, "  ✓ ", :reset, "Using app AMI: ", :cyan, infra.ami_id, :reset, " (setup will be skipped)"])
+            Mix.shell().info([
+              :green,
+              "  ✓ ",
+              :reset,
+              "Using app AMI: ",
+              :cyan,
+              infra.ami_id,
+              :reset,
+              " (setup will be skipped)"
+            ])
+
             {:ok, Map.put(infra, :using_app_ami, true)}
           else
             Mix.shell().info([:yellow, "  ⚠ ", :reset, "No app AMI found, using base AMI"])
@@ -178,7 +242,19 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
 
   defp create_qa_node(app_name, sha, infra, opts) do
-    Mix.shell().info([:cyan, "Creating QA node for ", :bright, app_name, :reset, :cyan, " with SHA ", :yellow, String.slice(sha, 0, 7), :reset, "..."])
+    Mix.shell().info([
+      :cyan,
+      "Creating QA node for ",
+      :bright,
+      app_name,
+      :reset,
+      :cyan,
+      " with SHA ",
+      :yellow,
+      String.slice(sha, 0, 7),
+      :reset,
+      "..."
+    ])
 
     params = %{
       ami_id: infra.ami_id,
@@ -193,12 +269,30 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
 
   defp wait_for_instance(qa_node, _opts) do
-    Mix.shell().info([:faint, "Waiting for instance ", :reset, qa_node.instance_id, :faint, " to start..."])
+    Mix.shell().info([
+      :faint,
+      "Waiting for instance ",
+      :reset,
+      qa_node.instance_id,
+      :faint,
+      " to start..."
+    ])
+
     DeployEx.AwsMachine.wait_for_started([qa_node.instance_id])
   end
 
   defp wait_for_ssh_ready(qa_node) do
-    Mix.shell().info([:faint, "Waiting for SSH to be ready on ", :reset, :cyan, qa_node.public_ip, :reset, :faint, "..."])
+    Mix.shell().info([
+      :faint,
+      "Waiting for SSH to be ready on ",
+      :reset,
+      :cyan,
+      qa_node.public_ip,
+      :reset,
+      :faint,
+      "..."
+    ])
+
     wait_for_ssh(qa_node.public_ip)
   end
 
@@ -217,44 +311,86 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
 
   defp maybe_run_setup(_qa_node, _infra, %{skip_setup: true}), do: :ok
+
   defp maybe_run_setup(_qa_node, %{using_app_ami: true}, _opts) do
     Mix.shell().info([:green, "  ✓ ", :reset, "Skipping setup (using pre-configured AMI)"])
     :ok
   end
+
   defp maybe_run_setup(qa_node, _infra, opts) do
-    Mix.shell().info([:faint, "Waiting for SSH to be ready on ", :reset, :cyan, qa_node.instance_name, :reset, :faint, "..."])
+    Mix.shell().info([
+      :faint,
+      "Waiting for SSH to be ready on ",
+      :reset,
+      :cyan,
+      qa_node.instance_name,
+      :reset,
+      :faint,
+      "..."
+    ])
+
     wait_for_ssh(qa_node.public_ip)
-    Mix.shell().info([:cyan, "Running Ansible setup for ", :bright, qa_node.instance_name, :reset, "..."])
+
+    Mix.shell().info([
+      :cyan,
+      "Running Ansible setup for ",
+      :bright,
+      qa_node.instance_name,
+      :reset,
+      "..."
+    ])
+
     run_ansible_setup(qa_node, opts)
   end
 
   defp wait_for_ssh(ip, retries \\ 30) do
     case System.cmd("nc", ["-z", "-w", "5", ip, "22"], stderr_to_stdout: true) do
-      {_, 0} -> :ok
+      {_, 0} ->
+        :ok
+
       _ when retries > 0 ->
         Process.sleep(5000)
         wait_for_ssh(ip, retries - 1)
-      _ -> :ok
+
+      _ ->
+        :ok
     end
   end
 
   defp maybe_wait_for_deploy(_qa_node, _infra, %{skip_deploy: true}), do: :ok
+
   defp maybe_wait_for_deploy(qa_node, %{using_app_ami: true}, _opts) do
     Mix.shell().info([:faint, "Waiting for cloud-init to deploy release..."])
     wait_for_ssh(qa_node.public_ip)
     Mix.shell().info([:green, "  ✓ ", :reset, "Release deployed via cloud-init"])
     :ok
   end
+
   defp maybe_wait_for_deploy(qa_node, _infra, opts) do
     sha = qa_node.target_sha
-    Mix.shell().info([:cyan, "Deploying SHA ", :yellow, String.slice(sha, 0, 7), :reset, :cyan, " to ", :bright, qa_node.instance_name, :reset, "..."])
+
+    Mix.shell().info([
+      :cyan,
+      "Deploying SHA ",
+      :yellow,
+      String.slice(sha, 0, 7),
+      :reset,
+      :cyan,
+      " to ",
+      :bright,
+      qa_node.instance_name,
+      :reset,
+      "..."
+    ])
+
     run_ansible_deploy(qa_node, sha, opts)
   end
 
   defp maybe_attach_lb(qa_node, %{attach_lb: true} = opts) do
     Mix.shell().info([:faint, "Attaching to load balancer..."])
 
-    with {:ok, target_groups} <- DeployEx.AwsLoadBalancer.find_target_groups_by_app(qa_node.app_name, opts) do
+    with {:ok, target_groups} <-
+           DeployEx.AwsLoadBalancer.find_target_groups_by_app(qa_node.app_name, opts) do
       if Enum.empty?(target_groups) do
         Mix.shell().info([:yellow, "No target groups found for #{qa_node.app_name}"])
         {:ok, qa_node}
@@ -264,6 +400,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
       end
     end
   end
+
   defp maybe_attach_lb(qa_node, _opts), do: {:ok, qa_node}
 
   defp run_ansible_setup(qa_node, _opts) do
@@ -273,8 +410,11 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     command = "ansible-playbook #{setup_playbook} --limit '#{qa_node.instance_name},'"
 
     case DeployEx.Utils.run_command(command, directory) do
-      {:ok, _} -> :ok
-      {:error, error} -> {:error, ErrorMessage.failed_dependency("ansible setup failed", %{error: error})}
+      {:ok, _} ->
+        :ok
+
+      {:error, error} ->
+        {:error, ErrorMessage.failed_dependency("ansible setup failed", %{error: error})}
     end
   end
 
@@ -282,11 +422,15 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     directory = @ansible_default_path
     playbook = "playbooks/#{qa_node.app_name}.yaml"
 
-    command = "ansible-playbook #{playbook} --limit '#{qa_node.instance_name},' --extra-vars 'target_release_sha=#{sha} release_prefix=qa release_state_prefix=release-state/qa'"
+    command =
+      "ansible-playbook #{playbook} --limit '#{qa_node.instance_name},' --extra-vars 'target_release_sha=#{sha} release_prefix=qa release_state_prefix=release-state/qa'"
 
     case DeployEx.Utils.run_command(command, directory) do
-      {:ok, _} -> :ok
-      {:error, error} -> {:error, ErrorMessage.failed_dependency("ansible deploy failed", %{error: error})}
+      {:ok, _} ->
+        :ok
+
+      {:error, error} ->
+        {:error, ErrorMessage.failed_dependency("ansible deploy failed", %{error: error})}
     end
   end
 
@@ -304,17 +448,51 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
   defp output_success(qa_node, _opts) do
     Mix.shell().info([
-      :green, "\n✓ QA node created successfully!\n",
-      :reset, "\n",
-      "  Instance ID: ", :cyan, qa_node.instance_id, :reset, "\n",
-      "  Instance Name: ", :cyan, qa_node.instance_name, :reset, "\n",
-      "  App: ", :cyan, qa_node.app_name, :reset, "\n",
-      "  SHA: ", :cyan, qa_node.target_sha, :reset, "\n",
-      "  Public IP: ", :cyan, to_string(qa_node.public_ip || "pending"), :reset, "\n",
-      "  IPv6: ", :cyan, to_string(qa_node.ipv6_address || "pending"), :reset, "\n",
-      "  LB Attached: ", :cyan, to_string(qa_node.load_balancer_attached?), :reset, "\n",
+      :green,
+      "\n✓ QA node created successfully!\n",
+      :reset,
       "\n",
-      "  SSH: ", :yellow, "ssh admin@#{qa_node.public_ip || qa_node.ipv6_address}", :reset, "\n"
+      "  Instance ID: ",
+      :cyan,
+      qa_node.instance_id,
+      :reset,
+      "\n",
+      "  Instance Name: ",
+      :cyan,
+      qa_node.instance_name,
+      :reset,
+      "\n",
+      "  App: ",
+      :cyan,
+      qa_node.app_name,
+      :reset,
+      "\n",
+      "  SHA: ",
+      :cyan,
+      qa_node.target_sha,
+      :reset,
+      "\n",
+      "  Public IP: ",
+      :cyan,
+      to_string(qa_node.public_ip || "pending"),
+      :reset,
+      "\n",
+      "  IPv6: ",
+      :cyan,
+      to_string(qa_node.ipv6_address || "pending"),
+      :reset,
+      "\n",
+      "  LB Attached: ",
+      :cyan,
+      to_string(qa_node.load_balancer_attached?),
+      :reset,
+      "\n",
+      "\n",
+      "  SSH: ",
+      :yellow,
+      "ssh admin@#{qa_node.public_ip || qa_node.ipv6_address}",
+      :reset,
+      "\n"
     ])
   end
 end

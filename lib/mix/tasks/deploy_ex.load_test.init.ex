@@ -65,7 +65,14 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Init do
     File.write!(script_path, @script_template)
 
     Mix.shell().info([
-      :green, "✓ ", :reset, "Created ", :cyan, script_path, :reset, "\n\n",
+      :green,
+      "✓ ",
+      :reset,
+      "Created ",
+      :cyan,
+      script_path,
+      :reset,
+      "\n\n",
       "Edit the script then run:\n",
       "  mix deploy_ex.load_test.upload #{app_name}\n",
       "  mix deploy_ex.load_test.exec #{app_name} --target-url http://your-app:4000\n"

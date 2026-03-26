@@ -4,7 +4,12 @@ defmodule DeployEx.TUI.Dashboard do
   alias ExRatatui.Style
   alias ExRatatui.Widgets
 
-  @spec run(String.t(), (-> term()), (term(), non_neg_integer(), non_neg_integer() -> list({ExRatatui.widget(), Rect.t()})), keyword()) :: :ok
+  @spec run(
+          String.t(),
+          (-> term()),
+          (term(), non_neg_integer(), non_neg_integer() -> list({ExRatatui.widget(), Rect.t()})),
+          keyword()
+        ) :: :ok
   def run(title, fetch_fn, render_fn, opts \\ []) do
     if DeployEx.TUI.enabled?() do
       run_tui(title, fetch_fn, render_fn, opts)
@@ -18,24 +23,31 @@ defmodule DeployEx.TUI.Dashboard do
     console_fn = Keyword.get(opts, :console_render_fn)
 
     Mix.shell().info([:cyan, title])
-    Mix.shell().info([:faint, "Refreshing every #{div(refresh_interval, 1000)}s... Press Ctrl+C to stop\n"])
+
+    Mix.shell().info([
+      :faint,
+      "Refreshing every #{div(refresh_interval, 1000)}s... Press Ctrl+C to stop\n"
+    ])
 
     Stream.interval(refresh_interval)
-      |> Stream.each(fn _ ->
-        IO.write(IO.ANSI.clear())
-        IO.write(IO.ANSI.home())
+    |> Stream.each(fn _ ->
+      IO.write(IO.ANSI.clear())
+      IO.write(IO.ANSI.home())
 
-        data = fetch_fn.()
+      data = fetch_fn.()
 
-        if is_function(console_fn) do
-          console_fn.(data)
-        else
-          Mix.shell().info(inspect(data, pretty: true))
-        end
+      if is_function(console_fn) do
+        console_fn.(data)
+      else
+        Mix.shell().info(inspect(data, pretty: true))
+      end
 
-        Mix.shell().info([:faint, "\nRefreshing every #{div(refresh_interval, 1000)}s... Press Ctrl+C to stop"])
-      end)
-      |> Stream.run()
+      Mix.shell().info([
+        :faint,
+        "\nRefreshing every #{div(refresh_interval, 1000)}s... Press Ctrl+C to stop"
+      ])
+    end)
+    |> Stream.run()
   end
 
   defp run_tui(title, fetch_fn, render_fn, opts) do
@@ -57,14 +69,15 @@ defmodule DeployEx.TUI.Dashboard do
 
   defp dashboard_loop(terminal, width, height, state, fetch_fn, render_fn) do
     now = System.monotonic_time(:millisecond)
-    should_fetch = is_nil(state.data) or (now - state.last_fetch) >= state.refresh_interval
+    should_fetch = is_nil(state.data) or now - state.last_fetch >= state.refresh_interval
 
-    state = if should_fetch do
-      data = fetch_fn.()
-      %{state | data: data, last_fetch: now}
-    else
-      state
-    end
+    state =
+      if should_fetch do
+        data = fetch_fn.()
+        %{state | data: data, last_fetch: now}
+      else
+        state
+      end
 
     draw_dashboard(terminal, width, height, state, render_fn)
 
@@ -90,11 +103,12 @@ defmodule DeployEx.TUI.Dashboard do
   defp draw_dashboard(terminal, width, height, state, render_fn) do
     area = %Rect{x: 0, y: 0, width: width, height: height}
 
-    [header_area, content_area, footer_area] = Layout.split(area, :vertical, [
-      {:length, 1},
-      {:min, 3},
-      {:length, 1}
-    ])
+    [header_area, content_area, footer_area] =
+      Layout.split(area, :vertical, [
+        {:length, 1},
+        {:min, 3},
+        {:length, 1}
+      ])
 
     header = %Widgets.Paragraph{
       text: " #{state.title}",
@@ -106,30 +120,32 @@ defmodule DeployEx.TUI.Dashboard do
       style: %Style{fg: :white, modifiers: [:dim]}
     }
 
-    content_widgets = if is_nil(state.data) do
-      loading = %Widgets.Paragraph{
-        text: "Loading...",
-        style: %Style{fg: :yellow},
-        alignment: :center
-      }
+    content_widgets =
+      if is_nil(state.data) do
+        loading = %Widgets.Paragraph{
+          text: "Loading...",
+          style: %Style{fg: :yellow},
+          alignment: :center
+        }
 
-      [{loading, content_area}]
-    else
-      render_fn.(state.data, content_area.width, content_area.height)
-    end
+        [{loading, content_area}]
+      else
+        render_fn.(state.data, content_area.width, content_area.height)
+      end
 
     base_widgets = [{header, header_area}, {footer, footer_area}]
 
-    adjusted_content_widgets = Enum.map(content_widgets, fn {widget, rect} ->
-      adjusted_rect = %Rect{
-        x: rect.x + content_area.x,
-        y: rect.y + content_area.y,
-        width: min(rect.width, content_area.width),
-        height: min(rect.height, content_area.height)
-      }
+    adjusted_content_widgets =
+      Enum.map(content_widgets, fn {widget, rect} ->
+        adjusted_rect = %Rect{
+          x: rect.x + content_area.x,
+          y: rect.y + content_area.y,
+          width: min(rect.width, content_area.width),
+          height: min(rect.height, content_area.height)
+        }
 
-      {widget, adjusted_rect}
-    end)
+        {widget, adjusted_rect}
+      end)
 
     ExRatatui.draw(terminal, base_widgets ++ adjusted_content_widgets)
   end

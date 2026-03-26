@@ -23,24 +23,46 @@ defmodule Mix.Tasks.Terraform.DropStateBucket do
       bucket = DeployEx.Config.aws_release_state_bucket()
       region = DeployEx.Config.aws_region()
 
-      if bucket in Enum.map(buckets, &(&1.name)) do
+      if bucket in Enum.map(buckets, & &1.name) do
         with :ok <- DeployEx.AwsBucket.delete_all_objects(region, bucket),
              :ok <- DeployEx.AwsBucket.delete_bucket(region, bucket) do
           Mix.shell().info([
-            :green, "Successfully deleted bucket ",
-            :green, :bright, bucket, :reset, :green,
-            " from ", :bright, region, :reset, :green, "!"
+            :green,
+            "Successfully deleted bucket ",
+            :green,
+            :bright,
+            bucket,
+            :reset,
+            :green,
+            " from ",
+            :bright,
+            region,
+            :reset,
+            :green,
+            "!"
           ])
+
           :ok
         else
           {:error, error} -> Mix.raise(to_string(error))
         end
       else
         Mix.shell().info([
-          :yellow, "No need to drop bucket ",
-          :yellow, :bright, bucket, :reset, :yellow,
-          " since it does not exist in ", :bright, region, :reset, :yellow, "!"
+          :yellow,
+          "No need to drop bucket ",
+          :yellow,
+          :bright,
+          bucket,
+          :reset,
+          :yellow,
+          " since it does not exist in ",
+          :bright,
+          region,
+          :reset,
+          :yellow,
+          "!"
         ])
+
         :ok
       end
     else

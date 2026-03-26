@@ -46,21 +46,26 @@ defmodule Mix.Tasks.DeployEx.RestartMachine do
     Application.ensure_all_started(:telemetry)
     Application.ensure_all_started(:ex_aws)
 
-    {opts, node_name_args} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quiet],
-      switches: [
-        aws_region: :string,
-        resource_group: :string,
-        force: :boolean,
-        quiet: :boolean,
-        no_tui: :boolean
-      ]
-    )
+    {opts, node_name_args} =
+      OptionParser.parse!(args,
+        aliases: [f: :force, q: :quiet],
+        switches: [
+          aws_region: :string,
+          resource_group: :string,
+          force: :boolean,
+          quiet: :boolean,
+          no_tui: :boolean
+        ]
+      )
 
     DeployEx.TUI.setup_no_tui(opts)
 
     with {:ok, app_name} <- DeployExHelpers.find_project_name(node_name_args),
-         {:ok, instances} <- DeployEx.AwsMachine.find_instance_ids_by_app_name(app_name, region: opts[:aws_region], resource_group: opts[:resource_group]) do
+         {:ok, instances} <-
+           DeployEx.AwsMachine.find_instance_ids_by_app_name(app_name,
+             region: opts[:aws_region],
+             resource_group: opts[:resource_group]
+           ) do
       instance_names = choose_instances(instances)
 
       if Enum.empty?(instance_names) do
@@ -70,18 +75,22 @@ defmodule Mix.Tasks.DeployEx.RestartMachine do
         names_label = Enum.join(instance_names, ", ")
 
         steps = [
-          {"Stopping instances: #{names_label}", fn ->
-            DeployEx.AwsMachine.stop(instance_ids)
-          end},
-          {"Waiting for instances to stop...", fn ->
-            DeployEx.AwsMachine.wait_for_stopped(instance_ids)
-          end},
-          {"Starting instances: #{names_label}", fn ->
-            DeployEx.AwsMachine.start(instance_ids)
-          end},
-          {"Waiting for instances to start...", fn ->
-            DeployEx.AwsMachine.wait_for_started(instance_ids)
-          end}
+          {"Stopping instances: #{names_label}",
+           fn ->
+             DeployEx.AwsMachine.stop(instance_ids)
+           end},
+          {"Waiting for instances to stop...",
+           fn ->
+             DeployEx.AwsMachine.wait_for_stopped(instance_ids)
+           end},
+          {"Starting instances: #{names_label}",
+           fn ->
+             DeployEx.AwsMachine.start(instance_ids)
+           end},
+          {"Waiting for instances to start...",
+           fn ->
+             DeployEx.AwsMachine.wait_for_started(instance_ids)
+           end}
         ]
 
         case DeployEx.TUI.Progress.run_steps(steps, title: "Restarting #{names_label}") do

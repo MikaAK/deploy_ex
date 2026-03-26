@@ -44,15 +44,16 @@ defmodule Mix.Tasks.DeployEx.RestartApp do
 
     with {:ok, app_name} <- DeployExHelpers.find_project_name(node_name_args) do
       steps = [
-        {"Restarting #{app_name} systemd service", fn ->
-          DeployExHelpers.run_ssh_command(
-            opts[:directory],
-            opts[:pem],
-            app_name,
-            DeployEx.SystemDController.restart_service(app_name),
-            machine_opts
-          )
-        end}
+        {"Restarting #{app_name} systemd service",
+         fn ->
+           DeployExHelpers.run_ssh_command(
+             opts[:directory],
+             opts[:pem],
+             app_name,
+             DeployEx.SystemDController.restart_service(app_name),
+             machine_opts
+           )
+         end}
       ]
 
       case DeployEx.TUI.Progress.run_steps(steps, title: "Restart #{app_name}") do

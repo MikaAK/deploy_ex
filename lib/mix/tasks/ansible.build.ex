@@ -31,7 +31,8 @@ defmodule Mix.Tasks.Ansible.Build do
     Application.ensure_all_started(:hackney)
     Application.ensure_all_started(:telemetry)
 
-    opts = args
+    opts =
+      args
       |> parse_args
       |> Keyword.put_new(:directory, @ansible_default_path)
       |> Keyword.put_new(:terraform_directory, @terraform_default_path)
@@ -56,28 +57,37 @@ defmodule Mix.Tasks.Ansible.Build do
         Enum.each(tail, &Mix.shell().error(to_string(&1)))
         Mix.raise(to_string(h))
 
-      {:error, e} -> Mix.raise(to_string(e))
+      {:error, e} ->
+        Mix.raise(to_string(e))
     end
   end
 
   defp parse_args(args) do
-    {opts, _} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quit, d: :directory, a: :auto_pull_aws, h: :host_only, n: :new_only],
-      switches: [
-        new_only: :boolean,
-        force: :boolean,
-        host_only: :boolean,
-        quiet: :boolean,
-        directory: :string,
-        terraform_directory: :string,
-        auto_pull_aws: :boolean,
-        aws_release_bucket: :string,
-        no_loki: :boolean,
-        no_sentry: :boolean,
-        no_grafana: :boolean,
-        no_prometheus: :boolean
-      ]
-    )
+    {opts, _} =
+      OptionParser.parse!(args,
+        aliases: [
+          f: :force,
+          q: :quit,
+          d: :directory,
+          a: :auto_pull_aws,
+          h: :host_only,
+          n: :new_only
+        ],
+        switches: [
+          new_only: :boolean,
+          force: :boolean,
+          host_only: :boolean,
+          quiet: :boolean,
+          directory: :string,
+          terraform_directory: :string,
+          auto_pull_aws: :boolean,
+          aws_release_bucket: :string,
+          no_loki: :boolean,
+          no_sentry: :boolean,
+          no_grafana: :boolean,
+          no_prometheus: :boolean
+        ]
+      )
 
     opts
   end
@@ -91,8 +101,8 @@ defmodule Mix.Tasks.Ansible.Build do
       Mix.shell().info([:green, "* copying ansible into ", :reset, directory])
 
       "ansible"
-        |> DeployExHelpers.priv_folder()
-        |> File.cp_r!(directory)
+      |> DeployExHelpers.priv_folder()
+      |> File.cp_r!(directory)
 
       File.rm!(Path.join(directory, "group_vars/all.yaml.eex"))
 
@@ -111,8 +121,9 @@ defmodule Mix.Tasks.Ansible.Build do
 
     case search_for_aws_credentials() do
       {:ok, {aws_access_key, aws_secret_access_key}} ->
-        new_contents = main_yaml_path
-          |> File.read!
+        new_contents =
+          main_yaml_path
+          |> File.read!()
           |> String.replace(
             "AWS_ACCESS_KEY_ID: \"<INSERT_SECRET_OR_PRELOAD_ON_MACHINE>\"",
             "AWS_ACCESS_KEY_ID: \"#{aws_access_key}\""
@@ -122,9 +133,15 @@ defmodule Mix.Tasks.Ansible.Build do
             "AWS_SECRET_ACCESS_KEY: \"#{aws_secret_access_key}\""
           )
 
-        opts = opts
+        opts =
+          opts
           |> Keyword.put_new(:force, true)
-          |> Keyword.put(:message, [:green, "* injecting aws credentials into ", :reset, main_yaml_path])
+          |> Keyword.put(:message, [
+            :green,
+            "* injecting aws credentials into ",
+            :reset,
+            main_yaml_path
+          ])
 
         DeployExHelpers.write_file(main_yaml_path, new_contents, opts)
 
@@ -142,7 +159,8 @@ defmodule Mix.Tasks.Ansible.Build do
       captures = Regex.named_captures(@aws_credentials_regex, credentials_content)
 
       if is_nil(captures) do
-        {:error, ErrorMessage.not_found("couldn't parse credentials in file at ~/.aws/credentials")}
+        {:error,
+         ErrorMessage.not_found("couldn't parse credentials in file at ~/.aws/credentials")}
       else
         %{
           "access_key" => access_key,
@@ -227,20 +245,24 @@ defmodule Mix.Tasks.Ansible.Build do
   end
 
   defp pem_file_path(app_name, directory) do
-    pem_file_path = directory
+    pem_file_path =
+      directory
       |> String.split("/")
       |> Enum.drop(-1)
       |> Enum.join("/")
       |> Path.join("terraform/#{app_name}*pem")
 
-    directory_path = pem_file_path
-      |> Path.wildcard
+    directory_path =
+      pem_file_path
+      |> Path.wildcard()
       |> then(&(List.first(&1) || ""))
       |> String.split("/")
       |> Enum.drop(1)
 
     if directory_path === [] do
-      Mix.raise("No PEM file found matching glob #{pem_file_path}, have you run mix terraform.apply yet?")
+      Mix.raise(
+        "No PEM file found matching glob #{pem_file_path}, have you run mix terraform.apply yet?"
+      )
     end
 
     Enum.join([".." | directory_path], "/")
@@ -266,7 +288,12 @@ defmodule Mix.Tasks.Ansible.Build do
       end
 
       if opts[:new_only] do
-        deploy_new_playbooks(app_names, project_playbooks_path, project_setup_playbooks_path, opts)
+        deploy_new_playbooks(
+          app_names,
+          project_playbooks_path,
+          project_setup_playbooks_path,
+          opts
+        )
       else
         deploy_all_playbooks(app_names, opts)
       end

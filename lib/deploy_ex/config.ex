@@ -21,7 +21,7 @@ defmodule DeployEx.Config do
 
   def aws_release_state_bucket do
     Application.get_env(@app, :aws_release_state_bucket) ||
-    "#{DeployExHelpers.kebab_project_name()}-elixir-release-state-#{env()}"
+      "#{DeployExHelpers.kebab_project_name()}-elixir-release-state-#{env()}"
   end
 
   def aws_release_state_lock_table do
@@ -73,20 +73,23 @@ defmodule DeployEx.Config do
   def terraform_backend, do: Application.get_env(@app, :terraform_backend, :s3)
 
   def terraform_default_args(command) do
-    result = @app
+    result =
+      @app
       |> Application.get_env(:terraform_default_args, [])
       |> Keyword.filter(fn {key, _} ->
         to_string(command) =~ Regex.compile!(to_string(key))
       end)
 
     case result do
-      [] -> []
+      [] ->
+        []
+
       [{_, _} | _] = args_map ->
         args_map
-          |> Enum.reduce([], fn {_, args}, acc -> Keyword.merge(acc, args) end)
-          |> Enum.reduce([], fn {key, value}, acc ->
-            ["--#{String.replace(to_string(key), "_", "-")}", to_string(value) | acc]
-          end)
+        |> Enum.reduce([], fn {_, args}, acc -> Keyword.merge(acc, args) end)
+        |> Enum.reduce([], fn {key, value}, acc ->
+          ["--#{String.replace(to_string(key), "_", "-")}", to_string(value) | acc]
+        end)
     end
   end
 end

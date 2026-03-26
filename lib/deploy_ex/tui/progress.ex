@@ -22,26 +22,27 @@ defmodule DeployEx.TUI.Progress do
     Mix.shell().info([:cyan, "#{title}"])
 
     steps
-      |> Enum.with_index(1)
-      |> Enum.reduce_while(:ok, fn {{label, fun}, index}, _acc ->
-        Mix.shell().info([:faint, "  [#{index}/#{total}] ", :reset, label])
+    |> Enum.with_index(1)
+    |> Enum.reduce_while(:ok, fn {{label, fun}, index}, _acc ->
+      Mix.shell().info([:faint, "  [#{index}/#{total}] ", :reset, label])
 
-        case fun.() do
-          :ok -> {:cont, :ok}
-          {:ok, _} -> {:cont, :ok}
-          {:error, _} = error -> {:halt, error}
-        end
-      end)
+      case fun.() do
+        :ok -> {:cont, :ok}
+        {:ok, _} -> {:cont, :ok}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
   end
 
   defp run_steps_tui(steps, opts) do
     title = Keyword.get(opts, :title, "Progress")
     total = length(steps)
 
-    {result, completed_steps} = ExRatatui.run(fn terminal ->
-      {width, height} = ExRatatui.terminal_size()
-      execute_steps(terminal, width, height, title, steps, total, 0, [])
-    end)
+    {result, completed_steps} =
+      ExRatatui.run(fn terminal ->
+        {width, height} = ExRatatui.terminal_size()
+        execute_steps(terminal, width, height, title, steps, total, 0, [])
+      end)
 
     print_steps_after_tui(title, completed_steps, result)
 
@@ -54,13 +55,24 @@ defmodule DeployEx.TUI.Progress do
     {:ok, Enum.reverse(completed)}
   end
 
-  defp execute_steps(terminal, width, height, title, [{label, fun} | rest], total, index, completed) do
+  defp execute_steps(
+         terminal,
+         width,
+         height,
+         title,
+         [{label, fun} | rest],
+         total,
+         index,
+         completed
+       ) do
     ratio = index / total
     task = Task.async(fun)
 
     case await_step(terminal, width, height, title, label, ratio, total, index, task, false) do
       {:ok, new_width, new_height} ->
-        execute_steps(terminal, new_width, new_height, title, rest, total, index + 1, [{label, :ok} | completed])
+        execute_steps(terminal, new_width, new_height, title, rest, total, index + 1, [
+          {label, :ok} | completed
+        ])
 
       {:cancelled, _new_width, _new_height} ->
         {{:error, :cancelled}, Enum.reverse([{label, :cancelled} | completed])}
@@ -78,7 +90,18 @@ defmodule DeployEx.TUI.Progress do
 
     case ExRatatui.poll_event(50) do
       %ExRatatui.Event.Resize{width: new_width, height: new_height} ->
-        await_step(terminal, new_width, new_height, title, label, ratio, total, index, task, cancelling?)
+        await_step(
+          terminal,
+          new_width,
+          new_height,
+          title,
+          label,
+          ratio,
+          total,
+          index,
+          task,
+          cancelling?
+        )
 
       %ExRatatui.Event.Key{code: "c", kind: "press", modifiers: ["ctrl"]} when not cancelling? ->
         await_step(terminal, width, height, title, label, ratio, total, index, task, true)
@@ -89,26 +112,51 @@ defmodule DeployEx.TUI.Progress do
 
       _ ->
         case Task.yield(task, 0) do
-          {:ok, :ok} -> {:ok, width, height}
-          {:ok, {:ok, _}} -> {:ok, width, height}
-          {:ok, {:error, _} = error} -> {error, width, height}
-          {:exit, reason} -> {{:error, reason}, width, height}
-          nil -> await_step(terminal, width, height, title, label, ratio, total, index, task, cancelling?)
+          {:ok, :ok} ->
+            {:ok, width, height}
+
+          {:ok, {:ok, _}} ->
+            {:ok, width, height}
+
+          {:ok, {:error, _} = error} ->
+            {error, width, height}
+
+          {:exit, reason} ->
+            {{:error, reason}, width, height}
+
+          nil ->
+            await_step(
+              terminal,
+              width,
+              height,
+              title,
+              label,
+              ratio,
+              total,
+              index,
+              task,
+              cancelling?
+            )
         end
     end
   end
 
   defp print_steps_after_tui(title, completed_steps, result) do
-    {status_label, header_color} = case result do
-      :ok -> {"OK", :green}
-      {:error, :cancelled} -> {"CANCELLED", :yellow}
-      _ -> {"FAILED", :red}
-    end
+    {status_label, header_color} =
+      case result do
+        :ok -> {"OK", :green}
+        {:error, :cancelled} -> {"CANCELLED", :yellow}
+        _ -> {"FAILED", :red}
+      end
 
     Mix.shell().info([
-      header_color, "\n#{String.duplicate("=", 60)}",
-      header_color, "\n#{title} [#{status_label}]",
-      header_color, "\n#{String.duplicate("=", 60)}", :reset
+      header_color,
+      "\n#{String.duplicate("=", 60)}",
+      header_color,
+      "\n#{title} [#{status_label}]",
+      header_color,
+      "\n#{String.duplicate("=", 60)}",
+      :reset
     ])
 
     Enum.each(completed_steps, fn {label, status} ->
@@ -146,10 +194,11 @@ defmodule DeployEx.TUI.Progress do
     caller = self()
     Mix.shell().info([:cyan, title])
 
-    worker = spawn_link(fn ->
-      result = work_fn.(caller)
-      send(caller, {:tui_progress_done, result})
-    end)
+    worker =
+      spawn_link(fn ->
+        result = work_fn.(caller)
+        send(caller, {:tui_progress_done, result})
+      end)
 
     console_stream_loop(title, worker)
   end
@@ -181,10 +230,11 @@ defmodule DeployEx.TUI.Progress do
         cancelling: false
       }
 
-      worker = spawn_link(fn ->
-        result = work_fn.(caller)
-        send(caller, {:tui_progress_done, result})
-      end)
+      worker =
+        spawn_link(fn ->
+          result = work_fn.(caller)
+          send(caller, {:tui_progress_done, result})
+        end)
 
       stream_loop(terminal, width, height, title, state, worker, opts)
     end)
@@ -195,14 +245,26 @@ defmodule DeployEx.TUI.Progress do
   end
 
   defp stream_loop(terminal, width, height, title, state, worker, opts) do
-    display_label = if state.cancelling, do: state.label <> "  [Ctrl-C again to cancel]", else: state.label
-    draw_progress(terminal, width, height, title, display_label, state.ratio, 100, round(state.ratio * 100))
+    display_label =
+      if state.cancelling, do: state.label <> "  [Ctrl-C again to cancel]", else: state.label
+
+    draw_progress(
+      terminal,
+      width,
+      height,
+      title,
+      display_label,
+      state.ratio,
+      100,
+      round(state.ratio * 100)
+    )
 
     case ExRatatui.poll_event(50) do
       %ExRatatui.Event.Resize{width: new_width, height: new_height} ->
         stream_loop(terminal, new_width, new_height, title, state, worker, opts)
 
-      %ExRatatui.Event.Key{code: "c", kind: "press", modifiers: ["ctrl"]} when not state.cancelling ->
+      %ExRatatui.Event.Key{code: "c", kind: "press", modifiers: ["ctrl"]}
+      when not state.cancelling ->
         stream_loop(terminal, width, height, title, %{state | cancelling: true}, worker, opts)
 
       %ExRatatui.Event.Key{code: "c", kind: "press", modifiers: ["ctrl"]} when state.cancelling ->
@@ -232,22 +294,25 @@ defmodule DeployEx.TUI.Progress do
     gauge_height = 3
     label_height = 3
 
-    [_top, content, _bottom] = Layout.split(area, :vertical, [
-      {:min, 0},
-      {:length, gauge_height + label_height + 2},
-      {:min, 0}
-    ])
+    [_top, content, _bottom] =
+      Layout.split(area, :vertical, [
+        {:min, 0},
+        {:length, gauge_height + label_height + 2},
+        {:min, 0}
+      ])
 
-    [_left, inner, _right] = Layout.split(content, :horizontal, [
-      {:length, 4},
-      {:min, 20},
-      {:length, 4}
-    ])
+    [_left, inner, _right] =
+      Layout.split(content, :horizontal, [
+        {:length, 4},
+        {:min, 20},
+        {:length, 4}
+      ])
 
-    [label_area, gauge_area] = Layout.split(inner, :vertical, [
-      {:length, label_height},
-      {:length, gauge_height}
-    ])
+    [label_area, gauge_area] =
+      Layout.split(inner, :vertical, [
+        {:length, label_height},
+        {:length, gauge_height}
+      ])
 
     percent = round(ratio * 100)
     gauge_label = "#{percent}% (#{current}/#{total})"
@@ -279,17 +344,19 @@ defmodule DeployEx.TUI.Progress do
   defp draw_error(terminal, width, height, title, label, {:error, error}) do
     area = %Rect{x: 0, y: 0, width: width, height: height}
 
-    [_top, content, _bottom] = Layout.split(area, :vertical, [
-      {:min, 0},
-      {:length, 6},
-      {:min, 0}
-    ])
+    [_top, content, _bottom] =
+      Layout.split(area, :vertical, [
+        {:min, 0},
+        {:length, 6},
+        {:min, 0}
+      ])
 
-    [_left, inner, _right] = Layout.split(content, :horizontal, [
-      {:length, 4},
-      {:min, 20},
-      {:length, 4}
-    ])
+    [_left, inner, _right] =
+      Layout.split(content, :horizontal, [
+        {:length, 4},
+        {:min, 20},
+        {:length, 4}
+      ])
 
     error_text = "#{label}: #{inspect(error)}"
 

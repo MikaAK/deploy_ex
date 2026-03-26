@@ -28,23 +28,42 @@ defmodule Mix.Tasks.Terraform.CreateStateBucket do
       bucket = DeployEx.Config.aws_release_state_bucket()
       region = DeployEx.Config.aws_region()
 
-      if bucket in Enum.map(buckets, &(&1.name)) do
+      if bucket in Enum.map(buckets, & &1.name) do
         Mix.shell().info([
-          :yellow, "No need to create bucket ",
-          :yellow, :bright, bucket, :reset, :yellow,
-          " since it already exists in ", :bright, region, :reset, :yellow, "!"
+          :yellow,
+          "No need to create bucket ",
+          :yellow,
+          :bright,
+          bucket,
+          :reset,
+          :yellow,
+          " since it already exists in ",
+          :bright,
+          region,
+          :reset,
+          :yellow,
+          "!"
         ])
 
         :ok
       else
         case DeployEx.AwsBucket.create_bucket(region, bucket) do
-          {:error, error} -> Mix.raise(to_string(error))
+          {:error, error} ->
+            Mix.raise(to_string(error))
 
           :ok ->
             Mix.shell().info([
-              :green, "Successfully created bucket ", :green,
-              :bright, bucket, :reset, :green,
-              " created in ", :bright, region, :reset
+              :green,
+              "Successfully created bucket ",
+              :green,
+              :bright,
+              bucket,
+              :reset,
+              :green,
+              " created in ",
+              :bright,
+              region,
+              :reset
             ])
         end
       end

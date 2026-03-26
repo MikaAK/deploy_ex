@@ -12,9 +12,10 @@ defmodule DeployEx.Terraform do
     default_args = DeployEx.Config.terraform_default_args(command)
     all_args = default_args ++ args
 
-    {terraform_opts, _extra_args, _invalid_args} = OptionParser.parse(all_args,
-      strict: @terraform_flags
-    )
+    {terraform_opts, _extra_args, _invalid_args} =
+      OptionParser.parse(all_args,
+        strict: @terraform_flags
+      )
 
     terraform_opts
     |> expand_target_args()
@@ -30,9 +31,10 @@ defmodule DeployEx.Terraform do
       targets ->
         opts_without_target = Keyword.delete(opts, :target)
 
-        expanded_targets = Enum.map(targets, fn target ->
-          {:target, build_target_string(target)}
-        end)
+        expanded_targets =
+          Enum.map(targets, fn target ->
+            {:target, build_target_string(target)}
+          end)
 
         opts_without_target ++ expanded_targets
     end
@@ -75,10 +77,11 @@ defmodule DeployEx.Terraform do
   end
 
   def find_pem_file(terraform_directory, pem_file) when is_nil(pem_file) do
-    res = terraform_directory
+    res =
+      terraform_directory
       |> Path.join("*.pem")
       |> Path.wildcard()
-      |> List.first
+      |> List.first()
 
     if is_nil(res) do
       {:error, ErrorMessage.not_found("couldn't find pem file in #{terraform_directory}")}
@@ -99,25 +102,27 @@ defmodule DeployEx.Terraform do
     with {:ok, output} <- list_state(terraform_directory) do
       lines = String.split(output, "\n")
 
-      ec2_instances = lines
+      ec2_instances =
+        lines
         |> Enum.filter(&(&1 =~ ~r/module\.ec2_instance.*aws_instance\.ec2_instance/))
         |> Enum.map(fn resource ->
           case Regex.run(
-            ~r/module\.ec2_instance\["(.*?)"\]\.aws_instance\.ec2_instance\[(.*)\]/,
-            resource
-          ) do
+                 ~r/module\.ec2_instance\["(.*?)"\]\.aws_instance\.ec2_instance\[(.*)\]/,
+                 resource
+               ) do
             [_, node, num] -> {node, String.to_integer(num)}
             _ -> Mix.raise("Error decoding node numbers from resource: #{resource}")
           end
         end)
 
-      asg_instances = lines
+      asg_instances =
+        lines
         |> Enum.filter(&(&1 =~ ~r/module\.ec2_instance.*aws_autoscaling_group\.ec2_asg/))
         |> Enum.map(fn resource ->
           case Regex.run(
-            ~r/module\.ec2_instance\["(.*?)"\]\.aws_autoscaling_group\.ec2_asg/,
-            resource
-          ) do
+                 ~r/module\.ec2_instance\["(.*?)"\]\.aws_autoscaling_group\.ec2_asg/,
+                 resource
+               ) do
             [_, node] -> {node, nil}
             _ -> Mix.raise("Error decoding ASG from resource: #{resource}")
           end

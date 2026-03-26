@@ -43,7 +43,11 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
     opts = parse_args(args)
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
-         {:ok, security_group_id} <- DeployEx.AwsSecurityGroup.find_security_group_id(region: opts[:region], security_group_id: opts[:security_group_id]),
+         {:ok, security_group_id} <-
+           DeployEx.AwsSecurityGroup.find_security_group_id(
+             region: opts[:region],
+             security_group_id: opts[:security_group_id]
+           ),
          :ok <- add_or_remove_whitelist(opts, security_group_id) do
       :ok
     else
@@ -52,17 +56,18 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
   end
 
   defp parse_args(args) do
-    {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quiet, r: :remove],
-      switches: [
-        force: :boolean,
-        quiet: :boolean,
-        remove: :boolean,
-        ip: :string,
-        region: :string,
-        security_group_id: :string
-      ]
-    )
+    {opts, _extra_args} =
+      OptionParser.parse!(args,
+        aliases: [f: :force, q: :quiet, r: :remove],
+        switches: [
+          force: :boolean,
+          quiet: :boolean,
+          remove: :boolean,
+          ip: :string,
+          region: :string,
+          security_group_id: :string
+        ]
+      )
 
     opts
   end
@@ -77,7 +82,13 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
 
   defp revoke_whitelist(opts, security_group_id) do
     with {:ok, current_ip} <- get_arg_id_or_current_ip(opts) do
-      Mix.shell().info(IO.ANSI.format([:yellow, "Deauthorizing current device #{current_ip} from security group #{security_group_id}", :reset]))
+      Mix.shell().info(
+        IO.ANSI.format([
+          :yellow,
+          "Deauthorizing current device #{current_ip} from security group #{security_group_id}",
+          :reset
+        ])
+      )
 
       DeployEx.AwsIpWhitelister.deauthorize(security_group_id, current_ip)
     end
@@ -85,7 +96,13 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
 
   defp whitelist(opts, security_group_id) do
     with {:ok, current_ip} <- get_arg_id_or_current_ip(opts) do
-      Mix.shell().info(IO.ANSI.format([:yellow, "Authorizing current device #{current_ip} in security group #{security_group_id}", :reset]))
+      Mix.shell().info(
+        IO.ANSI.format([
+          :yellow,
+          "Authorizing current device #{current_ip} in security group #{security_group_id}",
+          :reset
+        ])
+      )
 
       DeployEx.AwsIpWhitelister.authorize(security_group_id, current_ip)
     end

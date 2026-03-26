@@ -41,51 +41,55 @@ defmodule Mix.Tasks.DeployEx.Qa.List do
   end
 
   defp parse_args(args) do
-    {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [a: :app, q: :quiet],
-      switches: [
-        app: :string,
-        json: :boolean,
-        quiet: :boolean
-      ]
-    )
+    {opts, _extra_args} =
+      OptionParser.parse!(args,
+        aliases: [a: :app, q: :quiet],
+        switches: [
+          app: :string,
+          json: :boolean,
+          quiet: :boolean
+        ]
+      )
 
     opts
   end
 
   defp list_qa_nodes(opts) do
     with {:ok, app_names} <- DeployEx.QaNode.list_all_qa_states(opts) do
-      qa_nodes = app_names
-      |> maybe_filter_by_app(opts[:app])
-      |> Enum.flat_map(fn app_name ->
-        case DeployEx.QaNode.fetch_all_qa_states_for_app(app_name, opts) do
-          {:ok, states} ->
-            Enum.map(states, fn qa_node ->
-              case DeployEx.QaNode.verify_instance_exists(qa_node) do
-                {:ok, verified} when not is_nil(verified) -> verified
-                _ -> nil
-              end
-            end)
+      qa_nodes =
+        app_names
+        |> maybe_filter_by_app(opts[:app])
+        |> Enum.flat_map(fn app_name ->
+          case DeployEx.QaNode.fetch_all_qa_states_for_app(app_name, opts) do
+            {:ok, states} ->
+              Enum.map(states, fn qa_node ->
+                case DeployEx.QaNode.verify_instance_exists(qa_node) do
+                  {:ok, verified} when not is_nil(verified) -> verified
+                  _ -> nil
+                end
+              end)
 
-          _ ->
-            []
-        end
-      end)
-      |> Enum.reject(&is_nil/1)
+            _ ->
+              []
+          end
+        end)
+        |> Enum.reject(&is_nil/1)
 
       {:ok, qa_nodes}
     end
   end
 
   defp maybe_filter_by_app(app_names, nil), do: app_names
+
   defp maybe_filter_by_app(app_names, app_filter) do
     Enum.filter(app_names, &(&1 === app_filter or String.contains?(&1, app_filter)))
   end
 
   defp output_qa_nodes(qa_nodes, %{json: true}) do
-    json = qa_nodes
-    |> Enum.map(&qa_node_to_map/1)
-    |> Jason.encode!(pretty: true)
+    json =
+      qa_nodes
+      |> Enum.map(&qa_node_to_map/1)
+      |> Jason.encode!(pretty: true)
 
     Mix.shell().info(json)
   end
@@ -97,24 +101,44 @@ defmodule Mix.Tasks.DeployEx.Qa.List do
     end
 
     Enum.each(qa_nodes, fn qa_node ->
-      state_color = case qa_node.state do
-        "running" -> :green
-        "stopped" -> :yellow
-        "terminated" -> :red
-        _ -> :reset
-      end
+      state_color =
+        case qa_node.state do
+          "running" -> :green
+          "stopped" -> :yellow
+          "terminated" -> :red
+          _ -> :reset
+        end
 
       lb_status = if qa_node.load_balancer_attached?, do: "yes", else: "no"
 
       Mix.shell().info([
-        :cyan, qa_node.app_name, :reset, "\n",
-        "  Instance ID: ", qa_node.instance_id || "unknown", "\n",
-        "  SHA: ", String.slice(qa_node.target_sha || "", 0, 7), "\n",
-        "  State: ", state_color, qa_node.state || "unknown", :reset, "\n",
-        "  Public IP: ", qa_node.public_ip || "N/A", "\n",
-        "  IPv6: ", qa_node.ipv6_address || "N/A", "\n",
-        "  LB Attached: ", lb_status, "\n",
-        "  Created: ", qa_node.created_at || "unknown", "\n"
+        :cyan,
+        qa_node.app_name,
+        :reset,
+        "\n",
+        "  Instance ID: ",
+        qa_node.instance_id || "unknown",
+        "\n",
+        "  SHA: ",
+        String.slice(qa_node.target_sha || "", 0, 7),
+        "\n",
+        "  State: ",
+        state_color,
+        qa_node.state || "unknown",
+        :reset,
+        "\n",
+        "  Public IP: ",
+        qa_node.public_ip || "N/A",
+        "\n",
+        "  IPv6: ",
+        qa_node.ipv6_address || "N/A",
+        "\n",
+        "  LB Attached: ",
+        lb_status,
+        "\n",
+        "  Created: ",
+        qa_node.created_at || "unknown",
+        "\n"
       ])
     end)
 

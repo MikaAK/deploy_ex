@@ -21,7 +21,8 @@ defmodule Mix.Tasks.DeployEx.ViewCurrentRelease do
     with :ok <- DeployExHelpers.check_in_umbrella() do
       {opts, extra_args} = parse_args(args)
 
-      opts = opts
+      opts =
+        opts
         |> Keyword.put_new(:region, DeployEx.Config.aws_region())
         |> Keyword.put_new(:bucket, DeployEx.Config.aws_release_bucket())
 
@@ -29,8 +30,14 @@ defmodule Mix.Tasks.DeployEx.ViewCurrentRelease do
         Mix.raise("app_name is required. Example: mix deploy_ex.view_current_release my_app")
       else
         with {:ok, app_name} <- DeployExHelpers.find_project_name(extra_args),
-             {:ok, current_release} <- DeployEx.ReleaseController.fetch_current_release(app_name, opts) do
-          Mix.shell().info([:green, "\nCurrent release for #{app_name}:\n  ", :yellow, current_release])
+             {:ok, current_release} <-
+               DeployEx.ReleaseController.fetch_current_release(app_name, opts) do
+          Mix.shell().info([
+            :green,
+            "\nCurrent release for #{app_name}:\n  ",
+            :yellow,
+            current_release
+          ])
         else
           {:error, %ErrorMessage{code: :not_found}} ->
             Mix.shell().info([:yellow, "No release found for #{hd(extra_args)}."])

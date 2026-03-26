@@ -31,28 +31,30 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Scale do
     Application.ensure_all_started(:telemetry)
     Application.ensure_all_started(:ex_aws)
 
-    {opts, remaining_args} = OptionParser.parse!(args,
-      aliases: [e: :environment, u: :update_limits],
-      switches: [environment: :string, update_limits: :boolean]
-    )
+    {opts, remaining_args} =
+      OptionParser.parse!(args,
+        aliases: [e: :environment, u: :update_limits],
+        switches: [environment: :string, update_limits: :boolean]
+      )
 
-    {app_name, desired_capacity} = case remaining_args do
-      [name, capacity] ->
-        case Integer.parse(capacity) do
-          {num, ""} when num >= 0 ->
-            {name, num}
+    {app_name, desired_capacity} =
+      case remaining_args do
+        [name, capacity] ->
+          case Integer.parse(capacity) do
+            {num, ""} when num >= 0 ->
+              {name, num}
 
-          _ ->
-            Mix.raise("Desired capacity must be a non-negative integer. Got: #{capacity}")
-        end
+            _ ->
+              Mix.raise("Desired capacity must be a non-negative integer. Got: #{capacity}")
+          end
 
-      _ ->
-        Mix.raise("""
-        Invalid arguments.
-        Usage: mix deploy_ex.autoscale.scale <app_name> <desired_capacity>
-        Example: mix deploy_ex.autoscale.scale my_app 3
-        """)
-    end
+        _ ->
+          Mix.raise("""
+          Invalid arguments.
+          Usage: mix deploy_ex.autoscale.scale <app_name> <desired_capacity>
+          Example: mix deploy_ex.autoscale.scale my_app 3
+          """)
+      end
 
     environment = Keyword.get(opts, :environment, Mix.env() |> to_string())
 
@@ -79,19 +81,32 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Scale do
     Mix.shell().info(["\n  ASG: ", :bright, asg_name, :reset])
 
     if opts[:update_limits] do
-      update_params = [min_size: desired_capacity, max_size: desired_capacity, desired_capacity: desired_capacity]
+      update_params = [
+        min_size: desired_capacity,
+        max_size: desired_capacity,
+        desired_capacity: desired_capacity
+      ]
 
       Mix.shell().info([
-        :faint, "  Updating limits: min=", to_string(update_params[:min_size]),
-        ", max=", to_string(update_params[:max_size]),
-        ", desired=", to_string(desired_capacity), :reset
+        :faint,
+        "  Updating limits: min=",
+        to_string(update_params[:min_size]),
+        ", max=",
+        to_string(update_params[:max_size]),
+        ", desired=",
+        to_string(desired_capacity),
+        :reset
       ])
 
       case AwsAutoscaling.update_auto_scaling_group(asg_name, update_params) do
         :ok ->
           Mix.shell().info([:green, "  ✓ Successfully scaled to #{desired_capacity} instances.\n"])
+
           Mix.shell().info([
-            "  Run ", :bright, "mix deploy_ex.autoscale.status #{app_name}", :reset,
+            "  Run ",
+            :bright,
+            "mix deploy_ex.autoscale.status #{app_name}",
+            :reset,
             " to check the current status."
           ])
 
@@ -107,10 +122,15 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Scale do
     case AwsAutoscaling.set_desired_capacity(asg_name, desired_capacity) do
       :ok ->
         Mix.shell().info([
-          :green, "  ✓ Successfully requested scaling to #{desired_capacity} instances.\n"
+          :green,
+          "  ✓ Successfully requested scaling to #{desired_capacity} instances.\n"
         ])
+
         Mix.shell().info([
-          "  Run ", :bright, "mix deploy_ex.autoscale.status #{app_name}", :reset,
+          "  Run ",
+          :bright,
+          "mix deploy_ex.autoscale.status #{app_name}",
+          :reset,
           " to check the current status."
         ])
 
@@ -118,8 +138,11 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Scale do
         Mix.raise("Autoscaling group '#{asg_name}' not found")
 
       {:error, %ErrorMessage{code: :bad_request} = error} ->
-        if String.contains?(to_string(error), "outside") or String.contains?(to_string(error), "range") do
-          Mix.raise("Desired capacity #{desired_capacity} is outside the min/max range for #{asg_name}")
+        if String.contains?(to_string(error), "outside") or
+             String.contains?(to_string(error), "range") do
+          Mix.raise(
+            "Desired capacity #{desired_capacity} is outside the min/max range for #{asg_name}"
+          )
         else
           Mix.raise("Error setting desired capacity: #{inspect(error)}")
         end

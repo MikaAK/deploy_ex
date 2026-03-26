@@ -10,14 +10,29 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator.MixLockFileDiffParserTest do
       output = MixLockFileDiffParser.parse_mix_lock_diff(@cmd_output)
 
       assert output === [
-        "blitz_credo_checks", "bunt", "credo",
-        "dart_sass", "earmark", "earmark_parser",
-        "error_message", "ex_aws", "ex_aws_s3",
-        "excoveralls", "floki", "gettext", "hpax",
-        "httpoison", "phoenix", "phoenix_live_view",
-        "plug_crypto", "postgrex", "prometheus_telemetry",
-        "swoosh", "tailwind", "timex"
-      ]
+               "blitz_credo_checks",
+               "bunt",
+               "credo",
+               "dart_sass",
+               "earmark",
+               "earmark_parser",
+               "error_message",
+               "ex_aws",
+               "ex_aws_s3",
+               "excoveralls",
+               "floki",
+               "gettext",
+               "hpax",
+               "httpoison",
+               "phoenix",
+               "phoenix_live_view",
+               "plug_crypto",
+               "postgrex",
+               "prometheus_telemetry",
+               "swoosh",
+               "tailwind",
+               "timex"
+             ]
     end
   end
 end

@@ -31,15 +31,22 @@ defmodule Mix.Tasks.DeployEx.Instance.Status do
     Application.ensure_all_started(:telemetry)
     Application.ensure_all_started(:ex_aws)
 
-    {opts, remaining_args} = OptionParser.parse!(args,
-      aliases: [e: :environment],
-      switches: [environment: :string]
-    )
+    {opts, remaining_args} =
+      OptionParser.parse!(args,
+        aliases: [e: :environment],
+        switches: [environment: :string]
+      )
 
-    app_name = case remaining_args do
-      [name | _] -> name
-      [] -> Mix.raise("Application name is required. Usage: mix deploy_ex.instance.status <app_name>")
-    end
+    app_name =
+      case remaining_args do
+        [name | _] ->
+          name
+
+        [] ->
+          Mix.raise(
+            "Application name is required. Usage: mix deploy_ex.instance.status <app_name>"
+          )
+      end
 
     environment = Keyword.get(opts, :environment, Mix.env() |> to_string())
 
@@ -55,23 +62,32 @@ defmodule Mix.Tasks.DeployEx.Instance.Status do
     case AwsAutoscaling.find_asg_by_prefix(app_name, environment) do
       {:ok, []} ->
         asg_name = AwsAutoscaling.build_asg_name(app_name, environment)
+
         case AwsAutoscaling.describe_auto_scaling_group(asg_name) do
           {:ok, asg_data} ->
             display_asg_info(asg_data, asg_name)
 
           {:error, %ErrorMessage{code: :not_found}} ->
             Mix.shell().info([
-              :green, "\n",
+              :green,
+              "\n",
               "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
-              :cyan, "Autoscaling: ", :yellow, "Not Enabled\n",
+              :cyan,
+              "Autoscaling: ",
+              :yellow,
+              "Not Enabled\n",
               "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             ])
 
           {:error, _error} ->
             Mix.shell().info([
-              :green, "\n",
+              :green,
+              "\n",
               "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
-              :cyan, "Autoscaling: ", :yellow, "Not Enabled\n",
+              :cyan,
+              "Autoscaling: ",
+              :yellow,
+              "Not Enabled\n",
               "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             ])
         end
@@ -83,9 +99,13 @@ defmodule Mix.Tasks.DeployEx.Instance.Status do
 
       {:error, _error} ->
         Mix.shell().info([
-          :green, "\n",
+          :green,
+          "\n",
           "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
-          :cyan, "Autoscaling: ", :yellow, "Not Enabled\n",
+          :cyan,
+          "Autoscaling: ",
+          :yellow,
+          "Not Enabled\n",
           "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         ])
     end
@@ -93,11 +113,23 @@ defmodule Mix.Tasks.DeployEx.Instance.Status do
 
   defp display_asg_info(asg_data, asg_name) do
     Mix.shell().info([
-      :green, "\n",
+      :green,
+      "\n",
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
-      :cyan, "Autoscaling: ", :green, "Enabled\n",
-      :reset, "  Group: ", :bright, asg_name, :reset, "\n",
-      "  Desired: ", :bright, "#{asg_data.desired_capacity}", :reset,
+      :cyan,
+      "Autoscaling: ",
+      :green,
+      "Enabled\n",
+      :reset,
+      "  Group: ",
+      :bright,
+      asg_name,
+      :reset,
+      "\n",
+      "  Desired: ",
+      :bright,
+      "#{asg_data.desired_capacity}",
+      :reset,
       " | Min: #{asg_data.min_size} | Max: #{asg_data.max_size}\n",
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     ])
@@ -112,14 +144,19 @@ defmodule Mix.Tasks.DeployEx.Instance.Status do
     with {:ok, instances} <- AwsMachine.find_instances_by_tags(tag_filters),
          {:ok, eips} <- fetch_elastic_ips(),
          {:ok, target_groups} <- AwsLoadBalancer.find_target_groups_by_app(app_name) do
-
       lb_health_map = build_lb_health_map(target_groups)
 
       if Enum.empty?(instances) do
         Mix.shell().info([:yellow, "\nNo instances found for #{app_name} in #{environment}"])
       else
         Mix.shell().info([
-          :cyan, "\nInstances (", :bright, "#{length(instances)}", :reset, :cyan, "):\n"
+          :cyan,
+          "\nInstances (",
+          :bright,
+          "#{length(instances)}",
+          :reset,
+          :cyan,
+          "):\n"
         ])
 
         instances
@@ -131,7 +168,8 @@ defmodule Mix.Tasks.DeployEx.Instance.Status do
       end
 
       Mix.shell().info([
-        :green, "\n",
+        :green,
+        "\n",
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
       ])
     else
@@ -144,20 +182,38 @@ defmodule Mix.Tasks.DeployEx.Instance.Status do
   end
 
   defp display_instance(instance, eips, lb_health_map, target_groups) do
-    state_color = case instance.state do
-      "running" -> :green
-      "pending" -> :yellow
-      "stopped" -> :red
-      _ -> :yellow
-    end
+    state_color =
+      case instance.state do
+        "running" -> :green
+        "pending" -> :yellow
+        "stopped" -> :red
+        _ -> :yellow
+      end
 
     eip_info = find_eip_for_instance(eips, instance.instance_id)
 
     Mix.shell().info([
-      :bright, "\n  #{instance.tags["Name"] || instance.instance_id}\n", :reset,
-      "  ├─ ", :cyan, "Instance ID: ", :reset, instance.instance_id, "\n",
-      "  ├─ ", :cyan, "State: ", state_color, instance.state, :reset, "\n",
-      "  ├─ ", :cyan, "Type: ", :reset, "#{instance.instance_type}\n"
+      :bright,
+      "\n  #{instance.tags["Name"] || instance.instance_id}\n",
+      :reset,
+      "  ├─ ",
+      :cyan,
+      "Instance ID: ",
+      :reset,
+      instance.instance_id,
+      "\n",
+      "  ├─ ",
+      :cyan,
+      "State: ",
+      state_color,
+      instance.state,
+      :reset,
+      "\n",
+      "  ├─ ",
+      :cyan,
+      "Type: ",
+      :reset,
+      "#{instance.instance_type}\n"
     ])
 
     display_ip_info(instance, eip_info)
@@ -168,29 +224,46 @@ defmodule Mix.Tasks.DeployEx.Instance.Status do
   defp display_ip_info(instance, eip_info) do
     ip_lines = []
 
-    ip_lines = if eip_info do
-      ip_lines ++ [["  ├─ ", :cyan, "Elastic IP: ", :green, eip_info.public_ip, :reset, " (", eip_info.allocation_id, ")\n"]]
-    else
-      ip_lines
-    end
+    ip_lines =
+      if eip_info do
+        ip_lines ++
+          [
+            [
+              "  ├─ ",
+              :cyan,
+              "Elastic IP: ",
+              :green,
+              eip_info.public_ip,
+              :reset,
+              " (",
+              eip_info.allocation_id,
+              ")\n"
+            ]
+          ]
+      else
+        ip_lines
+      end
 
-    ip_lines = if instance.public_ip do
-      ip_lines ++ [["  ├─ ", :cyan, "Public IP: ", :reset, instance.public_ip, "\n"]]
-    else
-      ip_lines
-    end
+    ip_lines =
+      if instance.public_ip do
+        ip_lines ++ [["  ├─ ", :cyan, "Public IP: ", :reset, instance.public_ip, "\n"]]
+      else
+        ip_lines
+      end
 
-    ip_lines = if instance.private_ip do
-      ip_lines ++ [["  ├─ ", :cyan, "Private IP: ", :reset, instance.private_ip, "\n"]]
-    else
-      ip_lines
-    end
+    ip_lines =
+      if instance.private_ip do
+        ip_lines ++ [["  ├─ ", :cyan, "Private IP: ", :reset, instance.private_ip, "\n"]]
+      else
+        ip_lines
+      end
 
-    ip_lines = if instance.ipv6 do
-      ip_lines ++ [["  ├─ ", :cyan, "IPv6: ", :reset, instance.ipv6, "\n"]]
-    else
-      ip_lines
-    end
+    ip_lines =
+      if instance.ipv6 do
+        ip_lines ++ [["  ├─ ", :cyan, "IPv6: ", :reset, instance.ipv6, "\n"]]
+      else
+        ip_lines
+      end
 
     Enum.each(ip_lines, &Mix.shell().info/1)
   end
@@ -202,16 +275,26 @@ defmodule Mix.Tasks.DeployEx.Instance.Status do
       Enum.each(target_groups, fn tg ->
         health = Map.get(lb_health_map, {tg.arn, instance_id})
 
-        {health_color, health_text} = case health do
-          %{state: "healthy"} -> {:green, "healthy"}
-          %{state: "unhealthy", reason: reason} -> {:red, "unhealthy (#{reason})"}
-          %{state: "initial"} -> {:yellow, "initial"}
-          %{state: "draining"} -> {:yellow, "draining"}
-          nil -> {:yellow, "not registered"}
-        end
+        {health_color, health_text} =
+          case health do
+            %{state: "healthy"} -> {:green, "healthy"}
+            %{state: "unhealthy", reason: reason} -> {:red, "unhealthy (#{reason})"}
+            %{state: "initial"} -> {:yellow, "initial"}
+            %{state: "draining"} -> {:yellow, "draining"}
+            nil -> {:yellow, "not registered"}
+          end
 
         Mix.shell().info([
-          "  ├─ ", :cyan, "Target Group: ", :reset, tg.name, " - ", health_color, health_text, :reset, "\n"
+          "  ├─ ",
+          :cyan,
+          "Target Group: ",
+          :reset,
+          tg.name,
+          " - ",
+          health_color,
+          health_text,
+          :reset,
+          "\n"
         ])
       end)
     end
@@ -224,6 +307,7 @@ defmodule Mix.Tasks.DeployEx.Instance.Status do
       :ok
     else
       Mix.shell().info(["  └─ ", :cyan, "Tags:\n"])
+
       sorted_tags
       |> Enum.with_index()
       |> Enum.each(fn {{key, value}, idx} ->
@@ -250,10 +334,12 @@ defmodule Mix.Tasks.DeployEx.Instance.Status do
 
   defp handle_eip_response({:ok, %{body: body}}) do
     case XmlToMap.naive_map(body) do
-      %{"DescribeAddressesResponse" => %{"addressesSet" => %{"item" => items}}} when is_list(items) ->
+      %{"DescribeAddressesResponse" => %{"addressesSet" => %{"item" => items}}}
+      when is_list(items) ->
         {:ok, Enum.map(items, &parse_eip/1)}
 
-      %{"DescribeAddressesResponse" => %{"addressesSet" => %{"item" => item}}} when is_map(item) ->
+      %{"DescribeAddressesResponse" => %{"addressesSet" => %{"item" => item}}}
+      when is_map(item) ->
         {:ok, [parse_eip(item)]}
 
       %{"DescribeAddressesResponse" => %{"addressesSet" => nil}} ->
@@ -265,10 +351,11 @@ defmodule Mix.Tasks.DeployEx.Instance.Status do
   end
 
   defp handle_eip_response({:error, {:http_error, status_code, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error fetching elastic IPs",
-      %{error_body: body}
-    ])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+       "error fetching elastic IPs",
+       %{error_body: body}
+     ])}
   end
 
   defp handle_eip_response({:error, error}) do

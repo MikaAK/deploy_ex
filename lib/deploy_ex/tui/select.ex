@@ -5,8 +5,8 @@ defmodule DeployEx.TUI.Select do
   alias ExRatatui.Widgets
 
   @type option :: %{
-    allow_all: boolean()
-  }
+          allow_all: boolean()
+        }
 
   @spec run(list(String.t()), keyword()) :: list(String.t())
   def run(choices, opts \\ [])
@@ -34,14 +34,18 @@ defmodule DeployEx.TUI.Select do
     value = prompt |> Mix.shell().prompt() |> String.trim()
 
     cond do
-      value === "" -> run_console(choices, opts)
-      value === "a" and select_all? -> choices
+      value === "" ->
+        run_console(choices, opts)
+
+      value === "a" and select_all? ->
+        choices
 
       String.match?(value, ~r/^\d+$/) and
-        String.to_integer(value) in Range.new(0, length(choices) - 1) ->
+          String.to_integer(value) in Range.new(0, length(choices) - 1) ->
         value |> String.to_integer() |> then(&[Enum.at(choices, &1)])
 
-      true -> run_console(choices, opts)
+      true ->
+        run_console(choices, opts)
     end
   end
 
@@ -118,11 +122,12 @@ defmodule DeployEx.TUI.Select do
   end
 
   defp draw(terminal, state, width, height) do
-    title_text = if state.allow_all do
-      " #{state.title} (↑↓ navigate, Enter select, a=all, q=quit) "
-    else
-      " #{state.title} (↑↓ navigate, Enter select, q=quit) "
-    end
+    title_text =
+      if state.allow_all do
+        " #{state.title} (↑↓ navigate, Enter select, a=all, q=quit) "
+      else
+        " #{state.title} (↑↓ navigate, Enter select, q=quit) "
+      end
 
     list_widget = %Widgets.List{
       items: state.choices,
@@ -140,17 +145,19 @@ defmodule DeployEx.TUI.Select do
 
     area = %Rect{x: 0, y: 0, width: width, height: height}
 
-    [_padding_top, content_area, _padding_bottom] = Layout.split(area, :vertical, [
-      {:length, 1},
-      {:min, 3},
-      {:length, 1}
-    ])
+    [_padding_top, content_area, _padding_bottom] =
+      Layout.split(area, :vertical, [
+        {:length, 1},
+        {:min, 3},
+        {:length, 1}
+      ])
 
-    [_padding_left, inner_area, _padding_right] = Layout.split(content_area, :horizontal, [
-      {:length, 2},
-      {:min, 10},
-      {:length, 2}
-    ])
+    [_padding_left, inner_area, _padding_right] =
+      Layout.split(content_area, :horizontal, [
+        {:length, 2},
+        {:min, 10},
+        {:length, 2}
+      ])
 
     ExRatatui.draw(terminal, [{list_widget, inner_area}])
   end

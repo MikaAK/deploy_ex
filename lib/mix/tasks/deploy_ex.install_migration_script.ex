@@ -31,7 +31,8 @@ defmodule Mix.Tasks.DeployEx.InstallMigrationScript do
   """
 
   def run(args) do
-    opts = args
+    opts =
+      args
       |> parse_args()
       |> Keyword.put_new(:directory, @scripts_default_path)
 
@@ -63,14 +64,15 @@ defmodule Mix.Tasks.DeployEx.InstallMigrationScript do
   end
 
   defp parse_args(args) do
-    {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quiet, d: :directory],
-      switches: [
-        force: :boolean,
-        quiet: :boolean,
-        directory: :string
-      ]
-    )
+    {opts, _extra_args} =
+      OptionParser.parse!(args,
+        aliases: [f: :force, q: :quiet, d: :directory],
+        switches: [
+          force: :boolean,
+          quiet: :boolean,
+          directory: :string
+        ]
+      )
 
     opts
   end

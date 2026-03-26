@@ -23,10 +23,11 @@ defmodule Mix.Tasks.DeployEx.Qa.DetachLb do
     with :ok <- DeployExHelpers.check_in_umbrella() do
       {opts, extra_args} = parse_args(args)
 
-      app_name = case extra_args do
-        [name | _] -> name
-        [] -> Mix.raise("App name is required. Usage: mix deploy_ex.qa.detach_lb <app_name>")
-      end
+      app_name =
+        case extra_args do
+          [name | _] -> name
+          [] -> Mix.raise("App name is required. Usage: mix deploy_ex.qa.detach_lb <app_name>")
+        end
 
       with {:ok, qa_node} <- fetch_and_verify_qa_node(app_name, opts),
            :ok <- verify_attached(qa_node),
@@ -66,6 +67,7 @@ defmodule Mix.Tasks.DeployEx.Qa.DetachLb do
   defp verify_attached(%{load_balancer_attached?: false}) do
     {:error, ErrorMessage.bad_request("QA node is not attached to any load balancer")}
   end
+
   defp verify_attached(_), do: :ok
 
   defp detach_from_target_groups(qa_node, opts) do

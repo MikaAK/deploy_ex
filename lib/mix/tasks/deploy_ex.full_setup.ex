@@ -72,14 +72,15 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
   end
 
   defp parse_args(args) do
-    {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [k: :skip_deploy, p: :skip_setup],
-      switches: [
-        skip_setup: :boolean,
-        skip_deploy: :boolean,
-        no_tui: :boolean
-      ]
-    )
+    {opts, _extra_args} =
+      OptionParser.parse!(args,
+        aliases: [k: :skip_deploy, p: :skip_setup],
+        switches: [
+          skip_setup: :boolean,
+          skip_deploy: :boolean,
+          no_tui: :boolean
+        ]
+      )
 
     opts
   end
@@ -98,10 +99,10 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
 
     with :ok <- Ansible.Ping.run(args),
          :ok <- run_setup(opts, args) do
-
       if !opts[:skip_deploy] do
         Mix.shell().info([
-          :green, "* running post setup"
+          :green,
+          "* running post setup"
         ])
 
         run_commands(@post_setup_comands, args)
@@ -112,7 +113,8 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
   defp run_setup(opts, args) do
     unless opts[:skip_setup] do
       Mix.shell().info([
-        :green, "* running instance setup"
+        :green,
+        "* running instance setup"
       ])
 
       Ansible.Setup.run(args)
@@ -120,12 +122,14 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
   end
 
   defp run_setup_countdown(total_seconds) do
-    steps = Enum.map(1..total_seconds, fn second ->
-      {"Waiting for servers to initialize (#{second}/#{total_seconds}s)...", fn ->
-        Process.sleep(1000)
-        :ok
-      end}
-    end)
+    steps =
+      Enum.map(1..total_seconds, fn second ->
+        {"Waiting for servers to initialize (#{second}/#{total_seconds}s)...",
+         fn ->
+           Process.sleep(1000)
+           :ok
+         end}
+      end)
 
     DeployEx.TUI.Progress.run_steps(steps, title: "Server Initialization")
   end

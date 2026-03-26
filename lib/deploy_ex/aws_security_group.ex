@@ -13,18 +13,20 @@ defmodule DeployEx.AwsSecurityGroup do
     region = opts[:region] || DeployEx.Config.aws_region()
 
     with {:ok, security_groups} <- describe_security_groups(region) do
-      matching = Enum.find(security_groups, fn sg ->
-        sg["groupId"] === security_group_id or
-          sg["groupName"] === security_group_id or
-          String.starts_with?(sg["groupName"] || "", security_group_id)
-      end)
+      matching =
+        Enum.find(security_groups, fn sg ->
+          sg["groupId"] === security_group_id or
+            sg["groupName"] === security_group_id or
+            String.starts_with?(sg["groupName"] || "", security_group_id)
+        end)
 
       case matching do
         nil ->
-          {:error, ErrorMessage.not_found(
-            "security group #{security_group_id} not found",
-            %{security_group_id: security_group_id}
-          )}
+          {:error,
+           ErrorMessage.not_found(
+             "security group #{security_group_id} not found",
+             %{security_group_id: security_group_id}
+           )}
 
         sg ->
           {:ok, %{id: sg["groupId"], vpc_id: sg["vpcId"], name: sg["groupName"]}}
@@ -37,14 +39,16 @@ defmodule DeployEx.AwsSecurityGroup do
     project_name = opts[:project_name] || DeployEx.Config.aws_project_name()
     environment = opts[:environment] || DeployEx.Config.env()
 
-    sg_prefix = if DeployEx.Config.aws_names_include_env?() do
-      "#{project_name}-#{environment}-sg"
-    else
-      "#{project_name}-sg"
-    end
+    sg_prefix =
+      if DeployEx.Config.aws_names_include_env?() do
+        "#{project_name}-#{environment}-sg"
+      else
+        "#{project_name}-sg"
+      end
 
     with {:ok, security_groups} <- describe_security_groups(region) do
-      matching = security_groups
+      matching =
+        security_groups
         |> Enum.filter(fn sg ->
           name = sg["groupName"] || ""
           String.starts_with?(name, sg_prefix) or name === sg_prefix
@@ -54,11 +58,17 @@ defmodule DeployEx.AwsSecurityGroup do
 
       case matching do
         nil ->
-          available = security_groups
+          available =
+            security_groups
             |> Enum.map(& &1["groupName"])
             |> Enum.filter(& &1)
             |> Enum.reject(&(&1 === "default"))
-          {:error, ErrorMessage.not_found("no security group found matching prefix #{sg_prefix}", %{available: available})}
+
+          {:error,
+           ErrorMessage.not_found("no security group found matching prefix #{sg_prefix}", %{
+             available: available
+           })}
+
         sg ->
           {:ok, %{id: sg["groupId"], vpc_id: sg["vpcId"], name: sg["groupName"]}}
       end
@@ -86,15 +96,17 @@ defmodule DeployEx.AwsSecurityGroup do
   end
 
   defp handle_response({:error, {:http_error, status_code, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error fetching security groups from aws",
-      %{error_body: body}
-    ])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+       "error fetching security groups from aws",
+       %{error_body: body}
+     ])}
   end
 
   defp handle_response({:ok, %{body: body}}) do
     case XmlToMap.naive_map(body) do
-      %{"DescribeSecurityGroupsResponse" => %{"securityGroupInfo" => %{"item" => items}}} when is_list(items) ->
+      %{"DescribeSecurityGroupsResponse" => %{"securityGroupInfo" => %{"item" => items}}}
+      when is_list(items) ->
         {:ok, items}
 
       %{"DescribeSecurityGroupsResponse" => %{"securityGroupInfo" => %{"item" => item}}} ->
@@ -104,11 +116,11 @@ defmodule DeployEx.AwsSecurityGroup do
         {:ok, []}
 
       structure ->
-        {:error, ErrorMessage.bad_request(
-          "couldn't parse security groups response from aws",
-          %{structure: structure}
-        )}
+        {:error,
+         ErrorMessage.bad_request(
+           "couldn't parse security groups response from aws",
+           %{structure: structure}
+         )}
     end
   end
-
 end

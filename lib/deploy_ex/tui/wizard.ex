@@ -59,7 +59,9 @@ defmodule DeployEx.TUI.Wizard do
     command = pick_command_tui()
 
     case command do
-      nil -> :ok
+      nil ->
+        :ok
+
       cmd ->
         case Form.run(cmd) do
           :cancelled -> :ok
@@ -116,11 +118,13 @@ defmodule DeployEx.TUI.Wizard do
         wizard_loop(terminal, %{state | category_selected: new_idx})
 
       %ExRatatui.Event.Key{code: "/", kind: "press"} ->
-        new_state = %{state |
-          screen: {:search_overlay, "", :category_select},
-          search_query: "",
-          search_selected: 0
+        new_state = %{
+          state
+          | screen: {:search_overlay, "", :category_select},
+            search_query: "",
+            search_selected: 0
         }
+
         wizard_loop(terminal, new_state)
 
       %ExRatatui.Event.Key{code: "enter", kind: "press"} ->
@@ -151,11 +155,13 @@ defmodule DeployEx.TUI.Wizard do
         wizard_loop(terminal, %{state | command_selected: new_idx})
 
       %ExRatatui.Event.Key{code: "/", kind: "press"} ->
-        new_state = %{state |
-          screen: {:search_overlay, "", {:command_select, category}},
-          search_query: "",
-          search_selected: 0
+        new_state = %{
+          state
+          | screen: {:search_overlay, "", {:command_select, category}},
+            search_query: "",
+            search_selected: 0
         }
+
         wizard_loop(terminal, new_state)
 
       %ExRatatui.Event.Key{code: key, kind: "press"} when key in ["b", "backspace"] ->
@@ -204,20 +210,26 @@ defmodule DeployEx.TUI.Wizard do
 
       %ExRatatui.Event.Key{code: "backspace", kind: "press"} ->
         new_query = if byte_size(query) > 0, do: String.slice(query, 0..-2//1), else: ""
-        new_state = %{state |
-          screen: {:search_overlay, new_query, return_screen},
-          search_query: new_query,
-          search_selected: 0
+
+        new_state = %{
+          state
+          | screen: {:search_overlay, new_query, return_screen},
+            search_query: new_query,
+            search_selected: 0
         }
+
         wizard_loop(terminal, new_state)
 
       %ExRatatui.Event.Key{code: key, kind: "press"} when byte_size(key) === 1 ->
         new_query = query <> key
-        new_state = %{state |
-          screen: {:search_overlay, new_query, return_screen},
-          search_query: new_query,
-          search_selected: 0
+
+        new_state = %{
+          state
+          | screen: {:search_overlay, new_query, return_screen},
+            search_query: new_query,
+            search_selected: 0
         }
+
         wizard_loop(terminal, new_state)
 
       _ ->
@@ -261,11 +273,12 @@ defmodule DeployEx.TUI.Wizard do
   defp draw(terminal, state) do
     area = %Rect{x: 0, y: 0, width: state.width, height: state.height}
 
-    [header_area, content_area, footer_area] = Layout.split(area, :vertical, [
-      {:length, 3},
-      {:min, 3},
-      {:length, 1}
-    ])
+    [header_area, content_area, footer_area] =
+      Layout.split(area, :vertical, [
+        {:length, 3},
+        {:min, 3},
+        {:length, 1}
+      ])
 
     header = %Widgets.Paragraph{
       text: "  DeployEx Wizard  —  ↑↓ navigate  Enter select  / search",
@@ -289,10 +302,11 @@ defmodule DeployEx.TUI.Wizard do
   defp build_screen_content(%{screen: :category_select} = state, content_area) do
     categories = CommandRegistry.categories()
 
-    items = Enum.map(categories, fn cat ->
-      count = length(CommandRegistry.commands_for_category(cat))
-      "#{cat}  (#{count} commands)"
-    end)
+    items =
+      Enum.map(categories, fn cat ->
+        count = length(CommandRegistry.commands_for_category(cat))
+        "#{cat}  (#{count} commands)"
+      end)
 
     widget = %Widgets.List{
       items: items,
@@ -314,11 +328,12 @@ defmodule DeployEx.TUI.Wizard do
   defp build_screen_content(%{screen: {:command_select, category}} = state, content_area) do
     commands = CommandRegistry.commands_for_category(category)
 
-    items = Enum.map(commands, fn cmd ->
-      shortdoc = CommandRegistry.shortdoc_for(cmd)
-      task_short = String.replace_prefix(cmd.task, "#{String.downcase(category)}.", "")
-      "#{String.pad_trailing(task_short, 32)}  #{shortdoc}"
-    end)
+    items =
+      Enum.map(commands, fn cmd ->
+        shortdoc = CommandRegistry.shortdoc_for(cmd)
+        task_short = String.replace_prefix(cmd.task, "#{String.downcase(category)}.", "")
+        "#{String.pad_trailing(task_short, 32)}  #{shortdoc}"
+      end)
 
     widget = %Widgets.List{
       items: items,
@@ -340,18 +355,20 @@ defmodule DeployEx.TUI.Wizard do
   defp build_screen_content(%{screen: {:search_overlay, query, _return}} = state, content_area) do
     results = CommandRegistry.search(query)
 
-    items = Enum.map(results, fn cmd ->
-      shortdoc = CommandRegistry.shortdoc_for(cmd)
-      category_tag = String.pad_trailing("[#{cmd.category}]", 14)
-      "#{category_tag}  #{String.pad_trailing(cmd.task, 40)}  #{shortdoc}"
-    end)
+    items =
+      Enum.map(results, fn cmd ->
+        shortdoc = CommandRegistry.shortdoc_for(cmd)
+        category_tag = String.pad_trailing("[#{cmd.category}]", 14)
+        "#{category_tag}  #{String.pad_trailing(cmd.task, 40)}  #{shortdoc}"
+      end)
 
     search_display = if query === "", do: " (type to search...)", else: " #{query}█"
 
-    [search_area, results_area] = Layout.split(content_area, :vertical, [
-      {:length, 3},
-      {:min, 3}
-    ])
+    [search_area, results_area] =
+      Layout.split(content_area, :vertical, [
+        {:length, 3},
+        {:min, 3}
+      ])
 
     search_widget = %Widgets.Paragraph{
       text: search_display,

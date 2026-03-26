@@ -46,27 +46,34 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Refresh do
     Application.ensure_all_started(:telemetry)
     Application.ensure_all_started(:ex_aws)
 
-    {opts, remaining_args} = OptionParser.parse!(args,
-      aliases: [e: :environment, w: :wait, s: :strategy, a: :availability],
-      switches: [
-        environment: :string,
-        strategy: :string,
-        availability: :string,
-        min_healthy_percentage: :integer,
-        max_healthy_percentage: :integer,
-        instance_warmup: :integer,
-        wait: :boolean,
-        skip_matching: :boolean,
-        no_tui: :boolean
-      ]
-    )
+    {opts, remaining_args} =
+      OptionParser.parse!(args,
+        aliases: [e: :environment, w: :wait, s: :strategy, a: :availability],
+        switches: [
+          environment: :string,
+          strategy: :string,
+          availability: :string,
+          min_healthy_percentage: :integer,
+          max_healthy_percentage: :integer,
+          instance_warmup: :integer,
+          wait: :boolean,
+          skip_matching: :boolean,
+          no_tui: :boolean
+        ]
+      )
 
     DeployEx.TUI.setup_no_tui(opts)
 
-    app_name = case remaining_args do
-      [name | _] -> name
-      [] -> Mix.raise("Application name is required. Usage: mix deploy_ex.autoscale.refresh <app_name>")
-    end
+    app_name =
+      case remaining_args do
+        [name | _] ->
+          name
+
+        [] ->
+          Mix.raise(
+            "Application name is required. Usage: mix deploy_ex.autoscale.refresh <app_name>"
+          )
+      end
 
     environment = Keyword.get(opts, :environment, Mix.env() |> to_string())
     strategy = Keyword.get(opts, :strategy, "Rolling")
@@ -75,8 +82,12 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Refresh do
     skip_matching = Keyword.get(opts, :skip_matching)
 
     availability_defaults = resolve_availability(availability)
-    min_healthy = Keyword.get(opts, :min_healthy_percentage, availability_defaults.min_healthy_percentage)
-    max_healthy = Keyword.get(opts, :max_healthy_percentage, availability_defaults.max_healthy_percentage)
+
+    min_healthy =
+      Keyword.get(opts, :min_healthy_percentage, availability_defaults.min_healthy_percentage)
+
+    max_healthy =
+      Keyword.get(opts, :max_healthy_percentage, availability_defaults.max_healthy_percentage)
 
     with :ok <- DeployExHelpers.check_in_umbrella() do
       Mix.shell().info([:blue, "Starting instance refresh for #{app_name}..."])
@@ -106,58 +117,103 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Refresh do
 
   defp start_refresh_for_asg(asg_name, app_name, preferences, strategy, opts) do
     Mix.shell().info([
-      "\n  ASG: ", :bright, asg_name, :reset, "\n",
-      "  Strategy: ", :bright, strategy, :reset, "\n",
-      "  Availability: ", :bright, availability_label(preferences), :reset, "\n",
-      "  Min healthy: ", :bright, "#{preferences.min_healthy_percentage}%", :reset, "\n",
-      "  Max healthy: ", :bright, "#{preferences.max_healthy_percentage}%", :reset, "\n",
-      "  Instance warmup: ", :bright, "#{preferences.instance_warmup}s", :reset
+      "\n  ASG: ",
+      :bright,
+      asg_name,
+      :reset,
+      "\n",
+      "  Strategy: ",
+      :bright,
+      strategy,
+      :reset,
+      "\n",
+      "  Availability: ",
+      :bright,
+      availability_label(preferences),
+      :reset,
+      "\n",
+      "  Min healthy: ",
+      :bright,
+      "#{preferences.min_healthy_percentage}%",
+      :reset,
+      "\n",
+      "  Max healthy: ",
+      :bright,
+      "#{preferences.max_healthy_percentage}%",
+      :reset,
+      "\n",
+      "  Instance warmup: ",
+      :bright,
+      "#{preferences.instance_warmup}s",
+      :reset
     ])
 
     case AwsAutoscaling.start_instance_refresh(asg_name, preferences, strategy: strategy) do
       {:ok, refresh_id} ->
         Mix.shell().info([
-          :green, "\n✓ Instance refresh started successfully.\n",
-          :reset, "  Refresh ID: ", :bright, refresh_id, :reset
+          :green,
+          "\n✓ Instance refresh started successfully.\n",
+          :reset,
+          "  Refresh ID: ",
+          :bright,
+          refresh_id,
+          :reset
         ])
 
         if opts[:wait] do
           wait_for_refresh(asg_name, refresh_id)
         else
           Mix.shell().info([
-            "\nRun ", :bright, "mix deploy_ex.autoscale.refresh_status #{app_name}", :reset,
+            "\nRun ",
+            :bright,
+            "mix deploy_ex.autoscale.refresh_status #{app_name}",
+            :reset,
             " to check progress."
           ])
         end
 
       {:error, %ErrorMessage{code: :not_found}} ->
         Mix.shell().error([
-          :red, "\nError: Autoscaling group '#{asg_name}' not found.\n"
+          :red,
+          "\nError: Autoscaling group '#{asg_name}' not found.\n"
         ])
-        Mix.shell().info("Ensure autoscaling is enabled for #{app_name} in your Terraform configuration.")
+
+        Mix.shell().info(
+          "Ensure autoscaling is enabled for #{app_name} in your Terraform configuration."
+        )
 
       {:error, %ErrorMessage{code: :conflict}} ->
         Mix.shell().error([
-          :red, "\nError: An instance refresh is already in progress.\n"
+          :red,
+          "\nError: An instance refresh is already in progress.\n"
         ])
+
         Mix.shell().info("Wait for the current refresh to complete or cancel it first.")
 
       {:error, error} ->
         Mix.shell().error([
-          :red, "\nError starting instance refresh: #{inspect(error)}\n"
+          :red,
+          "\nError starting instance refresh: #{inspect(error)}\n"
         ])
     end
   end
 
   defp resolve_availability(nil), do: %{min_healthy_percentage: 100, max_healthy_percentage: 110}
+
   defp resolve_availability(name) do
     case Map.fetch(@availability_presets, name) do
-      {:ok, preset} -> preset
-      :error -> Mix.raise("Invalid --availability value '#{name}'. Must be one of: #{@availability_presets |> Map.keys() |> Enum.join(", ")}")
+      {:ok, preset} ->
+        preset
+
+      :error ->
+        Mix.raise(
+          "Invalid --availability value '#{name}'. Must be one of: #{@availability_presets |> Map.keys() |> Enum.join(", ")}"
+        )
     end
   end
 
-  defp availability_label(%{min_healthy_percentage: min, max_healthy_percentage: max}) when min >= 100 and max > 100 do
+  defp availability_label(%{min_healthy_percentage: min, max_healthy_percentage: max})
+       when min >= 100 and max > 100 do
     "Launch before terminating"
   end
 
@@ -175,7 +231,12 @@ defmodule Mix.Tasks.DeployEx.Autoscale.Refresh do
   defp poll_refresh_status(asg_name, refresh_id, tui_pid) do
     case AwsAutoscaling.describe_instance_refreshes(asg_name, refresh_ids: [refresh_id]) do
       {:ok, [%{status: "Successful"} | _]} ->
-        DeployEx.TUI.Progress.update_progress(tui_pid, 1.0, "Instance refresh completed successfully!")
+        DeployEx.TUI.Progress.update_progress(
+          tui_pid,
+          1.0,
+          "Instance refresh completed successfully!"
+        )
+
         :ok
 
       {:ok, [%{status: "Failed", status_reason: reason} | _]} ->

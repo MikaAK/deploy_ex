@@ -54,7 +54,11 @@ defmodule Mix.Tasks.DeployEx.SelectNode do
   defp fetch_instances(app_params, opts) do
     tag_filters = [{"ManagedBy", "DeployEx"}]
 
-    with {:ok, instances} <- AwsMachine.find_instances_by_tags(tag_filters, region: opts[:region], resource_group: opts[:resource_group]) do
+    with {:ok, instances} <-
+           AwsMachine.find_instances_by_tags(tag_filters,
+             region: opts[:region],
+             resource_group: opts[:resource_group]
+           ) do
       parsed =
         instances
         |> Enum.map(&AwsMachine.parse_instance_info/1)

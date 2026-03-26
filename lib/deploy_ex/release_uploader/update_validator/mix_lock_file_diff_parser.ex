@@ -6,17 +6,19 @@ defmodule DeployEx.ReleaseUploader.UpdateValidator.MixLockFileDiffParser do
       {output, 0} ->
         {:ok, {sha_tuple, output |> String.trim_trailing("\n") |> parse_mix_lock_diff}}
 
-      {output, code} -> {:error, ErrorMessage.failed_dependency(
-        "couldn't run git diff for mix.lock",
-        %{output: output, code: code}
-      )}
+      {output, code} ->
+        {:error,
+         ErrorMessage.failed_dependency(
+           "couldn't run git diff for mix.lock",
+           %{output: output, code: code}
+         )}
     end
   end
 
   def parse_mix_lock_diff(output) do
     output
-      |> String.split("\n")
-      |> Enum.filter(&(&1 =~ @dep_regex))
-      |> Enum.map(&(@dep_regex |> Regex.run(&1, capture: [:dep_name]) |> List.first))
+    |> String.split("\n")
+    |> Enum.filter(&(&1 =~ @dep_regex))
+    |> Enum.map(&(@dep_regex |> Regex.run(&1, capture: [:dep_name]) |> List.first()))
   end
 end

@@ -26,10 +26,11 @@ defmodule Mix.Tasks.DeployEx.Instance.Health do
       {opts, extra_args} = parse_args(args)
       opts = Map.new(opts)
 
-      app_filter = case extra_args do
-        [app_name | _] -> app_name
-        [] -> nil
-      end
+      app_filter =
+        case extra_args do
+          [app_name | _] -> app_name
+          [] -> nil
+        end
 
       with {:ok, instances} <- fetch_instances(opts),
            {:ok, health_statuses} <- fetch_health_statuses(instances, opts) do
@@ -86,14 +87,17 @@ defmodule Mix.Tasks.DeployEx.Instance.Health do
   defp handle_health_response({:error, _} = error), do: error
 
   defp parse_status_set(nil), do: %{}
+
   defp parse_status_set(%{"item" => items}) when is_list(items) do
     Map.new(items, fn item ->
       {item["instanceId"], parse_status_item(item)}
     end)
   end
+
   defp parse_status_set(%{"item" => item}) when is_map(item) do
     %{item["instanceId"] => parse_status_item(item)}
   end
+
   defp parse_status_set(_), do: %{}
 
   defp parse_status_item(item) do
@@ -106,14 +110,17 @@ defmodule Mix.Tasks.DeployEx.Instance.Health do
   end
 
   defp parse_status_details(nil), do: []
+
   defp parse_status_details(items) when is_list(items) do
     Enum.map(items, fn item -> {item["name"], item["status"]} end)
   end
+
   defp parse_status_details(item) when is_map(item) do
     [{item["name"], item["status"]}]
   end
 
   defp filter_by_app(instances, nil), do: instances
+
   defp filter_by_app(instances, app_name) do
     Enum.filter(instances, fn instance ->
       tags = get_tags(instance)
@@ -125,7 +132,9 @@ defmodule Mix.Tasks.DeployEx.Instance.Health do
   defp filter_by_qa_mode(instances, %{qa: true}) do
     Enum.filter(instances, &qa_node?/1)
   end
+
   defp filter_by_qa_mode(instances, %{all: true}), do: instances
+
   defp filter_by_qa_mode(instances, _opts) do
     Enum.reject(instances, &qa_node?/1)
   end
@@ -139,8 +148,10 @@ defmodule Mix.Tasks.DeployEx.Instance.Health do
     case instance["tagSet"]["item"] do
       items when is_list(items) ->
         Map.new(items, fn %{"key" => k, "value" => v} -> {k, v} end)
+
       item when is_map(item) ->
         %{item["key"] => item["value"]}
+
       _ ->
         %{}
     end
@@ -151,10 +162,11 @@ defmodule Mix.Tasks.DeployEx.Instance.Health do
   end
 
   defp display_instances(instances, health_statuses, opts) do
-    grouped = Enum.group_by(instances, fn instance ->
-      tags = get_tags(instance)
-      tags["InstanceGroup"] || "unknown"
-    end)
+    grouped =
+      Enum.group_by(instances, fn instance ->
+        tags = get_tags(instance)
+        tags["InstanceGroup"] || "unknown"
+      end)
 
     Mix.shell().info("")
 
@@ -190,32 +202,62 @@ defmodule Mix.Tasks.DeployEx.Instance.Health do
     ip = instance["ipAddress"] || "no ip"
     instance_type = instance["instanceType"]
 
-    state_color = case state do
-      "running" -> :green
-      "pending" -> :yellow
-      "stopping" -> :yellow
-      "stopped" -> :red
-      "terminated" -> :red
-      _ -> :reset
-    end
+    state_color =
+      case state do
+        "running" -> :green
+        "pending" -> :yellow
+        "stopping" -> :yellow
+        "stopped" -> :red
+        "terminated" -> :red
+        _ -> :reset
+      end
 
     qa_badge = if tags["QaNode"] === "true", do: [:magenta, " [QA]", :reset], else: []
 
-    Mix.shell().info([
-      "  ", state_color, "●", :reset,
-      " ", name] ++ qa_badge ++ [
-      :reset, "\n",
-      "    ", :faint, "ID: ", :reset, instance_id,
-      :faint, " | Type: ", :reset, instance_type,
-      :faint, " | IP: ", :reset, ip,
-      :faint, " | State: ", :reset, state_color, state, :reset
-    ])
+    Mix.shell().info(
+      [
+        "  ",
+        state_color,
+        "●",
+        :reset,
+        " ",
+        name
+      ] ++
+        qa_badge ++
+        [
+          :reset,
+          "\n",
+          "    ",
+          :faint,
+          "ID: ",
+          :reset,
+          instance_id,
+          :faint,
+          " | Type: ",
+          :reset,
+          instance_type,
+          :faint,
+          " | IP: ",
+          :reset,
+          ip,
+          :faint,
+          " | State: ",
+          :reset,
+          state_color,
+          state,
+          :reset
+        ]
+    )
 
     display_health_status(health)
 
     if tags["TargetSha"] do
       Mix.shell().info([
-        "    ", :faint, "SHA: ", :reset, String.slice(tags["TargetSha"], 0, 7)
+        "    ",
+        :faint,
+        "SHA: ",
+        :reset,
+        String.slice(tags["TargetSha"], 0, 7)
       ])
     end
   end
@@ -225,12 +267,24 @@ defmodule Mix.Tasks.DeployEx.Instance.Health do
     instance_color = health_color(instance)
 
     Mix.shell().info([
-      "    ", :faint, "Health: ", :reset,
-      "System: ", system_color, system || "N/A", :reset,
-      :faint, " | ", :reset,
-      "Instance: ", instance_color, instance || "N/A", :reset
+      "    ",
+      :faint,
+      "Health: ",
+      :reset,
+      "System: ",
+      system_color,
+      system || "N/A",
+      :reset,
+      :faint,
+      " | ",
+      :reset,
+      "Instance: ",
+      instance_color,
+      instance || "N/A",
+      :reset
     ])
   end
+
   defp display_health_status(_), do: :ok
 
   defp health_color("ok"), do: :green

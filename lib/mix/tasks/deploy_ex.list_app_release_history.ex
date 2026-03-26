@@ -23,17 +23,22 @@ defmodule Mix.Tasks.DeployEx.ListAppReleaseHistory do
     with :ok <- DeployExHelpers.check_in_umbrella() do
       {opts, extra_args} = parse_args(args)
 
-      opts = opts
+      opts =
+        opts
         |> Keyword.put_new(:region, DeployEx.Config.aws_region())
         |> Keyword.put_new(:bucket, DeployEx.Config.aws_release_bucket())
         |> Keyword.put_new(:limit, 25)
 
       if extra_args === [] do
-        Mix.raise("app is required to be passed in. Example: mix deploy_ex.list_app_release_history my_app")
+        Mix.raise(
+          "app is required to be passed in. Example: mix deploy_ex.list_app_release_history my_app"
+        )
       else
         with {:ok, app_name} <- DeployExHelpers.find_project_name(extra_args),
-             {:ok, releases} <- DeployEx.ReleaseController.list_release_history(app_name, opts[:limit], opts) do
+             {:ok, releases} <-
+               DeployEx.ReleaseController.list_release_history(app_name, opts[:limit], opts) do
           Mix.shell().info([:green, "\nRelease history for #{app_name}:"])
+
           Enum.each(releases, fn release ->
             Mix.shell().info([:yellow, "  #{release}"])
           end)

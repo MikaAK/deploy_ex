@@ -65,9 +65,16 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
             {:ok, verified} when not is_nil(verified) ->
               if !opts[:quiet] do
                 Mix.shell().info([
-                  :green, "  ✓ ", :reset, "Found existing runner: ",
-                  :cyan, verified.instance_id, :reset,
-                  " (", verified.state || "unknown", ")"
+                  :green,
+                  "  ✓ ",
+                  :reset,
+                  "Found existing runner: ",
+                  :cyan,
+                  verified.instance_id,
+                  :reset,
+                  " (",
+                  verified.state || "unknown",
+                  ")"
                 ])
 
                 print_runner_info(verified)
@@ -91,13 +98,15 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
     end
 
     with {:ok, infra} <- gather_infrastructure(opts),
-         {:ok, runner} <- DeployEx.K6Runner.create_instance(
-           Map.put(infra, :instance_type, opts[:instance_type]),
-           opts
-         ),
+         {:ok, runner} <-
+           DeployEx.K6Runner.create_instance(
+             Map.put(infra, :instance_type, opts[:instance_type]),
+             opts
+           ),
          {:ok, :saved} <- DeployEx.K6Runner.save_state(runner, opts) do
       if !opts[:quiet] do
         Mix.shell().info([:green, "  ✓ ", :reset, "Instance created: ", :cyan, runner.instance_id])
+
         Mix.shell().info([:faint, "Waiting for instance to start..."])
       end
 
@@ -125,9 +134,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
       Mix.shell().info([:faint, "Gathering infrastructure..."])
     end
 
-    DeployEx.AwsInfrastructure.gather_infrastructure(
-      Keyword.take(opts, [:resource_group])
-    )
+    DeployEx.AwsInfrastructure.gather_infrastructure(Keyword.take(opts, [:resource_group]))
   end
 
   defp wait_for_ssh(runner) do
@@ -141,23 +148,49 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
 
   defp do_wait_for_ssh(ip, retries) do
     case System.cmd("nc", ["-z", "-w", "5", ip, "22"], stderr_to_stdout: true) do
-      {_, 0} -> :ok
+      {_, 0} ->
+        :ok
+
       _ when retries > 0 ->
         Process.sleep(5000)
         do_wait_for_ssh(ip, retries - 1)
-      _ -> :ok
+
+      _ ->
+        :ok
     end
   end
 
   defp print_runner_info(runner) do
     Mix.shell().info([
-      :green, "\n✓ k6 Runner Ready\n", :reset,
+      :green,
+      "\n✓ k6 Runner Ready\n",
+      :reset,
       "\n",
-      "  Instance ID: ", :cyan, runner.instance_id || "unknown", :reset, "\n",
-      "  Public IP:   ", :cyan, runner.public_ip || "N/A", :reset, "\n",
-      "  IPv6:        ", :cyan, runner.ipv6_address || "N/A", :reset, "\n",
-      "  State:       ", :cyan, runner.state || "unknown", :reset, "\n",
-      "  Created:     ", :cyan, runner.created_at || "unknown", :reset, "\n"
+      "  Instance ID: ",
+      :cyan,
+      runner.instance_id || "unknown",
+      :reset,
+      "\n",
+      "  Public IP:   ",
+      :cyan,
+      runner.public_ip || "N/A",
+      :reset,
+      "\n",
+      "  IPv6:        ",
+      :cyan,
+      runner.ipv6_address || "N/A",
+      :reset,
+      "\n",
+      "  State:       ",
+      :cyan,
+      runner.state || "unknown",
+      :reset,
+      "\n",
+      "  Created:     ",
+      :cyan,
+      runner.created_at || "unknown",
+      :reset,
+      "\n"
     ])
   end
 end

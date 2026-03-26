@@ -30,14 +30,16 @@ defmodule Mix.Tasks.Terraform.ShowPassword do
 
     with :ok <- DeployExHelpers.check_in_umbrella(),
          {:ok, state} <- DeployEx.TerraformState.read_state(directory, state_opts),
-         database_name when not is_nil(database_name) <- List.first(extra_args) || show_database_selection(state),
-         {:ok, password} <- DeployEx.TerraformState.get_resource_attribute_by_tag(
-           state,
-           "aws_db_instance",
-           "Name",
-           database_name,
-           "password"
-         ) do
+         database_name when not is_nil(database_name) <-
+           List.first(extra_args) || show_database_selection(state),
+         {:ok, password} <-
+           DeployEx.TerraformState.get_resource_attribute_by_tag(
+             state,
+             "aws_db_instance",
+             "Name",
+             database_name,
+             "password"
+           ) do
       Mix.shell().info([:green, "Password for #{database_name}: ", :reset, password])
     else
       nil -> Mix.raise("No database name provided")
@@ -47,8 +49,12 @@ defmodule Mix.Tasks.Terraform.ShowPassword do
 
   defp show_database_selection(state) do
     case get_databases_from_state(state) do
-      [] -> nil
-      [single_db] -> single_db
+      [] ->
+        nil
+
+      [single_db] ->
+        single_db
+
       multiple_dbs ->
         [choice] = DeployExHelpers.prompt_for_choice(multiple_dbs)
         choice
@@ -83,14 +89,19 @@ defmodule Mix.Tasks.Terraform.ShowPassword do
   defp build_state_opts(opts) do
     state_opts = []
 
-    state_opts = if opts[:backend] do
-      Keyword.put(state_opts, :backend, String.to_existing_atom(opts[:backend]))
-    else
-      state_opts
-    end
+    state_opts =
+      if opts[:backend] do
+        Keyword.put(state_opts, :backend, String.to_existing_atom(opts[:backend]))
+      else
+        state_opts
+      end
 
-    state_opts = if opts[:bucket], do: Keyword.put(state_opts, :bucket, opts[:bucket]), else: state_opts
-    state_opts = if opts[:region], do: Keyword.put(state_opts, :region, opts[:region]), else: state_opts
+    state_opts =
+      if opts[:bucket], do: Keyword.put(state_opts, :bucket, opts[:bucket]), else: state_opts
+
+    state_opts =
+      if opts[:region], do: Keyword.put(state_opts, :region, opts[:region]), else: state_opts
+
     state_opts
   end
 

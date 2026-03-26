@@ -108,9 +108,10 @@ defmodule DeployEx.K6RunnerTest do
         created_at: "2024-01-15T10:30:00Z"
       }
 
-      round_tripped = original
-      |> K6Runner.to_json()
-      |> K6Runner.from_json()
+      round_tripped =
+        original
+        |> K6Runner.to_json()
+        |> K6Runner.from_json()
 
       assert round_tripped.instance_id === original.instance_id
       assert round_tripped.public_ip === original.public_ip
@@ -124,9 +125,10 @@ defmodule DeployEx.K6RunnerTest do
     test "round-trip with minimal data" do
       original = %K6Runner{instance_id: "i-minimal"}
 
-      round_tripped = original
-      |> K6Runner.to_json()
-      |> K6Runner.from_json()
+      round_tripped =
+        original
+        |> K6Runner.to_json()
+        |> K6Runner.from_json()
 
       assert round_tripped.instance_id === original.instance_id
       assert is_nil(round_tripped.public_ip)

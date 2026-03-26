@@ -20,10 +20,14 @@ defmodule DeployEx.TUI.DeployProgress do
     timeout = Keyword.get(opts, :timeout, :timer.minutes(30))
 
     app_playbooks
-      |> Task.async_stream(fn playbook ->
+    |> Task.async_stream(
+      fn playbook ->
         run_fn.(playbook, fn line -> IO.puts(line) end)
-      end, max_concurrency: max_concurrency, timeout: timeout)
-      |> DeployEx.Utils.reduce_status_tuples()
+      end,
+      max_concurrency: max_concurrency,
+      timeout: timeout
+    )
+    |> DeployEx.Utils.reduce_status_tuples()
   end
 
   defp run_tui(app_playbooks, run_fn, opts) do
@@ -33,39 +37,54 @@ defmodule DeployEx.TUI.DeployProgress do
 
     app_names = Enum.map(app_playbooks, &extract_app_name/1)
 
-    initial_states = Map.new(app_names, fn name ->
-      {name, %{status: :pending, current_task: "Waiting...", tasks_completed: 0, error: nil, output_tail: []}}
-    end)
+    initial_states =
+      Map.new(app_names, fn name ->
+        {name,
+         %{
+           status: :pending,
+           current_task: "Waiting...",
+           tasks_completed: 0,
+           error: nil,
+           output_tail: []
+         }}
+      end)
 
     ExRatatui.run(fn terminal ->
       {width, height} = ExRatatui.terminal_size()
 
-      task = Task.async(fn ->
-        app_playbooks
-          |> Task.async_stream(fn playbook ->
-            app_name = extract_app_name(playbook)
+      task =
+        Task.async(fn ->
+          app_playbooks
+          |> Task.async_stream(
+            fn playbook ->
+              app_name = extract_app_name(playbook)
 
-            callback = fn line ->
-              send(coordinator, {:deploy_output_line, app_name, line})
+              callback = fn line ->
+                send(coordinator, {:deploy_output_line, app_name, line})
 
-              case parse_ansible_line(line) do
-                {:task, task_name} ->
-                  send(coordinator, {:deploy_task_update, app_name, task_name})
-                :recap ->
-                  send(coordinator, {:deploy_complete, app_name})
-                :ignore ->
-                  :ok
+                case parse_ansible_line(line) do
+                  {:task, task_name} ->
+                    send(coordinator, {:deploy_task_update, app_name, task_name})
+
+                  :recap ->
+                    send(coordinator, {:deploy_complete, app_name})
+
+                  :ignore ->
+                    :ok
+                end
               end
-            end
 
-            send(coordinator, {:deploy_started, app_name})
-            result = run_fn.(playbook, callback)
+              send(coordinator, {:deploy_started, app_name})
+              result = run_fn.(playbook, callback)
 
-            send(coordinator, {:deploy_finished, app_name, result})
-            result
-          end, max_concurrency: max_concurrency, timeout: timeout)
+              send(coordinator, {:deploy_finished, app_name, result})
+              result
+            end,
+            max_concurrency: max_concurrency,
+            timeout: timeout
+          )
           |> DeployEx.Utils.reduce_status_tuples()
-      end)
+        end)
 
       deploy_loop(terminal, width, height, initial_states, task, false)
     end)
@@ -87,6 +106,7 @@ defmodule DeployEx.TUI.DeployProgress do
           nil -> Task.shutdown(task, :brutal_kill)
           _ -> :ok
         end
+
         {{:error, :cancelled}, states}
 
       _ ->
@@ -108,43 +128,43 @@ defmodule DeployEx.TUI.DeployProgress do
     receive do
       {:deploy_started, app_name} ->
         states
-          |> Map.update!(app_name, &%{&1 | status: :running, current_task: "Starting..."})
-          |> drain_messages()
+        |> Map.update!(app_name, &%{&1 | status: :running, current_task: "Starting..."})
+        |> drain_messages()
 
       {:deploy_task_update, app_name, task_name} ->
         states
-          |> Map.update!(app_name, &%{&1 |
-            current_task: task_name,
-            tasks_completed: &1.tasks_completed + 1
-          })
-          |> drain_messages()
+        |> Map.update!(
+          app_name,
+          &%{&1 | current_task: task_name, tasks_completed: &1.tasks_completed + 1}
+        )
+        |> drain_messages()
 
       {:deploy_complete, app_name} ->
         states
-          |> Map.update!(app_name, &%{&1 | status: :complete, current_task: "Complete"})
-          |> drain_messages()
+        |> Map.update!(app_name, &%{&1 | status: :complete, current_task: "Complete"})
+        |> drain_messages()
 
       {:deploy_finished, app_name, :ok} ->
         states
-          |> Map.update!(app_name, &%{&1 | status: :complete, current_task: "Complete"})
-          |> drain_messages()
+        |> Map.update!(app_name, &%{&1 | status: :complete, current_task: "Complete"})
+        |> drain_messages()
 
       {:deploy_finished, app_name, {:ok, _}} ->
         states
-          |> Map.update!(app_name, &%{&1 | status: :complete, current_task: "Complete"})
-          |> drain_messages()
+        |> Map.update!(app_name, &%{&1 | status: :complete, current_task: "Complete"})
+        |> drain_messages()
 
       {:deploy_finished, app_name, {:error, error}} ->
         states
-          |> Map.update!(app_name, &%{&1 | status: :failed, current_task: "Failed", error: error})
-          |> drain_messages()
+        |> Map.update!(app_name, &%{&1 | status: :failed, current_task: "Failed", error: error})
+        |> drain_messages()
 
       {:deploy_output_line, app_name, line} ->
         states
-          |> Map.update!(app_name, fn state ->
-            %{state | output_tail: state.output_tail ++ [line]}
-          end)
-          |> drain_messages()
+        |> Map.update!(app_name, fn state ->
+          %{state | output_tail: state.output_tail ++ [line]}
+        end)
+        |> drain_messages()
     after
       0 -> states
     end
@@ -158,9 +178,13 @@ defmodule DeployEx.TUI.DeployProgress do
       status_label = if state.status === :failed, do: "FAILED", else: "OK"
 
       Mix.shell().info([
-        header_color, "\n#{String.duplicate("=", 60)}",
-        header_color, "\n#{name} [#{status_label}]",
-        header_color, "\n#{String.duplicate("=", 60)}", :reset
+        header_color,
+        "\n#{String.duplicate("=", 60)}",
+        header_color,
+        "\n#{name} [#{status_label}]",
+        header_color,
+        "\n#{String.duplicate("=", 60)}",
+        :reset
       ])
 
       if state.error do
@@ -184,11 +208,12 @@ defmodule DeployEx.TUI.DeployProgress do
   defp draw_deploy_status(terminal, width, height, states, cancelling) do
     area = %Rect{x: 0, y: 0, width: width, height: height}
 
-    [header_area, content_area, footer_area] = Layout.split(area, :vertical, [
-      {:length, 1},
-      {:min, 3},
-      {:length, 1}
-    ])
+    [header_area, content_area, footer_area] =
+      Layout.split(area, :vertical, [
+        {:length, 1},
+        {:min, 3},
+        {:length, 1}
+      ])
 
     completed = Enum.count(states, fn {_, state} -> state.status in [:complete, :failed] end)
     total = map_size(states)
@@ -198,22 +223,27 @@ defmodule DeployEx.TUI.DeployProgress do
       style: %Style{fg: :cyan, modifiers: [:bold]}
     }
 
-    footer_text = if cancelling do
-      " Press Ctrl-C again to cancel all deployments"
-    else
-      " Waiting for all deployments to complete..."
-    end
+    footer_text =
+      if cancelling do
+        " Press Ctrl-C again to cancel all deployments"
+      else
+        " Waiting for all deployments to complete..."
+      end
 
     footer = %Widgets.Paragraph{
       text: footer_text,
       style: %Style{fg: :white, modifiers: [:dim]}
     }
 
-    lines = states
+    lines =
+      states
       |> Enum.sort_by(fn {name, _} -> name end)
       |> Enum.map(fn {name, state} ->
         {symbol, _color} = status_symbol(state.status)
-        task_display = truncate_text(state.current_task, max(width - String.length(name) - 10, 20))
+
+        task_display =
+          truncate_text(state.current_task, max(width - String.length(name) - 10, 20))
+
         "  #{symbol} #{name}  #{task_display}"
       end)
 
@@ -264,7 +294,7 @@ defmodule DeployEx.TUI.DeployProgress do
 
   defp extract_app_name(playbook_path) do
     playbook_path
-      |> Path.basename()
-      |> String.replace(~r/\.[^\.]*$/, "")
+    |> Path.basename()
+    |> String.replace(~r/\.[^\.]*$/, "")
   end
 end

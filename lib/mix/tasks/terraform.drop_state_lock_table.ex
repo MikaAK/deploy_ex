@@ -26,20 +26,39 @@ defmodule Mix.Tasks.Terraform.DropStateLockTable do
 
       if table_name in tables do
         case DeployEx.AwsDynamodb.delete_table(region, table_name) do
-          {:error, error} -> Mix.raise(to_string(error))
+          {:error, error} ->
+            Mix.raise(to_string(error))
 
           :ok ->
             Mix.shell().info([
-              :green, "Successfully deleted DynamoDB table ", :green,
-              :bright, table_name, :reset, :green,
-              " from ", :bright, region, :reset
+              :green,
+              "Successfully deleted DynamoDB table ",
+              :green,
+              :bright,
+              table_name,
+              :reset,
+              :green,
+              " from ",
+              :bright,
+              region,
+              :reset
             ])
         end
       else
         Mix.shell().info([
-          :yellow, "Table ",
-          :yellow, :bright, table_name, :reset, :yellow,
-          " does not exist in ", :bright, region, :reset, :yellow, "!"
+          :yellow,
+          "Table ",
+          :yellow,
+          :bright,
+          table_name,
+          :reset,
+          :yellow,
+          " does not exist in ",
+          :bright,
+          region,
+          :reset,
+          :yellow,
+          "!"
         ])
 
         :ok

@@ -73,14 +73,18 @@ defmodule Mix.Tasks.DeployEx.DownloadFile do
   end
 
   defp download_file(app_name, remote_path, local_path, opts) do
-    if File.exists?(local_path) and not !!opts[:force] do
+    if File.exists?(local_path) and not (!!opts[:force]) do
       {:error, "File #{local_path} already exists. Use --force to overwrite."}
     else
       {machine_opts, opts} = Keyword.split(opts, [:resource_group])
 
       with {:ok, pem_file_path} <- DeployEx.Terraform.find_pem_file(opts[:directory], opts[:pem]),
-         {:ok, instance_ips} <- DeployEx.AwsMachine.find_instance_ips(DeployExHelpers.project_name(), app_name, machine_opts) do
-
+           {:ok, instance_ips} <-
+             DeployEx.AwsMachine.find_instance_ips(
+               DeployExHelpers.project_name(),
+               app_name,
+               machine_opts
+             ) do
         ip = List.first(instance_ips)
 
         abs_pem_file = Path.expand(pem_file_path)

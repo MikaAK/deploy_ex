@@ -27,7 +27,8 @@ defmodule Mix.Tasks.DeployEx.Remake do
   """
 
   def run(args) do
-    {opts, node_name, _} = OptionParser.parse(args, switches: [no_deploy: :boolean, no_tui: :boolean])
+    {opts, node_name, _} =
+      OptionParser.parse(args, switches: [no_deploy: :boolean, no_tui: :boolean])
 
     DeployEx.TUI.setup_no_tui(opts)
 
@@ -36,25 +37,33 @@ defmodule Mix.Tasks.DeployEx.Remake do
       args_without_name = node_name_as_only_arg(node_name, args)
 
       steps = [
-        {"Replacing #{node_name} via Terraform", fn ->
-          run_command(Terraform.Replace, args)
-        end},
-        {"Waiting for new node to initialize", fn ->
-          Process.sleep(:timer.seconds(5))
-          :ok
-        end},
-        {"Running Ansible setup for #{node_name}", fn ->
-          run_command(Ansible.Setup, args_without_name)
-        end}
+        {"Replacing #{node_name} via Terraform",
+         fn ->
+           run_command(Terraform.Replace, args)
+         end},
+        {"Waiting for new node to initialize",
+         fn ->
+           Process.sleep(:timer.seconds(5))
+           :ok
+         end},
+        {"Running Ansible setup for #{node_name}",
+         fn ->
+           run_command(Ansible.Setup, args_without_name)
+         end}
       ]
 
-      steps = if opts[:no_deploy] do
-        steps
-      else
-        steps ++ [{"Deploying #{node_name} via Ansible", fn ->
-          run_command(Ansible.Deploy, args_without_name)
-        end}]
-      end
+      steps =
+        if opts[:no_deploy] do
+          steps
+        else
+          steps ++
+            [
+              {"Deploying #{node_name} via Ansible",
+               fn ->
+                 run_command(Ansible.Deploy, args_without_name)
+               end}
+            ]
+        end
 
       case DeployEx.TUI.Progress.run_steps(steps, title: "Remake #{node_name}") do
         :ok -> :ok
@@ -67,9 +76,9 @@ defmodule Mix.Tasks.DeployEx.Remake do
 
   defp node_name_as_only_arg(node_name, args) do
     args
-      |> Enum.join(" ")
-      |> String.replace(node_name, "--only #{node_name}")
-      |> String.split(" ")
+    |> Enum.join(" ")
+    |> String.replace(node_name, "--only #{node_name}")
+    |> String.split(" ")
   end
 
   defp run_command(command, args) do

@@ -32,7 +32,11 @@ defmodule Mix.Tasks.Terraform.Replace do
 
     with :ok <- DeployExHelpers.check_in_umbrella() do
       if opts[:string] do
-        terraform_apply_replace(opts[:string], DeployEx.Terraform.parse_args(args, :replace), opts)
+        terraform_apply_replace(
+          opts[:string],
+          DeployEx.Terraform.parse_args(args, :replace),
+          opts
+        )
       else
         match_instance_and_replace(opts, args, extra_args)
       end
@@ -41,19 +45,20 @@ defmodule Mix.Tasks.Terraform.Replace do
 
   defp match_instance_and_replace(opts, args, extra_args) do
     case DeployEx.Terraform.instances(opts[:directory]) do
-      {:error, e} -> Mix.raise(to_string(e))
+      {:error, e} ->
+        Mix.raise(to_string(e))
 
       {:ok, instances} ->
         instances
-          |> get_instances_from_args(extra_args, opts)
-          |> Enum.map(fn {instance_name, node_num} ->
-            display_name = format_instance_display(instance_name, node_num)
-            Mix.shell().info([:yellow, "* replacing #{display_name}"])
+        |> get_instances_from_args(extra_args, opts)
+        |> Enum.map(fn {instance_name, node_num} ->
+          display_name = format_instance_display(instance_name, node_num)
+          Mix.shell().info([:yellow, "* replacing #{display_name}"])
 
-            instance_name
-              |> replace_string(node_num)
-              |> terraform_apply_replace(DeployEx.Terraform.parse_args(args, :replace), opts)
-          end)
+          instance_name
+          |> replace_string(node_num)
+          |> terraform_apply_replace(DeployEx.Terraform.parse_args(args, :replace), opts)
+        end)
     end
   end
 
@@ -76,18 +81,19 @@ defmodule Mix.Tasks.Terraform.Replace do
   defp format_instance_display(instance_name, node_num), do: "#{instance_name}-#{node_num}"
 
   defp parse_args(args) do
-    {opts, extra_args} = OptionParser.parse!(args,
-      aliases: [d: :directory, y: :auto_approve, n: :node, s: :string],
-      switches: [
-        string: :string,
-        directory: :string,
-        node: :integer,
-        all: :boolean,
-        auto_approve: :boolean,
-        resource_group: :string,
-        region: :string
-      ]
-    )
+    {opts, extra_args} =
+      OptionParser.parse!(args,
+        aliases: [d: :directory, y: :auto_approve, n: :node, s: :string],
+        switches: [
+          string: :string,
+          directory: :string,
+          node: :integer,
+          all: :boolean,
+          auto_approve: :boolean,
+          resource_group: :string,
+          region: :string
+        ]
+      )
 
     {opts, extra_args}
   end
@@ -95,11 +101,12 @@ defmodule Mix.Tasks.Terraform.Replace do
   defp get_instances_from_args(instances, [instance_name], opts) do
     node_num = opts[:node]
 
-    selected_instances = if is_nil(node_num) do
-      Enum.filter(instances, fn {name, _} -> name =~ instance_name end)
-    else
-      Enum.filter(instances, fn {name, num} -> name =~ instance_name and num === node_num end)
-    end
+    selected_instances =
+      if is_nil(node_num) do
+        Enum.filter(instances, fn {name, _} -> name =~ instance_name end)
+      else
+        Enum.filter(instances, fn {name, num} -> name =~ instance_name and num === node_num end)
+      end
 
     if length(selected_instances) > 1 and !opts[:all] do
       Mix.raise("""
@@ -142,6 +149,7 @@ defmodule Mix.Tasks.Terraform.Replace do
     Enum.map_join(instances, "\n", fn
       {name, nil} ->
         "  - #{IO.ANSI.bright() <> name} (autoscaling)#{IO.ANSI.reset() <> IO.ANSI.red()}"
+
       {name, num} ->
         "  - #{IO.ANSI.bright() <> name} - #{to_string(num) <> IO.ANSI.reset() <> IO.ANSI.red()}"
     end)

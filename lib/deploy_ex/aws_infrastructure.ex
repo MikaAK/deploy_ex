@@ -23,11 +23,17 @@ defmodule DeployEx.AwsInfrastructure do
     region = opts[:region] || DeployEx.Config.aws_region()
     project_name = opts[:project_name] || DeployEx.Config.aws_project_name()
     environment = DeployEx.Config.env()
-    base_name = project_name |> String.replace("-#{environment}", "") |> String.replace("_#{environment}", "")
+
+    base_name =
+      project_name
+      |> String.replace("-#{environment}", "")
+      |> String.replace("_#{environment}", "")
+
     key_pattern = ~r/^#{Regex.escape(base_name)}-.*key-pair/
 
     with {:ok, key_pairs} <- describe_key_pairs(region) do
-      matching = key_pairs
+      matching =
+        key_pairs
         |> Enum.filter(fn kp ->
           name = kp["keyName"] || ""
           Regex.match?(key_pattern, name)
@@ -38,7 +44,12 @@ defmodule DeployEx.AwsInfrastructure do
       case matching do
         nil ->
           available = Enum.map(key_pairs, & &1["keyName"])
-          {:error, ErrorMessage.not_found("no key pair found matching pattern #{inspect(key_pattern)}", %{available: available})}
+
+          {:error,
+           ErrorMessage.not_found("no key pair found matching pattern #{inspect(key_pattern)}", %{
+             available: available
+           })}
+
         kp ->
           {:ok, kp["keyName"]}
       end
@@ -61,13 +72,15 @@ defmodule DeployEx.AwsInfrastructure do
           if default_name in profiles do
             {:ok, default_name}
           else
-            {:error, ErrorMessage.not_found(
-              "IAM instance profile '#{default_name}' not found. " <>
-              "Configure :aws_iam_instance_profile in deploy_ex config.",
-              %{available: profiles}
-            )}
+            {:error,
+             ErrorMessage.not_found(
+               "IAM instance profile '#{default_name}' not found. " <>
+                 "Configure :aws_iam_instance_profile in deploy_ex config.",
+               %{available: profiles}
+             )}
           end
         end
+
       profile_name ->
         {:ok, profile_name}
     end
@@ -86,26 +99,43 @@ defmodule DeployEx.AwsInfrastructure do
 
   defp handle_instance_profiles_response({:ok, %{body: body}}) do
     case XmlToMap.naive_map(body) do
-      %{"ListInstanceProfilesResponse" => %{"ListInstanceProfilesResult" => %{"InstanceProfiles" => %{"member" => profiles}}}} when is_list(profiles) ->
+      %{
+        "ListInstanceProfilesResponse" => %{
+          "ListInstanceProfilesResult" => %{"InstanceProfiles" => %{"member" => profiles}}
+        }
+      }
+      when is_list(profiles) ->
         names = Enum.map(profiles, & &1["InstanceProfileName"])
         {:ok, names}
 
-      %{"ListInstanceProfilesResponse" => %{"ListInstanceProfilesResult" => %{"InstanceProfiles" => %{"member" => profile}}}} ->
+      %{
+        "ListInstanceProfilesResponse" => %{
+          "ListInstanceProfilesResult" => %{"InstanceProfiles" => %{"member" => profile}}
+        }
+      } ->
         {:ok, [profile["InstanceProfileName"]]}
 
-      %{"ListInstanceProfilesResponse" => %{"ListInstanceProfilesResult" => %{"InstanceProfiles" => nil}}} ->
+      %{
+        "ListInstanceProfilesResponse" => %{
+          "ListInstanceProfilesResult" => %{"InstanceProfiles" => nil}
+        }
+      } ->
         {:ok, []}
 
       structure ->
-        {:error, ErrorMessage.bad_request("couldn't parse instance profiles response", %{structure: structure})}
+        {:error,
+         ErrorMessage.bad_request("couldn't parse instance profiles response", %{
+           structure: structure
+         })}
     end
   end
 
   defp handle_instance_profiles_response({:error, {:http_error, status_code, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error fetching IAM instance profiles",
-      %{error_body: body}
-    ])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+       "error fetching IAM instance profiles",
+       %{error_body: body}
+     ])}
   end
 
   def find_vpc_id(opts \\ []) do
@@ -165,15 +195,16 @@ defmodule DeployEx.AwsInfrastructure do
          {:ok, key_pair_name} <- find_key_pair_name(opts),
          {:ok, iam_instance_profile} <- find_iam_instance_profile(opts),
          {:ok, ami_id} <- find_latest_ami(opts) do
-      {:ok, %{
-        security_group_id: security_group.id,
-        vpc_id: security_group.vpc_id,
-        subnet_id: List.first(subnet_ids),
-        subnet_ids: subnet_ids,
-        key_name: key_pair_name,
-        iam_instance_profile: iam_instance_profile,
-        ami_id: ami_id
-      }}
+      {:ok,
+       %{
+         security_group_id: security_group.id,
+         vpc_id: security_group.vpc_id,
+         subnet_id: List.first(subnet_ids),
+         subnet_ids: subnet_ids,
+         key_name: key_pair_name,
+         iam_instance_profile: iam_instance_profile,
+         ami_id: ami_id
+       }}
     end
   end
 
@@ -190,22 +221,27 @@ defmodule DeployEx.AwsInfrastructure do
         {:error, ErrorMessage.not_found("no subnets found in VPC '#{resource_group}'")}
 
       structure ->
-        {:error, ErrorMessage.bad_request(
-          "couldn't parse subnets response from aws",
-          %{structure: structure}
-        )}
+        {:error,
+         ErrorMessage.bad_request(
+           "couldn't parse subnets response from aws",
+           %{structure: structure}
+         )}
     end
   end
 
-  defp handle_subnets_response({:ok, %{body: body}}, resource_group), do: parse_subnets_response(body, resource_group)
+  defp handle_subnets_response({:ok, %{body: body}}, resource_group),
+    do: parse_subnets_response(body, resource_group)
 
-  defp handle_subnets_response({:error, {:http_error, status_code, %{body: body}}}, _resource_group) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error fetching subnets from aws",
-      %{error_body: body}
-    ])}
+  defp handle_subnets_response(
+         {:error, {:http_error, status_code, %{body: body}}},
+         _resource_group
+       ) do
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+       "error fetching subnets from aws",
+       %{error_body: body}
+     ])}
   end
-
 
   defp handle_key_pairs_list_response({:ok, %{body: body}}) do
     case XmlToMap.naive_map(body) do
@@ -219,20 +255,21 @@ defmodule DeployEx.AwsInfrastructure do
         {:ok, []}
 
       structure ->
-        {:error, ErrorMessage.bad_request(
-          "couldn't parse key pairs response from aws",
-          %{structure: structure}
-        )}
+        {:error,
+         ErrorMessage.bad_request(
+           "couldn't parse key pairs response from aws",
+           %{structure: structure}
+         )}
     end
   end
 
   defp handle_key_pairs_list_response({:error, {:http_error, status_code, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error fetching key pairs from aws",
-      %{error_body: body}
-    ])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+       "error fetching key pairs from aws",
+       %{error_body: body}
+     ])}
   end
-
 
   @doc false
   def parse_vpcs_response(body) when is_binary(body) do
@@ -247,29 +284,32 @@ defmodule DeployEx.AwsInfrastructure do
         {:error, ErrorMessage.not_found("no VPCs found with the resource group tag")}
 
       structure ->
-        {:error, ErrorMessage.bad_request(
-          "couldn't parse VPCs response from aws",
-          %{structure: structure}
-        )}
+        {:error,
+         ErrorMessage.bad_request(
+           "couldn't parse VPCs response from aws",
+           %{structure: structure}
+         )}
     end
   end
 
   defp handle_vpcs_response({:ok, %{body: body}}), do: parse_vpcs_response(body)
 
   defp handle_vpcs_response({:error, {:http_error, status_code, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error fetching VPCs from aws",
-      %{error_body: body}
-    ])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+       "error fetching VPCs from aws",
+       %{error_body: body}
+     ])}
   end
 
   @doc false
   def parse_images_response(body) when is_binary(body) do
     case XmlToMap.naive_map(body) do
       %{"DescribeImagesResponse" => %{"imagesSet" => %{"item" => items}}} when is_list(items) ->
-        latest = items
-        |> Enum.sort_by(& &1["creationDate"], :desc)
-        |> List.first()
+        latest =
+          items
+          |> Enum.sort_by(& &1["creationDate"], :desc)
+          |> List.first()
 
         {:ok, latest["imageId"]}
 
@@ -280,20 +320,21 @@ defmodule DeployEx.AwsInfrastructure do
         {:error, ErrorMessage.not_found("no debian-13 AMI found")}
 
       structure ->
-        {:error, ErrorMessage.bad_request(
-          "couldn't parse images response from aws",
-          %{structure: structure}
-        )}
+        {:error,
+         ErrorMessage.bad_request(
+           "couldn't parse images response from aws",
+           %{structure: structure}
+         )}
     end
   end
 
   defp handle_images_response({:ok, %{body: body}}), do: parse_images_response(body)
 
   defp handle_images_response({:error, {:http_error, status_code, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error fetching AMIs from aws",
-      %{error_body: body}
-    ])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+       "error fetching AMIs from aws",
+       %{error_body: body}
+     ])}
   end
-
 end

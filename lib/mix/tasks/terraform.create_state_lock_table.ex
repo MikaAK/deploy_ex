@@ -26,21 +26,40 @@ defmodule Mix.Tasks.Terraform.CreateStateLockTable do
 
       if table_name in tables do
         Mix.shell().info([
-          :yellow, "No need to create table ",
-          :yellow, :bright, table_name, :reset, :yellow,
-          " since it already exists in ", :bright, region, :reset, :yellow, "!"
+          :yellow,
+          "No need to create table ",
+          :yellow,
+          :bright,
+          table_name,
+          :reset,
+          :yellow,
+          " since it already exists in ",
+          :bright,
+          region,
+          :reset,
+          :yellow,
+          "!"
         ])
 
         :ok
       else
         case DeployEx.AwsDynamodb.create_table(region, table_name, "LockID", :string) do
-          {:error, error} -> Mix.raise(to_string(error))
+          {:error, error} ->
+            Mix.raise(to_string(error))
 
           :ok ->
             Mix.shell().info([
-              :green, "Successfully created DynamoDB table ", :green,
-              :bright, table_name, :reset, :green,
-              " created in ", :bright, region, :reset
+              :green,
+              "Successfully created DynamoDB table ",
+              :green,
+              :bright,
+              table_name,
+              :reset,
+              :green,
+              " created in ",
+              :bright,
+              region,
+              :reset
             ])
         end
       end

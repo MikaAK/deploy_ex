@@ -8,7 +8,8 @@ defmodule DeployEx.AwsDatabase do
   def fetch_aws_databases do
     case ExAws.request(ExAws.RDS.describe_db_instances(), region: DeployEx.Config.aws_region()) do
       {:ok, %{body: body}} ->
-        instances = body
+        instances =
+          body
           |> SweetXml.xpath(~x"//DBInstances/DBInstance"l,
             identifier: ~x"./DBInstanceIdentifier/text()"s,
             endpoint: [
@@ -24,6 +25,7 @@ defmodule DeployEx.AwsDatabase do
               value: ~x"./Value/text()"s
             ]
           )
+
         {:ok, instances}
 
       {:error, {"AccessDenied", message}} ->
@@ -33,26 +35,33 @@ defmodule DeployEx.AwsDatabase do
         {:error, ErrorMessage.unauthorized("Invalid AWS credentials", %{message: message})}
 
       {:error, {error_type, message}} ->
-        {:error, ErrorMessage.failed_dependency("AWS RDS API error: #{error_type}", %{message: message})}
+        {:error,
+         ErrorMessage.failed_dependency("AWS RDS API error: #{error_type}", %{message: message})}
 
       {:error, error} ->
-        {:error, ErrorMessage.internal_server_error("Failed to fetch RDS instances", %{error: error})}
+        {:error,
+         ErrorMessage.internal_server_error("Failed to fetch RDS instances", %{error: error})}
     end
   end
 
   def fetch_aws_databases_by_identifier(identifier) do
     with {:ok, instances} <- fetch_aws_databases() do
       case Enum.find(instances, fn instance -> instance.identifier == identifier end) do
-        nil -> {:error, ErrorMessage.not_found("Database with identifier #{identifier} not found")}
-        instance -> {:ok, [format_instance(instance)]}
+        nil ->
+          {:error, ErrorMessage.not_found("Database with identifier #{identifier} not found")}
+
+        instance ->
+          {:ok, [format_instance(instance)]}
       end
     end
   end
 
   def fetch_aws_databases_by_tag(key, value) do
     with {:ok, instances} <- fetch_aws_databases() do
-      filtered_dbs = instances
-        |> Enum.to_list() |> IO.inspect()
+      filtered_dbs =
+        instances
+        |> Enum.to_list()
+        |> IO.inspect()
         |> Stream.filter(fn instance ->
           Enum.any?(instance.tags, fn
             %{key: ^key, value: ^value} -> true
@@ -92,9 +101,14 @@ defmodule DeployEx.AwsDatabase do
   def get_database_info(name_or_id, is_identifier \\ false) do
     if is_identifier do
       case fetch_aws_databases_by_identifier(name_or_id) do
-        {:ok, [db_info | _]} -> {:ok, db_info}
-        {:ok, []} -> {:error, ErrorMessage.not_found("Database with identifier #{name_or_id} not found")}
-        {:error, error} -> {:error, error}
+        {:ok, [db_info | _]} ->
+          {:ok, db_info}
+
+        {:ok, []} ->
+          {:error, ErrorMessage.not_found("Database with identifier #{name_or_id} not found")}
+
+        {:error, error} ->
+          {:error, error}
       end
     else
       with {:ok, instances} <- fetch_aws_databases() do
@@ -117,13 +131,14 @@ defmodule DeployEx.AwsDatabase do
   """
   def get_database_password(db_info, terraform_dir, opts \\ []) do
     with {:ok, state} <- DeployEx.TerraformState.read_state(terraform_dir, opts),
-         {:ok, password} <- DeployEx.TerraformState.get_resource_attribute_by_tag(
-           state,
-           "aws_db_instance",
-           "Name",
-           db_info.name,
-           "password"
-         ) do
+         {:ok, password} <-
+           DeployEx.TerraformState.get_resource_attribute_by_tag(
+             state,
+             "aws_db_instance",
+             "Name",
+             db_info.name,
+             "password"
+           ) do
       {:ok, password}
     end
   end

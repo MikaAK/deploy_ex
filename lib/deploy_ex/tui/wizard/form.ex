@@ -19,7 +19,12 @@ defmodule DeployEx.TUI.Wizard.Form do
     end
   end
 
-  @spec run_in_terminal(ExRatatui.terminal_ref(), non_neg_integer(), non_neg_integer(), CommandRegistry.command_def()) :: result()
+  @spec run_in_terminal(
+          ExRatatui.terminal_ref(),
+          non_neg_integer(),
+          non_neg_integer(),
+          CommandRegistry.command_def()
+        ) :: result()
   def run_in_terminal(terminal, width, height, command) do
     shortdoc = CommandRegistry.shortdoc_for(command)
 
@@ -40,6 +45,7 @@ defmodule DeployEx.TUI.Wizard.Form do
   defp run_console(command) do
     shortdoc = CommandRegistry.shortdoc_for(command)
     Mix.shell().info([:cyan, "\n#{command.task}", :reset, " — #{shortdoc}"])
+
     Mix.shell().info([:faint, "Fill in the options below (press Enter to skip optional fields)\n"])
 
     result =
@@ -70,7 +76,8 @@ defmodule DeployEx.TUI.Wizard.Form do
     end
   end
 
-  defp prompt_console_input(%{type: :select, choices_fn: choices_fn} = input) when not is_nil(choices_fn) do
+  defp prompt_console_input(%{type: :select, choices_fn: choices_fn} = input)
+       when not is_nil(choices_fn) do
     choices = choices_fn.()
 
     if Enum.empty?(choices) do
@@ -86,11 +93,15 @@ defmodule DeployEx.TUI.Wizard.Form do
       raw = label |> Mix.shell().prompt() |> String.trim()
 
       cond do
-        raw === "" and not input.required -> nil
+        raw === "" and not input.required ->
+          nil
+
         String.match?(raw, ~r/^\d+$/) ->
           idx = String.to_integer(raw)
           Enum.at(choices, idx) || raw
-        true -> raw
+
+        true ->
+          raw
       end
     end
   end
@@ -100,8 +111,12 @@ defmodule DeployEx.TUI.Wizard.Form do
     raw = label |> Mix.shell().prompt() |> String.trim()
 
     cond do
-      raw === "" and not input.required -> nil
-      raw === "" -> prompt_console_input(input)
+      raw === "" and not input.required ->
+        nil
+
+      raw === "" ->
+        prompt_console_input(input)
+
       true ->
         case Integer.parse(raw) do
           {num, ""} -> num
@@ -125,14 +140,15 @@ defmodule DeployEx.TUI.Wizard.Form do
 
   defp initial_values(inputs) do
     Map.new(inputs, fn input ->
-      default = if is_nil(input.default) do
-        case input.type do
-          :boolean -> false
-          _ -> nil
+      default =
+        if is_nil(input.default) do
+          case input.type do
+            :boolean -> false
+            _ -> nil
+          end
+        else
+          input.default
         end
-      else
-        input.default
-      end
 
       {input.key, default}
     end)
@@ -232,17 +248,24 @@ defmodule DeployEx.TUI.Wizard.Form do
         new_focused = min(state.focused + 1, length(inputs) - 1)
         form_loop(terminal, width, height, %{state | focused: new_focused})
       else
-        result = DeployEx.TUI.Select.run_in_terminal(terminal, choices,
-          title: current_input.label,
-          allow_all: false
-        )
+        result =
+          DeployEx.TUI.Select.run_in_terminal(terminal, choices,
+            title: current_input.label,
+            allow_all: false
+          )
 
         case result do
           [selected] ->
             new_values = Map.put(state.values, current_input.key, selected)
             new_buffers = Map.put(state.text_buffers, current_input.key, selected)
             new_focused = min(state.focused + 1, length(inputs) - 1)
-            form_loop(terminal, width, height, %{state | values: new_values, text_buffers: new_buffers, focused: new_focused})
+
+            form_loop(terminal, width, height, %{
+              state
+              | values: new_values,
+                text_buffers: new_buffers,
+                focused: new_focused
+            })
 
           [] ->
             form_loop(terminal, width, height, state)
@@ -275,16 +298,21 @@ defmodule DeployEx.TUI.Wizard.Form do
             buf = Map.get(state.text_buffers, input.key, "")
 
             cond do
-              buf === "" -> acc
+              buf === "" ->
+                acc
+
               type === :integer ->
                 case Integer.parse(buf) do
                   {num, ""} -> Map.put(acc, input.key, num)
                   _ -> acc
                 end
-              true -> Map.put(acc, input.key, buf)
+
+              true ->
+                Map.put(acc, input.key, buf)
             end
 
-          _ -> acc
+          _ ->
+            acc
         end
       end)
 
@@ -334,13 +362,19 @@ defmodule DeployEx.TUI.Wizard.Form do
   defp handle_backspace(state, %{type: type} = input) when type in [:string, :integer, :select] do
     buf = Map.get(state.text_buffers, input.key, "")
     new_buf = if byte_size(buf) > 0, do: String.slice(buf, 0..-2//1), else: ""
-    new_values = if new_buf === "", do: Map.put(state.values, input.key, nil), else: Map.put(state.values, input.key, new_buf)
+
+    new_values =
+      if new_buf === "",
+        do: Map.put(state.values, input.key, nil),
+        else: Map.put(state.values, input.key, new_buf)
+
     %{state | text_buffers: Map.put(state.text_buffers, input.key, new_buf), values: new_values}
   end
 
   defp handle_backspace(state, _input), do: state
 
-  defp handle_char(state, %{type: type} = input, char) when type in [:string, :integer, :select] do
+  defp handle_char(state, %{type: type} = input, char)
+       when type in [:string, :integer, :select] do
     buf = Map.get(state.text_buffers, input.key, "")
     new_buf = buf <> char
     new_values = Map.put(state.values, input.key, new_buf)
@@ -353,17 +387,19 @@ defmodule DeployEx.TUI.Wizard.Form do
     area = %Rect{x: 0, y: 0, width: width, height: height}
     inputs = state.command.inputs
 
-    [header_area, content_area, footer_area] = Layout.split(area, :vertical, [
-      {:length, 3},
-      {:min, 3},
-      {:length, 2}
-    ])
+    [header_area, content_area, footer_area] =
+      Layout.split(area, :vertical, [
+        {:length, 3},
+        {:min, 3},
+        {:length, 2}
+      ])
 
-    [_pad_l, inner_area, _pad_r] = Layout.split(content_area, :horizontal, [
-      {:length, 2},
-      {:min, 10},
-      {:length, 2}
-    ])
+    [_pad_l, inner_area, _pad_r] =
+      Layout.split(content_area, :horizontal, [
+        {:length, 2},
+        {:min, 10},
+        {:length, 2}
+      ])
 
     header_text = "  mix #{state.command.task}  —  #{state.shortdoc}"
 

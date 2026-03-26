@@ -29,31 +29,46 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
 
       DeployEx.TUI.setup_no_tui(opts)
 
-      app_name = case extra_args do
-        [name | _] -> name
-        [] -> Mix.raise("App name is required. Usage: mix deploy_ex.qa.deploy <app_name> --sha <sha>")
-      end
+      app_name =
+        case extra_args do
+          [name | _] ->
+            name
+
+          [] ->
+            Mix.raise(
+              "App name is required. Usage: mix deploy_ex.qa.deploy <app_name> --sha <sha>"
+            )
+        end
 
       sha = opts[:sha] || Mix.raise("--sha option is required")
       total_steps = 4
 
-      result = DeployEx.TUI.Progress.run_stream(
-        "QA Deploy: #{app_name}",
-        fn tui_pid ->
-          run_deploy_pipeline(tui_pid, app_name, sha, opts, total_steps)
-        end
-      )
+      result =
+        DeployEx.TUI.Progress.run_stream(
+          "QA Deploy: #{app_name}",
+          fn tui_pid ->
+            run_deploy_pipeline(tui_pid, app_name, sha, opts, total_steps)
+          end
+        )
 
       case result do
         {:ok, {qa_node, full_sha}} ->
           unless opts[:quiet] do
             Mix.shell().info([
-              :green, "\n✓ Deployed SHA ", :cyan, String.slice(full_sha, 0, 7),
-              :green, " to QA node ", :cyan, qa_node.instance_name, :reset
+              :green,
+              "\n✓ Deployed SHA ",
+              :cyan,
+              String.slice(full_sha, 0, 7),
+              :green,
+              " to QA node ",
+              :cyan,
+              qa_node.instance_name,
+              :reset
             ])
           end
 
-        {:error, error} -> Mix.raise(ErrorMessage.to_string(error))
+        {:error, error} ->
+          Mix.raise(ErrorMessage.to_string(error))
       end
     end
   end
@@ -63,10 +78,26 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
       DeployEx.TUI.Progress.update_progress(tui_pid, step / total, label)
     end
 
-    with {:ok, qa_node} <- (progress.(1, "Fetching QA node..."); fetch_and_verify_qa_node(app_name, opts)),
-         {:ok, full_sha} <- (progress.(2, "Validating SHA..."); validate_and_find_sha(app_name, sha, opts)),
-         :ok <- (progress.(3, "Running ansible deploy..."); run_ansible_deploy(qa_node, full_sha, opts)),
-         {:ok, _updated} <- (progress.(4, "Updating QA state..."); update_qa_state_sha(qa_node, full_sha, opts)) do
+    with {:ok, qa_node} <-
+           (
+             progress.(1, "Fetching QA node...")
+             fetch_and_verify_qa_node(app_name, opts)
+           ),
+         {:ok, full_sha} <-
+           (
+             progress.(2, "Validating SHA...")
+             validate_and_find_sha(app_name, sha, opts)
+           ),
+         :ok <-
+           (
+             progress.(3, "Running ansible deploy...")
+             run_ansible_deploy(qa_node, full_sha, opts)
+           ),
+         {:ok, _updated} <-
+           (
+             progress.(4, "Updating QA state...")
+             update_qa_state_sha(qa_node, full_sha, opts)
+           ) do
       {:ok, {qa_node, full_sha}}
     end
   end
@@ -107,7 +138,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
       {:ok, releases} ->
         {qa_match, qa_releases} = find_release_match(releases, app_name, sha, "qa")
 
-        {matching_release, candidate_releases} = if is_nil(qa_match) do
+        {matching_release, candidate_releases} =
+          if is_nil(qa_match) do
             {fallback_match, fallback_releases} = find_release_match(releases, app_name, sha, nil)
             {fallback_match, qa_releases ++ fallback_releases}
           else
@@ -116,7 +148,12 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
 
         if is_nil(matching_release) do
           suggestions = DeployExHelpers.format_release_suggestions(candidate_releases, sha)
-          {:error, ErrorMessage.not_found("no release found matching SHA '#{sha}' for app '#{app_name}'", %{suggestions: suggestions})}
+
+          {:error,
+           ErrorMessage.not_found(
+             "no release found matching SHA '#{sha}' for app '#{app_name}'",
+             %{suggestions: suggestions}
+           )}
         else
           full_sha = DeployExHelpers.extract_sha_from_release(matching_release)
 
@@ -132,7 +169,6 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
     end
   end
 
-
   defp run_ansible_deploy(qa_node, sha, opts) do
     unless opts[:quiet] do
       Mix.shell().info("Deploying SHA #{String.slice(sha, 0, 7)} to #{qa_node.instance_name}...")
@@ -141,11 +177,15 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
     directory = @ansible_default_path
     playbook = "playbooks/#{qa_node.app_name}.yaml"
 
-    command = "ansible-playbook #{playbook} --limit '#{qa_node.instance_name},' --extra-vars 'target_release_sha=#{sha} release_prefix=qa release_state_prefix=release-state/qa'"
+    command =
+      "ansible-playbook #{playbook} --limit '#{qa_node.instance_name},' --extra-vars 'target_release_sha=#{sha} release_prefix=qa release_state_prefix=release-state/qa'"
 
     case DeployEx.Utils.run_command(command, directory) do
-      {:ok, _} -> :ok
-      {:error, error} -> {:error, ErrorMessage.failed_dependency("ansible deploy failed", %{error: error})}
+      {:ok, _} ->
+        :ok
+
+      {:error, error} ->
+        {:error, ErrorMessage.failed_dependency("ansible deploy failed", %{error: error})}
     end
   end
 

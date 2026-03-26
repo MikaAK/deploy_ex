@@ -71,25 +71,26 @@ defmodule Mix.Tasks.DeployEx.LoadBalancer.Health do
   end
 
   defp fetch_health_for_all(target_groups, opts) do
-    health_data = Enum.map(target_groups, fn tg ->
-      case DeployEx.AwsLoadBalancer.describe_target_health(tg.arn, opts) do
-        {:ok, targets} ->
-          enriched_targets = enrich_targets_with_instance_info(targets, opts)
+    health_data =
+      Enum.map(target_groups, fn tg ->
+        case DeployEx.AwsLoadBalancer.describe_target_health(tg.arn, opts) do
+          {:ok, targets} ->
+            enriched_targets = enrich_targets_with_instance_info(targets, opts)
 
-          %{
-            target_group_name: tg.name,
-            target_group_arn: tg.arn,
-            targets: enriched_targets
-          }
+            %{
+              target_group_name: tg.name,
+              target_group_arn: tg.arn,
+              targets: enriched_targets
+            }
 
-        {:error, _} ->
-          %{
-            target_group_name: tg.name,
-            target_group_arn: tg.arn,
-            targets: []
-          }
-      end
-    end)
+          {:error, _} ->
+            %{
+              target_group_name: tg.name,
+              target_group_arn: tg.arn,
+              targets: []
+            }
+        end
+      end)
 
     {:ok, health_data}
   end
@@ -97,23 +98,27 @@ defmodule Mix.Tasks.DeployEx.LoadBalancer.Health do
   defp enrich_targets_with_instance_info(targets, _opts) do
     instance_ids = targets |> Enum.map(& &1.id) |> Enum.reject(&is_nil/1)
 
-    instance_map = case DeployEx.AwsMachine.find_instances_by_id(instance_ids) do
-      {:ok, instances} ->
-        Map.new(instances, fn instance ->
-          tags = get_instance_tags(instance)
-          {instance["instanceId"], %{
-            name: tags["Name"],
-            is_qa_node: tags["QaNode"] === "true",
-            app_name: tags["InstanceGroup"]
-          }}
-        end)
+    instance_map =
+      case DeployEx.AwsMachine.find_instances_by_id(instance_ids) do
+        {:ok, instances} ->
+          Map.new(instances, fn instance ->
+            tags = get_instance_tags(instance)
 
-      _ ->
-        %{}
-    end
+            {instance["instanceId"],
+             %{
+               name: tags["Name"],
+               is_qa_node: tags["QaNode"] === "true",
+               app_name: tags["InstanceGroup"]
+             }}
+          end)
+
+        _ ->
+          %{}
+      end
 
     Enum.map(targets, fn target ->
-      instance_info = Map.get(instance_map, target.id, %{name: nil, is_qa_node: false, app_name: nil})
+      instance_info =
+        Map.get(instance_map, target.id, %{name: nil, is_qa_node: false, app_name: nil})
 
       Map.merge(target, %{
         instance_name: instance_info.name,
@@ -137,6 +142,7 @@ defmodule Mix.Tasks.DeployEx.LoadBalancer.Health do
   end
 
   defp maybe_filter_qa_nodes(health_data, %{qa: true}), do: health_data
+
   defp maybe_filter_qa_nodes(health_data, _opts) do
     Enum.map(health_data, fn tg ->
       %{tg | targets: Enum.reject(tg.targets, & &1.is_qa_node)}
@@ -172,58 +178,65 @@ defmodule Mix.Tasks.DeployEx.LoadBalancer.Health do
       [{paragraph, %Rect{x: 0, y: 0, width: width, height: height}}]
     end
 
-    DeployEx.TUI.Dashboard.run("Load Balancer Health", fetch_fn, render_fn, refresh_interval: 5000)
+    DeployEx.TUI.Dashboard.run("Load Balancer Health", fetch_fn, render_fn,
+      refresh_interval: 5000
+    )
   end
 
   defp build_health_lines(health_data) do
     summary = %{healthy: 0, unhealthy: 0, initial: 0, draining: 0}
 
-    {lines, summary} = Enum.reduce(health_data, {[], summary}, fn tg, {lines_acc, sum_acc} ->
-      header = "Target Group: #{tg.target_group_name}"
+    {lines, summary} =
+      Enum.reduce(health_data, {[], summary}, fn tg, {lines_acc, sum_acc} ->
+        header = "Target Group: #{tg.target_group_name}"
 
-      if Enum.empty?(tg.targets) do
-        {lines_acc ++ [header, "  (no targets)", ""], sum_acc}
-      else
-        {target_lines, new_sum} = Enum.reduce(tg.targets, {[], sum_acc}, fn target, {tl_acc, s_acc} ->
-          {symbol, _color} = format_health_state(target.state)
-          qa_label = if target.is_qa_node, do: " [QA]", else: ""
-          name = target.instance_name || target.id || "unknown"
-          state_text = target.state || "unknown"
+        if Enum.empty?(tg.targets) do
+          {lines_acc ++ [header, "  (no targets)", ""], sum_acc}
+        else
+          {target_lines, new_sum} =
+            Enum.reduce(tg.targets, {[], sum_acc}, fn target, {tl_acc, s_acc} ->
+              {symbol, _color} = format_health_state(target.state)
+              qa_label = if target.is_qa_node, do: " [QA]", else: ""
+              name = target.instance_name || target.id || "unknown"
+              state_text = target.state || "unknown"
 
-          line = "  #{symbol} #{name} (#{target.id || "?"})#{qa_label} - #{state_text}"
-          reason_line = if target.reason, do: ["    Reason: #{target.reason}"], else: []
+              line = "  #{symbol} #{name} (#{target.id || "?"})#{qa_label} - #{state_text}"
+              reason_line = if target.reason, do: ["    Reason: #{target.reason}"], else: []
 
-          {tl_acc ++ [line | reason_line], update_summary(s_acc, target.state)}
-        end)
+              {tl_acc ++ [line | reason_line], update_summary(s_acc, target.state)}
+            end)
 
-        {lines_acc ++ [header | target_lines] ++ [""], new_sum}
-      end
-    end)
+          {lines_acc ++ [header | target_lines] ++ [""], new_sum}
+        end
+      end)
 
-    summary_line = "Summary: #{summary.healthy} healthy, #{summary.unhealthy} unhealthy, #{summary.initial} initializing, #{summary.draining} draining"
+    summary_line =
+      "Summary: #{summary.healthy} healthy, #{summary.unhealthy} unhealthy, #{summary.initial} initializing, #{summary.draining} draining"
 
     lines ++ [summary_line]
   end
 
   defp output_health(health_data, %{json: true}) do
-    json = health_data
-    |> Enum.map(fn tg ->
-      %{
-        target_group_name: tg.target_group_name,
-        target_group_arn: tg.target_group_arn,
-        targets: Enum.map(tg.targets, fn t ->
-          %{
-            instance_id: t.id,
-            instance_name: t.instance_name,
-            port: t.port,
-            state: t.state,
-            reason: t.reason,
-            is_qa_node: t.is_qa_node
-          }
-        end)
-      }
-    end)
-    |> Jason.encode!(pretty: true)
+    json =
+      health_data
+      |> Enum.map(fn tg ->
+        %{
+          target_group_name: tg.target_group_name,
+          target_group_arn: tg.target_group_arn,
+          targets:
+            Enum.map(tg.targets, fn t ->
+              %{
+                instance_id: t.id,
+                instance_name: t.instance_name,
+                port: t.port,
+                state: t.state,
+                reason: t.reason,
+                is_qa_node: t.is_qa_node
+              }
+            end)
+        }
+      end)
+      |> Jason.encode!(pretty: true)
 
     Mix.shell().info(json)
   end
@@ -234,43 +247,60 @@ defmodule Mix.Tasks.DeployEx.LoadBalancer.Health do
 
     summary = %{healthy: 0, unhealthy: 0, initial: 0, draining: 0, unused: 0}
 
-    summary = Enum.reduce(health_data, summary, fn tg, acc ->
-      Mix.shell().info(["\nTarget Group: ", :cyan, tg.target_group_name, :reset])
+    summary =
+      Enum.reduce(health_data, summary, fn tg, acc ->
+        Mix.shell().info(["\nTarget Group: ", :cyan, tg.target_group_name, :reset])
 
-      if Enum.empty?(tg.targets) do
-        Mix.shell().info("  (no targets)")
-        acc
-      else
-        Enum.reduce(tg.targets, acc, fn target, inner_acc ->
-          {symbol, color} = format_health_state(target.state)
-          qa_label = if target.is_qa_node, do: [" ", :magenta, "[QA]", :reset], else: []
+        if Enum.empty?(tg.targets) do
+          Mix.shell().info("  (no targets)")
+          acc
+        else
+          Enum.reduce(tg.targets, acc, fn target, inner_acc ->
+            {symbol, color} = format_health_state(target.state)
+            qa_label = if target.is_qa_node, do: [" ", :magenta, "[QA]", :reset], else: []
 
-          Mix.shell().info([
-            "  ", color, symbol, :reset, " ",
-            target.instance_name || target.id || "unknown",
-            " (", target.id || "?", ")",
-            qa_label,
-            " - ", color, target.state || "unknown", :reset
-          ])
+            Mix.shell().info([
+              "  ",
+              color,
+              symbol,
+              :reset,
+              " ",
+              target.instance_name || target.id || "unknown",
+              " (",
+              target.id || "?",
+              ")",
+              qa_label,
+              " - ",
+              color,
+              target.state || "unknown",
+              :reset
+            ])
 
-          if target.reason do
-            Mix.shell().info(["    Reason: ", target.reason])
-          end
+            if target.reason do
+              Mix.shell().info(["    Reason: ", target.reason])
+            end
 
-          update_summary(inner_acc, target.state)
-        end)
-      end
-    end)
+            update_summary(inner_acc, target.state)
+          end)
+        end
+      end)
 
     Mix.shell().info([
       "\n",
-      :green, "Summary: ",
-      :reset, "#{summary.healthy} healthy, ",
-      :red, "#{summary.unhealthy} unhealthy",
-      :reset, ", ",
-      :yellow, "#{summary.initial} initializing",
-      :reset, ", ",
-      :blue, "#{summary.draining} draining"
+      :green,
+      "Summary: ",
+      :reset,
+      "#{summary.healthy} healthy, ",
+      :red,
+      "#{summary.unhealthy} unhealthy",
+      :reset,
+      ", ",
+      :yellow,
+      "#{summary.initial} initializing",
+      :reset,
+      ", ",
+      :blue,
+      "#{summary.draining} draining"
     ])
   end
 

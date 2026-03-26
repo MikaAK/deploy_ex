@@ -26,10 +26,11 @@ defmodule Mix.Tasks.DeployEx.Qa.AttachLb do
     with :ok <- DeployExHelpers.check_in_umbrella() do
       {opts, extra_args} = parse_args(args)
 
-      app_name = case extra_args do
-        [name | _] -> name
-        [] -> Mix.raise("App name is required. Usage: mix deploy_ex.qa.attach_lb <app_name>")
-      end
+      app_name =
+        case extra_args do
+          [name | _] -> name
+          [] -> Mix.raise("App name is required. Usage: mix deploy_ex.qa.attach_lb <app_name>")
+        end
 
       with {:ok, qa_node} <- fetch_and_verify_qa_node(app_name, opts),
            {:ok, target_groups} <- find_target_groups(qa_node, opts),
@@ -37,8 +38,13 @@ defmodule Mix.Tasks.DeployEx.Qa.AttachLb do
            :ok <- maybe_wait_for_healthy(updated_qa_node, target_groups, opts) do
         unless opts[:quiet] do
           Mix.shell().info([
-            :green, "\n✓ Attached QA node to ", :cyan, "#{length(target_groups)}",
-            :green, " target group(s)", :reset
+            :green,
+            "\n✓ Attached QA node to ",
+            :cyan,
+            "#{length(target_groups)}",
+            :green,
+            " target group(s)",
+            :reset
           ])
         end
       else
@@ -107,9 +113,10 @@ defmodule Mix.Tasks.DeployEx.Qa.AttachLb do
       Mix.shell().info("Waiting for health checks to pass...")
     end
 
-    results = Enum.map(target_groups, fn tg ->
-      DeployEx.AwsLoadBalancer.wait_for_healthy(tg.arn, qa_node.instance_id, 300_000, opts)
-    end)
+    results =
+      Enum.map(target_groups, fn tg ->
+        DeployEx.AwsLoadBalancer.wait_for_healthy(tg.arn, qa_node.instance_id, 300_000, opts)
+      end)
 
     error = Enum.find(results, &match?({:error, _}, &1))
 

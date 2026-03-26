@@ -16,7 +16,9 @@ defmodule DeployEx.QaNodeTest do
         state: "running",
         created_at: "2024-01-15T10:30:00Z",
         load_balancer_attached?: true,
-        target_group_arns: ["arn:aws:elasticloadbalancing:us-west-2:123456789:targetgroup/my-tg/abc123"]
+        target_group_arns: [
+          "arn:aws:elasticloadbalancing:us-west-2:123456789:targetgroup/my-tg/abc123"
+        ]
       }
 
       json = QaNode.to_json(qa_node)
@@ -33,7 +35,10 @@ defmodule DeployEx.QaNodeTest do
       assert decoded["state"] === "running"
       assert decoded["created_at"] === "2024-01-15T10:30:00Z"
       assert decoded["load_balancer_attached"] === true
-      assert decoded["target_group_arns"] === ["arn:aws:elasticloadbalancing:us-west-2:123456789:targetgroup/my-tg/abc123"]
+
+      assert decoded["target_group_arns"] === [
+               "arn:aws:elasticloadbalancing:us-west-2:123456789:targetgroup/my-tg/abc123"
+             ]
     end
 
     test "handles nil values" do
@@ -90,7 +95,10 @@ defmodule DeployEx.QaNodeTest do
       assert qa_node.state === "running"
       assert qa_node.created_at === "2024-01-15T10:30:00Z"
       assert qa_node.load_balancer_attached? === true
-      assert qa_node.target_group_arns === ["arn:aws:elasticloadbalancing:us-west-2:123456789:targetgroup/my-tg/abc123"]
+
+      assert qa_node.target_group_arns === [
+               "arn:aws:elasticloadbalancing:us-west-2:123456789:targetgroup/my-tg/abc123"
+             ]
     end
 
     test "deserializes map to QaNode struct" do
@@ -142,9 +150,10 @@ defmodule DeployEx.QaNodeTest do
         target_group_arns: ["arn:aws:tg/1", "arn:aws:tg/2"]
       }
 
-      round_tripped = original
-      |> QaNode.to_json()
-      |> QaNode.from_json()
+      round_tripped =
+        original
+        |> QaNode.to_json()
+        |> QaNode.from_json()
 
       assert round_tripped.instance_id === original.instance_id
       assert round_tripped.app_name === original.app_name
@@ -167,9 +176,10 @@ defmodule DeployEx.QaNodeTest do
         target_group_arns: []
       }
 
-      round_tripped = original
-      |> QaNode.to_json()
-      |> QaNode.from_json()
+      round_tripped =
+        original
+        |> QaNode.to_json()
+        |> QaNode.from_json()
 
       assert round_tripped.app_name === original.app_name
       assert round_tripped.target_sha === original.target_sha
@@ -181,7 +191,9 @@ defmodule DeployEx.QaNodeTest do
   describe "qa_state_key/2" do
     test "builds correct S3 key path" do
       assert QaNode.qa_state_key("my_app", "i-abc123") === "qa-nodes/my_app/i-abc123.json"
-      assert QaNode.qa_state_key("another_app", "i-def456") === "qa-nodes/another_app/i-def456.json"
+
+      assert QaNode.qa_state_key("another_app", "i-def456") ===
+               "qa-nodes/another_app/i-def456.json"
     end
   end
 

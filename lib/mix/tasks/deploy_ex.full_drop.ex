@@ -27,7 +27,10 @@ defmodule Mix.Tasks.DeployEx.FullDrop do
         File.rm_rf!("./deploys")
 
         Mix.shell().info([
-          :red, "* removing ", :reset, "./deploys"
+          :red,
+          "* removing ",
+          :reset,
+          "./deploys"
         ])
       end
 
@@ -45,7 +48,10 @@ defmodule Mix.Tasks.DeployEx.FullDrop do
       File.rm!(file_path)
 
       Mix.shell().info([
-        :red, "* removing ", :reset, file_path
+        :red,
+        "* removing ",
+        :reset,
+        file_path
       ])
     end
   end

@@ -34,7 +34,8 @@ defmodule DeployEx.AwsInfrastructureTest do
       </DescribeSubnetsResponse>
       """
 
-      assert {:ok, ["subnet-abc123", "subnet-def456"]} === AwsInfrastructure.parse_subnets_response(xml)
+      assert {:ok, ["subnet-abc123", "subnet-def456"]} ===
+               AwsInfrastructure.parse_subnets_response(xml)
     end
 
     test "parses single subnet" do
@@ -61,7 +62,8 @@ defmodule DeployEx.AwsInfrastructureTest do
       </DescribeSubnetsResponse>
       """
 
-      assert {:error, %ErrorMessage{code: :not_found}} = AwsInfrastructure.parse_subnets_response(xml)
+      assert {:error, %ErrorMessage{code: :not_found}} =
+               AwsInfrastructure.parse_subnets_response(xml)
     end
   end
 
@@ -83,7 +85,8 @@ defmodule DeployEx.AwsInfrastructureTest do
       </DescribeKeyPairsResponse>
       """
 
-      assert {:ok, "my-project-key-pair"} === AwsInfrastructure.parse_key_pairs_response(xml, "my-project-key-pair")
+      assert {:ok, "my-project-key-pair"} ===
+               AwsInfrastructure.parse_key_pairs_response(xml, "my-project-key-pair")
     end
 
     test "parses single key pair" do
@@ -131,7 +134,8 @@ defmodule DeployEx.AwsInfrastructureTest do
       </DescribeKeyPairsResponse>
       """
 
-      assert {:error, %ErrorMessage{code: :not_found}} = AwsInfrastructure.parse_key_pairs_response(xml, "my-key")
+      assert {:error, %ErrorMessage{code: :not_found}} =
+               AwsInfrastructure.parse_key_pairs_response(xml, "my-key")
     end
   end
 
@@ -180,7 +184,8 @@ defmodule DeployEx.AwsInfrastructureTest do
       </DescribeVpcsResponse>
       """
 
-      assert {:error, %ErrorMessage{code: :not_found}} = AwsInfrastructure.parse_vpcs_response(xml)
+      assert {:error, %ErrorMessage{code: :not_found}} =
+               AwsInfrastructure.parse_vpcs_response(xml)
     end
   end
 
@@ -233,7 +238,8 @@ defmodule DeployEx.AwsInfrastructureTest do
       </DescribeImagesResponse>
       """
 
-      assert {:error, %ErrorMessage{code: :not_found}} = AwsInfrastructure.parse_images_response(xml)
+      assert {:error, %ErrorMessage{code: :not_found}} =
+               AwsInfrastructure.parse_images_response(xml)
     end
   end
 end

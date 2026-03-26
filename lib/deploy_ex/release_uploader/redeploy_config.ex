@@ -2,18 +2,20 @@ defmodule DeployEx.ReleaseUploader.RedeployConfig do
   defstruct [:whitelist, :blacklist]
 
   @type t :: %__MODULE__{
-    whitelist: [Regex.t()] | nil,
-    blacklist: [Regex.t()] | nil
-  }
+          whitelist: [Regex.t()] | nil,
+          blacklist: [Regex.t()] | nil
+        }
 
   @spec from_keyword(keyword() | nil) :: %{String.t() => t()}
   def from_keyword(nil), do: %{}
+
   def from_keyword(config) when is_list(config) do
     Map.new(config, fn {app_name, opts} ->
-      {to_string(app_name), %__MODULE__{
-        whitelist: compile_patterns(opts[:whitelist]),
-        blacklist: compile_patterns(opts[:blacklist])
-      }}
+      {to_string(app_name),
+       %__MODULE__{
+         whitelist: compile_patterns(opts[:whitelist]),
+         blacklist: compile_patterns(opts[:blacklist])
+       }}
     end)
   end
 
@@ -44,6 +46,7 @@ defmodule DeployEx.ReleaseUploader.RedeployConfig do
   end
 
   defp maybe_apply_whitelist(file_diffs, nil), do: file_diffs
+
   defp maybe_apply_whitelist(file_diffs, whitelist) do
     Enum.filter(file_diffs, fn file ->
       Enum.any?(whitelist, &Regex.match?(&1, file))
@@ -51,6 +54,7 @@ defmodule DeployEx.ReleaseUploader.RedeployConfig do
   end
 
   defp maybe_apply_blacklist(file_diffs, nil), do: file_diffs
+
   defp maybe_apply_blacklist(file_diffs, blacklist) do
     Enum.reject(file_diffs, fn file ->
       Enum.any?(blacklist, &Regex.match?(&1, file))
@@ -59,6 +63,7 @@ defmodule DeployEx.ReleaseUploader.RedeployConfig do
 
   defp compile_patterns(nil), do: nil
   defp compile_patterns([]), do: nil
+
   defp compile_patterns(patterns) when is_list(patterns) do
     Enum.map(patterns, fn
       %Regex{} = regex -> regex

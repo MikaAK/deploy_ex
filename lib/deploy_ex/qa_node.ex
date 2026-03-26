@@ -10,18 +10,18 @@ defmodule DeployEx.QaNode do
   """
 
   @type t :: %__MODULE__{
-    instance_id: String.t() | nil,
-    app_name: String.t(),
-    target_sha: String.t(),
-    public_ip: String.t() | nil,
-    ipv6_address: String.t() | nil,
-    private_ip: String.t() | nil,
-    instance_name: String.t() | nil,
-    state: String.t() | nil,
-    created_at: String.t() | nil,
-    load_balancer_attached?: boolean(),
-    target_group_arns: [String.t()]
-  }
+          instance_id: String.t() | nil,
+          app_name: String.t(),
+          target_sha: String.t(),
+          public_ip: String.t() | nil,
+          ipv6_address: String.t() | nil,
+          private_ip: String.t() | nil,
+          instance_name: String.t() | nil,
+          state: String.t() | nil,
+          created_at: String.t() | nil,
+          load_balancer_attached?: boolean(),
+          target_group_arns: [String.t()]
+        }
 
   defstruct [
     :instance_id,
@@ -89,6 +89,7 @@ defmodule DeployEx.QaNode do
           load_balancer_attached?: false,
           target_group_arns: []
         }
+
         {:ok, qa_node}
 
       error ->
@@ -113,24 +114,30 @@ defmodule DeployEx.QaNode do
     end
   end
 
-  defp maybe_detach_from_load_balancer(%__MODULE__{load_balancer_attached?: false}, _opts), do: :ok
+  defp maybe_detach_from_load_balancer(%__MODULE__{load_balancer_attached?: false}, _opts),
+    do: :ok
+
   defp maybe_detach_from_load_balancer(%__MODULE__{} = qa_node, opts) do
     detach_from_load_balancer(qa_node, opts)
   end
 
-  def attach_to_load_balancer(%__MODULE__{} = qa_node, target_group_arns, opts \\ []) when is_list(target_group_arns) do
+  def attach_to_load_balancer(%__MODULE__{} = qa_node, target_group_arns, opts \\ [])
+      when is_list(target_group_arns) do
     port = opts[:port] || 4000
 
-    results = Enum.map(target_group_arns, fn arn ->
-      DeployEx.AwsLoadBalancer.register_target(arn, qa_node.instance_id, port, opts)
-    end)
+    results =
+      Enum.map(target_group_arns, fn arn ->
+        DeployEx.AwsLoadBalancer.register_target(arn, qa_node.instance_id, port, opts)
+      end)
 
     case Enum.find(results, &match?({:error, _}, &1)) do
       nil ->
-        updated_qa_node = %{qa_node |
-          load_balancer_attached?: true,
-          target_group_arns: target_group_arns
+        updated_qa_node = %{
+          qa_node
+          | load_balancer_attached?: true,
+            target_group_arns: target_group_arns
         }
+
         with {:ok, :saved} <- save_qa_state(updated_qa_node, opts) do
           {:ok, updated_qa_node}
         end
@@ -141,17 +148,17 @@ defmodule DeployEx.QaNode do
   end
 
   def detach_from_load_balancer(%__MODULE__{target_group_arns: []} = _qa_node, _opts), do: :ok
+
   def detach_from_load_balancer(%__MODULE__{} = qa_node, opts) do
-    results = Enum.map(qa_node.target_group_arns, fn arn ->
-      DeployEx.AwsLoadBalancer.deregister_target(arn, qa_node.instance_id, opts)
-    end)
+    results =
+      Enum.map(qa_node.target_group_arns, fn arn ->
+        DeployEx.AwsLoadBalancer.deregister_target(arn, qa_node.instance_id, opts)
+      end)
 
     case Enum.find(results, &match?({:error, _}, &1)) do
       nil ->
-        updated_qa_node = %{qa_node |
-          load_balancer_attached?: false,
-          target_group_arns: []
-        }
+        updated_qa_node = %{qa_node | load_balancer_attached?: false, target_group_arns: []}
+
         with {:ok, :saved} <- save_qa_state(updated_qa_node, opts) do
           {:ok, updated_qa_node}
         end
@@ -252,34 +259,43 @@ defmodule DeployEx.QaNode do
 
   defp handle_run_instances_response({:ok, %{body: body}}) do
     case XmlToMap.naive_map(body) do
-      %{"RunInstancesResponse" => %{"instancesSet" => %{"item" => %{"instanceId" => instance_id}}}} ->
+      %{
+        "RunInstancesResponse" => %{"instancesSet" => %{"item" => %{"instanceId" => instance_id}}}
+      } ->
         {:ok, instance_id}
 
-      %{"RunInstancesResponse" => %{"instancesSet" => %{"item" => [%{"instanceId" => instance_id} | _]}}} ->
+      %{
+        "RunInstancesResponse" => %{
+          "instancesSet" => %{"item" => [%{"instanceId" => instance_id} | _]}
+        }
+      } ->
         {:ok, instance_id}
 
       structure ->
-        {:error, ErrorMessage.bad_request(
-          "couldn't parse run instances response from aws",
-          %{structure: structure}
-        )}
+        {:error,
+         ErrorMessage.bad_request(
+           "couldn't parse run instances response from aws",
+           %{structure: structure}
+         )}
     end
   end
 
   defp handle_run_instances_response({:error, {:http_error, status_code, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error creating instance",
-      %{error_body: body}
-    ])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+       "error creating instance",
+       %{error_body: body}
+     ])}
   end
 
   defp handle_terminate_response({:ok, _}), do: :ok
 
   defp handle_terminate_response({:error, {:http_error, status_code, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error terminating instance",
-      %{error_body: body}
-    ])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+       "error terminating instance",
+       %{error_body: body}
+     ])}
   end
 
   def qa_state_key(app_name, instance_id) do
@@ -311,13 +327,14 @@ defmodule DeployEx.QaNode do
     |> ExAws.request(region: region)
     |> case do
       {:ok, %{body: %{contents: contents}}} when is_list(contents) ->
-        states = Enum.map(contents, fn content ->
-          case ExAws.S3.get_object(bucket, content.key) |> ExAws.request(region: region) do
-            {:ok, %{body: body}} -> from_json(body)
-            _ -> nil
-          end
-        end)
-        |> Enum.reject(&is_nil/1)
+        states =
+          Enum.map(contents, fn content ->
+            case ExAws.S3.get_object(bucket, content.key) |> ExAws.request(region: region) do
+              {:ok, %{body: body}} -> from_json(body)
+              _ -> nil
+            end
+          end)
+          |> Enum.reject(&is_nil/1)
 
         {:ok, states}
 
@@ -341,12 +358,14 @@ defmodule DeployEx.QaNode do
     environment = opts[:environment] || DeployEx.Config.env()
     resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
 
-    ExAws.EC2.describe_instances(filters: [
-      "tag:QaNode": ["true"],
-      "tag:Group": [resource_group],
-      "tag:InstanceGroup": ["#{app_name}_#{environment}"],
-      "instance-state-name": ["running", "pending", "stopping", "stopped"]
-    ])
+    ExAws.EC2.describe_instances(
+      filters: [
+        "tag:QaNode": ["true"],
+        "tag:Group": [resource_group],
+        "tag:InstanceGroup": ["#{app_name}_#{environment}"],
+        "instance-state-name": ["running", "pending", "stopping", "stopped"]
+      ]
+    )
     |> ExAws.request(region: region)
     |> handle_describe_instances_for_qa()
   end
@@ -356,12 +375,14 @@ defmodule DeployEx.QaNode do
     environment = opts[:environment] || DeployEx.Config.env()
     resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
 
-    ExAws.EC2.describe_instances(filters: [
-      "tag:QaNode": ["true"],
-      "tag:Group": [resource_group],
-      "tag:InstanceGroup": ["#{app_name}_#{environment}"],
-      "instance-state-name": ["running", "pending", "stopping", "stopped"]
-    ])
+    ExAws.EC2.describe_instances(
+      filters: [
+        "tag:QaNode": ["true"],
+        "tag:Group": [resource_group],
+        "tag:InstanceGroup": ["#{app_name}_#{environment}"],
+        "instance-state-name": ["running", "pending", "stopping", "stopped"]
+      ]
+    )
     |> ExAws.request(region: region)
     |> handle_describe_instances_for_qa_list()
   end
@@ -370,6 +391,7 @@ defmodule DeployEx.QaNode do
     case XmlToMap.naive_map(body) do
       %{"DescribeInstancesResponse" => %{"reservationSet" => %{"item" => reservations}}} ->
         instances = extract_qa_instances(reservations)
+
         case instances do
           [instance | _] -> {:ok, instance}
           [] -> {:ok, nil}
@@ -397,7 +419,11 @@ defmodule DeployEx.QaNode do
   end
 
   defp handle_describe_instances_for_qa_list({:error, {:http_error, status, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["error fetching QA instances", %{body: body}])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), [
+       "error fetching QA instances",
+       %{body: body}
+     ])}
   end
 
   defp extract_qa_instances(reservations) when is_list(reservations) do
@@ -476,10 +502,11 @@ defmodule DeployEx.QaNode do
     |> ExAws.request(region: region)
     |> case do
       {:ok, %{body: %{contents: contents}}} when is_list(contents) ->
-        app_names = contents
-        |> Enum.map(&extract_app_name_from_key(&1.key))
-        |> Enum.reject(&is_nil/1)
-        |> Enum.uniq()
+        app_names =
+          contents
+          |> Enum.map(&extract_app_name_from_key(&1.key))
+          |> Enum.reject(&is_nil/1)
+          |> Enum.uniq()
 
         {:ok, app_names}
 
@@ -495,7 +522,9 @@ defmodule DeployEx.QaNode do
     case String.split(key, "/") do
       [@qa_state_prefix, app_name, filename] when is_binary(filename) ->
         if String.ends_with?(filename, ".json"), do: app_name, else: nil
-      _ -> nil
+
+      _ ->
+        nil
     end
   end
 
@@ -544,12 +573,14 @@ defmodule DeployEx.QaNode do
   def verify_instance_exists(%__MODULE__{instance_id: instance_id} = state) do
     case DeployEx.AwsMachine.find_instances_by_id([instance_id]) do
       {:ok, [instance]} ->
-        updated_state = %{state |
-          public_ip: instance["ipAddress"],
-          ipv6_address: instance["ipv6Address"],
-          private_ip: instance["privateIpAddress"],
-          state: instance["instanceState"]["name"]
+        updated_state = %{
+          state
+          | public_ip: instance["ipAddress"],
+            ipv6_address: instance["ipv6Address"],
+            private_ip: instance["privateIpAddress"],
+            state: instance["instanceState"]["name"]
         }
+
         {:ok, updated_state}
 
       {:error, %ErrorMessage{code: :not_found}} ->
@@ -568,7 +599,11 @@ defmodule DeployEx.QaNode do
   end
 
   defp handle_get_response({:error, {:http_error, status, reason}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["aws failure", %{reason: reason}])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), [
+       "aws failure",
+       %{reason: reason}
+     ])}
   end
 
   defp handle_get_response({:error, error}) when is_binary(error) do
@@ -578,7 +613,11 @@ defmodule DeployEx.QaNode do
   defp handle_put_response({:ok, _}), do: {:ok, :saved}
 
   defp handle_put_response({:error, {:http_error, status, reason}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["aws failure", %{reason: reason}])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), [
+       "aws failure",
+       %{reason: reason}
+     ])}
   end
 
   defp handle_put_response({:error, error}) when is_binary(error) do
@@ -594,7 +633,11 @@ defmodule DeployEx.QaNode do
   defp handle_delete_response({:error, {:http_error, 404, _}}), do: :ok
 
   defp handle_delete_response({:error, {:http_error, status, reason}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["aws failure", %{reason: reason}])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), [
+       "aws failure",
+       %{reason: reason}
+     ])}
   end
 
   defp handle_delete_response({:error, error}) when is_binary(error) do

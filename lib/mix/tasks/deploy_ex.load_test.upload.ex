@@ -33,14 +33,16 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Upload do
     with :ok <- DeployExHelpers.check_in_umbrella() do
       {opts, extra_args} = parse_args(args)
 
-      app_name = case extra_args do
-        [name | _] -> name
-        [] -> Mix.raise("App name is required: mix deploy_ex.load_test.upload <app_name>")
-      end
+      app_name =
+        case extra_args do
+          [name | _] -> name
+          [] -> Mix.raise("App name is required: mix deploy_ex.load_test.upload <app_name>")
+        end
 
       with {:ok, runner} <- find_runner(opts),
            {:ok, scripts} <- collect_scripts(app_name, opts),
-           {:ok, pem_file} <- DeployEx.Terraform.find_pem_file(@terraform_default_path, opts[:pem]) do
+           {:ok, pem_file} <-
+             DeployEx.Terraform.find_pem_file(@terraform_default_path, opts[:pem]) do
         ip = runner.public_ip || runner.ipv6_address
 
         if is_nil(ip) do
@@ -80,7 +82,10 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Upload do
             DeployEx.K6Runner.verify_instance_exists(runner)
 
           {:ok, []} ->
-            {:error, ErrorMessage.not_found("no k6 runners found, create one with: mix deploy_ex.load_test.create_instance")}
+            {:error,
+             ErrorMessage.not_found(
+               "no k6 runners found, create one with: mix deploy_ex.load_test.create_instance"
+             )}
 
           error ->
             error
@@ -97,10 +102,11 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Upload do
         dir = Path.join(["deploys", "k6", "scripts", app_name])
 
         if File.dir?(dir) do
-          scripts = dir
-          |> File.ls!()
-          |> Enum.filter(&String.ends_with?(&1, ".js"))
-          |> Enum.map(&Path.join(dir, &1))
+          scripts =
+            dir
+            |> File.ls!()
+            |> Enum.filter(&String.ends_with?(&1, ".js"))
+            |> Enum.map(&Path.join(dir, &1))
 
           if Enum.empty?(scripts) do
             {:error, ErrorMessage.not_found("no .js scripts found in #{dir}")}
@@ -108,10 +114,11 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Upload do
             {:ok, scripts}
           end
         else
-          {:error, ErrorMessage.not_found(
-            "script directory not found: #{dir}\n" <>
-            "Run: mix deploy_ex.load_test.init #{app_name}"
-          )}
+          {:error,
+           ErrorMessage.not_found(
+             "script directory not found: #{dir}\n" <>
+               "Run: mix deploy_ex.load_test.init #{app_name}"
+           )}
         end
 
       script_path ->
@@ -128,18 +135,34 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Upload do
     remote_path = "/srv/k6/scripts/#{filename}"
 
     unless opts[:quiet] do
-      Mix.shell().info([:faint, "Uploading ", :reset, filename, :faint, " → ", :reset, remote_path])
+      Mix.shell().info([
+        :faint,
+        "Uploading ",
+        :reset,
+        filename,
+        :faint,
+        " → ",
+        :reset,
+        remote_path
+      ])
     end
 
     abs_pem = Path.expand(pem_file)
 
-    case System.cmd("scp", [
-      "-i", abs_pem,
-      "-o", "StrictHostKeyChecking=no",
-      "-o", "UserKnownHostsFile=/dev/null",
-      script_path,
-      "admin@#{ip}:#{remote_path}"
-    ], stderr_to_stdout: true) do
+    case System.cmd(
+           "scp",
+           [
+             "-i",
+             abs_pem,
+             "-o",
+             "StrictHostKeyChecking=no",
+             "-o",
+             "UserKnownHostsFile=/dev/null",
+             script_path,
+             "admin@#{ip}:#{remote_path}"
+           ],
+           stderr_to_stdout: true
+         ) do
       {_, 0} ->
         unless opts[:quiet] do
           Mix.shell().info([:green, "  ✓ ", :reset, filename])

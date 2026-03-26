@@ -1,16 +1,16 @@
 defmodule DeployEx.AwsMachine do
   def start(region \\ DeployEx.Config.aws_region(), instance_ids) do
     instance_ids
-      |> ExAws.EC2.start_instances()
-      |> ex_aws_request(region)
-      |> handle_describe_response
+    |> ExAws.EC2.start_instances()
+    |> ex_aws_request(region)
+    |> handle_describe_response
   end
 
   def stop(region \\ DeployEx.Config.aws_region(), instance_ids) do
     instance_ids
-      |> ExAws.EC2.stop_instances()
-      |> ex_aws_request(region)
-      |> handle_describe_response
+    |> ExAws.EC2.stop_instances()
+    |> ex_aws_request(region)
+    |> handle_describe_response
   end
 
   def wait_for_started(region \\ DeployEx.Config.aws_region(), instance_ids, retries \\ 10) do
@@ -26,10 +26,11 @@ defmodule DeployEx.AwsMachine do
             wait_for_started(region, instance_ids, retries)
 
           true ->
-            {:error, ErrorMessage.failed_dependency(
-              "instance not started but not pending either",
-              %{instance_ids: instance_ids}
-            )}
+            {:error,
+             ErrorMessage.failed_dependency(
+               "instance not started but not pending either",
+               %{instance_ids: instance_ids}
+             )}
         end
 
       {:error, %ErrorMessage{code: :not_found}} when retries > 0 ->
@@ -53,10 +54,11 @@ defmodule DeployEx.AwsMachine do
           wait_for_stopped(region, instance_ids)
 
         true ->
-          {:error, ErrorMessage.failed_dependency(
-            "instance not stopped but not pending either",
-            %{instance_ids: instance_ids}
-          )}
+          {:error,
+           ErrorMessage.failed_dependency(
+             "instance not stopped but not pending either",
+             %{instance_ids: instance_ids}
+           )}
       end
     end
   end
@@ -110,10 +112,11 @@ defmodule DeployEx.AwsMachine do
     resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
 
     with {:ok, instances} <- fetch_instances_by_tag(region, "Group", resource_group) do
-      matching = Enum.filter(instances, fn instance ->
-        instance_group = instance |> get_instance_tags() |> Map.get("InstanceGroup")
-        instance_group && instance_group =~ app_name
-      end)
+      matching =
+        Enum.filter(instances, fn instance ->
+          instance_group = instance |> get_instance_tags() |> Map.get("InstanceGroup")
+          instance_group && instance_group =~ app_name
+        end)
 
       case matching do
         [] -> {:error, ErrorMessage.not_found("no instances found matching #{app_name}")}
@@ -137,17 +140,20 @@ defmodule DeployEx.AwsMachine do
   def fetch_instances_by_tag(region \\ DeployEx.Config.aws_region(), tag_name, tag) do
     with {:ok, instances} <- fetch_instances(region) do
       case filter_by_tag(instances, tag_name, tag) do
-        [] -> {:error, ErrorMessage.not_found("no aws instances found with the tag #{tag_name} of #{tag}")}
+        [] ->
+          {:error,
+           ErrorMessage.not_found("no aws instances found with the tag #{tag_name} of #{tag}")}
 
-        tags -> {:ok, tags}
+        tags ->
+          {:ok, tags}
       end
     end
   end
 
   def fetch_instances(region) do
     ExAws.EC2.describe_instances()
-      |> ex_aws_request(region)
-      |> handle_describe_response
+    |> ex_aws_request(region)
+    |> handle_describe_response
   end
 
   defp ex_aws_request(request_struct, nil) do
@@ -159,10 +165,11 @@ defmodule DeployEx.AwsMachine do
   end
 
   defp handle_describe_response({:error, {:http_error, status_code, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error with fetching from aws",
-      %{error_body: body}
-    ])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+       "error with fetching from aws",
+       %{error_body: body}
+     ])}
   end
 
   defp handle_describe_response({:ok, %{body: body}}) do
@@ -173,7 +180,8 @@ defmodule DeployEx.AwsMachine do
       %{"StartInstancesResponse" => %{"instancesSet" => %{"item" => item}}} ->
         {:ok, item}
 
-      %{"DescribeInstancesResponse" => %{"reservationSet" => %{"item" => items}}} when is_list(items) ->
+      %{"DescribeInstancesResponse" => %{"reservationSet" => %{"item" => items}}}
+      when is_list(items) ->
         {:ok, Enum.flat_map(items, &extract_instances_from_reservation/1)}
 
       %{"DescribeInstancesResponse" => %{"reservationSet" => %{"item" => item}}} ->
@@ -183,14 +191,18 @@ defmodule DeployEx.AwsMachine do
         {:ok, []}
 
       structure ->
-        {:error, ErrorMessage.bad_request(
-          "couldn't parse the structure from aws correctly",
-          %{structure: structure}
-        )}
+        {:error,
+         ErrorMessage.bad_request(
+           "couldn't parse the structure from aws correctly",
+           %{structure: structure}
+         )}
     end
   end
 
-  defp extract_instances_from_reservation(%{"instancesSet" => %{"item" => items}}) when is_list(items), do: items
+  defp extract_instances_from_reservation(%{"instancesSet" => %{"item" => items}})
+       when is_list(items),
+       do: items
+
   defp extract_instances_from_reservation(%{"instancesSet" => %{"item" => item}}), do: [item]
 
   defp filter_by_tag(instances, tag_name, tag_value) do
@@ -209,17 +221,27 @@ defmodule DeployEx.AwsMachine do
   """
   def find_jump_server(project_name, opts \\ []) do
     with {:ok, instances} <- DeployEx.AwsMachine.fetch_instance_groups(project_name, opts) do
-      server_ips = Enum.flat_map(instances, fn {name, instances} ->
-        Enum.map(instances, fn %{ip: ip, ipv6: ipv6, name: server_name} -> {ip, ipv6, "#{name} (#{server_name})"} end)
-      end)
+      server_ips =
+        Enum.flat_map(instances, fn {name, instances} ->
+          Enum.map(instances, fn %{ip: ip, ipv6: ipv6, name: server_name} ->
+            {ip, ipv6, "#{name} (#{server_name})"}
+          end)
+        end)
 
       case server_ips do
-        [{ip, ipv6, _}] -> {:ok, {ip, ipv6}}  # Single server case
+        # Single server case
+        [{ip, ipv6, _}] ->
+          {:ok, {ip, ipv6}}
+
         servers when servers !== [] ->
-          [choice] = DeployExHelpers.prompt_for_choice(Enum.map(servers, fn {_, _, name} -> name end))
+          [choice] =
+            DeployExHelpers.prompt_for_choice(Enum.map(servers, fn {_, _, name} -> name end))
+
           {ip, ipv6, _} = Enum.find(servers, fn {_, _, name} -> name === choice end)
           {:ok, {ip, ipv6}}
-        _ -> {:error, ErrorMessage.not_found("No jump servers found")}
+
+        _ ->
+          {:error, ErrorMessage.not_found("No jump servers found")}
       end
     end
   end
@@ -228,34 +250,41 @@ defmodule DeployEx.AwsMachine do
     resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
 
     with {:ok, instances} <- fetch_instances_by_tag("Group", resource_group) do
-      {:ok, instances
-        |> Stream.map(fn instance_data ->
-          tags = get_instance_tags(instance_data)
+      {:ok,
+       instances
+       |> Stream.map(fn instance_data ->
+         tags = get_instance_tags(instance_data)
 
-          instance_data
-            |> Map.put("InstanceGroupTag", tags["InstanceGroup"])
-            |> Map.put("NameTag", tags["Name"])
-            |> Map.put("QaNodeTag", tags["QaNode"])
-        end)
-        |> Stream.reject(&is_nil(&1["InstanceGroupTag"]))
-        |> Stream.filter(&(&1["instanceState"]["name"] === "running"))
-        |> Enum.group_by(&(&1["InstanceGroupTag"]), &%{
-          name: &1["NameTag"],
-          ip: &1["ipAddress"],
-          ipv6: &1["ipv6Address"],
-          qa_node?: &1["QaNodeTag"] === "true"
-        })}
+         instance_data
+         |> Map.put("InstanceGroupTag", tags["InstanceGroup"])
+         |> Map.put("NameTag", tags["Name"])
+         |> Map.put("QaNodeTag", tags["QaNode"])
+       end)
+       |> Stream.reject(&is_nil(&1["InstanceGroupTag"]))
+       |> Stream.filter(&(&1["instanceState"]["name"] === "running"))
+       |> Enum.group_by(
+         & &1["InstanceGroupTag"],
+         &%{
+           name: &1["NameTag"],
+           ip: &1["ipAddress"],
+           ipv6: &1["ipv6Address"],
+           qa_node?: &1["QaNodeTag"] === "true"
+         }
+       )}
     end
   end
 
   def find_instance_details(project_name, app_name, opts \\ []) do
     with {:ok, instance_groups} <- fetch_instance_groups(project_name, opts) do
-      case Enum.find_value(instance_groups, fn {group, values} -> if group =~ app_name, do: values end) do
+      case Enum.find_value(instance_groups, fn {group, values} ->
+             if group =~ app_name, do: values
+           end) do
         nil ->
-          {:error, ErrorMessage.not_found(
-            "no app names found with #{app_name}",
-            %{app_names: Map.keys(instance_groups)}
-          )}
+          {:error,
+           ErrorMessage.not_found(
+             "no app names found with #{app_name}",
+             %{app_names: Map.keys(instance_groups)}
+           )}
 
         instances ->
           instances =
@@ -273,9 +302,7 @@ defmodule DeployEx.AwsMachine do
   def find_instance_ips(project_name, app_name, opts \\ []) do
     case find_instance_details(project_name, app_name, opts) do
       {:ok, [%{ip: ip, ipv6: ipv6}]} -> {:ok, [ipv6 || ip]}
-
       {:ok, instances} -> {:ok, Enum.map(instances, &(&1[:ipv6] || &1[:ip]))}
-
       e -> e
     end
   end
@@ -284,23 +311,25 @@ defmodule DeployEx.AwsMachine do
     resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
 
     with {:ok, instances} <- fetch_instances_by_tag("Group", resource_group) do
-      qa_ips = instances
-      |> Enum.filter(&instance_running_or_pending?/1)
-      |> Enum.filter(&qa_node?/1)
-      |> maybe_filter_by_app_name(app_name)
-      |> Enum.map(fn instance ->
-        tags = get_instance_tags(instance)
-        name = tags["Name"]
-        ip = instance["ipv6Address"] || instance["ipAddress"]
-        {name, ip}
-      end)
-      |> Enum.reject(fn {_, ip} -> is_nil(ip) end)
+      qa_ips =
+        instances
+        |> Enum.filter(&instance_running_or_pending?/1)
+        |> Enum.filter(&qa_node?/1)
+        |> maybe_filter_by_app_name(app_name)
+        |> Enum.map(fn instance ->
+          tags = get_instance_tags(instance)
+          name = tags["Name"]
+          ip = instance["ipv6Address"] || instance["ipAddress"]
+          {name, ip}
+        end)
+        |> Enum.reject(fn {_, ip} -> is_nil(ip) end)
 
       {:ok, qa_ips}
     end
   end
 
   defp maybe_filter_by_app_name(instances, nil), do: instances
+
   defp maybe_filter_by_app_name(instances, app_name) do
     Enum.filter(instances, fn instance ->
       tags = get_instance_tags(instance)
@@ -328,10 +357,11 @@ defmodule DeployEx.AwsMachine do
     all_filters = tag_filters ++ resource_group_filter(opts)
 
     with {:ok, instances} <- fetch_instances_by_tag(region, "ManagedBy", "DeployEx") do
-      incomplete = instances
-      |> filter_instances_by_tags(all_filters)
-      |> Enum.filter(&instance_running_or_pending?/1)
-      |> Enum.reject(&setup_complete?/1)
+      incomplete =
+        instances
+        |> filter_instances_by_tags(all_filters)
+        |> Enum.filter(&instance_running_or_pending?/1)
+        |> Enum.reject(&setup_complete?/1)
 
       {:ok, incomplete}
     end
@@ -342,10 +372,11 @@ defmodule DeployEx.AwsMachine do
     all_filters = tag_filters ++ resource_group_filter(opts)
 
     with {:ok, instances} <- fetch_instances_by_tag(region, "ManagedBy", "DeployEx") do
-      complete = instances
-      |> filter_instances_by_tags(all_filters)
-      |> Enum.filter(&instance_running_or_pending?/1)
-      |> Enum.filter(&setup_complete?/1)
+      complete =
+        instances
+        |> filter_instances_by_tags(all_filters)
+        |> Enum.filter(&instance_running_or_pending?/1)
+        |> Enum.filter(&setup_complete?/1)
 
       {:ok, complete}
     end
@@ -403,6 +434,7 @@ defmodule DeployEx.AwsMachine do
   end
 
   defp filter_instances_by_tags(instances, []), do: instances
+
   defp filter_instances_by_tags(instances, tag_filters) do
     Enum.filter(instances, fn instance ->
       Enum.all?(tag_filters, fn {tag_name, tag_value} ->
@@ -421,22 +453,24 @@ defmodule DeployEx.AwsMachine do
     with {:ok, instances} <- fetch_instances_by_tag(region, "ManagedBy", "DeployEx") do
       filtered = filter_instances_by_tags(instances, resource_group_filter(opts))
 
-      instance_nodes = filtered
-      |> Enum.reject(&instance_terminated?/1)
-      |> Enum.map(fn instance ->
-        tags = get_instance_tags(instance)
-        instance_group = tags["InstanceGroup"]
-        name = tags["Name"]
-        node_num = parse_node_number_from_name(name)
-        {instance_group, node_num}
-      end)
-      |> Enum.reject(fn {group, _} -> is_nil(group) end)
+      instance_nodes =
+        filtered
+        |> Enum.reject(&instance_terminated?/1)
+        |> Enum.map(fn instance ->
+          tags = get_instance_tags(instance)
+          instance_group = tags["InstanceGroup"]
+          name = tags["Name"]
+          node_num = parse_node_number_from_name(name)
+          {instance_group, node_num}
+        end)
+        |> Enum.reject(fn {group, _} -> is_nil(group) end)
 
       {:ok, instance_nodes}
     end
   end
 
   defp parse_node_number_from_name(nil), do: nil
+
   defp parse_node_number_from_name(name) do
     case Regex.run(~r/-(\d+)$/, name) do
       [_, num] -> String.to_integer(num)

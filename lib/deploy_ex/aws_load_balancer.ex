@@ -40,9 +40,11 @@ defmodule DeployEx.AwsLoadBalancer do
 
   def find_target_groups_by_app(app_name, opts \\ []) do
     with {:ok, target_groups} <- describe_target_groups(opts) do
-      filtered = Enum.filter(target_groups, fn tg ->
-        String.contains?(tg.name, app_name) or String.contains?(tg.name, String.replace(app_name, "_", "-"))
-      end)
+      filtered =
+        Enum.filter(target_groups, fn tg ->
+          String.contains?(tg.name, app_name) or
+            String.contains?(tg.name, String.replace(app_name, "_", "-"))
+        end)
 
       {:ok, filtered}
     end
@@ -87,108 +89,134 @@ defmodule DeployEx.AwsLoadBalancer do
   defp handle_register_response({:ok, _}), do: :ok
 
   defp handle_register_response({:error, {:http_error, status_code, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error registering target",
-      %{error_body: body}
-    ])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+       "error registering target",
+       %{error_body: body}
+     ])}
   end
 
   defp handle_deregister_response({:ok, _}), do: :ok
 
   defp handle_deregister_response({:error, {:http_error, status_code, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error deregistering target",
-      %{error_body: body}
-    ])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+       "error deregistering target",
+       %{error_body: body}
+     ])}
   end
 
   defp handle_health_response({:ok, %{body: body}}) when is_binary(body) do
     case XmlToMap.naive_map(body) do
-      %{"DescribeTargetHealthResponse" => %{"DescribeTargetHealthResult" => %{"TargetHealthDescriptions" => %{"member" => members}}}} ->
-        targets = members
-        |> List.wrap()
-        |> Enum.map(&parse_target_health/1)
+      %{
+        "DescribeTargetHealthResponse" => %{
+          "DescribeTargetHealthResult" => %{"TargetHealthDescriptions" => %{"member" => members}}
+        }
+      } ->
+        targets =
+          members
+          |> List.wrap()
+          |> Enum.map(&parse_target_health/1)
 
         {:ok, targets}
 
-      %{"DescribeTargetHealthResponse" => %{"DescribeTargetHealthResult" => %{"TargetHealthDescriptions" => nil}}} ->
+      %{
+        "DescribeTargetHealthResponse" => %{
+          "DescribeTargetHealthResult" => %{"TargetHealthDescriptions" => nil}
+        }
+      } ->
         {:ok, []}
 
       structure ->
-        {:error, ErrorMessage.bad_request(
-          "couldn't parse target health response",
-          %{structure: structure}
-        )}
+        {:error,
+         ErrorMessage.bad_request(
+           "couldn't parse target health response",
+           %{structure: structure}
+         )}
     end
   end
 
   defp handle_health_response({:ok, %{body: %{target_health_descriptions: descriptions}}}) do
-    targets = descriptions
-    |> List.wrap()
-    |> Enum.flat_map(fn desc ->
-      Enum.map(desc[:targets] || [], fn target ->
-        %{
-          id: target[:id],
-          port: target[:port] |> parse_integer(),
-          state: desc[:target_health],
-          reason: desc[:target_health_reason],
-          description: desc[:target_health_description]
-        }
+    targets =
+      descriptions
+      |> List.wrap()
+      |> Enum.flat_map(fn desc ->
+        Enum.map(desc[:targets] || [], fn target ->
+          %{
+            id: target[:id],
+            port: target[:port] |> parse_integer(),
+            state: desc[:target_health],
+            reason: desc[:target_health_reason],
+            description: desc[:target_health_description]
+          }
+        end)
       end)
-    end)
 
     {:ok, targets}
   end
 
   defp handle_health_response({:error, {:http_error, status_code, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error describing target health",
-      %{error_body: body}
-    ])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+       "error describing target health",
+       %{error_body: body}
+     ])}
   end
 
   defp handle_target_groups_response({:ok, %{body: body}}) when is_binary(body) do
     case XmlToMap.naive_map(body) do
-      %{"DescribeTargetGroupsResponse" => %{"DescribeTargetGroupsResult" => %{"TargetGroups" => %{"member" => members}}}} ->
-        target_groups = members
-        |> List.wrap()
-        |> Enum.map(&parse_target_group/1)
+      %{
+        "DescribeTargetGroupsResponse" => %{
+          "DescribeTargetGroupsResult" => %{"TargetGroups" => %{"member" => members}}
+        }
+      } ->
+        target_groups =
+          members
+          |> List.wrap()
+          |> Enum.map(&parse_target_group/1)
 
         {:ok, target_groups}
 
-      %{"DescribeTargetGroupsResponse" => %{"DescribeTargetGroupsResult" => %{"TargetGroups" => nil}}} ->
+      %{
+        "DescribeTargetGroupsResponse" => %{
+          "DescribeTargetGroupsResult" => %{"TargetGroups" => nil}
+        }
+      } ->
         {:ok, []}
 
       structure ->
-        {:error, ErrorMessage.bad_request(
-          "couldn't parse target groups response",
-          %{structure: structure}
-        )}
+        {:error,
+         ErrorMessage.bad_request(
+           "couldn't parse target groups response",
+           %{structure: structure}
+         )}
     end
   end
 
   defp handle_target_groups_response({:ok, %{body: %{target_groups: target_groups}}}) do
-    parsed = Enum.map(target_groups, fn tg ->
-      %{
-        arn: tg[:target_group_arn],
-        name: tg[:target_group_name],
-        port: tg[:port] |> parse_integer(),
-        protocol: tg[:protocol],
-        vpc_id: tg[:vpc_id],
-        health_check_path: tg[:health_check_path],
-        health_check_port: tg[:health_check_port],
-        health_check_protocol: tg[:health_check_protocol]
-      }
-    end)
+    parsed =
+      Enum.map(target_groups, fn tg ->
+        %{
+          arn: tg[:target_group_arn],
+          name: tg[:target_group_name],
+          port: tg[:port] |> parse_integer(),
+          protocol: tg[:protocol],
+          vpc_id: tg[:vpc_id],
+          health_check_path: tg[:health_check_path],
+          health_check_port: tg[:health_check_port],
+          health_check_protocol: tg[:health_check_protocol]
+        }
+      end)
 
     {:ok, parsed}
   end
 
   defp handle_target_groups_response({:error, {:http_error, status_code, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error describing target groups",
-      %{error_body: body}
-    ])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+       "error describing target groups",
+       %{error_body: body}
+     ])}
   end
 
   defp parse_target_health(member) do

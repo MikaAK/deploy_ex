@@ -1,13 +1,13 @@
 defmodule DeployEx.K6Runner do
   @type t :: %__MODULE__{
-    instance_id: String.t() | nil,
-    public_ip: String.t() | nil,
-    ipv6_address: String.t() | nil,
-    private_ip: String.t() | nil,
-    instance_name: String.t() | nil,
-    state: String.t() | nil,
-    created_at: String.t() | nil
-  }
+          instance_id: String.t() | nil,
+          public_ip: String.t() | nil,
+          ipv6_address: String.t() | nil,
+          private_ip: String.t() | nil,
+          instance_name: String.t() | nil,
+          state: String.t() | nil,
+          created_at: String.t() | nil
+        }
 
   defstruct [
     :instance_id,
@@ -115,11 +115,13 @@ defmodule DeployEx.K6Runner do
     region = opts[:region] || DeployEx.Config.aws_region()
     resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
 
-    ExAws.EC2.describe_instances(filters: [
-      "tag:K6Runner": ["true"],
-      "tag:Group": [resource_group],
-      "instance-state-name": ["running", "pending", "stopping", "stopped"]
-    ])
+    ExAws.EC2.describe_instances(
+      filters: [
+        "tag:K6Runner": ["true"],
+        "tag:Group": [resource_group],
+        "instance-state-name": ["running", "pending", "stopping", "stopped"]
+      ]
+    )
     |> ExAws.request(region: region)
     |> handle_describe_instances()
   end
@@ -129,11 +131,12 @@ defmodule DeployEx.K6Runner do
   def verify_instance_exists(%__MODULE__{instance_id: instance_id} = runner) do
     case DeployEx.AwsMachine.find_instances_by_id([instance_id]) do
       {:ok, [instance]} ->
-        updated = %{runner |
-          public_ip: instance["ipAddress"],
-          ipv6_address: instance["ipv6Address"],
-          private_ip: instance["privateIpAddress"],
-          state: instance["instanceState"]["name"]
+        updated = %{
+          runner
+          | public_ip: instance["ipAddress"],
+            ipv6_address: instance["ipv6Address"],
+            private_ip: instance["privateIpAddress"],
+            state: instance["instanceState"]["name"]
         }
 
         {:ok, updated}
@@ -187,13 +190,14 @@ defmodule DeployEx.K6Runner do
     |> ExAws.request(region: region)
     |> case do
       {:ok, %{body: %{contents: contents}}} when is_list(contents) ->
-        runners = Enum.map(contents, fn content ->
-          case ExAws.S3.get_object(bucket, content.key) |> ExAws.request(region: region) do
-            {:ok, %{body: body}} -> from_json(body)
-            _ -> nil
-          end
-        end)
-        |> Enum.reject(&is_nil/1)
+        runners =
+          Enum.map(contents, fn content ->
+            case ExAws.S3.get_object(bucket, content.key) |> ExAws.request(region: region) do
+              {:ok, %{body: body}} -> from_json(body)
+              _ -> nil
+            end
+          end)
+          |> Enum.reject(&is_nil/1)
 
         {:ok, runners}
 
@@ -201,7 +205,8 @@ defmodule DeployEx.K6Runner do
         {:ok, []}
 
       {:error, error} ->
-        {:error, ErrorMessage.failed_dependency("failed to list k6 runner states", %{error: error})}
+        {:error,
+         ErrorMessage.failed_dependency("failed to list k6 runner states", %{error: error})}
     end
   end
 
@@ -297,34 +302,43 @@ defmodule DeployEx.K6Runner do
 
   defp handle_run_instances_response({:ok, %{body: body}}) do
     case XmlToMap.naive_map(body) do
-      %{"RunInstancesResponse" => %{"instancesSet" => %{"item" => %{"instanceId" => instance_id}}}} ->
+      %{
+        "RunInstancesResponse" => %{"instancesSet" => %{"item" => %{"instanceId" => instance_id}}}
+      } ->
         {:ok, instance_id}
 
-      %{"RunInstancesResponse" => %{"instancesSet" => %{"item" => [%{"instanceId" => instance_id} | _]}}} ->
+      %{
+        "RunInstancesResponse" => %{
+          "instancesSet" => %{"item" => [%{"instanceId" => instance_id} | _]}
+        }
+      } ->
         {:ok, instance_id}
 
       structure ->
-        {:error, ErrorMessage.bad_request(
-          "couldn't parse run instances response from aws",
-          %{structure: structure}
-        )}
+        {:error,
+         ErrorMessage.bad_request(
+           "couldn't parse run instances response from aws",
+           %{structure: structure}
+         )}
     end
   end
 
   defp handle_run_instances_response({:error, {:http_error, status_code, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error creating k6 runner instance",
-      %{error_body: body}
-    ])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+       "error creating k6 runner instance",
+       %{error_body: body}
+     ])}
   end
 
   defp handle_terminate_response({:ok, _}), do: :ok
 
   defp handle_terminate_response({:error, {:http_error, status_code, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error terminating k6 runner instance",
-      %{error_body: body}
-    ])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+       "error terminating k6 runner instance",
+       %{error_body: body}
+     ])}
   end
 
   defp handle_describe_instances({:ok, %{body: body}}) do
@@ -341,10 +355,11 @@ defmodule DeployEx.K6Runner do
   end
 
   defp handle_describe_instances({:error, {:http_error, status, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), [
-      "error fetching k6 runner instances",
-      %{body: body}
-    ])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), [
+       "error fetching k6 runner instances",
+       %{body: body}
+     ])}
   end
 
   defp extract_runners(reservations) when is_list(reservations) do
@@ -394,7 +409,11 @@ defmodule DeployEx.K6Runner do
   end
 
   defp handle_get_response({:error, {:http_error, status, reason}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["aws failure", %{reason: reason}])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), [
+       "aws failure",
+       %{reason: reason}
+     ])}
   end
 
   defp handle_get_response({:error, error}) when is_binary(error) do
@@ -404,7 +423,11 @@ defmodule DeployEx.K6Runner do
   defp handle_put_response({:ok, _}), do: {:ok, :saved}
 
   defp handle_put_response({:error, {:http_error, status, reason}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["aws failure", %{reason: reason}])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), [
+       "aws failure",
+       %{reason: reason}
+     ])}
   end
 
   defp handle_put_response({:error, error}) when is_binary(error) do
@@ -419,7 +442,11 @@ defmodule DeployEx.K6Runner do
   defp handle_delete_response({:error, {:http_error, 404, _}}), do: :ok
 
   defp handle_delete_response({:error, {:http_error, status, reason}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["aws failure", %{reason: reason}])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), [
+       "aws failure",
+       %{reason: reason}
+     ])}
   end
 
   defp handle_delete_response({:error, error}) when is_binary(error) do

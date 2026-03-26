@@ -58,14 +58,15 @@ defmodule Mix.Tasks.DeployEx.Qa.Cleanup do
   end
 
   defp parse_args(args) do
-    {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quiet],
-      switches: [
-        dry_run: :boolean,
-        force: :boolean,
-        quiet: :boolean
-      ]
-    )
+    {opts, _extra_args} =
+      OptionParser.parse!(args,
+        aliases: [f: :force, q: :quiet],
+        switches: [
+          dry_run: :boolean,
+          force: :boolean,
+          quiet: :boolean
+        ]
+      )
 
     opts
   end
@@ -73,13 +74,14 @@ defmodule Mix.Tasks.DeployEx.Qa.Cleanup do
   defp find_s3_orphans(opts) do
     case DeployEx.QaNode.list_all_qa_states(opts) do
       {:ok, app_names} ->
-        orphans = Enum.flat_map(app_names, fn app_name ->
-          case DeployEx.QaNode.fetch_all_qa_states_for_app(app_name, opts) do
-            {:ok, states} ->
-              Enum.reduce(states, [], fn state, acc ->
-                if is_nil(state.instance_id) do
-                  acc
-                else
+        orphans =
+          Enum.flat_map(app_names, fn app_name ->
+            case DeployEx.QaNode.fetch_all_qa_states_for_app(app_name, opts) do
+              {:ok, states} ->
+                Enum.reduce(states, [], fn state, acc ->
+                  if is_nil(state.instance_id) do
+                    acc
+                  else
                     case DeployEx.AwsMachine.find_instances_by_id([state.instance_id]) do
                       {:ok, [instance]} ->
                         if instance["instanceState"]["name"] === "terminated" do
@@ -94,13 +96,13 @@ defmodule Mix.Tasks.DeployEx.Qa.Cleanup do
                       _ ->
                         acc
                     end
-                end
-              end)
+                  end
+                end)
 
-            _ ->
-              []
-          end
-        end)
+              _ ->
+                []
+            end
+          end)
 
         {:ok, orphans}
 
@@ -112,30 +114,31 @@ defmodule Mix.Tasks.DeployEx.Qa.Cleanup do
   defp find_instance_orphans(opts) do
     case DeployEx.AwsMachine.find_instances_by_tags([{"QaNode", "true"}], opts) do
       {:ok, instances} ->
-        orphans = instances
-        |> Enum.reject(fn instance -> instance["instanceState"]["name"] === "terminated" end)
-        |> Enum.reduce([], fn instance, acc ->
-          tags = get_instance_tags(instance)
-          instance_group = tags["InstanceGroup"]
-          instance_id = instance["instanceId"]
+        orphans =
+          instances
+          |> Enum.reject(fn instance -> instance["instanceState"]["name"] === "terminated" end)
+          |> Enum.reduce([], fn instance, acc ->
+            tags = get_instance_tags(instance)
+            instance_group = tags["InstanceGroup"]
+            instance_id = instance["instanceId"]
 
-          app_name = extract_app_name_from_instance_group(instance_group)
+            app_name = extract_app_name_from_instance_group(instance_group)
 
-          if app_name do
-            case DeployEx.QaNode.fetch_qa_state(app_name, instance_id, opts) do
-              {:ok, nil} ->
-                [instance | acc]
+            if app_name do
+              case DeployEx.QaNode.fetch_qa_state(app_name, instance_id, opts) do
+                {:ok, nil} ->
+                  [instance | acc]
 
-              {:ok, _state} ->
-                acc
+                {:ok, _state} ->
+                  acc
 
-              _ ->
-                acc
+                _ ->
+                  acc
+              end
+            else
+              [instance | acc]
             end
-          else
-            [instance | acc]
-          end
-        end)
+          end)
 
         {:ok, orphans}
 
@@ -148,10 +151,12 @@ defmodule Mix.Tasks.DeployEx.Qa.Cleanup do
   end
 
   defp extract_app_name_from_instance_group(nil), do: nil
+
   defp extract_app_name_from_instance_group(instance_group) do
     case String.split(instance_group, "_") do
       parts when length(parts) >= 2 ->
         parts |> Enum.drop(-1) |> Enum.join("_")
+
       _ ->
         instance_group
     end
@@ -175,13 +180,28 @@ defmodule Mix.Tasks.DeployEx.Qa.Cleanup do
     Mix.shell().info(String.duplicate("=", 40))
 
     unless Enum.empty?(s3_orphans) do
-      Mix.shell().info([:yellow, "\nS3 State Orphans ", :reset, "(instance terminated/not found):"])
+      Mix.shell().info([
+        :yellow,
+        "\nS3 State Orphans ",
+        :reset,
+        "(instance terminated/not found):"
+      ])
 
       Enum.each(s3_orphans, fn {app_name, state, reason} ->
         Mix.shell().info([
-          "  - ", :cyan, app_name, :reset,
-          ": ", :white, state.instance_id || "unknown", :reset,
-          " (", :red, reason, :reset, ")"
+          "  - ",
+          :cyan,
+          app_name,
+          :reset,
+          ": ",
+          :white,
+          state.instance_id || "unknown",
+          :reset,
+          " (",
+          :red,
+          reason,
+          :reset,
+          ")"
         ])
       end)
     end
@@ -195,9 +215,19 @@ defmodule Mix.Tasks.DeployEx.Qa.Cleanup do
         state_color = if state_name === "running", do: :green, else: :yellow
 
         Mix.shell().info([
-          "  - ", :white, instance["instanceId"], :reset,
-          " (", :cyan, tags["Name"] || "unnamed", :reset,
-          ", ", state_color, state_name, :reset, ")"
+          "  - ",
+          :white,
+          instance["instanceId"],
+          :reset,
+          " (",
+          :cyan,
+          tags["Name"] || "unnamed",
+          :reset,
+          ", ",
+          state_color,
+          state_name,
+          :reset,
+          ")"
         ])
       end)
     end
@@ -209,7 +239,13 @@ defmodule Mix.Tasks.DeployEx.Qa.Cleanup do
     end
 
     unless Enum.empty?(instance_orphans) do
-      Mix.shell().info(["  - ", :red, "Terminate ", :reset, "#{length(instance_orphans)} orphaned instance(s)"])
+      Mix.shell().info([
+        "  - ",
+        :red,
+        "Terminate ",
+        :reset,
+        "#{length(instance_orphans)} orphaned instance(s)"
+      ])
     end
   end
 
@@ -226,11 +262,16 @@ defmodule Mix.Tasks.DeployEx.Qa.Cleanup do
       case DeployEx.QaNode.delete_qa_state(state, opts) do
         :ok ->
           unless opts[:quiet] do
-            Mix.shell().info([:green, "  ✓ Deleted S3 state for #{app_name} (#{state.instance_id})"])
+            Mix.shell().info([
+              :green,
+              "  ✓ Deleted S3 state for #{app_name} (#{state.instance_id})"
+            ])
           end
 
         {:error, error} ->
-          Mix.shell().error("  ✗ Failed to delete S3 state for #{app_name}: #{ErrorMessage.to_string(error)}")
+          Mix.shell().error(
+            "  ✗ Failed to delete S3 state for #{app_name}: #{ErrorMessage.to_string(error)}"
+          )
       end
     end)
   end
@@ -246,7 +287,9 @@ defmodule Mix.Tasks.DeployEx.Qa.Cleanup do
           end
 
         {:error, error} ->
-          Mix.shell().error("  ✗ Failed to terminate #{instance_id}: #{ErrorMessage.to_string(error)}")
+          Mix.shell().error(
+            "  ✗ Failed to terminate #{instance_id}: #{ErrorMessage.to_string(error)}"
+          )
       end
     end)
   end

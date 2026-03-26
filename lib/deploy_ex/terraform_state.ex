@@ -90,7 +90,8 @@ defmodule DeployEx.TerraformState do
           end
         end)
 
-      _ -> {:error, "Invalid Terraform state format"}
+      _ ->
+        {:error, "Invalid Terraform state format"}
     end
   end
 
@@ -107,6 +108,7 @@ defmodule DeployEx.TerraformState do
         Enum.find_value(resources, {:error, "Resource not found"}, fn resource ->
           if resource["type"] == resource_type do
             tags = get_in(resource, ["instances", Access.at(0), "attributes", "tags"]) || %{}
+
             if tags[tag_key] == tag_value do
               get_in(resource, ["instances", Access.at(0), "attributes", attribute])
               |> case do
@@ -117,7 +119,8 @@ defmodule DeployEx.TerraformState do
           end
         end)
 
-      _ -> {:error, "Invalid Terraform state format"}
+      _ ->
+        {:error, "Invalid Terraform state format"}
     end
   end
 
@@ -140,21 +143,24 @@ defmodule DeployEx.TerraformState do
   defp find_instance_display_name(state, app_name) do
     case get_in(state, ["resources"]) do
       resources when is_list(resources) ->
-        result = Enum.find_value(resources, fn resource ->
-          if resource["type"] === "aws_instance" and resource["module"] =~ app_name do
-            instances = resource["instances"] || []
-            Enum.find_value(instances, fn instance ->
-              get_in(instance, ["attributes", "tags", "Name"])
-            end)
-          end
-        end)
+        result =
+          Enum.find_value(resources, fn resource ->
+            if resource["type"] === "aws_instance" and resource["module"] =~ app_name do
+              instances = resource["instances"] || []
+
+              Enum.find_value(instances, fn instance ->
+                get_in(instance, ["attributes", "tags", "Name"])
+              end)
+            end
+          end)
 
         case result do
           nil -> {:error, "Instance not found for app: #{app_name}"}
           name -> {:ok, extract_base_name(name)}
         end
 
-      _ -> {:error, "Invalid Terraform state format"}
+      _ ->
+        {:error, "Invalid Terraform state format"}
     end
   end
 

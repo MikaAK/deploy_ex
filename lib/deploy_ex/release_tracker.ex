@@ -45,12 +45,14 @@ defmodule DeployEx.ReleaseTracker do
     region = opts[:region] || DeployEx.Config.aws_region()
     bucket = opts[:bucket] || DeployEx.Config.aws_release_bucket()
 
-    existing_history = case fetch_release_history(app_name, opts) do
-      {:ok, history} -> history
-      {:error, _} -> ""
-    end
+    existing_history =
+      case fetch_release_history(app_name, opts) do
+        {:ok, history} -> history
+        {:error, _} -> ""
+      end
 
-    new_history = "#{String.trim(existing_history)}\n#{release_name}\n"
+    new_history =
+      "#{String.trim(existing_history)}\n#{release_name}\n"
       |> String.trim_leading("\n")
 
     bucket
@@ -61,7 +63,8 @@ defmodule DeployEx.ReleaseTracker do
 
   def list_release_history(app_name, limit \\ 25, opts \\ []) do
     with {:ok, history} <- fetch_release_history(app_name, opts) do
-      releases = history
+      releases =
+        history
         |> String.split("\n", trim: true)
         |> Enum.reverse()
         |> Enum.take(limit)
@@ -77,7 +80,11 @@ defmodule DeployEx.ReleaseTracker do
   end
 
   defp handle_get_response({:error, {:http_error, status, reason}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["aws failure", %{reason: reason}])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), [
+       "aws failure",
+       %{reason: reason}
+     ])}
   end
 
   defp handle_get_response({:error, error}) when is_binary(error) do
@@ -87,7 +94,11 @@ defmodule DeployEx.ReleaseTracker do
   defp handle_put_response({:ok, _}), do: {:ok, :uploaded}
 
   defp handle_put_response({:error, {:http_error, status, reason}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["aws failure", %{reason: reason}])}
+    {:error,
+     apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), [
+       "aws failure",
+       %{reason: reason}
+     ])}
   end
 
   defp handle_put_response({:error, error}) when is_binary(error) do
@@ -106,10 +117,11 @@ defmodule DeployEx.ReleaseTracker do
   end
 
   defp build_release_state_prefix(opts) do
-    release_prefix = case Keyword.get(opts, :release_prefix) do
-      prefix when is_binary(prefix) and prefix !== "" -> prefix
-      _ -> if Keyword.get(opts, :qa_release) === true, do: "qa", else: nil
-    end
+    release_prefix =
+      case Keyword.get(opts, :release_prefix) do
+        prefix when is_binary(prefix) and prefix !== "" -> prefix
+        _ -> if Keyword.get(opts, :qa_release) === true, do: "qa", else: nil
+      end
 
     case release_prefix do
       nil -> @release_state_prefix

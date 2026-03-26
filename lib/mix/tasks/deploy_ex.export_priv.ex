@@ -45,10 +45,19 @@ defmodule Mix.Tasks.DeployEx.ExportPriv do
           hash = DeployEx.PrivManifest.hash_content(content)
 
           if File.exists?(dest_path) and not opts[:force] do
-            Mix.shell().info([:yellow, "* skipping ", :reset, dest_path, " (exists, use --force to overwrite)"])
+            Mix.shell().info([
+              :yellow,
+              "* skipping ",
+              :reset,
+              dest_path,
+              " (exists, use --force to overwrite)"
+            ])
           else
             File.mkdir_p!(Path.dirname(dest_path))
-            DeployExHelpers.write_file(dest_path, content, [{:message, [:green, "* copying ", :reset, dest_path]} | opts])
+
+            DeployExHelpers.write_file(dest_path, content, [
+              {:message, [:green, "* copying ", :reset, dest_path]} | opts
+            ])
           end
 
           DeployEx.PrivManifest.put_file(acc, relative_path, hash)
@@ -57,7 +66,12 @@ defmodule Mix.Tasks.DeployEx.ExportPriv do
       DeployEx.PrivManifest.write(deploy_folder, manifest)
 
       unless opts[:quiet] do
-        Mix.shell().info([:green, "* manifest written to ", :reset, Path.join(deploy_folder, ".deploy_ex_manifest.exs")])
+        Mix.shell().info([
+          :green,
+          "* manifest written to ",
+          :reset,
+          Path.join(deploy_folder, ".deploy_ex_manifest.exs")
+        ])
       end
     else
       {:error, e} -> Mix.raise(to_string(e))
@@ -72,10 +86,11 @@ defmodule Mix.Tasks.DeployEx.ExportPriv do
   end
 
   defp parse_args(args) do
-    {opts, _} = OptionParser.parse!(args,
-      aliases: [f: :force, q: :quiet],
-      switches: [force: :boolean, quiet: :boolean]
-    )
+    {opts, _} =
+      OptionParser.parse!(args,
+        aliases: [f: :force, q: :quiet],
+        switches: [force: :boolean, quiet: :boolean]
+      )
 
     opts
   end

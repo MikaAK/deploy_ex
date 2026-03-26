@@ -41,15 +41,16 @@ defmodule Mix.Tasks.DeployEx.StopApp do
 
     with {:ok, app_name} <- DeployExHelpers.find_project_name(node_name_args) do
       steps = [
-        {"Stopping #{app_name} systemd service", fn ->
-          DeployExHelpers.run_ssh_command(
-            opts[:directory],
-            opts[:pem],
-            app_name,
-            DeployEx.SystemDController.stop_service(app_name),
-            machine_opts
-          )
-        end}
+        {"Stopping #{app_name} systemd service",
+         fn ->
+           DeployExHelpers.run_ssh_command(
+             opts[:directory],
+             opts[:pem],
+             app_name,
+             DeployEx.SystemDController.stop_service(app_name),
+             machine_opts
+           )
+         end}
       ]
 
       case DeployEx.TUI.Progress.run_steps(steps, title: "Stop #{app_name}") do

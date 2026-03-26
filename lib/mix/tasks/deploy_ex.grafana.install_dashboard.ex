@@ -98,7 +98,16 @@ defmodule Mix.Tasks.DeployEx.Grafana.InstallDashboard do
 
   defp download_from_grafana_com(id, opts) do
     unless opts[:quiet] do
-      Mix.shell().info([:faint, "Downloading dashboard ", :reset, :cyan, "#{id}", :reset, :faint, " from grafana.com..."])
+      Mix.shell().info([
+        :faint,
+        "Downloading dashboard ",
+        :reset,
+        :cyan,
+        "#{id}",
+        :reset,
+        :faint,
+        " from grafana.com..."
+      ])
     end
 
     case DeployEx.Grafana.download_dashboard(id) do
@@ -125,16 +134,17 @@ defmodule Mix.Tasks.DeployEx.Grafana.InstallDashboard do
   end
 
   defp install_dashboard(dashboard_json, opts) do
-    install_opts = [
-      grafana_ip: opts[:grafana_ip],
-      grafana_port: opts[:grafana_port],
-      user: opts[:user],
-      password: opts[:password],
-      resource_group: opts[:resource_group],
-      pem: opts[:pem],
-      terraform_directory: @terraform_default_path
-    ]
-    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    install_opts =
+      [
+        grafana_ip: opts[:grafana_ip],
+        grafana_port: opts[:grafana_port],
+        user: opts[:user],
+        password: opts[:password],
+        resource_group: opts[:resource_group],
+        pem: opts[:pem],
+        terraform_directory: @terraform_default_path
+      ]
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
 
     case DeployEx.Grafana.install_dashboard(dashboard_json, install_opts) do
       {:ok, result} ->
@@ -152,11 +162,25 @@ defmodule Mix.Tasks.DeployEx.Grafana.InstallDashboard do
   defp print_success(result, opts) do
     unless opts[:quiet] do
       Mix.shell().info([
-        :green, "\n✓ Dashboard installed successfully!\n",
-        :reset, "\n",
-        "  Title: ", :cyan, result.title, :reset, "\n",
-        "  UID:   ", :cyan, result.uid || "auto-generated", :reset, "\n",
-        "  URL:   ", :cyan, result.url, :reset, "\n"
+        :green,
+        "\n✓ Dashboard installed successfully!\n",
+        :reset,
+        "\n",
+        "  Title: ",
+        :cyan,
+        result.title,
+        :reset,
+        "\n",
+        "  UID:   ",
+        :cyan,
+        result.uid || "auto-generated",
+        :reset,
+        "\n",
+        "  URL:   ",
+        :cyan,
+        result.url,
+        :reset,
+        "\n"
       ])
     end
   end

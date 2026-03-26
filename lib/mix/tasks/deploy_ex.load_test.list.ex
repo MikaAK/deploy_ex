@@ -40,13 +40,14 @@ defmodule Mix.Tasks.DeployEx.LoadTest.List do
   end
 
   defp parse_args(args) do
-    {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [q: :quiet],
-      switches: [
-        json: :boolean,
-        quiet: :boolean
-      ]
-    )
+    {opts, _extra_args} =
+      OptionParser.parse!(args,
+        aliases: [q: :quiet],
+        switches: [
+          json: :boolean,
+          quiet: :boolean
+        ]
+      )
 
     opts
   end
@@ -54,13 +55,14 @@ defmodule Mix.Tasks.DeployEx.LoadTest.List do
   defp list_runners(opts) do
     case DeployEx.K6Runner.fetch_all_runners(opts) do
       {:ok, runners} ->
-        verified = Enum.map(runners, fn runner ->
-          case DeployEx.K6Runner.verify_instance_exists(runner) do
-            {:ok, verified} when not is_nil(verified) -> verified
-            _ -> nil
-          end
-        end)
-        |> Enum.reject(&is_nil/1)
+        verified =
+          Enum.map(runners, fn runner ->
+            case DeployEx.K6Runner.verify_instance_exists(runner) do
+              {:ok, verified} when not is_nil(verified) -> verified
+              _ -> nil
+            end
+          end)
+          |> Enum.reject(&is_nil/1)
 
         {:ok, verified}
 
@@ -70,9 +72,10 @@ defmodule Mix.Tasks.DeployEx.LoadTest.List do
   end
 
   defp output_runners(runners, %{json: true}) do
-    json = runners
-    |> Enum.map(&runner_to_map/1)
-    |> Jason.encode!(pretty: true)
+    json =
+      runners
+      |> Enum.map(&runner_to_map/1)
+      |> Jason.encode!(pretty: true)
 
     Mix.shell().info(json)
   end
@@ -84,20 +87,36 @@ defmodule Mix.Tasks.DeployEx.LoadTest.List do
     end
 
     Enum.each(runners, fn runner ->
-      state_color = case runner.state do
-        "running" -> :green
-        "stopped" -> :yellow
-        "terminated" -> :red
-        _ -> :reset
-      end
+      state_color =
+        case runner.state do
+          "running" -> :green
+          "stopped" -> :yellow
+          "terminated" -> :red
+          _ -> :reset
+        end
 
       Mix.shell().info([
-        :cyan, runner.instance_name || runner.instance_id, :reset, "\n",
-        "  Instance ID: ", runner.instance_id || "unknown", "\n",
-        "  State:       ", state_color, runner.state || "unknown", :reset, "\n",
-        "  Public IP:   ", runner.public_ip || "N/A", "\n",
-        "  IPv6:        ", runner.ipv6_address || "N/A", "\n",
-        "  Created:     ", runner.created_at || "unknown", "\n"
+        :cyan,
+        runner.instance_name || runner.instance_id,
+        :reset,
+        "\n",
+        "  Instance ID: ",
+        runner.instance_id || "unknown",
+        "\n",
+        "  State:       ",
+        state_color,
+        runner.state || "unknown",
+        :reset,
+        "\n",
+        "  Public IP:   ",
+        runner.public_ip || "N/A",
+        "\n",
+        "  IPv6:        ",
+        runner.ipv6_address || "N/A",
+        "\n",
+        "  Created:     ",
+        runner.created_at || "unknown",
+        "\n"
       ])
     end)
 
