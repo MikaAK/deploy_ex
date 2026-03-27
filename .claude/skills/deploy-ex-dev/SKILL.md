@@ -1,6 +1,6 @@
 ---
 name: deploy-ex-dev
-description: "Use when writing code inside the deploy_ex library itself — adding new Mix tasks, modifying existing tasks, extending AWS modules, working with the template pipeline (priv/ EEx templates), writing tests, or understanding deploy_ex internals. Triggers on: adding a task, new mix task, extend deploy_ex, template pipeline, priv templates, deploy_ex module, writing tests for deploy_ex, how does deploy_ex work internally. Always use this skill when modifying any file in lib/deploy_ex/, lib/mix/tasks/, priv/, or test/ within the deploy_ex repository."
+description: "Use when writing or modifying code inside the deploy_ex library — adding new Mix tasks, modifying existing tasks, extending AWS wrapper modules, adding EEx templates to the priv/ pipeline, writing tests for deploy_ex modules, understanding deploy_ex internals and architecture, adding config keys to DeployEx.Config, registering tasks in the TUI wizard, or adding Ansible roles. This is for CONTRIBUTING to deploy_ex itself, not for running deploy_ex commands operationally. Triggers on: add a mix task, new deploy_ex task, extend AwsAutoscaling, modify UpdateValidator, add terraform template, write test for QaNode, how does change detection work, add --dry-run flag to existing task, add config key, support Mix workspaces, priv template pipeline. Always use when modifying files in lib/deploy_ex/, lib/mix/tasks/, priv/, or test/ within deploy_ex."
 ---
 
 # deploy_ex Development

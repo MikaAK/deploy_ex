@@ -1,0 +1,122 @@
+[
+  {
+    "id": 1,
+    "query": "set up deploy_ex infrastructure from scratch for a new project, skip redis and sentry since we don't need them",
+    "should_trigger": true
+  },
+  {
+    "id": 2,
+    "query": "I need to dump the production database and restore it to my local postgres for debugging",
+    "should_trigger": true
+  },
+  {
+    "id": 3,
+    "query": "terraform state is out of sync with what's actually running in AWS, how do I fix it?",
+    "should_trigger": true
+  },
+  {
+    "id": 4,
+    "query": "regenerate the terraform files because I added a new release to mix.exs and need the EC2 instances created",
+    "should_trigger": true
+  },
+  {
+    "id": 5,
+    "query": "I want to create an EBS snapshot of the data volumes before we do this risky migration",
+    "should_trigger": true
+  },
+  {
+    "id": 6,
+    "query": "show me the database password from terraform state so I can connect with pgcli",
+    "should_trigger": true
+  },
+  {
+    "id": 7,
+    "query": "run ansible setup on the new instances that were just created by terraform apply",
+    "should_trigger": true
+  },
+  {
+    "id": 8,
+    "query": "I need to replace the api EC2 instances because the underlying hardware is degraded",
+    "should_trigger": true
+  },
+  {
+    "id": 9,
+    "query": "configure deploy_ex to use us-east-1 instead of us-west-2 and change the release bucket name",
+    "should_trigger": true
+  },
+  {
+    "id": 10,
+    "query": "the ansible playbooks are out of date, regenerate them but only for the new apps we added",
+    "should_trigger": true
+  },
+  {
+    "id": 11,
+    "query": "I want to review what terraform would change before applying, run a plan with the prod vars",
+    "should_trigger": true
+  },
+  {
+    "id": 12,
+    "query": "set up the state bucket and lock table for a brand new AWS account before first terraform init",
+    "should_trigger": true
+  },
+  {
+    "id": 13,
+    "query": "extract the PEM key from terraform state so I can use it with standard ssh instead of the mix task",
+    "should_trigger": true
+  },
+  {
+    "id": 14,
+    "query": "I need to upgrade the deploy_ex templates after bumping the dependency version, some priv files changed",
+    "should_trigger": true
+  },
+  {
+    "id": 15,
+    "query": "tear down all the infrastructure for the staging environment, we're consolidating to one env",
+    "should_trigger": true
+  },
+  {
+    "id": 16,
+    "query": "install the github action workflow so our CI/CD pipeline handles deploys automatically",
+    "should_trigger": true
+  },
+  {
+    "id": 17,
+    "query": "deploy the api app to the running instances using ansible",
+    "should_trigger": false
+  },
+  {
+    "id": 18,
+    "query": "build and upload a new release for the worker app",
+    "should_trigger": false
+  },
+  {
+    "id": 19,
+    "query": "create a QA node for testing commit abc123 with load balancer attached",
+    "should_trigger": false
+  },
+  {
+    "id": 20,
+    "query": "SSH into the api server and check what's in the logs",
+    "should_trigger": false
+  },
+  {
+    "id": 21,
+    "query": "I want to add a new mix task to deploy_ex that lists all EBS snapshots with their ages",
+    "should_trigger": false
+  },
+  {
+    "id": 22,
+    "query": "help me write a Phoenix controller for the user registration flow with email verification",
+    "should_trigger": false
+  },
+  {
+    "id": 23,
+    "query": "restore the database dump from last night's backup to the RDS instance using 4 parallel jobs",
+    "should_trigger": true
+  },
+  {
+    "id": 24,
+    "query": "delete all EBS snapshots older than 30 days to save on storage costs",
+    "should_trigger": true
+  }
+]

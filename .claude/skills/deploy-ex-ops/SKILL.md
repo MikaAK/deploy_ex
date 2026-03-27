@@ -1,6 +1,6 @@
 ---
 name: deploy-ex-ops
-description: "Use when running deploy_ex deployment operations — releasing, uploading, deploying via Ansible, managing QA nodes, autoscaling, load testing, SSH into instances, checking instance health, rolling back, or any Mix task that interacts with AWS infrastructure. Triggers on: deploy, release, upload, rollback, QA node, load test, autoscale, SSH, restart app, instance status, full setup. Use this skill even if the user doesn't mention deploy_ex by name — if they're talking about deploying an Elixir app to AWS, checking instance health, or running Ansible/Terraform commands in this project, this skill applies."
+description: "Use when executing deploy_ex commands to operate on running infrastructure — deploying releases, uploading to S3, running Ansible deploys, managing QA nodes, autoscaling EC2 instances, running k6 load tests, SSH-ing into instances, checking instance health, viewing logs, connecting to remote IEx, rolling back releases, restarting apps, or checking what's currently deployed. This is for RUNNING existing deploy_ex mix tasks, not for writing new code or generating infrastructure files. Triggers on: deploy to production, upload release, rollback, QA node create/destroy, scale up/down, SSH into server, app is down, check health, restart app, view logs, iex console, load test, what's deployed, ping ansible hosts. Use this even without mentioning deploy_ex — if someone wants to deploy an Elixir app, check instance status, or restart a service in this project, this skill applies."
 ---
 
 # deploy_ex Operations
