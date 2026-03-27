@@ -1532,7 +1532,7 @@ possible without his help!!
 
   First figure out what is failing, there are several monitoring systems running in the background:
 
-  1) `promtail` - This is present on all app nodes, it tails the logs and exports them to loki
+  1) `alloy` - This is present on all app nodes, it tails the logs and exports them to loki
   2) `prometheus_exporter` - This is present on all app nodes, it scrapes metrics endpoints and exports them to prometheus
   2) `prometheus-server` - This is present on all `prometheus` nodes, it's the database for prometheus
   3) `grafana-server` - This is present on all `grafana_ui` node, it's the service for the interface

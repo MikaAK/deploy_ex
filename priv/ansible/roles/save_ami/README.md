@@ -31,7 +31,7 @@ All instances (autoscaling and regular) can boot from pre-configured AMIs instea
 │    - beam_linux_tuning                                      │
 │    - pip3, awscli, ipv6                                     │
 │    - prometheus_exporter                                    │
-│    - grafana_loki_promtail                                  │
+│    - grafana_alloy                                          │
 │    - log_cleanup                                            │
 │    - deploy_node (fetch & start app)                        │
 │    - save_ami ← Creates custom AMI                          │
