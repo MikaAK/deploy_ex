@@ -108,4 +108,4 @@ The primary interface is Mix tasks in `lib/mix/tasks/`. All tasks:
 
 The TUI wizard (`mix deploy_ex`) provides a browsable interface to all tasks.
 
-See also: [System Architecture](system-architecture.md) | [Project Overview](project-overview.md)
+See also: [System Architecture](architecture.md) | [Project Overview](../introduction.md)

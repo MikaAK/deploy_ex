@@ -1,24 +1,30 @@
 # DeployEx Documentation
 
-Documentation follows the [Diataxis](https://diataxis.fr/) framework.
+Documentation follows the [Diataxis](https://diataxis.fr/) framework. Guides live in `guides/`.
 
 ## Tutorials (learning-oriented)
 
-- [Deployment Guide](deployment-guide.md) — Walk through initial setup to first deploy
+- [Getting Started](../guides/tutorials/getting_started.md) — install, setup, first deploy
 
 ## How-to Guides (task-oriented)
 
-- [Deployment Guide](deployment-guide.md) — Release workflow, rollback, QA nodes, load testing, autoscaling, database ops
+- [Deploying Releases](../guides/how-to/deploying_releases.md) — build, upload, deploy, rollback, CI/CD
+- [QA Nodes](../guides/how-to/qa_nodes.md) — ephemeral test instances
+- [Load Testing](../guides/how-to/load_testing.md) — k6 runner lifecycle
+- [Autoscaling](../guides/how-to/autoscaling.md) — refresh, scale, strategies
+- [Database Operations](../guides/how-to/database_operations.md) — dump, restore, passwords
+- [Connecting to Nodes](../guides/how-to/connecting_to_nodes.md) — SSH, logs, IEx, authorize
+- [Managing Infrastructure](../guides/how-to/managing_infrastructure.md) — terraform, ansible, templates, teardown
 
 ## Reference (information-oriented)
 
-- [API Reference](api-reference.md) — All 73 Mix tasks with options
-- [Configuration Guide](configuration-guide.md) — Config keys, env vars, redeploy config
-- [Codebase Summary](codebase-summary.md) — File inventory, module listing, dependencies
-- [Testing Guide](testing-guide.md) — Test structure, conventions, fixtures
+- [Mix Tasks](../guides/reference/mix_tasks.md) — all 73 tasks with options
+- [Configuration](../guides/reference/configuration.md) — config keys, env vars, redeploy config
+- [Codebase Summary](../guides/reference/codebase_summary.md) — module inventory, dependencies
+- [Testing](../guides/reference/testing.md) — test structure, conventions, fixtures
 
 ## Explanation (understanding-oriented)
 
-- [Project Overview](project-overview.md) — What deploy_ex is, key abstractions, getting started
-- [System Architecture](system-architecture.md) — Layers, data flows, diagrams
-- [Code Standards](code-standards.md) — Error handling, config patterns, AWS patterns, code style
+- [Introduction](../guides/introduction.md) — what deploy_ex is, key abstractions
+- [Architecture](../guides/explanation/architecture.md) — layers, data flows, diagrams
+- [Code Standards](../guides/explanation/code_standards.md) — error handling, config, AWS, style

@@ -179,4 +179,4 @@ QA node state is persisted to S3 at `qa-nodes/{app_name}/{instance_id}.json`.
 | Infrastructure | 8 | ~700 | terraform.ex (175), ssh.ex (134), utils.ex (187) |
 | Release | 8 | ~430 | release_uploader.ex (149), update_validator.ex (256) |
 
-See also: [Code Standards](code-standards.md) | [API Reference](api-reference.md) | [Configuration Guide](configuration-guide.md)
+See also: [Code Standards](code_standards.md) | [API Reference](../reference/mix_tasks.md) | [Configuration Guide](../reference/configuration.md)

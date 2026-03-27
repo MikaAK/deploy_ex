@@ -116,4 +116,4 @@ Toggle monitoring and infrastructure services when generating files:
 
 Pass these to `mix terraform.build`, `mix ansible.build`, or `mix deploy_ex.full_setup`.
 
-See also: [Deployment Guide](deployment-guide.md) | [API Reference](api-reference.md)
+See also: [Deployment Guide](../tutorials/getting_started.md) | [API Reference](../reference/mix_tasks.md)

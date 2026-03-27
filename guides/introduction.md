@@ -60,6 +60,6 @@ config/
 6. mix ansible.deploy                    # Deploy to EC2 instances
 ```
 
-For detailed setup, see [Deployment Guide](deployment-guide.md).
-For all available commands, see [API Reference](api-reference.md).
-For configuration options, see [Configuration Guide](configuration-guide.md).
+For detailed setup, see [Deployment Guide](../tutorials/getting_started.md).
+For all available commands, see [API Reference](../reference/mix_tasks.md).
+For configuration options, see [Configuration Guide](../reference/configuration.md).

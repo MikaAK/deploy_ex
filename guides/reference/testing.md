@@ -82,4 +82,4 @@ Parser tests use fixture files in `test/deploy_ex/release_uploader/update_valida
 | PrivManifest | SHA256 hashing, manifest read/write, file tracking |
 | AWS parsing | Subnet, key pair, VPC XML response parsing |
 
-See also: [Code Standards](code-standards.md)
+See also: [Code Standards](code_standards.md)
