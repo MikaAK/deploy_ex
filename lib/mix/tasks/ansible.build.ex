@@ -21,7 +21,8 @@ defmodule Mix.Tasks.Ansible.Build do
   - `new_only` - Only generate files for new applications
   - `auto_pull_aws` - Automatically pull AWS credentials from ~/.aws/credentials
   - `aws_release_bucket` - AWS S3 bucket for releases
-  - `no_loki` - Disable Loki logging configuration
+  - `no_logging` - Disable logging configuration (Alloy + Loki)
+  - `no_loki` - Deprecated alias for `no_logging`
   - `no_sentry` - Disable Sentry error tracking configuration
   - `no_grafana` - Disable Grafana monitoring configuration
   - `no_prometheus` - Disable Prometheus metrics configuration
@@ -42,6 +43,9 @@ defmodule Mix.Tasks.Ansible.Build do
       |> Keyword.put_new(:aws_logging_region, Config.aws_log_region())
       |> Keyword.put_new(:aws_release_bucket, Config.aws_release_bucket())
       |> Keyword.put_new(:aws_region, Config.aws_region())
+
+    no_logging = opts[:no_logging] || opts[:no_loki] || false
+    opts = Keyword.put(opts, :no_logging, no_logging)
 
     with :ok <- DeployExHelpers.check_valid_project(),
          :ok <- ensure_ansible_directory_exists(opts[:directory], opts),
@@ -72,6 +76,7 @@ defmodule Mix.Tasks.Ansible.Build do
         terraform_directory: :string,
         auto_pull_aws: :boolean,
         aws_release_bucket: :string,
+        no_logging: :boolean,
         no_loki: :boolean,
         no_sentry: :boolean,
         no_grafana: :boolean,
@@ -161,7 +166,7 @@ defmodule Mix.Tasks.Ansible.Build do
       :ok
     else
       variables = %{
-        is_loki_enabled: !opts[:no_loki],
+        is_logging_enabled: !opts[:no_logging],
         is_prometheus_enabled: !opts[:no_prometheus],
         loki_logger_s3_region: opts[:aws_logging_bucket],
         loki_logger_s3_bucket_name: opts[:aws_logging_region]
@@ -304,7 +309,7 @@ defmodule Mix.Tasks.Ansible.Build do
     host_playbook_path = Path.join(opts[:directory], "playbooks/#{app_name}.yaml")
 
     variables = %{
-      no_loki: opts[:no_loki],
+      no_logging: opts[:no_logging],
       no_prometheus: opts[:no_prometheus],
       app_name: app_name,
       aws_release_bucket: opts[:aws_release_bucket],
@@ -324,7 +329,7 @@ defmodule Mix.Tasks.Ansible.Build do
     setup_host_playbook = Path.join(opts[:directory], "setup/#{app_name}.yaml")
 
     variables = %{
-      no_loki: opts[:no_loki],
+      no_logging: opts[:no_logging],
       no_prometheus: opts[:no_prometheus],
       app_name: app_name,
       port: 80
