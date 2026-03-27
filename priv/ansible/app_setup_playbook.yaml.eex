@@ -12,6 +12,6 @@
     - ipv6
     <%= unless @no_prometheus do %>- prometheus_exporter
     <% end %>
-    <%= unless @no_loki do %>- grafana_loki_promtail
+    <%= unless @no_logging do %>- grafana_alloy
     <% end %>
     - save_ami
