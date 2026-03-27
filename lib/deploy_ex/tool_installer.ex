@@ -13,6 +13,7 @@ defmodule DeployEx.ToolInstaller do
       {:win32, _} -> :windows
       {:unix, :darwin} -> :macos
       {:unix, _} -> detect_linux_distro()
+      _ -> {:error, :unsupported_platform}
     end
   end
 
@@ -37,7 +38,13 @@ defmodule DeployEx.ToolInstaller do
     iac_tool = DeployEx.Config.iac_tool()
 
     case System.find_executable(iac_tool) do
-      nil -> install_tool(String.to_existing_atom(iac_tool))
+      nil ->
+        case iac_tool do
+          "terraform" -> install_tool(:terraform)
+          "tofu" -> install_tool(:tofu)
+          other -> {:error, ErrorMessage.bad_request("#{__MODULE__}: unsupported iac_tool #{inspect(other)}, expected \"terraform\" or \"tofu\"")}
+        end
+
       _path -> :ok
     end
   end
@@ -53,11 +60,11 @@ defmodule DeployEx.ToolInstaller do
   @spec install_command(atom(), atom() | {:error, :unsupported_platform}) ::
           {String.t(), String.t()} | {:error, ErrorMessage.t()}
   def install_command(tool, :windows) do
-    {:error, ErrorMessage.bad_request("#{tool} is not supported on Windows natively, please use WSL")}
+    {:error, ErrorMessage.bad_request("#{__MODULE__}: #{tool} is not supported on Windows natively, please use WSL")}
   end
 
   def install_command(_tool, {:error, :unsupported_platform}) do
-    {:error, ErrorMessage.bad_request("unsupported platform, please install tools manually")}
+    {:error, ErrorMessage.bad_request("#{__MODULE__}: unsupported platform, please install tools manually")}
   end
 
   # SECTION: macOS
