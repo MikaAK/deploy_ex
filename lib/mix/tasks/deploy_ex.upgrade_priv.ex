@@ -228,12 +228,7 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
               :ok
           end
 
-          # If upstream and user paths differ (rename), also write the upstream path
-          if upstream_path !== user_path do
-            DeployEx.PrivManifest.put_file(acc_manifest, upstream_path, upstream_hash)
-          else
-            DeployEx.PrivManifest.put_file(acc_manifest, upstream_path, upstream_hash)
-          end
+          DeployEx.PrivManifest.put_file(acc_manifest, upstream_path, upstream_hash)
 
         {:keep_user, _user_path} ->
           acc_manifest

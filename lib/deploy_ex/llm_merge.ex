@@ -124,13 +124,22 @@ defmodule DeployEx.LLMMerge do
   end
 
   defp parse_plan(response_text) do
-    case Code.eval_string(response_text) do
-      {actions, _} when is_list(actions) -> {:ok, actions}
-      _ -> {:error, :invalid_plan}
+    response_text
+    |> String.trim()
+    |> Code.string_to_quoted()
+    |> case do
+      {:ok, actions} when is_list(actions) ->
+        if Enum.all?(actions, &valid_action?/1), do: {:ok, actions}, else: {:error, :invalid_plan}
+
+      _ ->
+        {:error, :invalid_plan}
     end
-  rescue
-    _ -> {:error, :invalid_plan}
   end
+
+  defp valid_action?({:merge, upstream, user}) when is_binary(upstream) and is_binary(user), do: true
+  defp valid_action?({:copy_upstream, path}) when is_binary(path), do: true
+  defp valid_action?({:keep_user, path}) when is_binary(path), do: true
+  defp valid_action?(_), do: false
 
   defp format_file_list([]), do: "(none)"
 
