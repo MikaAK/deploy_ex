@@ -36,6 +36,7 @@ defmodule Mix.Tasks.Terraform.Build do
 
 
     with :ok <- DeployExHelpers.check_valid_project(),
+         :ok <- DeployEx.ToolInstaller.ensure_installed(:terraform),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
          :ok <- ensure_terraform_directory_exists(opts[:directory]) do
       random_bytes = 6 |> :crypto.strong_rand_bytes |> Base.encode32(padding: false)

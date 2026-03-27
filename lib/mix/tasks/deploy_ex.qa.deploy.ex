@@ -24,7 +24,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
     Application.ensure_all_started(:ex_aws)
 
     with :ok <- DeployExHelpers.check_valid_project(),
-         :ok <- DeployExHelpers.ensure_ansible_installed() do
+         :ok <- DeployEx.ToolInstaller.ensure_installed(:ansible) do
       {opts, extra_args} = parse_args(args)
 
       DeployEx.TUI.setup_no_tui(opts)

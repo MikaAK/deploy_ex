@@ -30,7 +30,7 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
     deploy_folder = DeployEx.Config.deploy_folder()
     priv_dir = :deploy_ex |> :code.priv_dir() |> to_string()
 
-    with :ok <- DeployExHelpers.check_in_umbrella(),
+    with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, manifest} <- DeployEx.PrivManifest.read(deploy_folder) do
       priv_files = list_priv_files(priv_dir)
 

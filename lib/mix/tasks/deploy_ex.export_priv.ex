@@ -27,7 +27,7 @@ defmodule Mix.Tasks.DeployEx.ExportPriv do
     deploy_folder = DeployEx.Config.deploy_folder()
     priv_dir = :deploy_ex |> :code.priv_dir() |> to_string()
 
-    with :ok <- DeployExHelpers.check_in_umbrella() do
+    with :ok <- DeployExHelpers.check_valid_project() do
       File.mkdir_p!(deploy_folder)
 
       priv_files =

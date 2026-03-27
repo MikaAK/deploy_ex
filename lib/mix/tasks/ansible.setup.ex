@@ -37,7 +37,7 @@ defmodule Mix.Tasks.Ansible.Setup do
 
   def run(args) do
     with :ok <- DeployExHelpers.check_valid_project(),
-         :ok <- DeployExHelpers.ensure_ansible_installed() do
+         :ok <- DeployEx.ToolInstaller.ensure_installed(:ansible) do
       opts = args
         |> parse_args
         |> Keyword.put_new(:directory, @ansible_default_path)

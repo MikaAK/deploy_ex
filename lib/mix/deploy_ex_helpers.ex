@@ -300,24 +300,4 @@ defmodule DeployExHelpers do
     end
   end
 
-  def ensure_ansible_installed do
-    case System.cmd("which", ["ansible-playbook"], stderr_to_stdout: true) do
-      {_, 0} ->
-        :ok
-
-      _ ->
-        Mix.shell().info([:yellow, "Ansible not found, installing..."])
-
-        case System.cmd("pip3", ["install", "--user", "ansible", "boto3", "botocore"], stderr_to_stdout: true) do
-          {_, 0} ->
-            Mix.shell().info([:green, "✓ Ansible installed successfully"])
-            :ok
-
-          {error, _} ->
-            Mix.shell().error("Failed to install ansible: #{error}")
-            Mix.shell().info("Please install ansible manually: pip3 install ansible boto3 botocore")
-            {:error, "Ansible installation failed"}
-        end
-    end
-  end
 end
