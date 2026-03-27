@@ -37,7 +37,7 @@ defmodule DeployEx.MixProject do
       {:hackney, "~> 1.18"},
       {:sweet_xml, "~> 0.7"},
       {:ex_ratatui, "~> 0.4"},
-      {:langchain, "~> 0.6", optional: true}
+      {:langchain, "~> 0.6"}
     ]
   end
 end

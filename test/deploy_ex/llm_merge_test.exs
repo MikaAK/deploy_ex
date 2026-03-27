@@ -10,32 +10,12 @@ defmodule DeployEx.LLMMergeTest do
     end
   end
 
-  describe "merge_file/3 when llm_provider module is not loaded" do
-    test "returns langchain_not_available error" do
-      assert {:error, :langchain_not_available} =
-               LLMMerge.merge_file("user content", "upstream content",
-                 llm_provider: {NonExistentLLMModule, model: "some-model"}
-               )
-    end
-  end
-
   describe "plan/2 when llm_provider is not configured" do
     test "returns not_configured error" do
       change_manifest = %{new_upstream: ["a.tf"], modified: [], user_only: []}
 
       assert {:error, :not_configured} =
                LLMMerge.plan(change_manifest, llm_provider: nil)
-    end
-  end
-
-  describe "plan/2 when llm_provider module is not loaded" do
-    test "returns langchain_not_available error" do
-      change_manifest = %{new_upstream: ["a.tf"], modified: [], user_only: []}
-
-      assert {:error, :langchain_not_available} =
-               LLMMerge.plan(change_manifest,
-                 llm_provider: {NonExistentLLMModule, model: "some-model"}
-               )
     end
   end
 end
