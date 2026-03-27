@@ -34,6 +34,8 @@ defmodule Mix.Tasks.Terraform.Build do
       |> Keyword.put_new(:aws_release_state_lock_table, DeployEx.Config.aws_release_state_lock_table())
       |> Keyword.put_new(:env, Mix.env())
 
+    no_logging = opts[:no_logging] || opts[:no_loki] || false
+    opts = Keyword.put(opts, :no_logging, no_logging)
 
     with :ok <- DeployExHelpers.check_valid_project(),
          :ok <- DeployEx.ToolInstaller.ensure_installed(:terraform),
@@ -67,7 +69,7 @@ defmodule Mix.Tasks.Terraform.Build do
         app_name: DeployExHelpers.underscored_project_name(),
         kebab_app_name: DeployExHelpers.kebab_project_name(),
 
-        use_loki: !opts[:no_loki],
+        use_loki: !opts[:no_logging],
         use_grafana: !opts[:no_grafana],
         use_prometheus: !opts[:no_prometheus],
         use_redis: !opts[:no_redis],
@@ -105,6 +107,7 @@ defmodule Mix.Tasks.Terraform.Build do
         aws_region: :string,
         env: :string,
         no_database: :boolean,
+        no_logging: :boolean,
         no_loki: :boolean,
         no_sentry: :boolean,
         no_grafana: :boolean,
@@ -202,7 +205,7 @@ defmodule Mix.Tasks.Terraform.Build do
   end
 
   defp terraform_loki_variables(opts) do
-    if opts[:no_loki] do
+    if opts[:no_logging] do
       ""
     else
       """
