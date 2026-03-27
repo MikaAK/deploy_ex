@@ -1,0 +1,81 @@
+- name: grafana_alloy
+  block:
+    - name: Check if old promtail service exists
+      stat:
+        path: /etc/systemd/system/promtail.service
+      register: old_promtail_service
+
+    - name: Stop old promtail service
+      systemd:
+        name: promtail
+        state: stopped
+        enabled: false
+      when: old_promtail_service.stat.exists
+      ignore_errors: true
+
+    - name: Remove old promtail service file
+      file:
+        path: /etc/systemd/system/promtail.service
+        state: absent
+      when: old_promtail_service.stat.exists
+
+    - name: Remove old promtail config
+      file:
+        path: /root/promtail_config.yaml
+        state: absent
+
+    - name: Remove old promtail positions file
+      file:
+        path: /root/promtail_positions.yaml
+        state: absent
+
+    - name: Remove old promtail binary
+      shell: rm -f /root/promtail-*
+      args:
+        warn: false
+
+    - name: Reload systemd after promtail cleanup
+      systemd:
+        daemon_reload: true
+      when: old_promtail_service.stat.exists
+
+    - name: Check for Alloy {{ alloy_architecture }}/{{ alloy_version }}
+      stat:
+        path: ~/alloy-{{ alloy_architecture }}
+      register: alloy
+
+    - name: Download Alloy {{ alloy_architecture }}/{{ alloy_version }}
+      unarchive:
+        src: https://github.com/grafana/alloy/releases/download/{{ alloy_version }}/alloy-{{ alloy_architecture }}.zip
+        dest: /root
+        remote_src: true
+      when: not alloy.stat.exists
+
+    - name: Add Alloy config to /root/alloy_config.alloy
+      template:
+        src: alloy_config.alloy.j2
+        dest: /root/alloy_config.alloy
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Add alloy systemd service file to /etc/systemd/system/alloy.service
+      template:
+        src: alloy_systemd.service.j2
+        dest: /etc/systemd/system/alloy.service
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Enable alloy service
+      systemd:
+        name: alloy
+        enabled: true
+
+    - name: Start alloy service
+      systemd:
+        daemon_reload: true
+        name: alloy
+        state: started
+
+  become: true
