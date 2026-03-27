@@ -115,4 +115,4 @@ Universal options available on most tasks: `--only` (multi), `--except` (multi),
 | `mix deploy_ex.list_app_release_history` | Show release history | |
 | `mix deploy_ex.view_current_release` | Show current deployed release | |
 
-See also: [Deployment Guide](deployment-guide.md) | [Configuration Guide](configuration-guide.md)
+See also: [Deployment Guide](../tutorials/getting_started.md) | [Configuration Guide](../reference/configuration.md)

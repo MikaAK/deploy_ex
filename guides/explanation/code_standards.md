@@ -100,4 +100,4 @@ ExRatatui widgets use event loop pattern with `q`/`Ctrl+C` to quit, with console
 - `refute` over `assert !` or `assert not`
 - Never `Application.put_env/3` in tests
 
-See also: [Testing Guide](testing-guide.md) | [System Architecture](system-architecture.md)
+See also: [Testing Guide](../reference/testing.md) | [System Architecture](architecture.md)
