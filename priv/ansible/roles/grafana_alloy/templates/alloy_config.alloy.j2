@@ -1,0 +1,53 @@
+loki.source.journal "systemd" {
+  forward_to    = [loki.process.pipeline.receiver]
+  relabel_rules = loki.relabel.journal.rules
+  max_age       = "12h"
+  path          = "/var/log/journal"
+  labels        = {
+    job = "systemd-journal",
+  }
+}
+
+loki.relabel "journal" {
+  forward_to = []
+
+  rule {
+    target_label = "service_name"
+    replacement  = "{{ app_name }}"
+  }
+
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    regex         = "(?P<service>[^\\.]+)\\.service"
+    target_label  = "service"
+  }
+
+  rule {
+    source_labels = ["__journal__hostname"]
+    target_label  = "instance_id"
+  }
+}
+
+loki.process "pipeline" {
+  forward_to = [loki.write.default.receiver]
+
+  stage.match {
+    selector = "{job=\"systemd-journal\"}"
+
+    stage.regex {
+      expression = "^[^\\[]+\\[(?P<level>error|warn|debug|alert|critical|warning|notice)\\]"
+    }
+
+    stage.labels {
+      values = {
+        level = "",
+      }
+    }
+  }
+}
+
+loki.write "default" {
+  endpoint {
+    url = "{{ grafana_loki_url }}/loki/api/v1/push"
+  }
+}

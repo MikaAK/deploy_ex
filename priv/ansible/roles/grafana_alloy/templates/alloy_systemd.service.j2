@@ -1,0 +1,23 @@
+[Unit]
+Description=Grafana Alloy Log Collector
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/root/
+ExecStart=/root/alloy-{{ alloy_architecture }} run /root/alloy_config.alloy
+
+Restart=on-failure
+RestartSec=5
+SuccessExitStatus=143
+TimeoutStopSec=10
+{% for env in extra_alloy_env %}
+Environment={{ env }}
+{% endfor %}
+SyslogIdentifier=alloy
+RemainAfterExit=no
+LimitNOFILE=infinity
+
+[Install]
+WantedBy=multi-user.target
