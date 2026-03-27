@@ -15,8 +15,7 @@ defmodule DeployEx.LLMMerge do
   Direct same-path conflicts (upstream changed, user changed same file) skip
   the planning phase and go straight to per-file merge.
 
-  Requires `langchain ~> 0.6` in your project's deps and an `:llm_provider`
-  configured in your deploy_ex config:
+  Requires an `:llm_provider` configured in your deploy_ex config:
 
       config :deploy_ex,
         llm_provider: {LangChain.ChatModels.ChatAnthropic, model: "claude-sonnet-4-6"}
@@ -68,15 +67,8 @@ defmodule DeployEx.LLMMerge do
 
   defp build_model(opts) do
     case Keyword.get(opts, :llm_provider, DeployEx.Config.llm_provider()) do
-      nil ->
-        {:error, :not_configured}
-
-      {model_module, model_opts} ->
-        if not Code.ensure_loaded?(model_module) do
-          {:error, :langchain_not_available}
-        else
-          {:ok, struct!(model_module, Map.new(model_opts))}
-        end
+      nil -> {:error, :not_configured}
+      {model_module, model_opts} -> {:ok, struct!(model_module, Map.new(model_opts))}
     end
   end
 
@@ -187,11 +179,14 @@ defmodule DeployEx.LLMMerge do
   # SECTION: LLM Call
 
   defp run_llm(model, prompt) do
-    user_message = apply(LangChain.Message, :new_user!, [prompt])
-    chain = apply(LangChain.Chains.LLMChain, :new!, [%{llm: model}])
-    chain = apply(LangChain.Chains.LLMChain, :add_messages, [chain, [user_message]])
+    user_message = LangChain.Message.new_user!(prompt)
 
-    case apply(LangChain.Chains.LLMChain, :run, [chain]) do
+    chain =
+      %{llm: model}
+      |> LangChain.Chains.LLMChain.new!()
+      |> LangChain.Chains.LLMChain.add_messages([user_message])
+
+    case LangChain.Chains.LLMChain.run(chain) do
       {:ok, _chain, response} -> {:ok, response.content}
       {:error, _chain, error} -> {:error, error}
     end
