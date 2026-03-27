@@ -65,7 +65,18 @@ Under the default commands you will gain the following services (all of which ca
 There are a few variables to be set in here. Once all of these can be dealt with automatically and rollbacks are implemented we will release a 0.1.0
 
 #### Pre-requisite
-You will need to make sure to have `ansible`, `terraform` & `git` available
+You will need `git` available. deploy_ex will attempt to install `terraform` (or `tofu`) and `ansible`
+automatically when they are not found. Supported platforms:
+
+| Platform | Terraform/Tofu | Ansible |
+|----------|---------------|---------|
+| macOS | Homebrew | Homebrew |
+| Debian/Ubuntu | HashiCorp apt repo | pip3 |
+| Alpine | apk (edge/community) | apk |
+| Amazon Linux | HashiCorp yum repo | pip3 |
+| Windows | Not supported (use WSL) | Not supported (use WSL) |
+
+If auto-install fails or your platform isn't listed, install the tools manually
 
 [Available in Hex](https://hex.pm/deploy_ex), the package can be installed
 by adding `deploy_ex` to your list of dependencies in `mix.exs`:
