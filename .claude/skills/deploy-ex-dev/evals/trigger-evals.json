@@ -1,0 +1,112 @@
+[
+  {
+    "id": 1,
+    "query": "I want to add a new mix task called deploy_ex.cleanup_old_releases that removes S3 releases older than 30 days",
+    "should_trigger": true
+  },
+  {
+    "id": 2,
+    "query": "how do I add a new EEx terraform template for an ElastiCache Redis cluster to the priv/terraform/ pipeline?",
+    "should_trigger": true
+  },
+  {
+    "id": 3,
+    "query": "I need to write tests for the QaNode module, what's the pattern for testing without mocking AWS?",
+    "should_trigger": true
+  },
+  {
+    "id": 4,
+    "query": "the UpdateValidator isn't detecting changes in a new directory I added called lib/my_app/jobs/, how do I fix file_part_of_app?",
+    "should_trigger": true
+  },
+  {
+    "id": 5,
+    "query": "I want to add a new config key to DeployEx.Config for specifying a custom AMI ID directly instead of searching by name",
+    "should_trigger": true
+  },
+  {
+    "id": 6,
+    "query": "how does the release change detection work? I need to understand UpdateValidator before modifying it",
+    "should_trigger": true
+  },
+  {
+    "id": 7,
+    "query": "add the new cleanup task to the TUI wizard command registry under the utility category",
+    "should_trigger": true
+  },
+  {
+    "id": 8,
+    "query": "I'm extending AwsAutoscaling to support scheduled scaling actions, what patterns should I follow?",
+    "should_trigger": true
+  },
+  {
+    "id": 9,
+    "query": "the deploy_ex_helpers.ex file needs a new function to find the nearest AWS region, where should I put it?",
+    "should_trigger": true
+  },
+  {
+    "id": 10,
+    "query": "I want to add an ansible role for installing nginx as a reverse proxy, where does it go in priv/?",
+    "should_trigger": true
+  },
+  {
+    "id": 11,
+    "query": "how do I create a new TUI dashboard widget that shows deployment progress with a progress bar?",
+    "should_trigger": true
+  },
+  {
+    "id": 12,
+    "query": "I need to modify the release upload to support Google Cloud Storage in addition to S3",
+    "should_trigger": true
+  },
+  {
+    "id": 13,
+    "query": "what's the right way to add error handling to a new AWS module? I'm wrapping the ECS API",
+    "should_trigger": true
+  },
+  {
+    "id": 14,
+    "query": "deploy my_api app to production and check the instance health after",
+    "should_trigger": false
+  },
+  {
+    "id": 15,
+    "query": "run terraform apply with the prod.tfvars file and auto-approve",
+    "should_trigger": false
+  },
+  {
+    "id": 16,
+    "query": "SSH into the worker instance and tail the logs for the last hour",
+    "should_trigger": false
+  },
+  {
+    "id": 17,
+    "query": "I need to add a Phoenix LiveView for our admin dashboard with AG Grid",
+    "should_trigger": false
+  },
+  {
+    "id": 18,
+    "query": "set up Oban to process PDF generation jobs with retry logic",
+    "should_trigger": false
+  },
+  {
+    "id": 19,
+    "query": "create a GenServer that caches exchange rates and refreshes every 5 minutes",
+    "should_trigger": false
+  },
+  {
+    "id": 20,
+    "query": "roll back the api app to the previous release, something broke in prod",
+    "should_trigger": false
+  },
+  {
+    "id": 21,
+    "query": "I want to understand how DeployEx.ProjectContext works so I can add support for Mix workspaces",
+    "should_trigger": true
+  },
+  {
+    "id": 22,
+    "query": "add a --dry-run flag to the existing deploy_ex.release task that shows what would be built without building",
+    "should_trigger": true
+  }
+]
