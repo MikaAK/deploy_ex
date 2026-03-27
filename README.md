@@ -158,7 +158,7 @@ config :deploy_ex,
 - `deploy_folder` - Local folder for deployment files (default: `"./deploys"`)
 - `aws_security_group_id` - Explicit AWS security group ID to use instead of auto-detecting by name prefix. Useful when your security group naming doesn't follow the `<project>-sg` convention. (default: `nil`)
 - `aws_names_include_env` - Whether AWS resource names include the environment (e.g., `myapp-prod-sg` vs `myapp-sg`). Set to `true` if your Terraform creates resources with environment in the name. (default: `false`)
-- `llm_provider` - LLM provider for `--llm-merge` in `mix deploy_ex.upgrade_priv`. Requires `{:langchain, "~> 0.6"}` in your deps. Example: `{LangChain.ChatModels.ChatAnthropic, model: "claude-sonnet-4-6"}` (default: `nil`)
+- `llm_provider` - LLM provider for `--llm-merge` in `mix deploy_ex.upgrade_priv`. Example: `{LangChain.ChatModels.ChatAnthropic, model: "claude-sonnet-4-6"}` (default: `nil`). API keys are configured via LangChain: `config :langchain, anthropic_key: System.get_env("ANTHROPIC_API_KEY")`, or passed inline as `api_key:` in the provider tuple
 
 ### Redeploy Config
 
@@ -270,8 +270,10 @@ To use LLM-assisted merging (detects renames, merges content intelligently):
 mix deploy_ex.upgrade_priv --llm-merge
 ```
 
-This requires `{:langchain, "~> 0.6"}` in your deps and an `:llm_provider` configured (see Available Configuration below).
-The LLM first plans the merge (detecting renames like `ec2.tf.eex` -> `my_ec2.tf.eex`), then merges file contents for conflicts.
+This requires an `:llm_provider` configured (see Available Configuration below) with an API key
+provided via `config :langchain, anthropic_key: System.get_env("ANTHROPIC_API_KEY")`.
+The LLM compares your setup to upstream, detects renames (e.g. `ec2.tf.eex` -> `my_ec2.tf.eex`),
+and merges file contents for conflicts.
 
 In the case of terraform, `mix terraform.build` will automatically inject apps into your variables file despite changes to the file. If you change terraform, make sure to run `mix terraform.apply`
 
