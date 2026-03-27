@@ -19,6 +19,19 @@ defmodule DeployEx.LLMMerge do
 
       config :deploy_ex,
         llm_provider: {LangChain.ChatModels.ChatAnthropic, model: "claude-sonnet-4-6"}
+
+  API keys can be provided via LangChain's own config (recommended):
+
+      # config/runtime.exs
+      config :langchain, anthropic_key: System.get_env("ANTHROPIC_API_KEY")
+
+  Or inline in the provider tuple:
+
+      config :deploy_ex,
+        llm_provider: {LangChain.ChatModels.ChatAnthropic,
+          model: "claude-sonnet-4-6",
+          api_key: System.get_env("ANTHROPIC_API_KEY")
+        }
   """
 
   @type change_manifest :: %{
