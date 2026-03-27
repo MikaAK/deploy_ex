@@ -30,9 +30,9 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
     deploy_folder = DeployEx.Config.deploy_folder()
     priv_dir = :deploy_ex |> :code.priv_dir() |> to_string()
 
-    with :ok <- DeployExHelpers.check_valid_project(),
-         {:ok, manifest} <- DeployEx.PrivManifest.read(deploy_folder) do
+    with :ok <- DeployExHelpers.check_valid_project() do
       priv_files = list_priv_files(priv_dir)
+      manifest = load_or_generate_manifest(deploy_folder)
 
       timestamp =
         DateTime.utc_now()
@@ -96,26 +96,33 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
   # SECTION: LLM Upgrade (plan + execute)
 
   defp run_llm_upgrade(priv_files, priv_dir, deploy_folder, manifest, backup_dir) do
-    {new_upstream, modified, unmodified_files, user_only} =
-      classify_files(priv_files, priv_dir, deploy_folder, manifest)
+    upstream_paths = Enum.map(priv_files, &Path.relative_to(&1, priv_dir))
 
-    # Auto-update unmodified files (no LLM needed)
-    manifest =
-      Enum.reduce(unmodified_files, manifest, fn {relative_path, priv_path}, acc ->
-        dest_path = Path.join(deploy_folder, relative_path)
-        upstream_content = File.read!(priv_path)
-        upstream_hash = DeployEx.PrivManifest.hash_content(upstream_content)
-        {updated, _} = write_unmodified_file(dest_path, upstream_content, acc, relative_path, upstream_hash)
-        updated
+    user_paths =
+      deploy_folder
+      |> list_deploy_files()
+      |> Enum.map(&Path.relative_to(&1, deploy_folder))
+
+    upstream_only = upstream_paths -- user_paths
+    user_only = user_paths -- upstream_paths
+    shared = upstream_paths -- upstream_only
+
+    # For shared paths, check which are actually different
+    {identical, changed} =
+      Enum.split_with(shared, fn path ->
+        upstream_content = File.read!(Path.join(priv_dir, path))
+        user_content = File.read!(Path.join(deploy_folder, path))
+        upstream_content === user_content
       end)
 
     change_manifest = %{
-      new_upstream: Enum.map(new_upstream, &elem(&1, 0)),
-      modified: Enum.map(modified, &elem(&1, 0)),
+      new_upstream: upstream_only,
+      modified: changed,
       user_only: user_only
     }
 
     Mix.shell().info([:cyan, "* planning merge with LLM..."])
+    Mix.shell().info("  #{length(upstream_only)} new upstream, #{length(changed)} changed, #{length(identical)} identical, #{length(user_only)} user-only")
 
     case DeployEx.LLMMerge.plan(change_manifest) do
       {:ok, actions} ->
@@ -126,7 +133,7 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
         print_summary(
           %{
             new: Enum.count(actions, &match?({:copy_upstream, _}, &1)),
-            auto_updated: length(unmodified_files),
+            auto_updated: length(identical),
             backed_up: Enum.count(actions, &match?({:merge, _, _}, &1))
           },
           backup_dir
@@ -140,46 +147,6 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
 
         run_standard_upgrade(priv_files, priv_dir, deploy_folder, manifest, backup_dir)
     end
-  end
-
-  defp classify_files(priv_files, priv_dir, deploy_folder, manifest) do
-    upstream_relative_paths = MapSet.new(priv_files, &Path.relative_to(&1, priv_dir))
-
-    {new_upstream, modified, unmodified} =
-      Enum.reduce(priv_files, {[], [], []}, fn priv_path, {new_acc, mod_acc, unmod_acc} ->
-        relative_path = Path.relative_to(priv_path, priv_dir)
-        dest_path = Path.join(deploy_folder, relative_path)
-
-        case DeployEx.PrivManifest.base_hash(manifest, relative_path) do
-          {:error, _} ->
-            {[{relative_path, priv_path} | new_acc], mod_acc, unmod_acc}
-
-          {:ok, base_hash} ->
-            user_content =
-              if File.exists?(dest_path), do: File.read!(dest_path), else: File.read!(priv_path)
-
-            user_hash = DeployEx.PrivManifest.hash_content(user_content)
-
-            if user_hash === base_hash do
-              {new_acc, mod_acc, [{relative_path, priv_path} | unmod_acc]}
-            else
-              {new_acc, [{relative_path, priv_path} | mod_acc], unmod_acc}
-            end
-        end
-      end)
-
-    # Find user-only files: in deploys but not in upstream and not in manifest as unmodified
-    user_only =
-      deploy_folder
-      |> Path.join("**/*")
-      |> Path.wildcard()
-      |> Enum.reject(&File.dir?/1)
-      |> Enum.reject(&String.ends_with?(&1, ".md"))
-      |> Enum.map(&Path.relative_to(&1, deploy_folder))
-      |> Enum.reject(&String.starts_with?(&1, "."))
-      |> Enum.reject(&MapSet.member?(upstream_relative_paths, &1))
-
-    {Enum.reverse(new_upstream), Enum.reverse(modified), Enum.reverse(unmodified), user_only}
   end
 
   defp execute_plan(actions, priv_dir, deploy_folder, manifest, backup_dir) do
@@ -309,6 +276,45 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
     if counts.backed_up > 0 do
       Mix.shell().info([:yellow, "\nReview the diffs above. Your backups are in: #{backup_dir}"])
     end
+  end
+
+  # SECTION: Manifest
+
+  defp load_or_generate_manifest(deploy_folder) do
+    case DeployEx.PrivManifest.read(deploy_folder) do
+      {:ok, manifest} ->
+        manifest
+
+      {:error, _} ->
+        if File.exists?(deploy_folder) do
+          Mix.shell().info([:yellow, "* no manifest found, generating from existing files in #{deploy_folder}"])
+          generate_manifest_from_existing(deploy_folder)
+        else
+          [deploy_ex_version: to_string(Application.spec(:deploy_ex, :vsn)), files: []]
+        end
+    end
+  end
+
+  defp generate_manifest_from_existing(deploy_folder) do
+    deploy_folder
+    |> list_deploy_files()
+    |> Enum.reduce(
+      [deploy_ex_version: to_string(Application.spec(:deploy_ex, :vsn)), files: []],
+      fn file_path, acc ->
+        relative_path = Path.relative_to(file_path, deploy_folder)
+        hash = file_path |> File.read!() |> DeployEx.PrivManifest.hash_content()
+        DeployEx.PrivManifest.put_file(acc, relative_path, hash)
+      end
+    )
+  end
+
+  defp list_deploy_files(deploy_folder) do
+    deploy_folder
+    |> Path.join("**/*")
+    |> Path.wildcard()
+    |> Enum.reject(&File.dir?/1)
+    |> Enum.reject(&String.ends_with?(&1, ".md"))
+    |> Enum.reject(&String.starts_with?(Path.relative_to(&1, deploy_folder), "."))
   end
 
   # SECTION: Helpers
