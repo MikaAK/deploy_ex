@@ -1,0 +1,115 @@
+{
+  "skill_name": "deploy-ex-ops",
+  "evals": [
+    {
+      "id": 1,
+      "query": "I just merged a PR and need to get it deployed to production, only for the api app though not the worker",
+      "should_trigger": true
+    },
+    {
+      "id": 2,
+      "query": "mix deploy_ex.release keeps saying no changes detected but I definitely changed code, how do I force it?",
+      "should_trigger": true
+    },
+    {
+      "id": 3,
+      "query": "our staging app is throwing 500s, can you check the instance health and restart it if needed?",
+      "should_trigger": true
+    },
+    {
+      "id": 4,
+      "query": "I need to test sha e4f2a1b on a qa node before merging, and I want it behind the load balancer so QA can hit it",
+      "should_trigger": true
+    },
+    {
+      "id": 5,
+      "query": "how do I roll back to the previous release? the deploy we just did broke something",
+      "should_trigger": true
+    },
+    {
+      "id": 6,
+      "query": "we're getting hammered with traffic, scale the worker app to 5 instances",
+      "should_trigger": true
+    },
+    {
+      "id": 7,
+      "query": "I need to SSH into the api server and check the logs, something's wrong with the payment flow",
+      "should_trigger": true
+    },
+    {
+      "id": 8,
+      "query": "run a load test against https://api.myapp.com/health with k6",
+      "should_trigger": true
+    },
+    {
+      "id": 9,
+      "query": "what releases are currently deployed across all our apps?",
+      "should_trigger": true
+    },
+    {
+      "id": 10,
+      "query": "destroy all the qa nodes for my_api, we're done testing that feature",
+      "should_trigger": true
+    },
+    {
+      "id": 11,
+      "query": "the autoscaling refresh is stuck, how do I check the status?",
+      "should_trigger": true
+    },
+    {
+      "id": 12,
+      "query": "I need to upload the releases but skip the worker app, just do the api and web",
+      "should_trigger": true
+    },
+    {
+      "id": 13,
+      "query": "connect to the remote iex console on the api server so I can debug a genserver state",
+      "should_trigger": true
+    },
+    {
+      "id": 14,
+      "query": "I want to add a new Ecto schema for tracking user subscriptions with stripe integration",
+      "should_trigger": false
+    },
+    {
+      "id": 15,
+      "query": "can you write a Phoenix LiveView component for our dashboard that shows real-time order counts?",
+      "should_trigger": false
+    },
+    {
+      "id": 16,
+      "query": "I need to add a new terraform module for an ElastiCache cluster in our deploy_ex setup",
+      "should_trigger": false
+    },
+    {
+      "id": 17,
+      "query": "help me write a new mix task in deploy_ex that cleans up old S3 releases",
+      "should_trigger": false
+    },
+    {
+      "id": 18,
+      "query": "how do I configure my Phoenix endpoint to use SSL with let's encrypt?",
+      "should_trigger": false
+    },
+    {
+      "id": 19,
+      "query": "the CI pipeline is failing on the credo step, how do I fix the warnings?",
+      "should_trigger": false
+    },
+    {
+      "id": 20,
+      "query": "set up a new Oban worker to process webhook events from Stripe in the background",
+      "should_trigger": false
+    },
+    {
+      "id": 21,
+      "query": "do a zero-downtime deploy using the launch-first autoscaling strategy for the web app",
+      "should_trigger": true
+    },
+    {
+      "id": 22,
+      "query": "check if all the ansible hosts are reachable before I deploy",
+      "should_trigger": true
+    }
+  ]
+}
