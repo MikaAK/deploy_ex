@@ -1,336 +1,675 @@
 defmodule Mix.Tasks.DeployEx.UpgradePriv do
   use Mix.Task
 
-  @shortdoc "Upgrades ./deploys/ templates from the latest deploy_ex dependency"
+  @shortdoc "Upgrades ./deploys/ from the latest deploy_ex templates"
   @moduledoc """
-  Syncs Terraform, Ansible, and CI template files in `./deploys/` from the
-  latest version of the deploy_ex dependency.
+  Compares rendered upstream templates against your `./deploys/` directory
+  and applies changes interactively, with AI review, or autonomously.
 
-  Files are categorized as:
-  - **New**: copied automatically (no previous version)
-  - **Unmodified**: overwritten silently (you never changed them)
-  - **Modified**: your version is backed up, upstream overwrites, diff is shown
+  The upgrade pipeline:
+  1. Renders all priv EEx templates to a temp directory (same as terraform.build/ansible.build)
+  2. Compares rendered output against your existing `./deploys/` files
+  3. Creates a backup of all files that will be modified
+  4. Applies changes according to the selected mode
 
-  Requires `mix deploy_ex.export_priv` to have been run first.
+  ## Modes
 
-  ## Example
-  ```bash
-  mix deploy_ex.upgrade_priv
-  mix deploy_ex.upgrade_priv --llm-merge
-  ```
+  **Interactive (default):** Category summary, drill into each category,
+  hunk-level accept/reject for updates via DiffViewer.
+
+  **AI-assisted (`--ai-review`):** LLM reviews each change and proposes
+  accept/reject per file. You confirm before any writes.
+
+  **Autonomous (`--llm-merge`):** LLM applies all changes automatically.
+  Summary shown at the end. Files can be restored from backup.
+
+  ## Examples
+
+      mix deploy_ex.upgrade_priv
+      mix deploy_ex.upgrade_priv --ai-review
+      mix deploy_ex.upgrade_priv --llm-merge
 
   ## Options
-  - `llm-merge` - Use LLM to plan the merge autonomously, detecting renames and
-    restructuring, then merge file contents for conflicts. Requires `langchain`
-    dep and `:llm_provider` config.
+
+  - `--ai-review` - LLM reviews diffs and proposes a plan; you confirm per file
+  - `--llm-merge` - LLM applies all changes autonomously
   """
 
+  require Logger
+
+  # SECTION: Public API
+
+  @spec run(list(String.t())) :: :ok
   def run(args) do
     opts = parse_args(args)
     deploy_folder = DeployEx.Config.deploy_folder()
-    priv_dir = :deploy_ex |> :code.priv_dir() |> to_string()
 
-    with :ok <- DeployExHelpers.check_valid_project() do
-      priv_files = list_priv_files(priv_dir)
-      manifest = load_or_generate_manifest(deploy_folder)
+    with :ok <- DeployExHelpers.check_valid_project(),
+         {:ok, temp_dir, actions} <- run_pipeline(deploy_folder, opts) do
+      try do
+        backup_dir = create_backup(actions, deploy_folder)
 
-      timestamp =
-        DateTime.utc_now()
-        |> DateTime.to_iso8601()
-        |> String.replace(~r/[:\.]/, "-")
-
-      backup_dir = Path.join([deploy_folder, ".backup", timestamp])
-
-      if opts[:llm_merge] do
-        run_llm_upgrade(priv_files, priv_dir, deploy_folder, manifest, backup_dir)
-      else
-        run_standard_upgrade(priv_files, priv_dir, deploy_folder, manifest, backup_dir)
+        cond do
+          opts[:llm_merge] -> run_autonomous(actions, temp_dir, deploy_folder, backup_dir)
+          opts[:ai_review] -> run_ai_assisted(actions, temp_dir, deploy_folder, backup_dir)
+          true -> run_interactive(actions, temp_dir, deploy_folder, backup_dir)
+        end
+      after
+        File.rm_rf!(temp_dir)
       end
     else
-      {:error, e} -> Mix.raise(to_string(e))
+      {:error, %ErrorMessage{} = error} -> Mix.raise(ErrorMessage.to_string(error))
+      {:error, reason} -> Mix.raise("Upgrade failed: #{inspect(reason)}")
     end
   end
 
-  # SECTION: Standard Upgrade (no LLM)
+  # SECTION: Shared Pipeline
 
-  defp run_standard_upgrade(priv_files, priv_dir, deploy_folder, manifest, backup_dir) do
-    {manifest, counts} =
-      Enum.reduce(
-        priv_files,
-        {manifest, %{new: 0, auto_updated: 0, backed_up: 0}},
-        fn priv_path, {acc_manifest, acc_counts} ->
-          relative_path = Path.relative_to(priv_path, priv_dir)
-          dest_path = Path.join(deploy_folder, relative_path)
-          upstream_content = File.read!(priv_path)
-          upstream_hash = DeployEx.PrivManifest.hash_content(upstream_content)
+  defp run_pipeline(deploy_folder, opts) do
+    temp_dir_ref = :erlang.make_ref()
 
-          {updated_manifest, counts_key} =
-            case DeployEx.PrivManifest.base_hash(acc_manifest, relative_path) do
-              {:error, _} ->
-                write_new_file(dest_path, upstream_content, acc_manifest, relative_path, upstream_hash)
+    steps = [
+      {"Rendering upstream templates", fn ->
+        case DeployEx.PrivRenderer.render_to_temp(opts) do
+          {:ok, dir} ->
+            Process.put(temp_dir_ref, dir)
+            :ok
 
-              {:ok, base_hash} ->
-                user_content =
-                  if File.exists?(dest_path), do: File.read!(dest_path), else: upstream_content
-
-                user_hash = DeployEx.PrivManifest.hash_content(user_content)
-
-                if user_hash === base_hash do
-                  write_unmodified_file(dest_path, upstream_content, acc_manifest, relative_path, upstream_hash)
-                else
-                  backup_and_overwrite(
-                    dest_path, priv_path, backup_dir, relative_path,
-                    user_content, upstream_content, acc_manifest, upstream_hash
-                  )
-                end
-            end
-
-          {updated_manifest, Map.update!(acc_counts, counts_key, &(&1 + 1))}
+          {:error, _} = error ->
+            error
         end
-      )
+      end},
+      {"Planning changes", fn ->
+        temp_dir = Process.get(temp_dir_ref)
 
-    DeployEx.PrivManifest.write(deploy_folder, manifest)
-    print_summary(counts, backup_dir)
+        case DeployEx.ChangePlanner.plan(temp_dir, deploy_folder, opts) do
+          {:ok, plan} ->
+            Process.put({temp_dir_ref, :plan}, plan)
+            :ok
+
+          {:error, _} = error ->
+            error
+        end
+      end}
+    ]
+
+    case DeployEx.TUI.Progress.run_steps(steps, title: "Upgrade Pipeline") do
+      :ok ->
+        temp_dir = Process.get(temp_dir_ref)
+        actions = Process.get({temp_dir_ref, :plan})
+        {:ok, temp_dir, actions}
+
+      {:error, _} = error ->
+        temp_dir = Process.get(temp_dir_ref)
+        if temp_dir, do: File.rm_rf!(temp_dir)
+        error
+    end
   end
 
-  # SECTION: LLM Upgrade (plan + execute)
+  # SECTION: Backup
 
-  defp run_llm_upgrade(priv_files, priv_dir, deploy_folder, manifest, backup_dir) do
-    upstream_paths = Enum.map(priv_files, &Path.relative_to(&1, priv_dir))
+  defp create_backup(actions, deploy_folder) do
+    timestamp =
+      DateTime.utc_now()
+      |> DateTime.to_iso8601()
+      |> String.replace(~r/[:\.]/, "-")
 
-    user_paths =
-      deploy_folder
-      |> list_deploy_files()
-      |> Enum.map(&Path.relative_to(&1, deploy_folder))
+    backup_dir = Path.join([deploy_folder, ".backup", timestamp])
+    modifiable_actions = Enum.reject(actions, &match?({:identical, _}, &1))
+    modifiable_actions = Enum.reject(modifiable_actions, &match?({:user_only, _}, &1))
+    modifiable_actions = Enum.reject(modifiable_actions, &match?({:new, _}, &1))
 
-    upstream_only = upstream_paths -- user_paths
-    user_only = user_paths -- upstream_paths
-    shared = upstream_paths -- upstream_only
+    Enum.each(modifiable_actions, fn action ->
+      user_paths = user_paths_for_action(action)
 
-    # For shared paths, check which are actually different
-    {identical, changed} =
-      Enum.split_with(shared, fn path ->
-        upstream_content = File.read!(Path.join(priv_dir, path))
-        user_content = File.read!(Path.join(deploy_folder, path))
-        upstream_content === user_content
+      Enum.each(user_paths, fn user_path ->
+        src = Path.join(deploy_folder, user_path)
+
+        if File.exists?(src) do
+          dest = Path.join(backup_dir, user_path)
+          File.mkdir_p!(Path.dirname(dest))
+          File.cp!(src, dest)
+        end
+      end)
+    end)
+
+    backup_dir
+  end
+
+  defp user_paths_for_action({:update, _upstream, user}), do: [user]
+  defp user_paths_for_action({:rename, _upstream, user}), do: [user]
+  defp user_paths_for_action({:split, _upstream, users}), do: users
+  defp user_paths_for_action({:merge_files, _upstreams, user}), do: [user]
+  defp user_paths_for_action({:removed, _upstream}), do: []
+  defp user_paths_for_action(_), do: []
+
+  # SECTION: Interactive Mode
+
+  defp run_interactive(actions, temp_dir, deploy_folder, backup_dir) do
+    summary = categorize_actions(actions)
+    print_category_summary(summary)
+
+    if Enum.all?(Map.values(summary), &Enum.empty?/1) do
+      Mix.shell().info([:green, "\nEverything is up to date!"])
+    else
+      applied = interactive_category_loop(summary, temp_dir, deploy_folder)
+      print_final_summary(applied, backup_dir)
+    end
+  end
+
+  defp categorize_actions(actions) do
+    Enum.group_by(actions, &elem(&1, 0))
+  end
+
+  defp print_category_summary(summary) do
+    Mix.shell().info([:cyan, "\n=== Upgrade Summary ===\n"])
+
+    categories = [
+      {:identical, "Identical (no changes)"},
+      {:update, "Updates"},
+      {:rename, "Renames"},
+      {:split, "Splits"},
+      {:merge_files, "Merges"},
+      {:new, "New files"},
+      {:removed, "Removed files"},
+      {:user_only, "User-only files"}
+    ]
+
+    Enum.each(categories, fn {key, label} ->
+      count = summary |> Map.get(key, []) |> length()
+
+      if count > 0 do
+        color = category_color(key)
+        Mix.shell().info([color, "  #{count} #{label}"])
+      end
+    end)
+
+    Mix.shell().info("")
+  end
+
+  defp category_color(:identical), do: :faint
+  defp category_color(:update), do: :yellow
+  defp category_color(:rename), do: :cyan
+  defp category_color(:split), do: :cyan
+  defp category_color(:merge_files), do: :cyan
+  defp category_color(:new), do: :green
+  defp category_color(:removed), do: :red
+  defp category_color(:user_only), do: :faint
+
+  defp interactive_category_loop(summary, temp_dir, deploy_folder) do
+    selectable = [
+      {:update, "Updates"},
+      {:rename, "Renames"},
+      {:split, "Splits"},
+      {:merge_files, "Merges"},
+      {:new, "New files"},
+      {:removed, "Removed files"}
+    ]
+
+    available =
+      selectable
+      |> Enum.filter(fn {key, _} -> length(Map.get(summary, key, [])) > 0 end)
+
+    if Enum.empty?(available) do
+      Mix.shell().info([:green, "No actionable changes."])
+      %{}
+    else
+      choices = Enum.map(available, fn {key, label} ->
+        count = length(Map.get(summary, key, []))
+        "#{label} (#{count})"
       end)
 
-    change_manifest = %{
-      new_upstream: upstream_only,
-      modified: changed,
-      user_only: user_only
-    }
+      selected = DeployEx.TUI.Select.run(
+        choices ++ ["Done - apply all reviewed changes"],
+        title: "Select a category to review"
+      )
 
-    Mix.shell().info([:cyan, "* planning merge with LLM..."])
-    Mix.shell().info("  #{length(upstream_only)} new upstream, #{length(changed)} changed, #{length(identical)} identical, #{length(user_only)} user-only")
+      case selected do
+        [] ->
+          Mix.shell().info([:yellow, "Cancelled."])
+          %{}
 
-    case DeployEx.LLMMerge.plan(change_manifest) do
-      {:ok, actions} ->
-        Mix.shell().info([:green, "* LLM produced #{length(actions)} action(s)"])
-        manifest = execute_plan(actions, priv_dir, deploy_folder, manifest, backup_dir)
-        DeployEx.PrivManifest.write(deploy_folder, manifest)
+        [choice] ->
+          if String.starts_with?(choice, "Done") do
+            %{}
+          else
+            index = Enum.find_index(choices, &(&1 === choice))
+            {category_key, _label} = Enum.at(available, index)
+            category_actions = Map.get(summary, category_key, [])
 
-        print_summary(
-          %{
-            new: Enum.count(actions, &match?({:copy_upstream, _}, &1)),
-            auto_updated: length(identical),
-            backed_up: Enum.count(actions, &match?({:merge, _, _}, &1))
-          },
-          backup_dir
-        )
+            applied = process_category(category_key, category_actions, temp_dir, deploy_folder)
 
-      {:error, reason} ->
-        Mix.shell().info([
-          :yellow,
-          "* LLM planning failed (#{inspect(reason)}), falling back to standard upgrade"
-        ])
-
-        run_standard_upgrade(priv_files, priv_dir, deploy_folder, manifest, backup_dir)
+            remaining_summary = Map.put(summary, category_key, [])
+            more = interactive_category_loop(remaining_summary, temp_dir, deploy_folder)
+            Map.merge(applied, more, fn _k, v1, v2 -> v1 + v2 end)
+          end
+      end
     end
   end
 
-  defp execute_plan(actions, priv_dir, deploy_folder, manifest, backup_dir) do
-    context = %{deploy_folder: deploy_folder, priv_dir: priv_dir}
+  defp process_category(:new, actions, temp_dir, deploy_folder) do
+    count =
+      Enum.count(actions, fn {:new, upstream_path} ->
+        answer = Mix.shell().yes?("Add new file #{upstream_path}?")
 
-    Enum.reduce(actions, manifest, fn action, acc_manifest ->
-      case action do
-        {:copy_upstream, upstream_path} ->
-          dest_path = Path.join(deploy_folder, upstream_path)
-          upstream_content = File.read!(Path.join(priv_dir, upstream_path))
-          upstream_hash = DeployEx.PrivManifest.hash_content(upstream_content)
-          {updated, _} = write_new_file(dest_path, upstream_content, acc_manifest, upstream_path, upstream_hash)
-          updated
+        if answer do
+          src = Path.join(temp_dir, upstream_path)
+          dest = Path.join(deploy_folder, upstream_path)
+          File.mkdir_p!(Path.dirname(dest))
+          File.cp!(src, dest)
+          Mix.shell().info([:green, "  + ", :reset, upstream_path])
+        end
 
-        {:merge, upstream_path, user_path} ->
-          dest_path = Path.join(deploy_folder, user_path)
-          user_content = File.read!(dest_path)
-          upstream_content = File.read!(Path.join(priv_dir, upstream_path))
-          upstream_hash = DeployEx.PrivManifest.hash_content(upstream_content)
+        answer
+      end)
 
-          backup_path = Path.join(backup_dir, user_path)
-          File.mkdir_p!(Path.dirname(backup_path))
-          File.write!(backup_path, user_content)
-          Mix.shell().info([:yellow, "* backed up ", :reset, dest_path, :yellow, " -> ", :reset, backup_path])
+    %{new: count}
+  end
 
-          case DeployEx.LLMMerge.execute_merge(action, context) do
+  defp process_category(:removed, actions, _temp_dir, deploy_folder) do
+    count =
+      Enum.count(actions, fn {:removed, upstream_path} ->
+        dest = Path.join(deploy_folder, upstream_path)
+        answer = Mix.shell().yes?("Remove #{upstream_path}?")
+
+        if answer and File.exists?(dest) do
+          File.rm!(dest)
+          Mix.shell().info([:red, "  - ", :reset, upstream_path])
+        end
+
+        answer
+      end)
+
+    %{removed: count}
+  end
+
+  defp process_category(:update, actions, temp_dir, deploy_folder) do
+    count =
+      Enum.count(actions, fn {:update, upstream_path, user_path} ->
+        upstream_content = File.read!(Path.join(temp_dir, upstream_path))
+        user_content = File.read!(Path.join(deploy_folder, user_path))
+
+        case DeployEx.TUI.DiffViewer.run(user_content, upstream_content,
+               title: "Update: #{user_path}",
+               old_label: "yours",
+               new_label: "upstream") do
+          {:ok, merged} ->
+            dest = Path.join(deploy_folder, user_path)
+            File.write!(dest, merged)
+            Mix.shell().info([:green, "  ~ ", :reset, user_path])
+            true
+
+          :cancelled ->
+            Mix.shell().info([:yellow, "  skipped ", :reset, user_path])
+            false
+        end
+      end)
+
+    %{update: count}
+  end
+
+  defp process_category(:rename, actions, temp_dir, deploy_folder) do
+    count =
+      Enum.count(actions, fn {:rename, upstream_path, user_path} ->
+        upstream_content = File.read!(Path.join(temp_dir, upstream_path))
+        user_content = File.read!(Path.join(deploy_folder, user_path))
+
+        Mix.shell().info([:cyan, "  Rename detected: ", :reset, user_path, :cyan, " <- ", :reset, upstream_path])
+
+        case DeployEx.TUI.DiffViewer.run(user_content, upstream_content,
+               title: "Rename: #{user_path}",
+               old_label: "yours (#{user_path})",
+               new_label: "upstream (#{upstream_path})") do
+          {:ok, merged} ->
+            dest = Path.join(deploy_folder, user_path)
+            File.write!(dest, merged)
+            Mix.shell().info([:green, "  ~ ", :reset, user_path])
+            true
+
+          :cancelled ->
+            Mix.shell().info([:yellow, "  skipped ", :reset, user_path])
+            false
+        end
+      end)
+
+    %{rename: count}
+  end
+
+  defp process_category(:split, actions, temp_dir, deploy_folder) do
+    count =
+      Enum.count(actions, fn {:split, upstream_path, user_paths} ->
+        upstream_content = File.read!(Path.join(temp_dir, upstream_path))
+        Mix.shell().info([:cyan, "  Split: ", :reset, upstream_path, :cyan, " -> ", :reset, Enum.join(user_paths, ", ")])
+
+        Enum.each(user_paths, fn user_path ->
+          user_content = File.read!(Path.join(deploy_folder, user_path))
+
+          case DeployEx.TUI.DiffViewer.run(user_content, upstream_content,
+                 title: "Split: #{user_path} (from #{upstream_path})",
+                 old_label: "yours (#{user_path})",
+                 new_label: "upstream (#{upstream_path})") do
             {:ok, merged} ->
-              File.mkdir_p!(Path.dirname(dest_path))
+              dest = Path.join(deploy_folder, user_path)
+              File.write!(dest, merged)
+              Mix.shell().info([:green, "    ~ ", :reset, user_path])
 
-              DeployExHelpers.write_file(dest_path, merged,
-                message: [:green, "* llm-merged ", :reset, dest_path],
-                force: true
-              )
-
-            {:error, reason} ->
-              Mix.shell().info([:yellow, "* file merge failed (#{inspect(reason)}), overwriting"])
-
-              File.mkdir_p!(Path.dirname(dest_path))
-
-              DeployExHelpers.write_file(dest_path, upstream_content,
-                message: [:yellow, "* overwritten ", :reset, dest_path],
-                force: true
-              )
-
-            :skip ->
-              :ok
+            :cancelled ->
+              Mix.shell().info([:yellow, "    skipped ", :reset, user_path])
           end
+        end)
 
-          DeployEx.PrivManifest.put_file(acc_manifest, upstream_path, upstream_hash)
+        true
+      end)
 
-        {:keep_user, _user_path} ->
-          acc_manifest
+    %{split: count}
+  end
+
+  defp process_category(:merge_files, actions, temp_dir, deploy_folder) do
+    count =
+      Enum.count(actions, fn {:merge_files, upstream_paths, user_path} ->
+        concatenated_upstream =
+          upstream_paths
+          |> Enum.map(&File.read!(Path.join(temp_dir, &1)))
+          |> Enum.join("\n")
+
+        user_content = File.read!(Path.join(deploy_folder, user_path))
+        Mix.shell().info([:cyan, "  Merge: ", :reset, Enum.join(upstream_paths, " + "), :cyan, " -> ", :reset, user_path])
+
+        case DeployEx.TUI.DiffViewer.run(user_content, concatenated_upstream,
+               title: "Merge: #{user_path}",
+               old_label: "yours",
+               new_label: "upstream (concatenated)") do
+          {:ok, merged} ->
+            dest = Path.join(deploy_folder, user_path)
+            File.write!(dest, merged)
+            Mix.shell().info([:green, "  ~ ", :reset, user_path])
+            true
+
+          :cancelled ->
+            Mix.shell().info([:yellow, "  skipped ", :reset, user_path])
+            false
+        end
+      end)
+
+    %{merge_files: count}
+  end
+
+  # SECTION: AI-Assisted Mode
+
+  defp run_ai_assisted(actions, temp_dir, deploy_folder, backup_dir) do
+    non_trivial =
+      actions
+      |> Enum.reject(&match?({:identical, _}, &1))
+      |> Enum.reject(&match?({:user_only, _}, &1))
+
+    if Enum.empty?(non_trivial) do
+      Mix.shell().info([:green, "\nEverything is up to date!"])
+    else
+      total = length(non_trivial)
+
+      reviews =
+        DeployEx.TUI.Progress.run_stream("AI Review", fn tui_pid ->
+          non_trivial
+          |> Enum.with_index(1)
+          |> Enum.map(fn {action, index} ->
+            label = action_label(action)
+            DeployEx.TUI.Progress.update_progress(tui_pid, index / total, "Reviewing: #{label}")
+            review = review_action_with_llm(action, temp_dir, deploy_folder)
+            {action, review}
+          end)
+        end)
+
+      present_ai_review(reviews, temp_dir, deploy_folder, backup_dir)
+    end
+  end
+
+  defp review_action_with_llm(action, temp_dir, deploy_folder) do
+    case DeployEx.LLMMerge.review_action(action, temp_dir, deploy_folder) do
+      {:ok, review} -> review
+      {:error, _} -> %{decision: :apply, rationale: "LLM review failed, defaulting to apply.", path: action_label(action)}
+    end
+  end
+
+  defp present_ai_review(reviews, temp_dir, deploy_folder, backup_dir) do
+    Mix.shell().info([:cyan, "\n=== AI Review Results ===\n"])
+
+    choices =
+      Enum.map(reviews, fn {action, review} ->
+        decision_symbol = case review.decision do
+          :apply -> "[+]"
+          :skip -> "[-]"
+          :partial -> "[~]"
+        end
+
+        "#{decision_symbol} #{action_label(action)} -- #{review.rationale}"
+      end)
+
+    selected = DeployEx.TUI.Select.run(
+      choices ++ ["Apply all recommended", "Cancel"],
+      title: "Confirm AI recommendations (select to toggle)",
+      allow_all: true
+    )
+
+    case selected do
+      [] ->
+        Mix.shell().info([:yellow, "Cancelled."])
+
+      [choice] when is_binary(choice) ->
+        cond do
+          String.starts_with?(choice, "Apply all") ->
+            apply_ai_recommendations(reviews, temp_dir, deploy_folder)
+            print_final_summary(%{ai_applied: length(reviews)}, backup_dir)
+
+          String.starts_with?(choice, "Cancel") ->
+            Mix.shell().info([:yellow, "Cancelled."])
+
+          true ->
+            index = Enum.find_index(choices, &(&1 === choice))
+            {action, _review} = Enum.at(reviews, index)
+            apply_single_action(action, temp_dir, deploy_folder)
+            print_final_summary(%{ai_applied: 1}, backup_dir)
+        end
+
+      all when is_list(all) ->
+        apply_ai_recommendations(reviews, temp_dir, deploy_folder)
+        print_final_summary(%{ai_applied: length(reviews)}, backup_dir)
+    end
+  end
+
+  defp apply_ai_recommendations(reviews, temp_dir, deploy_folder) do
+    Enum.each(reviews, fn {action, review} ->
+      if review.decision in [:apply, :partial] do
+        apply_single_action(action, temp_dir, deploy_folder)
       end
     end)
   end
 
-  # SECTION: File Operations
+  # SECTION: Autonomous Mode
 
-  defp write_new_file(dest_path, upstream_content, manifest, relative_path, upstream_hash) do
-    File.mkdir_p!(Path.dirname(dest_path))
+  defp run_autonomous(actions, temp_dir, deploy_folder, backup_dir) do
+    non_trivial =
+      actions
+      |> Enum.reject(&match?({:identical, _}, &1))
+      |> Enum.reject(&match?({:user_only, _}, &1))
 
-    DeployExHelpers.write_file(dest_path, upstream_content,
-      message: [:green, "* new ", :reset, dest_path],
-      force: true
-    )
+    if Enum.empty?(non_trivial) do
+      Mix.shell().info([:green, "\nEverything is up to date!"])
+    else
+      total = length(non_trivial)
 
-    {DeployEx.PrivManifest.put_file(manifest, relative_path, upstream_hash), :new}
+      result =
+        DeployEx.TUI.Progress.run_stream("Autonomous Upgrade", fn tui_pid ->
+          non_trivial
+          |> Enum.with_index(1)
+          |> Enum.each(fn {action, index} ->
+            label = action_label(action)
+            DeployEx.TUI.Progress.update_progress(tui_pid, index / total, "Applying: #{label}")
+            apply_single_action_with_llm(action, temp_dir, deploy_folder)
+          end)
+
+          :ok
+        end)
+
+      case result do
+        :ok -> print_autonomous_summary(non_trivial, backup_dir)
+        {:error, :cancelled} -> Mix.shell().info([:yellow, "\nCancelled."])
+        {:error, reason} -> Mix.shell().error("Upgrade failed: #{inspect(reason)}")
+      end
+    end
   end
 
-  defp write_unmodified_file(dest_path, upstream_content, manifest, relative_path, upstream_hash) do
-    File.mkdir_p!(Path.dirname(dest_path))
+  defp apply_single_action_with_llm(action, temp_dir, deploy_folder) do
+    case action do
+      {:new, _upstream_path} ->
+        apply_single_action(action, temp_dir, deploy_folder)
 
-    DeployExHelpers.write_file(dest_path, upstream_content,
-      message: [:green, "* auto-updated ", :reset, dest_path],
-      force: true
-    )
+      {:removed, _} ->
+        :ok
 
-    {DeployEx.PrivManifest.put_file(manifest, relative_path, upstream_hash), :auto_updated}
-  end
+      {:update, upstream_path, user_path} ->
+        upstream_content = File.read!(Path.join(temp_dir, upstream_path))
+        user_content = File.read!(Path.join(deploy_folder, user_path))
 
-  defp backup_and_overwrite(
-         dest_path, priv_path, backup_dir, relative_path,
-         user_content, upstream_content, manifest, upstream_hash
-       ) do
-    backup_path = Path.join(backup_dir, relative_path)
-    File.mkdir_p!(Path.dirname(backup_path))
-    File.write!(backup_path, user_content)
+        case DeployEx.LLMMerge.merge_file(user_content, upstream_content) do
+          {:ok, merged} ->
+            dest = Path.join(deploy_folder, user_path)
+            File.write!(dest, merged)
+            Mix.shell().info([:green, "  ~ ", :reset, user_path, " (LLM merged)"])
 
-    Mix.shell().info([
-      :yellow, "* backed up ", :reset, dest_path,
-      :yellow, " -> ", :reset, backup_path
-    ])
+          {:error, _} ->
+            apply_single_action(action, temp_dir, deploy_folder)
+        end
 
-    File.mkdir_p!(Path.dirname(dest_path))
+      {:rename, upstream_path, user_path} ->
+        upstream_content = File.read!(Path.join(temp_dir, upstream_path))
+        user_content = File.read!(Path.join(deploy_folder, user_path))
 
-    DeployExHelpers.write_file(dest_path, upstream_content,
-      message: [:yellow, "* overwritten ", :reset, dest_path],
-      force: true
-    )
+        case DeployEx.LLMMerge.merge_file(user_content, upstream_content) do
+          {:ok, merged} ->
+            dest = Path.join(deploy_folder, user_path)
+            File.write!(dest, merged)
+            Mix.shell().info([:green, "  ~ ", :reset, user_path, " (LLM merged rename)"])
 
-    print_diff(backup_path, priv_path)
+          {:error, _} ->
+            apply_single_action(action, temp_dir, deploy_folder)
+        end
 
-    {DeployEx.PrivManifest.put_file(manifest, relative_path, upstream_hash), :backed_up}
-  end
+      {:split, upstream_path, user_paths} ->
+        upstream_content = File.read!(Path.join(temp_dir, upstream_path))
 
-  # SECTION: Output
+        Enum.each(user_paths, fn user_path ->
+          user_content = File.read!(Path.join(deploy_folder, user_path))
 
-  defp print_diff(old_path, new_path) do
-    case System.cmd("diff", [old_path, new_path], stderr_to_stdout: true) do
-      {output, _exit_code} when output !== "" ->
-        Mix.shell().info([:cyan, "--- diff (your backup vs upstream) ---"])
-        Mix.shell().info(output)
-        Mix.shell().info([:cyan, "--------------------------------------"])
+          case DeployEx.LLMMerge.merge_file(user_content, upstream_content) do
+            {:ok, merged} ->
+              dest = Path.join(deploy_folder, user_path)
+              File.write!(dest, merged)
+
+            {:error, _} ->
+              :ok
+          end
+        end)
+
+      {:merge_files, upstream_paths, user_path} ->
+        concatenated =
+          upstream_paths
+          |> Enum.map(&File.read!(Path.join(temp_dir, &1)))
+          |> Enum.join("\n")
+
+        user_content = File.read!(Path.join(deploy_folder, user_path))
+
+        case DeployEx.LLMMerge.merge_file(user_content, concatenated) do
+          {:ok, merged} ->
+            dest = Path.join(deploy_folder, user_path)
+            File.write!(dest, merged)
+
+          {:error, _} ->
+            :ok
+        end
 
       _ ->
         :ok
     end
   end
 
-  defp print_summary(counts, backup_dir) do
-    Mix.shell().info("")
-    Mix.shell().info([:green, "Upgrade complete:"])
-    Mix.shell().info("  #{counts.new} new file(s) added")
-    Mix.shell().info("  #{counts.auto_updated} file(s) auto-updated (unmodified)")
-    Mix.shell().info("  #{counts.backed_up} file(s) backed up and overwritten")
+  # SECTION: Action Application
 
-    if counts.backed_up > 0 do
-      Mix.shell().info([:yellow, "\nReview the diffs above. Your backups are in: #{backup_dir}"])
+  defp apply_single_action({:new, upstream_path}, temp_dir, deploy_folder) do
+    src = Path.join(temp_dir, upstream_path)
+    dest = Path.join(deploy_folder, upstream_path)
+    File.mkdir_p!(Path.dirname(dest))
+    File.cp!(src, dest)
+    Mix.shell().info([:green, "  + ", :reset, upstream_path])
+  end
+
+  defp apply_single_action({:update, upstream_path, user_path}, temp_dir, deploy_folder) do
+    src = Path.join(temp_dir, upstream_path)
+    dest = Path.join(deploy_folder, user_path)
+    File.mkdir_p!(Path.dirname(dest))
+    File.cp!(src, dest)
+    Mix.shell().info([:green, "  ~ ", :reset, user_path])
+  end
+
+  defp apply_single_action({:rename, upstream_path, user_path}, temp_dir, deploy_folder) do
+    src = Path.join(temp_dir, upstream_path)
+    dest = Path.join(deploy_folder, user_path)
+    File.mkdir_p!(Path.dirname(dest))
+    File.cp!(src, dest)
+    Mix.shell().info([:green, "  ~ ", :reset, user_path, " (renamed from #{upstream_path})"])
+  end
+
+  defp apply_single_action({:removed, upstream_path}, _temp_dir, deploy_folder) do
+    dest = Path.join(deploy_folder, upstream_path)
+
+    if File.exists?(dest) do
+      File.rm!(dest)
+      Mix.shell().info([:red, "  - ", :reset, upstream_path])
     end
   end
 
-  # SECTION: Manifest
+  defp apply_single_action(_, _temp_dir, _deploy_folder), do: :ok
 
-  defp load_or_generate_manifest(deploy_folder) do
-    case DeployEx.PrivManifest.read(deploy_folder) do
-      {:ok, manifest} ->
-        manifest
+  # SECTION: Output
 
-      {:error, _} ->
-        if File.exists?(deploy_folder) do
-          Mix.shell().info([:yellow, "* no manifest found, generating from existing files in #{deploy_folder}"])
-          generate_manifest_from_existing(deploy_folder)
-        else
-          [deploy_ex_version: to_string(Application.spec(:deploy_ex, :vsn)), files: []]
-        end
-    end
-  end
+  defp action_label({:identical, path}), do: path
+  defp action_label({:update, _up, user}), do: user
+  defp action_label({:rename, up, user}), do: "#{user} <- #{up}"
+  defp action_label({:split, up, users}), do: "#{up} -> #{Enum.join(users, ", ")}"
+  defp action_label({:merge_files, ups, user}), do: "#{Enum.join(ups, " + ")} -> #{user}"
+  defp action_label({:new, path}), do: "#{path} (new)"
+  defp action_label({:removed, path}), do: "#{path} (removed)"
+  defp action_label({:user_only, path}), do: "#{path} (user-only)"
 
-  defp generate_manifest_from_existing(deploy_folder) do
-    deploy_folder
-    |> list_deploy_files()
-    |> Enum.reduce(
-      [deploy_ex_version: to_string(Application.spec(:deploy_ex, :vsn)), files: []],
-      fn file_path, acc ->
-        relative_path = Path.relative_to(file_path, deploy_folder)
-        hash = file_path |> File.read!() |> DeployEx.PrivManifest.hash_content()
-        DeployEx.PrivManifest.put_file(acc, relative_path, hash)
+  defp print_final_summary(counts, backup_dir) do
+    Mix.shell().info([:green, "\n=== Upgrade Complete ==="])
+
+    Enum.each(counts, fn {key, count} ->
+      if count > 0 do
+        Mix.shell().info("  #{count} #{key} action(s) applied")
       end
-    )
+    end)
+
+    if File.exists?(backup_dir) do
+      Mix.shell().info([:yellow, "\nBackups saved to: #{backup_dir}"])
+    end
   end
 
-  defp list_deploy_files(deploy_folder) do
-    deploy_folder
-    |> Path.join("**/*")
-    |> Path.wildcard()
-    |> Enum.reject(&File.dir?/1)
-    |> Enum.reject(&String.ends_with?(&1, ".md"))
-    |> Enum.reject(&String.starts_with?(Path.relative_to(&1, deploy_folder), "."))
+  defp print_autonomous_summary(actions, backup_dir) do
+    Mix.shell().info([:green, "\n=== Autonomous Upgrade Complete ==="])
+    Mix.shell().info("  #{length(actions)} action(s) processed")
+
+    if File.exists?(backup_dir) do
+      Mix.shell().info([:yellow, "\nBackups saved to: #{backup_dir}"])
+      Mix.shell().info("  To undo a file: cp #{backup_dir}/<path> ./deploys/<path>")
+    end
   end
 
-  # SECTION: Helpers
-
-  defp list_priv_files(priv_dir) do
-    priv_dir
-    |> Path.join("**/*")
-    |> Path.wildcard()
-    |> Enum.reject(&File.dir?/1)
-    |> Enum.reject(&String.ends_with?(&1, ".md"))
-  end
+  # SECTION: Arg Parsing
 
   defp parse_args(args) do
     {opts, _} =
       OptionParser.parse!(args,
-        switches: [llm_merge: :boolean]
+        switches: [llm_merge: :boolean, ai_review: :boolean]
       )
 
     opts
