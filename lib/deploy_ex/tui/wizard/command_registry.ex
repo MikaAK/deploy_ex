@@ -81,20 +81,12 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       ]
     },
     %{
-      task: "deploy_ex.export_priv",
-      module: Mix.Tasks.DeployEx.ExportPriv,
-      category: "DeployEx",
-      inputs: [
-        input(:force, "Force overwrite", :boolean, description: "Overwrite files that already exist in ./deploys/"),
-        input(:quiet, "Quiet", :boolean)
-      ]
-    },
-    %{
       task: "deploy_ex.upgrade_priv",
       module: Mix.Tasks.DeployEx.UpgradePriv,
       category: "DeployEx",
       inputs: [
-        input(:llm_merge, "LLM merge", :boolean, description: "Use LLM to plan and merge changes autonomously")
+        input(:ai_review, "AI review", :boolean, description: "LLM reviews diffs and proposes a plan; you confirm per file"),
+        input(:llm_merge, "LLM merge", :boolean, description: "LLM applies all changes autonomously")
       ]
     },
     %{

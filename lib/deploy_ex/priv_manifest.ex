@@ -21,14 +21,14 @@ defmodule DeployEx.PrivManifest do
     else
       {:error,
        ErrorMessage.not_found(
-         "manifest not found at #{manifest_path}, run mix deploy_ex.export_priv first"
+         "manifest not found at #{manifest_path}, run mix deploy_ex.upgrade_priv first"
        )}
     end
   rescue
     e ->
       {:error,
        ErrorMessage.unprocessable_entity(
-         "#{__MODULE__}: manifest in #{deploy_folder} is corrupted, consider re-running mix deploy_ex.export_priv, error: #{inspect(e)}"
+         "#{__MODULE__}: manifest in #{deploy_folder} is corrupted, consider re-running mix deploy_ex.upgrade_priv, error: #{inspect(e)}"
        )}
   end
 
