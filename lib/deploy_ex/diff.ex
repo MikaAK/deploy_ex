@@ -145,10 +145,16 @@ defmodule DeployEx.Diff do
           :new -> {String.to_integer(new_start), String.to_integer(new_count)}
         end
 
-      [_, old_start, "", new_start] ->
+      [_, old_start, old_count, new_start] ->
         case which do
-          :old -> {String.to_integer(old_start), 1}
+          :old -> {String.to_integer(old_start), String.to_integer(old_count)}
           :new -> {String.to_integer(new_start), 1}
+        end
+
+      [_, old_start, old_count] ->
+        case which do
+          :old -> {String.to_integer(old_start), String.to_integer(old_count)}
+          :new -> {1, 0}
         end
 
       _ ->
