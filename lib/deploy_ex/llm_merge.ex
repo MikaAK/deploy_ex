@@ -311,6 +311,15 @@ defmodule DeployEx.LLMMerge do
     end
   end
 
+  # SECTION: Generic LLM Query
+
+  @spec ask(String.t(), keyword()) :: {:ok, String.t()} | {:error, atom() | term()}
+  def ask(prompt, opts \\ []) do
+    with {:ok, model} <- build_model(opts) do
+      run_llm(model, prompt)
+    end
+  end
+
   # SECTION: LLM Call
 
   defp run_llm(model, prompt) do

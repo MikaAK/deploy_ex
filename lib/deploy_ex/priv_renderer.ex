@@ -58,10 +58,12 @@ defmodule DeployEx.PrivRenderer do
       |> Enum.each(fn template_file ->
         rendered = EEx.eval_file(template_file, assigns: params)
 
-        output_path = template_file
+        output_name =
+          template_file
           |> Path.basename()
           |> String.replace_suffix(".eex", "")
-          |> then(&Path.join(target_dir, &1))
+
+        output_path = Path.join(target_dir, output_name)
 
         File.write!(output_path, rendered)
       end)
@@ -89,7 +91,7 @@ defmodule DeployEx.PrivRenderer do
       aws_region: aws_region,
       aws_release_bucket: aws_release_bucket,
 
-      use_db: not Keyword.get(opts, :no_database, false),
+      use_db: !Keyword.get(opts, :no_database, false),
       db_password: "placeholder",
 
       release_bucket_name: aws_release_bucket,
@@ -104,12 +106,12 @@ defmodule DeployEx.PrivRenderer do
       app_name: app_name,
       kebab_app_name: kebab_app_name,
 
-      use_loki: not Keyword.get(opts, :no_logging, false),
-      use_grafana: not Keyword.get(opts, :no_grafana, false),
-      use_prometheus: not Keyword.get(opts, :no_prometheus, false),
-      use_redis: not Keyword.get(opts, :no_redis, false),
-      use_sentry: not Keyword.get(opts, :no_sentry, false),
-      use_database: not Keyword.get(opts, :no_database, false),
+      use_loki: !Keyword.get(opts, :no_logging, false),
+      use_grafana: !Keyword.get(opts, :no_grafana, false),
+      use_prometheus: !Keyword.get(opts, :no_prometheus, false),
+      use_redis: !Keyword.get(opts, :no_redis, false),
+      use_sentry: !Keyword.get(opts, :no_sentry, false),
+      use_database: !Keyword.get(opts, :no_database, false),
 
       terraform_app_releases_variables: terraform_app_releases_variables,
       terraform_release_variables: terraform_app_releases_variables,
@@ -160,8 +162,8 @@ defmodule DeployEx.PrivRenderer do
 
     # group_vars/all.yaml
     group_vars_vars = %{
-      is_logging_enabled: not Keyword.get(opts, :no_logging, false),
-      is_prometheus_enabled: not Keyword.get(opts, :no_prometheus, false),
+      is_logging_enabled: !Keyword.get(opts, :no_logging, false),
+      is_prometheus_enabled: !Keyword.get(opts, :no_prometheus, false),
       loki_logger_s3_region: DeployEx.Config.aws_log_region(),
       loki_logger_s3_bucket_name: DeployEx.Config.aws_log_bucket()
     }

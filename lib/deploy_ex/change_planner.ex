@@ -271,7 +271,7 @@ defmodule DeployEx.ChangePlanner do
     Answer only "yes" or "no".
     """
 
-    case DeployEx.LLMMerge.merge_file(prompt, "", llm_provider: llm_provider) do
+    case DeployEx.LLMMerge.ask(prompt, llm_provider: llm_provider) do
       {:ok, response} ->
         response
         |> String.downcase()
