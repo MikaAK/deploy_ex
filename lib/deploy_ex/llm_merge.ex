@@ -61,6 +61,73 @@ defmodule DeployEx.LLMMerge do
     end
   end
 
+  @spec review_action(DeployEx.ChangePlanner.action(), String.t(), String.t(), keyword()) ::
+          {:ok, %{decision: :apply | :skip, rationale: String.t(), path: String.t()}}
+          | {:error, term()}
+  def review_action(action, rendered_dir, deploy_folder, opts \\ [])
+
+  def review_action({:identical, path}, _rendered_dir, _deploy_folder, _opts) do
+    {:ok, %{decision: :skip, rationale: "No changes needed", path: path}}
+  end
+
+  def review_action({:user_only, path}, _rendered_dir, _deploy_folder, _opts) do
+    {:ok, %{decision: :skip, rationale: "No changes needed", path: path}}
+  end
+
+  def review_action({:new, path}, _rendered_dir, _deploy_folder, _opts) do
+    {:ok, %{decision: :apply, rationale: "New file from upstream", path: path}}
+  end
+
+  def review_action({:removed, path}, _rendered_dir, deploy_folder, opts) do
+    with {:ok, model} <- build_model(opts) do
+      user_content = File.read!(Path.join(deploy_folder, path))
+      prompt = build_review_prompt(:removed, path, nil, user_content)
+
+      case run_llm(model, prompt) do
+        {:ok, response} -> {:ok, parse_review_response(response, path)}
+        {:error, _} = error -> error
+      end
+    end
+  end
+
+  def review_action({action_type, upstream_path, user_path}, rendered_dir, deploy_folder, opts)
+      when action_type in [:update, :rename] do
+    with {:ok, model} <- build_model(opts) do
+      upstream_content = File.read!(Path.join(rendered_dir, upstream_path))
+      user_content = File.read!(Path.join(deploy_folder, user_path))
+      prompt = build_review_prompt(action_type, upstream_path, upstream_content, user_content)
+
+      case run_llm(model, prompt) do
+        {:ok, response} -> {:ok, parse_review_response(response, upstream_path)}
+        {:error, _} = error -> error
+      end
+    end
+  end
+
+  def review_action({:split, upstream_path, _user_paths}, rendered_dir, _deploy_folder, opts) do
+    with {:ok, model} <- build_model(opts) do
+      upstream_content = File.read!(Path.join(rendered_dir, upstream_path))
+      prompt = build_review_prompt(:split, upstream_path, upstream_content, nil)
+
+      case run_llm(model, prompt) do
+        {:ok, response} -> {:ok, parse_review_response(response, upstream_path)}
+        {:error, _} = error -> error
+      end
+    end
+  end
+
+  def review_action({:merge_files, _upstream_paths, user_path}, _rendered_dir, deploy_folder, opts) do
+    with {:ok, model} <- build_model(opts) do
+      user_content = File.read!(Path.join(deploy_folder, user_path))
+      prompt = build_review_prompt(:merge_files, user_path, nil, user_content)
+
+      case run_llm(model, prompt) do
+        {:ok, response} -> {:ok, parse_review_response(response, user_path)}
+        {:error, _} = error -> error
+      end
+    end
+  end
+
   @spec execute_merge(merge_action(), map(), keyword()) :: {:ok, binary()} | {:error, atom() | term()} | :skip
   def execute_merge(action, context, opts \\ [])
 
@@ -186,6 +253,61 @@ defmodule DeployEx.LLMMerge do
 
       {:error, _} = error ->
         error
+    end
+  end
+
+  # SECTION: Review Helpers
+
+  defp build_review_prompt(action_type, path, upstream_content, user_content) do
+    upstream_section = if is_nil(upstream_content), do: "(not applicable)",
+      else: "```\n#{first_n_lines(upstream_content, 100)}\n```"
+
+    user_section = if is_nil(user_content), do: "(not applicable)",
+      else: "```\n#{first_n_lines(user_content, 100)}\n```"
+
+    """
+    You are reviewing a deploy infrastructure change.
+
+    Action: #{action_type}
+    Upstream file (#{path}):
+    #{upstream_section}
+
+    User file (#{path}):
+    #{user_section}
+
+    Should this change be applied? Consider:
+    - Does the upstream version add important fixes or features?
+    - Has the user made meaningful customizations that should be preserved?
+
+    Respond with exactly one line: APPLY: [reason] or SKIP: [reason]
+    """
+  end
+
+  defp first_n_lines(content, n) do
+    content
+    |> String.split("\n")
+    |> Enum.take(n)
+    |> Enum.join("\n")
+  end
+
+  defp parse_review_response(response, path) do
+    line =
+      response
+      |> String.trim()
+      |> String.split("\n")
+      |> List.first("")
+
+    cond do
+      String.starts_with?(line, "APPLY:") ->
+        rationale = line |> String.replace_leading("APPLY:", "") |> String.trim()
+        %{decision: :apply, rationale: rationale, path: path}
+
+      String.starts_with?(line, "SKIP:") ->
+        rationale = line |> String.replace_leading("SKIP:", "") |> String.trim()
+        %{decision: :skip, rationale: rationale, path: path}
+
+      true ->
+        %{decision: :apply, rationale: "LLM response unclear, defaulting to apply", path: path}
     end
   end
 
