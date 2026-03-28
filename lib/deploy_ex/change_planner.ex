@@ -42,8 +42,8 @@ defmodule DeployEx.ChangePlanner do
       user_set = MapSet.new(user_files)
 
       exact_matches = MapSet.intersection(upstream_set, user_set)
-      upstream_only = MapSet.difference(upstream_set, user_set) |> MapSet.to_list()
-      user_only = MapSet.difference(user_set, upstream_set) |> MapSet.to_list()
+      upstream_only = upstream_set |> MapSet.difference(user_set) |> MapSet.to_list()
+      user_only = user_set |> MapSet.difference(upstream_set) |> MapSet.to_list()
 
       exact_actions = classify_exact_matches(exact_matches, rendered_dir, deploy_folder)
       {matched_actions, remaining_upstream, remaining_user} =

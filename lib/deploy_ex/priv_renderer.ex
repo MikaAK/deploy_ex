@@ -162,8 +162,8 @@ defmodule DeployEx.PrivRenderer do
     group_vars_vars = %{
       is_logging_enabled: not Keyword.get(opts, :no_logging, false),
       is_prometheus_enabled: not Keyword.get(opts, :no_prometheus, false),
-      loki_logger_s3_region: DeployEx.Config.aws_log_bucket(),
-      loki_logger_s3_bucket_name: DeployEx.Config.aws_log_region()
+      loki_logger_s3_region: DeployEx.Config.aws_log_region(),
+      loki_logger_s3_bucket_name: DeployEx.Config.aws_log_bucket()
     }
 
     File.mkdir_p!(Path.join(target_dir, "group_vars"))

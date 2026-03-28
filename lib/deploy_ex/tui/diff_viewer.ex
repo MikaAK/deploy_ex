@@ -1,4 +1,10 @@
 defmodule DeployEx.TUI.DiffViewer do
+  @moduledoc """
+  Interactive TUI component for reviewing unified diffs with hunk-level
+  accept/reject. Supports scrollable diff display, hunk navigation,
+  and a console fallback for non-TUI environments.
+  """
+
   alias ExRatatui.Layout
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Style
@@ -82,10 +88,7 @@ defmodule DeployEx.TUI.DiffViewer do
   end
 
   defp remaining_from(all_hunks, already_processed) do
-    count = length(already_processed)
-
-    all_hunks
-    |> Enum.drop(count + 1)
+    Enum.drop(all_hunks, length(already_processed) + 1)
   end
 
   defp mark_remaining_hunks(status, remaining, acc) do

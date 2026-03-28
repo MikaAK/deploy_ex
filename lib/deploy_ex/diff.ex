@@ -159,9 +159,7 @@ defmodule DeployEx.Diff do
   # SECTION: Helpers
 
   defp write_temp(prefix, content) do
-    path =
-      "deploy_ex_diff_#{prefix}_#{System.unique_integer([:positive])}"
-      |> then(&Path.join(System.tmp_dir!(), &1))
+    path = Path.join(System.tmp_dir!(), "deploy_ex_diff_#{prefix}_#{System.unique_integer([:positive])}")
 
     File.write!(path, content)
     path
