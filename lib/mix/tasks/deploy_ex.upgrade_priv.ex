@@ -115,9 +115,11 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
       |> String.replace(~r/[:\.]/, "-")
 
     backup_dir = Path.join([deploy_folder, ".backup", timestamp])
-    modifiable_actions = Enum.reject(actions, &match?({:identical, _}, &1))
-    modifiable_actions = Enum.reject(modifiable_actions, &match?({:user_only, _}, &1))
-    modifiable_actions = Enum.reject(modifiable_actions, &match?({:new, _}, &1))
+    modifiable_actions =
+      actions
+      |> Enum.reject(&match?({:identical, _}, &1))
+      |> Enum.reject(&match?({:user_only, _}, &1))
+      |> Enum.reject(&match?({:new, _}, &1))
 
     Enum.each(modifiable_actions, fn action ->
       user_paths = user_paths_for_action(action)
@@ -438,7 +440,6 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
         decision_symbol = case review.decision do
           :apply -> "[+]"
           :skip -> "[-]"
-          :partial -> "[~]"
         end
 
         "#{decision_symbol} #{action_label(action)} -- #{review.rationale}"
@@ -478,7 +479,7 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
 
   defp apply_ai_recommendations(reviews, temp_dir, deploy_folder) do
     Enum.each(reviews, fn {action, review} ->
-      if review.decision in [:apply, :partial] do
+      if review.decision === :apply do
         apply_single_action(action, temp_dir, deploy_folder)
       end
     end)
