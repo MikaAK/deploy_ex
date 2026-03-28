@@ -25,8 +25,8 @@ defmodule DeployEx.ToolInstaller do
     id_like = extract_field(lines, "ID_LIKE")
 
     cond do
-      id in ["alpine"] -> :alpine
-      id in ["amzn"] -> :amazon_linux
+      id === "alpine" -> :alpine
+      id === "amzn" -> :amazon_linux
       id in ["debian", "ubuntu"] -> :debian
       String.contains?(id_like, "debian") -> :debian
       true -> {:error, :unsupported_platform}

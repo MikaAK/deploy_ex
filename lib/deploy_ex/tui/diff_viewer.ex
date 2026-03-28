@@ -42,7 +42,7 @@ defmodule DeployEx.TUI.DiffViewer do
       case prompt_hunk_action() do
         :accept -> {:cont, [%{hunk | status: :accepted} | acc]}
         :reject -> {:cont, [%{hunk | status: :rejected} | acc]}
-        :all -> {:cont, mark_remaining_hunks(:accepted, [hunk | remaining_from(hunks, acc)], acc)}
+        :all -> {:halt, mark_remaining_hunks(:accepted, [hunk | remaining_from(hunks, acc)], acc)}
         :quit -> {:halt, :cancelled}
       end
     end)
