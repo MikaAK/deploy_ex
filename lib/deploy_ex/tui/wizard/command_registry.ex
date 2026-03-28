@@ -81,6 +81,15 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       ]
     },
     %{
+      task: "deploy_ex.export_priv",
+      module: Mix.Tasks.DeployEx.ExportPriv,
+      category: "DeployEx",
+      inputs: [
+        input(:force, "Force overwrite", :boolean, description: "Overwrite files that already exist in ./deploys/"),
+        input(:quiet, "Quiet", :boolean)
+      ]
+    },
+    %{
       task: "deploy_ex.upgrade_priv",
       module: Mix.Tasks.DeployEx.UpgradePriv,
       category: "DeployEx",
