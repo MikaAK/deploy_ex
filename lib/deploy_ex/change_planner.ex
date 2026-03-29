@@ -268,22 +268,26 @@ defmodule DeployEx.ChangePlanner do
   # SECTION: LLM Disambiguation
 
   defp llm_confirms_rename?(upstream_path, user_path, opts) do
-    llm_provider = Keyword.get(opts, :llm_provider)
+    llm_provider = Keyword.get(opts, :llm_provider, DeployEx.Config.llm_provider())
 
-    prompt = """
-    Is the file "#{user_path}" a renamed/restructured version of "#{upstream_path}"?
-    Answer only "yes" or "no".
-    """
+    if is_nil(llm_provider) do
+      false
+    else
+      prompt = """
+      Is the file "#{user_path}" a renamed/restructured version of "#{upstream_path}"?
+      Answer only "yes" or "no".
+      """
 
-    case DeployEx.LLMMerge.ask(prompt, llm_provider: llm_provider) do
-      {:ok, response} ->
-        response
-        |> String.downcase()
-        |> String.trim()
-        |> String.contains?("yes")
+      case DeployEx.LLMMerge.ask(prompt, llm_provider: llm_provider) do
+        {:ok, response} ->
+          response
+          |> String.downcase()
+          |> String.trim()
+          |> String.contains?("yes")
 
       {:error, _} ->
         false
+      end
     end
   end
 
