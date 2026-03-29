@@ -55,6 +55,7 @@ defmodule Mix.Tasks.DeployEx.ExportPriv do
     case DeployEx.PrivRenderer.render_to_temp(opts) do
       {:ok, temp_dir} ->
         copy_rendered_to_deploy(temp_dir, deploy_folder, opts)
+        write_manifest(temp_dir, deploy_folder)
         File.rm_rf!(temp_dir)
 
         unless opts[:quiet] do
@@ -90,6 +91,24 @@ defmodule Mix.Tasks.DeployEx.ExportPriv do
         end
       end
     end)
+  end
+
+  defp write_manifest(temp_dir, deploy_folder) do
+    manifest =
+      temp_dir
+      |> Path.join("**/*")
+      |> Path.wildcard()
+      |> Enum.reject(&File.dir?/1)
+      |> Enum.reduce(
+        [deploy_ex_version: to_string(Application.spec(:deploy_ex, :vsn)), files: []],
+        fn file_path, acc ->
+          relative = Path.relative_to(file_path, temp_dir)
+          hash = file_path |> File.read!() |> DeployEx.PrivManifest.hash_content()
+          DeployEx.PrivManifest.put_file(acc, relative, hash)
+        end
+      )
+
+    DeployEx.PrivManifest.write(deploy_folder, manifest)
   end
 
   defp parse_args(args) do
