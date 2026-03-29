@@ -73,6 +73,7 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
   # SECTION: Shared Pipeline
 
   defp run_pipeline(deploy_folder, opts) do
+    ensure_manifest_exists(deploy_folder)
     Mix.shell().info([:cyan, "* rendering upstream templates..."])
 
     with {:ok, temp_dir} <- DeployEx.PrivRenderer.render_to_temp(opts) do
@@ -652,6 +653,19 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
   end
 
   # SECTION: Manifest
+
+  defp ensure_manifest_exists(deploy_folder) do
+    case DeployEx.PrivManifest.read(deploy_folder) do
+      {:ok, _manifest} ->
+        :ok
+
+      {:error, _} ->
+        if File.dir?(deploy_folder) do
+          Mix.shell().info([:yellow, "* no manifest found, generating from existing files..."])
+          update_manifest(deploy_folder)
+        end
+    end
+  end
 
   defp update_manifest(deploy_folder) do
     manifest =
