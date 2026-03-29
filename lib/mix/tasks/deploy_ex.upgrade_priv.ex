@@ -59,6 +59,8 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
           opts[:ai_review] -> run_ai_assisted(actions, temp_dir, deploy_folder, backup_dir)
           true -> run_interactive(actions, temp_dir, deploy_folder, backup_dir)
         end
+
+        update_manifest(deploy_folder)
       after
         File.rm_rf!(temp_dir)
       end
@@ -647,6 +649,28 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
       Mix.shell().info([:yellow, "\nBackups saved to: #{backup_dir}"])
       Mix.shell().info("  To undo a file: cp #{backup_dir}/<path> ./deploys/<path>")
     end
+  end
+
+  # SECTION: Manifest
+
+  defp update_manifest(deploy_folder) do
+    manifest =
+      deploy_folder
+      |> Path.join("**/*")
+      |> Path.wildcard()
+      |> Enum.reject(&File.dir?/1)
+      |> Enum.reject(&String.starts_with?(Path.relative_to(&1, deploy_folder), "."))
+      |> Enum.reduce(
+        [deploy_ex_version: to_string(Application.spec(:deploy_ex, :vsn)), files: []],
+        fn file_path, acc ->
+          relative = Path.relative_to(file_path, deploy_folder)
+          hash = file_path |> File.read!() |> DeployEx.PrivManifest.hash_content()
+          DeployEx.PrivManifest.put_file(acc, relative, hash)
+        end
+      )
+
+    DeployEx.PrivManifest.write(deploy_folder, manifest)
+    Mix.shell().info([:green, "* manifest updated"])
   end
 
   # SECTION: Arg Parsing
