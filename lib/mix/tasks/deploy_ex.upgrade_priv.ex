@@ -423,32 +423,42 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
   end
 
   defp present_ai_review(reviews, temp_dir, deploy_folder, backup_dir, identical_count, user_only_count) do
-    review_lines =
-      Enum.map(reviews, fn {action, review} ->
-        symbol = if review.decision === :apply, do: "[+]", else: "[-]"
-        "#{symbol} #{action_label(action)} -- #{review.rationale}"
+    header = "#{identical_count} identical | #{user_only_count} user-only | #{length(reviews)} to review"
+
+    # State: each file tracks its review status and optional merged content
+    file_states =
+      reviews
+      |> Enum.with_index()
+      |> Enum.map(fn {{action, review}, idx} ->
+        %{
+          index: idx,
+          action: action,
+          ai_decision: review.decision,
+          rationale: review.rationale,
+          status: :pending,
+          merged_content: nil
+        }
       end)
 
-    header = "#{identical_count} identical | #{user_only_count} user-only | #{length(reviews)} reviewed"
-
     if DeployEx.TUI.enabled?() do
-      present_ai_review_tui(review_lines, reviews, temp_dir, deploy_folder, backup_dir, header)
+      present_ai_review_tui(file_states, temp_dir, deploy_folder, backup_dir, header)
     else
-      present_ai_review_console(review_lines, reviews, temp_dir, deploy_folder, backup_dir, header)
+      present_ai_review_console(file_states, temp_dir, deploy_folder, backup_dir, header)
     end
   end
 
-  defp present_ai_review_console(review_lines, reviews, temp_dir, deploy_folder, backup_dir, header) do
+  # SECTION: AI Review — Console Fallback
+
+  defp present_ai_review_console(file_states, temp_dir, deploy_folder, backup_dir, header) do
     Mix.shell().info([:cyan, "\n=== AI Review (#{header}) ===\n"])
 
-    review_lines
-    |> Enum.with_index()
-    |> Enum.each(fn {line, idx} ->
-      Mix.shell().info("  #{idx}) #{line}")
+    Enum.each(file_states, fn fs ->
+      symbol = file_state_symbol(fs)
+      Mix.shell().info("  #{fs.index}) #{symbol} #{action_label(fs.action)} -- #{fs.rationale}")
     end)
 
     Mix.shell().info("")
-    Mix.shell().info("[a] Apply all recommended  [d N] View diff for file N  [N] Apply file N  [q] Cancel")
+    Mix.shell().info("[d N] review file N (hunk-by-hunk)  [a] apply all AI-recommended  [w] write reviewed  [q] cancel")
 
     input =
       "Action: "
@@ -457,75 +467,58 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
       |> String.downcase()
 
     cond do
-      input === "a" ->
-        apply_ai_recommendations(reviews, temp_dir, deploy_folder)
-        print_final_summary(%{ai_applied: Enum.count(reviews, fn {_, r} -> r.decision === :apply end)}, backup_dir)
-
       input === "q" ->
         Mix.shell().info([:yellow, "Cancelled."])
 
+      input === "a" ->
+        apply_all_ai_recommended(file_states, temp_dir, deploy_folder)
+        print_final_summary(%{ai_applied: Enum.count(file_states, &(&1.ai_decision === :apply))}, backup_dir)
+
+      input === "w" ->
+        count = write_reviewed_files(file_states, deploy_folder)
+        print_final_summary(%{ai_applied: count}, backup_dir)
+
       String.starts_with?(input, "d") ->
         case input |> String.replace_leading("d", "") |> String.trim() |> Integer.parse() do
-          {idx, _} when idx >= 0 and idx < length(reviews) ->
-            {action, _} = Enum.at(reviews, idx)
-            show_diff_for_action(action, temp_dir, deploy_folder)
+          {idx, _} when idx >= 0 and idx < length(file_states) ->
+            updated = review_file_hunks(Enum.at(file_states, idx), temp_dir, deploy_folder)
+            file_states = List.replace_at(file_states, idx, updated)
+            present_ai_review_console(file_states, temp_dir, deploy_folder, backup_dir, header)
 
           _ ->
             Mix.shell().info([:red, "Invalid file number."])
+            present_ai_review_console(file_states, temp_dir, deploy_folder, backup_dir, header)
         end
-
-        present_ai_review_console(review_lines, reviews, temp_dir, deploy_folder, backup_dir, header)
 
       true ->
-        case Integer.parse(input) do
-          {idx, _} when idx >= 0 and idx < length(reviews) ->
-            {action, _} = Enum.at(reviews, idx)
-            apply_single_action(action, temp_dir, deploy_folder)
-            print_final_summary(%{ai_applied: 1}, backup_dir)
-
-          _ ->
-            Mix.shell().info([:red, "Invalid input."])
-            present_ai_review_console(review_lines, reviews, temp_dir, deploy_folder, backup_dir, header)
-        end
+        present_ai_review_console(file_states, temp_dir, deploy_folder, backup_dir, header)
     end
   end
 
-  defp present_ai_review_tui(review_lines, reviews, temp_dir, deploy_folder, backup_dir, header) do
-    alias ExRatatui.Layout
-    alias ExRatatui.Layout.Rect
-    alias ExRatatui.Style
-    alias ExRatatui.Widgets
+  # SECTION: AI Review — TUI
 
+  defp present_ai_review_tui(file_states, temp_dir, deploy_folder, backup_dir, header) do
     result = ExRatatui.run(fn terminal ->
       {width, height} = ExRatatui.terminal_size()
-
-      state = %{
-        lines: review_lines,
-        reviews: reviews,
-        selected: 0,
-        result: nil
-      }
-
-      ai_review_loop(terminal, state, width, height, header)
+      ai_review_loop(terminal, %{files: file_states, selected: 0}, width, height, header)
     end)
 
     case result do
       :cancelled ->
         Mix.shell().info([:yellow, "Cancelled."])
 
-      :apply_all ->
-        apply_ai_recommendations(reviews, temp_dir, deploy_folder)
-        print_final_summary(%{ai_applied: Enum.count(reviews, fn {_, r} -> r.decision === :apply end)}, backup_dir)
+      {:apply_all, states} ->
+        apply_all_ai_recommended(states, temp_dir, deploy_folder)
+        print_final_summary(%{ai_applied: Enum.count(states, &(&1.ai_decision === :apply))}, backup_dir)
 
-      {:apply, index} ->
-        {action, _} = Enum.at(reviews, index)
-        apply_single_action(action, temp_dir, deploy_folder)
-        print_final_summary(%{ai_applied: 1}, backup_dir)
+      {:write_reviewed, states} ->
+        count = write_reviewed_files(states, deploy_folder)
+        print_final_summary(%{ai_applied: count}, backup_dir)
 
-      {:diff, index} ->
-        {action, _} = Enum.at(reviews, index)
-        show_diff_for_action(action, temp_dir, deploy_folder)
-        present_ai_review_tui(review_lines, reviews, temp_dir, deploy_folder, backup_dir, header)
+      {:review_file, states, index} ->
+        updated = review_file_hunks(Enum.at(states, index), temp_dir, deploy_folder)
+        file_states = List.replace_at(states, index, updated)
+        present_ai_review_tui(file_states, temp_dir, deploy_folder, backup_dir, header)
     end
   end
 
@@ -535,25 +528,34 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
     alias ExRatatui.Style
     alias ExRatatui.Widgets
 
+    lines = Enum.map(state.files, fn fs ->
+      "#{file_state_symbol(fs)} #{action_label(fs.action)} -- #{fs.rationale}"
+    end)
+
+    reviewed_count = Enum.count(state.files, &(&1.status === :reviewed))
+    status = "#{reviewed_count}/#{length(state.files)} reviewed"
+
     area = %Rect{x: 0, y: 0, width: width, height: height}
     [list_area, help_area] = Layout.split(area, :vertical, [{:min, 5}, {:length, 3}])
 
     list_widget = %Widgets.List{
-      items: state.lines,
+      items: lines,
       selected: state.selected,
       highlight_style: %Style{fg: :cyan, modifiers: [:bold]},
       highlight_symbol: " ▸ ",
       style: %Style{fg: :white},
       block: %Widgets.Block{
-        title: " AI Review (#{header}) ",
+        title: " AI Review (#{header} | #{status}) ",
         borders: [:all],
         border_type: :rounded,
         border_style: %Style{fg: :blue}
       }
     }
 
+    help_text = "[d/Enter] review hunks  [a] apply all AI-recommended  [w] write reviewed  [q] cancel"
+
     help_widget = %Widgets.Paragraph{
-      text: "[d] view diff  [Enter] apply selected  [a] apply all recommended  [q] cancel",
+      text: help_text,
       style: %Style{fg: :yellow},
       block: %Widgets.Block{
         borders: [:all],
@@ -570,18 +572,18 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
         ai_review_loop(terminal, %{state | selected: new_sel}, width, height, header)
 
       %ExRatatui.Event.Key{code: "down", kind: "press"} ->
-        max_idx = max(length(state.lines) - 1, 0)
+        max_idx = max(length(state.files) - 1, 0)
         new_sel = min(state.selected + 1, max_idx)
         ai_review_loop(terminal, %{state | selected: new_sel}, width, height, header)
 
-      %ExRatatui.Event.Key{code: "d", kind: "press"} ->
-        {:diff, state.selected}
-
-      %ExRatatui.Event.Key{code: "enter", kind: "press"} ->
-        {:apply, state.selected}
+      %ExRatatui.Event.Key{code: code, kind: "press"} when code in ["d", "enter"] ->
+        {:review_file, state.files, state.selected}
 
       %ExRatatui.Event.Key{code: "a", kind: "press"} ->
-        :apply_all
+        {:apply_all, state.files}
+
+      %ExRatatui.Event.Key{code: "w", kind: "press"} ->
+        {:write_reviewed, state.files}
 
       %ExRatatui.Event.Key{code: "q", kind: "press"} ->
         :cancelled
@@ -597,41 +599,96 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
     end
   end
 
-  defp show_diff_for_action({:update, up_path, user_path}, temp_dir, deploy_folder) do
-    upstream_content = File.read!(Path.join(temp_dir, up_path))
-    user_content = File.read!(Path.join(deploy_folder, user_path))
-    DeployEx.TUI.DiffViewer.run(user_content, upstream_content, title: "#{user_path} (user vs upstream)")
+  # SECTION: AI Review — Hunk-Level File Review
+
+  defp review_file_hunks(file_state, temp_dir, deploy_folder) do
+    case get_file_contents(file_state.action, temp_dir, deploy_folder) do
+      {:diff, user_content, upstream_content, title} ->
+        case DeployEx.TUI.DiffViewer.run(user_content, upstream_content, title: title) do
+          {:ok, merged} -> %{file_state | status: :reviewed, merged_content: merged}
+          :cancelled -> file_state
+        end
+
+      {:new_file, content, path} ->
+        Mix.shell().info([:green, "\n--- New file: #{path} ---\n"])
+        Mix.shell().info(content)
+        Mix.shell().info([:green, "--- end ---\n"])
+        %{file_state | status: :reviewed, merged_content: content}
+
+      {:removed_file, content, path} ->
+        Mix.shell().info([:red, "\n--- File to remove: #{path} ---\n"])
+        Mix.shell().info(content)
+        Mix.shell().info([:red, "--- end ---\n"])
+        %{file_state | status: :reviewed, merged_content: :remove}
+
+      :skip ->
+        file_state
+    end
   end
 
-  defp show_diff_for_action({:rename, up_path, user_path}, temp_dir, deploy_folder) do
-    upstream_content = File.read!(Path.join(temp_dir, up_path))
-    user_content = File.read!(Path.join(deploy_folder, user_path))
-    DeployEx.TUI.DiffViewer.run(user_content, upstream_content, title: "#{user_path} <- #{up_path} (rename)")
+  defp get_file_contents({:update, up_path, user_path}, temp_dir, deploy_folder) do
+    upstream = File.read!(Path.join(temp_dir, up_path))
+    user = File.read!(Path.join(deploy_folder, user_path))
+    {:diff, user, upstream, "#{user_path} (user vs upstream)"}
   end
 
-  defp show_diff_for_action({:new, up_path}, temp_dir, _deploy_folder) do
-    content = File.read!(Path.join(temp_dir, up_path))
-    Mix.shell().info([:green, "\n--- New file: #{up_path} ---\n"])
-    Mix.shell().info(content)
-    Mix.shell().info([:green, "--- end ---\n"])
+  defp get_file_contents({:rename, up_path, user_path}, temp_dir, deploy_folder) do
+    upstream = File.read!(Path.join(temp_dir, up_path))
+    user = File.read!(Path.join(deploy_folder, user_path))
+    {:diff, user, upstream, "#{user_path} <- #{up_path} (rename)"}
   end
 
-  defp show_diff_for_action({:removed, path}, _temp_dir, deploy_folder) do
-    content = File.read!(Path.join(deploy_folder, path))
-    Mix.shell().info([:red, "\n--- Removed file: #{path} ---\n"])
-    Mix.shell().info(content)
-    Mix.shell().info([:red, "--- end ---\n"])
+  defp get_file_contents({:new, up_path}, temp_dir, _deploy_folder) do
+    {:new_file, File.read!(Path.join(temp_dir, up_path)), up_path}
   end
 
-  defp show_diff_for_action(_, _, _), do: :ok
+  defp get_file_contents({:removed, path}, _temp_dir, deploy_folder) do
+    {:removed_file, File.read!(Path.join(deploy_folder, path)), path}
+  end
 
-  defp apply_ai_recommendations(reviews, temp_dir, deploy_folder) do
-    Enum.each(reviews, fn {action, review} ->
-      if review.decision === :apply do
-        apply_single_action(action, temp_dir, deploy_folder)
+  defp get_file_contents(_, _, _), do: :skip
+
+  # SECTION: AI Review — Apply
+
+  defp file_state_symbol(%{status: :reviewed}), do: "[✓]"
+  defp file_state_symbol(%{ai_decision: :apply}), do: "[+]"
+  defp file_state_symbol(%{ai_decision: :skip}), do: "[-]"
+  defp file_state_symbol(_), do: "[?]"
+
+  defp apply_all_ai_recommended(file_states, temp_dir, deploy_folder) do
+    Enum.each(file_states, fn fs ->
+      if fs.ai_decision === :apply do
+        apply_single_action(fs.action, temp_dir, deploy_folder)
       end
     end)
   end
+
+  defp write_reviewed_files(file_states, deploy_folder) do
+    file_states
+    |> Enum.filter(&(&1.status === :reviewed and not is_nil(&1.merged_content)))
+    |> Enum.each(fn fs ->
+      case fs.merged_content do
+        :remove ->
+          path = user_path_for_action(fs.action)
+          File.rm(Path.join(deploy_folder, path))
+          Mix.shell().info([:red, "* removed ", :reset, path])
+
+        content when is_binary(content) ->
+          path = user_path_for_action(fs.action)
+          dest = Path.join(deploy_folder, path)
+          File.mkdir_p!(Path.dirname(dest))
+          File.write!(dest, content)
+          Mix.shell().info([:green, "* wrote ", :reset, path])
+      end
+    end)
+    |> length()
+  end
+
+  defp user_path_for_action({:update, _up, user}), do: user
+  defp user_path_for_action({:rename, _up, user}), do: user
+  defp user_path_for_action({:new, path}), do: path
+  defp user_path_for_action({:removed, path}), do: path
+  defp user_path_for_action({_, path}), do: path
 
   # SECTION: Autonomous Mode
 
