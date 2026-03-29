@@ -66,42 +66,21 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
   # SECTION: Shared Pipeline
 
   defp run_pipeline(deploy_folder, opts) do
-    temp_dir_ref = :erlang.make_ref()
+    Mix.shell().info([:cyan, "* rendering upstream templates..."])
 
-    steps = [
-      {"Rendering upstream templates", fn ->
-        case DeployEx.PrivRenderer.render_to_temp(opts) do
-          {:ok, dir} ->
-            Process.put(temp_dir_ref, dir)
-            :ok
+    with {:ok, temp_dir} <- DeployEx.PrivRenderer.render_to_temp(opts) do
+      Mix.shell().info([:cyan, "* planning changes..."])
 
-          {:error, _} = error ->
-            error
-        end
-      end},
-      {"Planning changes", fn ->
-        temp_dir = Process.get(temp_dir_ref)
+      case DeployEx.ChangePlanner.plan(temp_dir, deploy_folder, opts) do
+        {:ok, actions} ->
+          {:ok, temp_dir, actions}
 
-        case DeployEx.ChangePlanner.plan(temp_dir, deploy_folder, opts) do
-          {:ok, plan} ->
-            Process.put({temp_dir_ref, :plan}, plan)
-            :ok
-
-          {:error, _} = error ->
-            error
-        end
-      end}
-    ]
-
-    case DeployEx.TUI.Progress.run_steps(steps, title: "Upgrade Pipeline") do
-      :ok ->
-        temp_dir = Process.get(temp_dir_ref)
-        actions = Process.get({temp_dir_ref, :plan})
-        {:ok, temp_dir, actions}
-
+        {:error, _} = error ->
+          File.rm_rf!(temp_dir)
+          error
+      end
+    else
       {:error, _} = error ->
-        temp_dir = Process.get(temp_dir_ref)
-        if temp_dir, do: File.rm_rf!(temp_dir)
         error
     end
   end
