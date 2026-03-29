@@ -44,6 +44,11 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
     opts = parse_args(args)
     deploy_folder = DeployEx.Config.deploy_folder()
 
+    if opts[:llm_merge] or opts[:ai_review] do
+      Application.ensure_all_started(:telemetry)
+      Application.ensure_all_started(:req)
+    end
+
     with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, temp_dir, actions} <- run_pipeline(deploy_folder, opts) do
       try do
