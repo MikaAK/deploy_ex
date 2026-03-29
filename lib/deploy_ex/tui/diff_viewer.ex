@@ -1,14 +1,23 @@
 defmodule DeployEx.TUI.DiffViewer do
   @moduledoc """
-  Interactive TUI component for reviewing unified diffs with hunk-level
-  accept/reject. Supports scrollable diff display, hunk navigation,
-  and a console fallback for non-TUI environments.
+  Interactive TUI component for reviewing diffs with per-line accept/reject.
+  Each changed line can be individually toggled. Context lines are always kept.
+  Supports scrollable display and a console fallback.
   """
 
   alias ExRatatui.Layout
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Style
   alias ExRatatui.Widgets
+
+  # SECTION: Types
+
+  @type line_entry :: %{
+          type: :context | :added | :removed,
+          text: String.t(),
+          status: :keep | :accept | :reject,
+          hunk_index: non_neg_integer()
+        }
 
   # SECTION: Public API
 
@@ -19,10 +28,12 @@ defmodule DeployEx.TUI.DiffViewer do
         {:ok, old_content}
 
       {:ok, hunks} ->
+        lines = flatten_hunks_to_lines(hunks)
+
         if DeployEx.TUI.enabled?() do
-          run_tui(old_content, hunks, opts)
+          run_tui(old_content, lines, opts)
         else
-          run_console(old_content, hunks, opts)
+          run_console(old_content, lines, opts)
         end
 
       {:error, _reason} ->
@@ -30,151 +41,135 @@ defmodule DeployEx.TUI.DiffViewer do
     end
   end
 
+  # SECTION: Flatten Hunks to Line Entries
+
+  defp flatten_hunks_to_lines(hunks) do
+    hunks
+    |> Enum.with_index()
+    |> Enum.flat_map(fn {hunk, hunk_idx} ->
+      header = %{type: :header, text: hunk.header, status: :keep, hunk_index: hunk_idx}
+
+      lines =
+        Enum.map(hunk.lines, fn line ->
+          status = if line.type === :context, do: :keep, else: :accept
+          %{type: line.type, text: line.text, status: status, hunk_index: hunk_idx}
+        end)
+
+      [header | lines]
+    end)
+  end
+
   # SECTION: Console Fallback
 
-  defp run_console(old_content, hunks, opts) do
+  defp run_console(old_content, lines, opts) do
     title = Keyword.get(opts, :title, "Diff Review")
     Mix.shell().info("\n--- #{title} ---\n")
 
-    resolved_hunks = Enum.reduce_while(hunks, [], fn hunk, acc ->
-      print_hunk_console(hunk)
+    resolved = Enum.reduce_while(lines, lines, fn _line, acc ->
+      print_lines_console(acc)
+      Mix.shell().info("")
+      Mix.shell().info("[N] toggle line N  [a] accept all  [r] reject all  [Enter] done  [q] cancel")
 
-      case prompt_hunk_action() do
-        :accept -> {:cont, [%{hunk | status: :accepted} | acc]}
-        :reject -> {:cont, [%{hunk | status: :rejected} | acc]}
-        :all -> {:halt, mark_remaining_hunks(:accepted, [hunk | remaining_from(hunks, acc)], acc)}
-        :quit -> {:halt, :cancelled}
+      input =
+        "Action: "
+        |> Mix.shell().prompt()
+        |> String.trim()
+        |> String.downcase()
+
+      cond do
+        input === "" -> {:halt, {:done, acc}}
+        input === "q" -> {:halt, :cancelled}
+        input === "a" -> {:cont, set_all_changed(acc, :accept)}
+        input === "r" -> {:cont, set_all_changed(acc, :reject)}
+
+        true ->
+          case Integer.parse(input) do
+            {idx, _} when idx >= 0 and idx < length(acc) ->
+              {:cont, toggle_line(acc, idx)}
+
+            _ ->
+              {:cont, acc}
+          end
       end
     end)
 
-    case resolved_hunks do
-      :cancelled ->
-        :cancelled
-
-      resolved when is_list(resolved) ->
-        merged = resolved
-          |> Enum.reverse()
-          |> then(&DeployEx.Diff.apply_hunks(old_content, &1))
-
-        {:ok, merged}
+    case resolved do
+      :cancelled -> :cancelled
+      {:done, final_lines} -> {:ok, apply_line_decisions(old_content, final_lines)}
+      final_lines when is_list(final_lines) -> {:ok, apply_line_decisions(old_content, final_lines)}
     end
   end
 
-  defp print_hunk_console(hunk) do
-    Mix.shell().info(IO.ANSI.cyan() <> hunk.header <> IO.ANSI.reset())
+  defp print_lines_console(lines) do
+    lines
+    |> Enum.with_index()
+    |> Enum.each(fn {line, idx} ->
+      prefix = line_prefix(line)
+      status_mark = line_status_mark(line)
 
-    Enum.each(hunk.lines, fn line ->
       case line.type do
-        :added -> Mix.shell().info(IO.ANSI.green() <> "+ #{line.text}" <> IO.ANSI.reset())
-        :removed -> Mix.shell().info(IO.ANSI.red() <> "- #{line.text}" <> IO.ANSI.reset())
-        :context -> Mix.shell().info("  #{line.text}")
+        :header -> Mix.shell().info([:cyan, "    #{line.text}"])
+        :added -> Mix.shell().info([:green, "#{idx}) #{status_mark} +#{line.text}"])
+        :removed -> Mix.shell().info([:red, "#{idx}) #{status_mark} -#{line.text}"])
+        :context -> Mix.shell().info("    #{prefix}#{line.text}")
       end
     end)
-  end
-
-  defp prompt_hunk_action do
-    response = "Accept this hunk? [y/n/a(ll)/q(uit)] "
-      |> Mix.shell().prompt()
-      |> String.trim()
-      |> String.downcase()
-
-    case response do
-      "y" -> :accept
-      "n" -> :reject
-      "a" -> :all
-      "q" -> :quit
-      _ -> prompt_hunk_action()
-    end
-  end
-
-  defp remaining_from(all_hunks, already_processed) do
-    Enum.drop(all_hunks, length(already_processed) + 1)
-  end
-
-  defp mark_remaining_hunks(status, remaining, acc) do
-    remaining
-    |> Enum.map(&%{&1 | status: status})
-    |> Enum.reverse()
-    |> Kernel.++(acc)
   end
 
   # SECTION: TUI Mode
 
-  defp run_tui(old_content, hunks, opts) do
+  defp run_tui(old_content, lines, opts) do
     title = Keyword.get(opts, :title, "Diff Review")
 
-    {diff_text, hunk_line_offsets} = build_diff_text(hunks)
-
-    ExRatatui.run(fn terminal ->
+    result = ExRatatui.run(fn terminal ->
       {width, height} = ExRatatui.terminal_size()
 
-      initial_state = %{
-        hunks: hunks,
-        current_hunk: 0,
+      state = %{
+        lines: lines,
+        selected: 0,
         scroll: 0,
         title: title,
-        diff_text: diff_text,
-        hunk_line_offsets: hunk_line_offsets,
-        old_content: old_content,
-        result: nil
+        old_content: old_content
       }
 
-      tui_loop(terminal, initial_state, width, height)
+      tui_loop(terminal, state, width, height)
     end)
+
+    case result do
+      :cancelled -> :cancelled
+      {:ok, final_lines} -> {:ok, apply_line_decisions(old_content, final_lines)}
+    end
   end
 
   defp tui_loop(terminal, state, width, height) do
     draw_tui(terminal, state, width, height)
 
     case ExRatatui.poll_event(50) do
-      %ExRatatui.Event.Key{code: "n", kind: "press"} ->
-        max_index = max(length(state.hunks) - 1, 0)
-        new_index = min(state.current_hunk + 1, max_index)
-        scroll = Enum.at(state.hunk_line_offsets, new_index, 0)
-        tui_loop(terminal, %{state | current_hunk: new_index, scroll: scroll}, width, height)
-
-      %ExRatatui.Event.Key{code: "p", kind: "press"} ->
-        new_index = max(state.current_hunk - 1, 0)
-        scroll = Enum.at(state.hunk_line_offsets, new_index, 0)
-        tui_loop(terminal, %{state | current_hunk: new_index, scroll: scroll}, width, height)
-
-      %ExRatatui.Event.Key{code: "a", kind: "press"} ->
-        state
-        |> update_hunk_status(state.current_hunk, :accepted)
-        |> rebuild_diff_text()
-        |> then(&tui_loop(terminal, &1, width, height))
-
-      %ExRatatui.Event.Key{code: "r", kind: "press"} ->
-        state
-        |> update_hunk_status(state.current_hunk, :rejected)
-        |> rebuild_diff_text()
-        |> then(&tui_loop(terminal, &1, width, height))
-
-      %ExRatatui.Event.Key{code: "A", kind: "press"} ->
-        state
-        |> update_all_hunks(:accepted)
-        |> rebuild_diff_text()
-        |> then(&tui_loop(terminal, &1, width, height))
-
-      %ExRatatui.Event.Key{code: "R", kind: "press"} ->
-        state
-        |> update_all_hunks(:rejected)
-        |> rebuild_diff_text()
-        |> then(&tui_loop(terminal, &1, width, height))
-
       %ExRatatui.Event.Key{code: "up", kind: "press"} ->
-        new_scroll = max(state.scroll - 1, 0)
-        tui_loop(terminal, %{state | scroll: new_scroll}, width, height)
+        new_sel = max(state.selected - 1, 0)
+        scroll = adjust_scroll(new_sel, state.scroll, height - 6)
+        tui_loop(terminal, %{state | selected: new_sel, scroll: scroll}, width, height)
 
       %ExRatatui.Event.Key{code: "down", kind: "press"} ->
-        new_scroll = state.scroll + 1
-        tui_loop(terminal, %{state | scroll: new_scroll}, width, height)
+        max_idx = max(length(state.lines) - 1, 0)
+        new_sel = min(state.selected + 1, max_idx)
+        scroll = adjust_scroll(new_sel, state.scroll, height - 6)
+        tui_loop(terminal, %{state | selected: new_sel, scroll: scroll}, width, height)
+
+      %ExRatatui.Event.Key{code: " ", kind: "press"} ->
+        lines = toggle_line(state.lines, state.selected)
+        tui_loop(terminal, %{state | lines: lines}, width, height)
+
+      %ExRatatui.Event.Key{code: "a", kind: "press"} ->
+        lines = set_all_changed(state.lines, :accept)
+        tui_loop(terminal, %{state | lines: lines}, width, height)
+
+      %ExRatatui.Event.Key{code: "r", kind: "press"} ->
+        lines = set_all_changed(state.lines, :reject)
+        tui_loop(terminal, %{state | lines: lines}, width, height)
 
       %ExRatatui.Event.Key{code: "enter", kind: "press"} ->
-        merged = state.hunks
-          |> then(&DeployEx.Diff.apply_hunks(state.old_content, &1))
-
-        {:ok, merged}
+        {:ok, state.lines}
 
       %ExRatatui.Event.Key{code: "q", kind: "press"} ->
         :cancelled
@@ -182,8 +177,8 @@ defmodule DeployEx.TUI.DiffViewer do
       %ExRatatui.Event.Key{code: "c", kind: "press", modifiers: ["ctrl"]} ->
         :cancelled
 
-      %ExRatatui.Event.Resize{width: new_width, height: new_height} ->
-        tui_loop(terminal, state, new_width, new_height)
+      %ExRatatui.Event.Resize{width: new_w, height: new_h} ->
+        tui_loop(terminal, state, new_w, new_h)
 
       _ ->
         tui_loop(terminal, state, width, height)
@@ -194,104 +189,121 @@ defmodule DeployEx.TUI.DiffViewer do
 
   defp draw_tui(terminal, state, width, height) do
     area = %Rect{x: 0, y: 0, width: width, height: height}
-    [diff_area, status_area] = Layout.split(area, :vertical, [{:min, 5}, {:length, 3}])
+    [diff_area, help_area] = Layout.split(area, :vertical, [{:min, 5}, {:length, 3}])
 
-    diff_widget = %Widgets.Paragraph{
-      text: state.diff_text,
-      wrap: false,
-      scroll: {state.scroll, 0},
+    display_lines = build_display_lines(state.lines)
+
+    accepted = Enum.count(state.lines, &(&1.status === :accept))
+    rejected = Enum.count(state.lines, &(&1.status === :reject))
+    total_changed = Enum.count(state.lines, &(&1.type in [:added, :removed]))
+
+    list_widget = %Widgets.List{
+      items: display_lines,
+      selected: state.selected,
+      highlight_style: %Style{fg: :white, modifiers: [:bold]},
+      highlight_symbol: "▸ ",
       style: %Style{fg: :white},
       block: %Widgets.Block{
-        title: " #{state.title} ",
+        title: " #{state.title} (#{accepted}/#{total_changed} accepted, #{rejected} rejected) ",
         borders: [:all],
         border_type: :rounded,
         border_style: %Style{fg: :blue}
       }
     }
 
-    status_text = build_status_bar(state)
-
-    status_widget = %Widgets.Paragraph{
-      text: status_text,
-      wrap: false,
-      scroll: {0, 0},
-      style: %Style{fg: :white},
+    help_widget = %Widgets.Paragraph{
+      text: "[Space] toggle line  [a] accept all  [r] reject all  [Enter] done  [q] cancel",
+      style: %Style{fg: :yellow},
       block: %Widgets.Block{
-        title: " Keys: n/p=nav  a/r=accept/reject  A/R=all  Enter=done  q=cancel ",
         borders: [:all],
         border_type: :rounded,
         border_style: %Style{fg: :yellow}
       }
     }
 
-    ExRatatui.draw(terminal, [{diff_widget, diff_area}, {status_widget, status_area}])
+    ExRatatui.draw(terminal, [{list_widget, diff_area}, {help_widget, help_area}])
   end
 
-  # SECTION: Diff Text Building
+  defp build_display_lines(lines) do
+    Enum.map(lines, fn line ->
+      status_mark = line_status_mark(line)
+      prefix = line_prefix(line)
 
-  defp build_diff_text(hunks) do
-    {lines, offsets, _line_count} =
-      Enum.reduce(hunks, {[], [], 0}, fn hunk, {lines_acc, offsets_acc, line_count} ->
-        status_prefix = status_label(hunk.status)
-        header_line = "#{status_prefix} #{hunk.header}"
+      case line.type do
+        :header -> "  #{line.text}"
+        :added -> "#{status_mark} +#{line.text}"
+        :removed -> "#{status_mark} -#{line.text}"
+        :context -> "   #{prefix}#{line.text}"
+      end
+    end)
+  end
 
-        hunk_lines = Enum.map(hunk.lines, fn line ->
-          case line.type do
-            :added -> "+ #{line.text}"
-            :removed -> "- #{line.text}"
-            :context -> "  #{line.text}"
+  # SECTION: Line Helpers
+
+  defp line_prefix(%{type: :context}), do: " "
+  defp line_prefix(_), do: ""
+
+  defp line_status_mark(%{type: type}) when type in [:context, :header], do: "  "
+  defp line_status_mark(%{status: :accept}), do: "✓"
+  defp line_status_mark(%{status: :reject}), do: "✗"
+  defp line_status_mark(_), do: "?"
+
+  defp toggle_line(lines, index) do
+    line = Enum.at(lines, index)
+
+    if line.type in [:added, :removed] do
+      new_status = if line.status === :accept, do: :reject, else: :accept
+      List.replace_at(lines, index, %{line | status: new_status})
+    else
+      lines
+    end
+  end
+
+  defp set_all_changed(lines, status) do
+    Enum.map(lines, fn line ->
+      if line.type in [:added, :removed] do
+        %{line | status: status}
+      else
+        line
+      end
+    end)
+  end
+
+  defp adjust_scroll(selected, current_scroll, visible_height) do
+    cond do
+      selected < current_scroll -> selected
+      selected >= current_scroll + visible_height -> selected - visible_height + 1
+      true -> current_scroll
+    end
+  end
+
+  # SECTION: Apply Line Decisions
+
+  defp apply_line_decisions(old_content, lines) do
+    # Reconstruct hunks from line decisions, then apply
+    hunks = reconstruct_hunks(lines)
+    DeployEx.Diff.apply_hunks(old_content, hunks)
+  end
+
+  defp reconstruct_hunks(lines) do
+    lines
+    |> Enum.reject(&(&1.type === :header))
+    |> Enum.group_by(& &1.hunk_index)
+    |> Enum.sort_by(fn {idx, _} -> idx end)
+    |> Enum.map(fn {_idx, hunk_lines} ->
+      # Filter out rejected lines from the hunk
+      filtered_lines =
+        Enum.flat_map(hunk_lines, fn line ->
+          case {line.type, line.status} do
+            {:context, _} -> [%{type: :context, text: line.text}]
+            {:added, :accept} -> [%{type: :added, text: line.text}]
+            {:added, :reject} -> []
+            {:removed, :accept} -> [%{type: :removed, text: line.text}]
+            {:removed, :reject} -> [%{type: :context, text: line.text}]
           end
         end)
 
-        all_lines = [header_line | hunk_lines] ++ [""]
-        new_line_count = line_count + length(all_lines)
-
-        {lines_acc ++ all_lines, offsets_acc ++ [line_count], new_line_count}
-      end)
-
-    text = Enum.join(lines, "\n")
-    {text, offsets}
-  end
-
-  defp status_label(:accepted), do: "[ACCEPT]"
-  defp status_label(:rejected), do: "[REJECT]"
-  defp status_label(:pending), do: "[?????]"
-
-  defp build_status_bar(state) do
-    indicators = state.hunks
-      |> Enum.with_index()
-      |> Enum.map(fn {hunk, index} ->
-        symbol = case hunk.status do
-          :accepted -> "+"
-          :rejected -> "-"
-          :pending -> "?"
-        end
-
-        if index === state.current_hunk do
-          ">[#{symbol}]<"
-        else
-          " [#{symbol}] "
-        end
-      end)
-      |> Enum.join("")
-
-    "Hunks: #{indicators}"
-  end
-
-  # SECTION: State Helpers
-
-  defp update_hunk_status(state, index, status) do
-    updated_hunks = List.update_at(state.hunks, index, &%{&1 | status: status})
-    %{state | hunks: updated_hunks}
-  end
-
-  defp update_all_hunks(state, status) do
-    updated_hunks = Enum.map(state.hunks, &%{&1 | status: status})
-    %{state | hunks: updated_hunks}
-  end
-
-  defp rebuild_diff_text(state) do
-    {diff_text, hunk_line_offsets} = build_diff_text(state.hunks)
-    %{state | diff_text: diff_text, hunk_line_offsets: hunk_line_offsets}
+      %{header: "@@ synthesized @@", lines: filtered_lines, status: :accepted}
+    end)
   end
 end
