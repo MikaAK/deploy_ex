@@ -423,83 +423,177 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
   end
 
   defp present_ai_review(reviews, temp_dir, deploy_folder, backup_dir, identical_count, user_only_count) do
-    summary_lines = [
-      "#{identical_count} identical (no changes needed)",
-      "#{user_only_count} user-only (untouched)",
-      "#{length(reviews)} reviewed by AI:"
-    ]
-
-    review_choices =
+    review_lines =
       Enum.map(reviews, fn {action, review} ->
-        decision_symbol = case review.decision do
-          :apply -> "[+]"
-          :skip -> "[-]"
-        end
-
-        "#{decision_symbol} #{action_label(action)} -- #{review.rationale}"
+        symbol = if review.decision === :apply, do: "[+]", else: "[-]"
+        "#{symbol} #{action_label(action)} -- #{review.rationale}"
       end)
 
-    all_choices = review_choices ++ [
-      "---",
-      "View diff for a file",
-      "Apply all recommended",
-      "Cancel"
-    ]
+    header = "#{identical_count} identical | #{user_only_count} user-only | #{length(reviews)} reviewed"
 
-    Enum.each(summary_lines, &Mix.shell().info([:cyan, "  #{&1}"]))
-
-    present_ai_review_loop(all_choices, review_choices, reviews, temp_dir, deploy_folder, backup_dir)
-  end
-
-  defp present_ai_review_loop(all_choices, review_choices, reviews, temp_dir, deploy_folder, backup_dir) do
-    selected = DeployEx.TUI.Select.run(all_choices, title: "AI Review — select action", allow_all: false)
-
-    case selected do
-      [] ->
-        Mix.shell().info([:yellow, "Cancelled."])
-
-      ["Cancel"] ->
-        Mix.shell().info([:yellow, "Cancelled."])
-
-      ["Apply all recommended"] ->
-        apply_ai_recommendations(reviews, temp_dir, deploy_folder)
-        print_final_summary(%{ai_applied: Enum.count(reviews, fn {_, r} -> r.decision === :apply end)}, backup_dir)
-
-      ["View diff for a file"] ->
-        view_ai_diff(review_choices, reviews, temp_dir, deploy_folder)
-        present_ai_review_loop(all_choices, review_choices, reviews, temp_dir, deploy_folder, backup_dir)
-
-      [choice] ->
-        index = Enum.find_index(review_choices, &(&1 === choice))
-
-        if is_nil(index) do
-          present_ai_review_loop(all_choices, review_choices, reviews, temp_dir, deploy_folder, backup_dir)
-        else
-          {action, _review} = Enum.at(reviews, index)
-          apply_single_action(action, temp_dir, deploy_folder)
-          print_final_summary(%{ai_applied: 1}, backup_dir)
-        end
-
-      _all ->
-        apply_ai_recommendations(reviews, temp_dir, deploy_folder)
-        print_final_summary(%{ai_applied: Enum.count(reviews, fn {_, r} -> r.decision === :apply end)}, backup_dir)
+    if DeployEx.TUI.enabled?() do
+      present_ai_review_tui(review_lines, reviews, temp_dir, deploy_folder, backup_dir, header)
+    else
+      present_ai_review_console(review_lines, reviews, temp_dir, deploy_folder, backup_dir, header)
     end
   end
 
-  defp view_ai_diff(review_choices, reviews, temp_dir, deploy_folder) do
-    selected = DeployEx.TUI.Select.run(review_choices, title: "Select file to view diff")
+  defp present_ai_review_console(review_lines, reviews, temp_dir, deploy_folder, backup_dir, header) do
+    Mix.shell().info([:cyan, "\n=== AI Review (#{header}) ===\n"])
 
-    case selected do
-      [choice] ->
-        index = Enum.find_index(review_choices, &(&1 === choice))
+    review_lines
+    |> Enum.with_index()
+    |> Enum.each(fn {line, idx} ->
+      Mix.shell().info("  #{idx}) #{line}")
+    end)
 
-        if not is_nil(index) do
-          {action, _review} = Enum.at(reviews, index)
-          show_diff_for_action(action, temp_dir, deploy_folder)
+    Mix.shell().info("")
+    Mix.shell().info("[a] Apply all recommended  [d N] View diff for file N  [N] Apply file N  [q] Cancel")
+
+    input =
+      "Action: "
+      |> Mix.shell().prompt()
+      |> String.trim()
+      |> String.downcase()
+
+    cond do
+      input === "a" ->
+        apply_ai_recommendations(reviews, temp_dir, deploy_folder)
+        print_final_summary(%{ai_applied: Enum.count(reviews, fn {_, r} -> r.decision === :apply end)}, backup_dir)
+
+      input === "q" ->
+        Mix.shell().info([:yellow, "Cancelled."])
+
+      String.starts_with?(input, "d") ->
+        case input |> String.replace_leading("d", "") |> String.trim() |> Integer.parse() do
+          {idx, _} when idx >= 0 and idx < length(reviews) ->
+            {action, _} = Enum.at(reviews, idx)
+            show_diff_for_action(action, temp_dir, deploy_folder)
+
+          _ ->
+            Mix.shell().info([:red, "Invalid file number."])
         end
 
+        present_ai_review_console(review_lines, reviews, temp_dir, deploy_folder, backup_dir, header)
+
+      true ->
+        case Integer.parse(input) do
+          {idx, _} when idx >= 0 and idx < length(reviews) ->
+            {action, _} = Enum.at(reviews, idx)
+            apply_single_action(action, temp_dir, deploy_folder)
+            print_final_summary(%{ai_applied: 1}, backup_dir)
+
+          _ ->
+            Mix.shell().info([:red, "Invalid input."])
+            present_ai_review_console(review_lines, reviews, temp_dir, deploy_folder, backup_dir, header)
+        end
+    end
+  end
+
+  defp present_ai_review_tui(review_lines, reviews, temp_dir, deploy_folder, backup_dir, header) do
+    alias ExRatatui.Layout
+    alias ExRatatui.Layout.Rect
+    alias ExRatatui.Style
+    alias ExRatatui.Widgets
+
+    result = ExRatatui.run(fn terminal ->
+      {width, height} = ExRatatui.terminal_size()
+
+      state = %{
+        lines: review_lines,
+        reviews: reviews,
+        selected: 0,
+        result: nil
+      }
+
+      ai_review_loop(terminal, state, width, height, header)
+    end)
+
+    case result do
+      :cancelled ->
+        Mix.shell().info([:yellow, "Cancelled."])
+
+      :apply_all ->
+        apply_ai_recommendations(reviews, temp_dir, deploy_folder)
+        print_final_summary(%{ai_applied: Enum.count(reviews, fn {_, r} -> r.decision === :apply end)}, backup_dir)
+
+      {:apply, index} ->
+        {action, _} = Enum.at(reviews, index)
+        apply_single_action(action, temp_dir, deploy_folder)
+        print_final_summary(%{ai_applied: 1}, backup_dir)
+
+      {:diff, index} ->
+        {action, _} = Enum.at(reviews, index)
+        show_diff_for_action(action, temp_dir, deploy_folder)
+        present_ai_review_tui(review_lines, reviews, temp_dir, deploy_folder, backup_dir, header)
+    end
+  end
+
+  defp ai_review_loop(terminal, state, width, height, header) do
+    alias ExRatatui.Layout
+    alias ExRatatui.Layout.Rect
+    alias ExRatatui.Style
+    alias ExRatatui.Widgets
+
+    area = %Rect{x: 0, y: 0, width: width, height: height}
+    [list_area, help_area] = Layout.split(area, :vertical, [{:min, 5}, {:length, 3}])
+
+    list_widget = %Widgets.List{
+      items: state.lines,
+      selected: state.selected,
+      highlight_style: %Style{fg: :cyan, modifiers: [:bold]},
+      highlight_symbol: " ▸ ",
+      style: %Style{fg: :white},
+      block: %Widgets.Block{
+        title: " AI Review (#{header}) ",
+        borders: [:all],
+        border_type: :rounded,
+        border_style: %Style{fg: :blue}
+      }
+    }
+
+    help_widget = %Widgets.Paragraph{
+      text: "[d] view diff  [Enter] apply selected  [a] apply all recommended  [q] cancel",
+      style: %Style{fg: :yellow},
+      block: %Widgets.Block{
+        borders: [:all],
+        border_type: :rounded,
+        border_style: %Style{fg: :yellow}
+      }
+    }
+
+    ExRatatui.draw(terminal, [{list_widget, list_area}, {help_widget, help_area}])
+
+    case ExRatatui.poll_event(50) do
+      %ExRatatui.Event.Key{code: "up", kind: "press"} ->
+        new_sel = max(state.selected - 1, 0)
+        ai_review_loop(terminal, %{state | selected: new_sel}, width, height, header)
+
+      %ExRatatui.Event.Key{code: "down", kind: "press"} ->
+        max_idx = max(length(state.lines) - 1, 0)
+        new_sel = min(state.selected + 1, max_idx)
+        ai_review_loop(terminal, %{state | selected: new_sel}, width, height, header)
+
+      %ExRatatui.Event.Key{code: "d", kind: "press"} ->
+        {:diff, state.selected}
+
+      %ExRatatui.Event.Key{code: "enter", kind: "press"} ->
+        {:apply, state.selected}
+
+      %ExRatatui.Event.Key{code: "a", kind: "press"} ->
+        :apply_all
+
+      %ExRatatui.Event.Key{code: "q", kind: "press"} ->
+        :cancelled
+
+      %ExRatatui.Event.Key{code: "c", kind: "press", modifiers: ["ctrl"]} ->
+        :cancelled
+
+      %ExRatatui.Event.Resize{width: new_w, height: new_h} ->
+        ai_review_loop(terminal, state, new_w, new_h, header)
+
       _ ->
-        :ok
+        ai_review_loop(terminal, state, width, height, header)
     end
   end
 
