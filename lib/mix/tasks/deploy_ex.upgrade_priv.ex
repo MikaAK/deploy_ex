@@ -386,19 +386,22 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
   # SECTION: AI-Assisted Mode
 
   defp run_ai_assisted(actions, temp_dir, deploy_folder, backup_dir) do
-    non_trivial =
+    reviewable =
       actions
       |> Enum.reject(&match?({:identical, _}, &1))
       |> Enum.reject(&match?({:user_only, _}, &1))
 
-    if Enum.empty?(non_trivial) do
-      Mix.shell().info([:green, "\nEverything is up to date!"])
+    identical_count = Enum.count(actions, &match?({:identical, _}, &1))
+    user_only_count = Enum.count(actions, &match?({:user_only, _}, &1))
+
+    if Enum.empty?(reviewable) do
+      Mix.shell().info([:green, "\nEverything is up to date! (#{identical_count} identical, #{user_only_count} user-only)"])
     else
-      total = length(non_trivial)
+      total = length(reviewable)
 
       reviews =
         DeployEx.TUI.Progress.run_stream("AI Review", fn tui_pid ->
-          non_trivial
+          reviewable
           |> Enum.with_index(1)
           |> Enum.map(fn {action, index} ->
             label = action_label(action)
@@ -408,7 +411,7 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
           end)
         end)
 
-      present_ai_review(reviews, temp_dir, deploy_folder, backup_dir)
+      present_ai_review(reviews, temp_dir, deploy_folder, backup_dir, identical_count, user_only_count)
     end
   end
 
@@ -419,10 +422,14 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
     end
   end
 
-  defp present_ai_review(reviews, temp_dir, deploy_folder, backup_dir) do
-    Mix.shell().info([:cyan, "\n=== AI Review Results ===\n"])
+  defp present_ai_review(reviews, temp_dir, deploy_folder, backup_dir, identical_count, user_only_count) do
+    summary_lines = [
+      "#{identical_count} identical (no changes needed)",
+      "#{user_only_count} user-only (untouched)",
+      "#{length(reviews)} reviewed by AI:"
+    ]
 
-    choices =
+    review_choices =
       Enum.map(reviews, fn {action, review} ->
         decision_symbol = case review.decision do
           :apply -> "[+]"
@@ -432,37 +439,97 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
         "#{decision_symbol} #{action_label(action)} -- #{review.rationale}"
       end)
 
-    selected = DeployEx.TUI.Select.run(
-      choices ++ ["Apply all recommended", "Cancel"],
-      title: "Confirm AI recommendations (select to toggle)",
-      allow_all: true
-    )
+    all_choices = review_choices ++ [
+      "---",
+      "View diff for a file",
+      "Apply all recommended",
+      "Cancel"
+    ]
+
+    Enum.each(summary_lines, &Mix.shell().info([:cyan, "  #{&1}"]))
+
+    present_ai_review_loop(all_choices, review_choices, reviews, temp_dir, deploy_folder, backup_dir)
+  end
+
+  defp present_ai_review_loop(all_choices, review_choices, reviews, temp_dir, deploy_folder, backup_dir) do
+    selected = DeployEx.TUI.Select.run(all_choices, title: "AI Review — select action", allow_all: false)
 
     case selected do
       [] ->
         Mix.shell().info([:yellow, "Cancelled."])
 
-      [choice] when is_binary(choice) ->
-        cond do
-          String.starts_with?(choice, "Apply all") ->
-            apply_ai_recommendations(reviews, temp_dir, deploy_folder)
-            print_final_summary(%{ai_applied: length(reviews)}, backup_dir)
+      ["Cancel"] ->
+        Mix.shell().info([:yellow, "Cancelled."])
 
-          String.starts_with?(choice, "Cancel") ->
-            Mix.shell().info([:yellow, "Cancelled."])
+      ["Apply all recommended"] ->
+        apply_ai_recommendations(reviews, temp_dir, deploy_folder)
+        print_final_summary(%{ai_applied: Enum.count(reviews, fn {_, r} -> r.decision === :apply end)}, backup_dir)
 
-          true ->
-            index = Enum.find_index(choices, &(&1 === choice))
-            {action, _review} = Enum.at(reviews, index)
-            apply_single_action(action, temp_dir, deploy_folder)
-            print_final_summary(%{ai_applied: 1}, backup_dir)
+      ["View diff for a file"] ->
+        view_ai_diff(review_choices, reviews, temp_dir, deploy_folder)
+        present_ai_review_loop(all_choices, review_choices, reviews, temp_dir, deploy_folder, backup_dir)
+
+      [choice] ->
+        index = Enum.find_index(review_choices, &(&1 === choice))
+
+        if is_nil(index) do
+          present_ai_review_loop(all_choices, review_choices, reviews, temp_dir, deploy_folder, backup_dir)
+        else
+          {action, _review} = Enum.at(reviews, index)
+          apply_single_action(action, temp_dir, deploy_folder)
+          print_final_summary(%{ai_applied: 1}, backup_dir)
         end
 
-      all when is_list(all) ->
+      _all ->
         apply_ai_recommendations(reviews, temp_dir, deploy_folder)
-        print_final_summary(%{ai_applied: length(reviews)}, backup_dir)
+        print_final_summary(%{ai_applied: Enum.count(reviews, fn {_, r} -> r.decision === :apply end)}, backup_dir)
     end
   end
+
+  defp view_ai_diff(review_choices, reviews, temp_dir, deploy_folder) do
+    selected = DeployEx.TUI.Select.run(review_choices, title: "Select file to view diff")
+
+    case selected do
+      [choice] ->
+        index = Enum.find_index(review_choices, &(&1 === choice))
+
+        if not is_nil(index) do
+          {action, _review} = Enum.at(reviews, index)
+          show_diff_for_action(action, temp_dir, deploy_folder)
+        end
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp show_diff_for_action({:update, up_path, user_path}, temp_dir, deploy_folder) do
+    upstream_content = File.read!(Path.join(temp_dir, up_path))
+    user_content = File.read!(Path.join(deploy_folder, user_path))
+    DeployEx.TUI.DiffViewer.run(user_content, upstream_content, title: "#{user_path} (user vs upstream)")
+  end
+
+  defp show_diff_for_action({:rename, up_path, user_path}, temp_dir, deploy_folder) do
+    upstream_content = File.read!(Path.join(temp_dir, up_path))
+    user_content = File.read!(Path.join(deploy_folder, user_path))
+    DeployEx.TUI.DiffViewer.run(user_content, upstream_content, title: "#{user_path} <- #{up_path} (rename)")
+  end
+
+  defp show_diff_for_action({:new, up_path}, temp_dir, _deploy_folder) do
+    content = File.read!(Path.join(temp_dir, up_path))
+    Mix.shell().info([:green, "\n--- New file: #{up_path} ---\n"])
+    Mix.shell().info(content)
+    Mix.shell().info([:green, "--- end ---\n"])
+  end
+
+  defp show_diff_for_action({:removed, path}, _temp_dir, deploy_folder) do
+    content = File.read!(Path.join(deploy_folder, path))
+    Mix.shell().info([:red, "\n--- Removed file: #{path} ---\n"])
+    Mix.shell().info(content)
+    Mix.shell().info([:red, "--- end ---\n"])
+  end
+
+  defp show_diff_for_action(_, _, _), do: :ok
 
   defp apply_ai_recommendations(reviews, temp_dir, deploy_folder) do
     Enum.each(reviews, fn {action, review} ->
