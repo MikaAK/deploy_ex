@@ -331,8 +331,25 @@ defmodule DeployEx.LLMMerge do
       |> LangChain.Chains.LLMChain.add_messages([user_message])
 
     case LangChain.Chains.LLMChain.run(chain) do
-      {:ok, _chain, response} -> {:ok, response.content}
-      {:error, _chain, error} -> {:error, error}
+      {:ok, updated_chain} ->
+        content = extract_content(updated_chain.last_message)
+        {:ok, content}
+
+      {:error, _chain, error} ->
+        {:error, error}
+
+      {:error, error} ->
+        {:error, error}
     end
   end
+
+  defp extract_content(%{content: content}) when is_binary(content), do: content
+
+  defp extract_content(%{content: parts}) when is_list(parts) do
+    parts
+    |> Enum.filter(&(Map.get(&1, :type) === :text))
+    |> Enum.map_join("\n", &Map.get(&1, :content, ""))
+  end
+
+  defp extract_content(_), do: ""
 end
