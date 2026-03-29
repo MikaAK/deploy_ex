@@ -36,11 +36,7 @@ defmodule DeployEx.PrivManifest do
   def write(deploy_folder, manifest) do
     manifest_path = Path.join(deploy_folder, @manifest_filename)
 
-    content =
-      manifest
-      |> inspect(pretty: true)
-      |> Code.format_string!()
-      |> IO.iodata_to_binary()
+    content = inspect(manifest, pretty: true, limit: :infinity, printable_limit: :infinity)
 
     case File.write(manifest_path, content) do
       :ok ->
