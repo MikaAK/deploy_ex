@@ -62,6 +62,10 @@ defmodule DeployEx.ChangePlanner do
 
   # SECTION: File Listing
 
+  defp list_files(nil) do
+    {:error, ErrorMessage.bad_request("#{__MODULE__}: directory path is nil")}
+  end
+
   defp list_files(dir) do
     if File.dir?(dir) do
       files =
