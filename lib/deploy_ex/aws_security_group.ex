@@ -38,7 +38,11 @@ defmodule DeployEx.AwsSecurityGroup do
     environment = opts[:environment] || DeployEx.Config.env()
 
     sg_prefix = if DeployEx.Config.aws_names_include_env?() do
-      "#{project_name}-#{environment}-sg"
+      base_name = project_name
+        |> String.replace("-#{environment}", "")
+        |> String.replace("_#{environment}", "")
+
+      "#{base_name}-#{environment}-sg"
     else
       "#{project_name}-sg"
     end
