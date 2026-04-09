@@ -63,7 +63,12 @@ defmodule Mix.Tasks.DeployEx.Qa.AttachLb do
   defp resolve_qa_node(app_name, opts) do
     cond do
       is_binary(opts[:instance_id]) ->
-        {:ok, %DeployEx.QaNode{instance_id: opts[:instance_id], app_name: app_name}}
+        instance_id = opts[:instance_id]
+
+        case fetch_existing_qa_node(app_name, instance_id, opts) do
+          {:ok, qa_node} -> {:ok, qa_node}
+          {:error, _} -> {:ok, %DeployEx.QaNode{instance_id: instance_id, app_name: app_name}}
+        end
 
       is_binary(app_name) ->
         case DeployEx.QaNode.fetch_qa_state(app_name, opts) do
@@ -81,6 +86,15 @@ defmodule Mix.Tasks.DeployEx.Qa.AttachLb do
         Mix.raise("App name or --instance-id is required. Usage: mix deploy_ex.qa.attach_lb <app_name> or mix deploy_ex.qa.attach_lb --instance-id <id> --target-group <arn>")
     end
   end
+
+  defp fetch_existing_qa_node(app_name, instance_id, opts) when is_binary(app_name) do
+    case DeployEx.QaNode.fetch_qa_state(app_name, instance_id, opts) do
+      {:ok, %DeployEx.QaNode{} = qa_node} -> {:ok, qa_node}
+      _ -> {:error, :not_found}
+    end
+  end
+
+  defp fetch_existing_qa_node(_app_name, _instance_id, _opts), do: {:error, :not_found}
 
   defp find_target_groups(_qa_node, app_name, opts) do
     if is_binary(opts[:target_group]) do

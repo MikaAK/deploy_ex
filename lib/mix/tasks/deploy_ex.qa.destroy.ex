@@ -108,7 +108,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
     Enum.each(nodes, fn qa_node ->
       Mix.shell().info([
         "  - ", :cyan, qa_node.instance_name || qa_node.app_name, :reset,
-        " (", qa_node.instance_id, ", SHA: ", String.slice(qa_node.target_sha || "", 0, 7), ")"
+        " (", qa_node.instance_id, ", SHA: ", sha_display(qa_node.target_sha), ")"
       ])
     end)
 
@@ -116,6 +116,10 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
       Mix.raise("Aborted")
     end
   end
+
+  defp sha_display(nil), do: "N/A"
+  defp sha_display(""), do: "N/A"
+  defp sha_display(sha), do: String.slice(sha, 0, 7)
 
   defp destroy_qa_node(qa_node, opts) do
     unless opts[:quiet] do
