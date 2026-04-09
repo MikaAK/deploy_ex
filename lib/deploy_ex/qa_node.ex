@@ -147,9 +147,14 @@ defmodule DeployEx.QaNode do
 
   def detach_from_load_balancer(%__MODULE__{target_group_arns: []} = _qa_node, _opts), do: :ok
   def detach_from_load_balancer(%__MODULE__{} = qa_node, opts) do
-    results = Enum.map(qa_node.target_group_arns, fn arn ->
-      DeployEx.AwsLoadBalancer.deregister_target(arn, qa_node.instance_id, opts)
-    end)
+    ports = case opts[:port] do
+      port when is_integer(port) -> [port]
+      _ -> @default_lb_ports
+    end
+
+    results = for arn <- qa_node.target_group_arns, port <- ports do
+      DeployEx.AwsLoadBalancer.deregister_target(arn, qa_node.instance_id, port, opts)
+    end
 
     case Enum.find(results, &match?({:error, _}, &1)) do
       nil ->

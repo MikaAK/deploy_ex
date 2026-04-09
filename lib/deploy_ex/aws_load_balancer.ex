@@ -12,11 +12,11 @@ defmodule DeployEx.AwsLoadBalancer do
     |> handle_register_response()
   end
 
-  def deregister_target(target_group_arn, instance_id, opts \\ []) do
+  def deregister_target(target_group_arn, instance_id, port, opts) do
     region = opts[:region] || DeployEx.Config.aws_region()
 
     target_group_arn
-    |> ExAws.ElasticLoadBalancingV2.deregister_targets([%{id: instance_id}])
+    |> ExAws.ElasticLoadBalancingV2.deregister_targets([%{id: instance_id, port: port}])
     |> ExAws.request(region: region)
     |> handle_deregister_response()
   end
