@@ -165,7 +165,9 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
 
   defp gather_infrastructure(app_name, opts) do
-    Mix.shell().info([:faint, "Gathering infrastructure details from AWS..."])
+    console? = not DeployEx.TUI.enabled?()
+
+    if console?, do: Mix.shell().info([:faint, "Gathering infrastructure details from AWS..."])
 
     infra_opts = if opts[:skip_ami] do
       opts
@@ -179,10 +181,10 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
           {:ok, Map.put(infra, :using_app_ami, false)}
         else
           if infra.ami_id do
-            Mix.shell().info([:green, "  ✓ ", :reset, "Using app AMI: ", :cyan, infra.ami_id, :reset, " (setup will be skipped)"])
+            if console?, do: Mix.shell().info([:green, "  ✓ ", :reset, "Using app AMI: ", :cyan, infra.ami_id, :reset, " (setup will be skipped)"])
             {:ok, Map.put(infra, :using_app_ami, true)}
           else
-            Mix.shell().info([:yellow, "  ⚠ ", :reset, "No app AMI found, using base AMI"])
+            if console?, do: Mix.shell().info([:yellow, "  ⚠ ", :reset, "No app AMI found, using base AMI"])
             {:ok, Map.put(infra, :using_app_ami, false)}
           end
         end
@@ -193,7 +195,9 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
 
   defp create_qa_node(app_name, sha, infra, opts) do
-    Mix.shell().info([:cyan, "Creating QA node for ", :bright, app_name, :reset, :cyan, " with SHA ", :yellow, String.slice(sha, 0, 7), :reset, "..."])
+    if not DeployEx.TUI.enabled?() do
+      Mix.shell().info([:cyan, "Creating QA node for ", :bright, app_name, :reset, :cyan, " with SHA ", :yellow, String.slice(sha, 0, 7), :reset, "..."])
+    end
 
     params = %{
       ami_id: infra.ami_id,
@@ -208,21 +212,29 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
 
   defp wait_for_instance(qa_node, _opts) do
-    Mix.shell().info([:faint, "Waiting for instance ", :reset, qa_node.instance_id, :faint, " to start..."])
+    if not DeployEx.TUI.enabled?() do
+      Mix.shell().info([:faint, "Waiting for instance ", :reset, qa_node.instance_id, :faint, " to start..."])
+    end
+
     DeployEx.AwsMachine.wait_for_started([qa_node.instance_id])
   end
 
   defp wait_for_ssh_ready(qa_node) do
-    Mix.shell().info([:faint, "Waiting for SSH to be ready on ", :reset, :cyan, qa_node.public_ip, :reset, :faint, "..."])
+    if not DeployEx.TUI.enabled?() do
+      Mix.shell().info([:faint, "Waiting for SSH to be ready on ", :reset, :cyan, qa_node.public_ip, :reset, :faint, "..."])
+    end
+
     wait_for_ssh(qa_node.public_ip)
   end
 
   defp save_and_refresh_state(qa_node, opts) do
-    Mix.shell().info([:faint, "Saving QA state to S3..."])
+    console? = not DeployEx.TUI.enabled?()
+
+    if console?, do: Mix.shell().info([:faint, "Saving QA state to S3..."])
 
     case DeployEx.QaNode.save_qa_state(qa_node, opts) do
       {:ok, :saved} ->
-        Mix.shell().info([:green, "  ✓ ", :reset, "QA state saved"])
+        if console?, do: Mix.shell().info([:green, "  ✓ ", :reset, "QA state saved"])
         DeployEx.QaNode.verify_instance_exists(qa_node)
 
       {:error, error} ->
@@ -233,13 +245,23 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
   defp maybe_run_setup(_qa_node, _infra, %{skip_setup: true}), do: :ok
   defp maybe_run_setup(_qa_node, %{using_app_ami: true}, _opts) do
-    Mix.shell().info([:green, "  ✓ ", :reset, "Skipping setup (using pre-configured AMI)"])
+    if not DeployEx.TUI.enabled?() do
+      Mix.shell().info([:green, "  ✓ ", :reset, "Skipping setup (using pre-configured AMI)"])
+    end
+
     :ok
   end
   defp maybe_run_setup(qa_node, _infra, opts) do
-    Mix.shell().info([:faint, "Waiting for SSH to be ready on ", :reset, :cyan, qa_node.instance_name, :reset, :faint, "..."])
+    if not DeployEx.TUI.enabled?() do
+      Mix.shell().info([:faint, "Waiting for SSH to be ready on ", :reset, :cyan, qa_node.instance_name, :reset, :faint, "..."])
+    end
+
     wait_for_ssh(qa_node.public_ip)
-    Mix.shell().info([:cyan, "Running Ansible setup for ", :bright, qa_node.instance_name, :reset, "..."])
+
+    if not DeployEx.TUI.enabled?() do
+      Mix.shell().info([:cyan, "Running Ansible setup for ", :bright, qa_node.instance_name, :reset, "..."])
+    end
+
     run_ansible_setup(qa_node, opts)
   end
 
@@ -255,23 +277,37 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
   defp maybe_wait_for_deploy(_qa_node, _infra, %{skip_deploy: true}), do: :ok
   defp maybe_wait_for_deploy(qa_node, %{using_app_ami: true}, _opts) do
-    Mix.shell().info([:faint, "Waiting for cloud-init to deploy release..."])
+    if not DeployEx.TUI.enabled?() do
+      Mix.shell().info([:faint, "Waiting for cloud-init to deploy release..."])
+    end
+
     wait_for_ssh(qa_node.public_ip)
-    Mix.shell().info([:green, "  ✓ ", :reset, "Release deployed via cloud-init"])
+
+    if not DeployEx.TUI.enabled?() do
+      Mix.shell().info([:green, "  ✓ ", :reset, "Release deployed via cloud-init"])
+    end
+
     :ok
   end
   defp maybe_wait_for_deploy(qa_node, _infra, opts) do
-    sha = qa_node.target_sha
-    Mix.shell().info([:cyan, "Deploying SHA ", :yellow, String.slice(sha, 0, 7), :reset, :cyan, " to ", :bright, qa_node.instance_name, :reset, "..."])
-    run_ansible_deploy(qa_node, sha, opts)
+    if not DeployEx.TUI.enabled?() do
+      Mix.shell().info([:cyan, "Deploying SHA ", :yellow, String.slice(qa_node.target_sha, 0, 7), :reset, :cyan, " to ", :bright, qa_node.instance_name, :reset, "..."])
+    end
+
+    run_ansible_deploy(qa_node, qa_node.target_sha, opts)
   end
 
   defp maybe_attach_lb(qa_node, %{attach_lb: true} = opts) do
-    Mix.shell().info([:faint, "Attaching to load balancer..."])
+    if not DeployEx.TUI.enabled?() do
+      Mix.shell().info([:faint, "Attaching to load balancer..."])
+    end
 
     with {:ok, target_groups} <- DeployEx.AwsLoadBalancer.find_target_groups_by_app(qa_node.app_name, opts) do
       if Enum.empty?(target_groups) do
-        Mix.shell().info([:yellow, "No target groups found for #{qa_node.app_name}"])
+        if not DeployEx.TUI.enabled?() do
+          Mix.shell().info([:yellow, "No target groups found for #{qa_node.app_name}"])
+        end
+
         {:ok, qa_node}
       else
         arns = Enum.map(target_groups, & &1.arn)
