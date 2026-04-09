@@ -53,7 +53,7 @@ defmodule DeployEx.ReleaseUploader do
     as: :load_app_dep_tree
 
   def fetch_all_remote_releases(opts) do
-    AwsManager.get_releases(opts[:aws_region], opts[:aws_release_bucket])
+    AwsManager.get_releases(opts[:aws_region], opts[:aws_release_bucket], opts[:prefix])
   end
 
   def fetch_all_local_releases do

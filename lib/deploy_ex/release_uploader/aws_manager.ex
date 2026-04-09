@@ -1,10 +1,15 @@
 defmodule DeployEx.ReleaseUploader.AwsManager do
-  def get_releases(region, bucket) do
-    res = bucket |> ExAws.S3.list_objects |> ExAws.request(region: region) |> handle_response
+  def get_releases(region, bucket, prefix \\ nil) do
+    s3_opts = if prefix, do: [prefix: prefix], else: []
 
-    with {:ok, %{contents: contents}} <- res do
-      {:ok, Enum.map(contents, &(&1.key))}
-    end
+    keys = bucket
+      |> ExAws.S3.list_objects(s3_opts)
+      |> ExAws.stream!(region: region)
+      |> Enum.map(& &1.key)
+
+    {:ok, keys}
+  rescue
+    e -> {:error, ErrorMessage.failed_dependency("failed to list S3 releases", %{error: Exception.message(e)})}
   end
 
   def upload(file_path, region, bucket, upload_path) do

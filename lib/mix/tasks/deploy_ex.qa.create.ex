@@ -115,37 +115,52 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
 
   defp validate_and_find_sha(app_name, sha, opts) do
-    fetch_opts = [
+    release_fetch_opts = [
       aws_release_bucket: opts[:aws_release_bucket] || DeployEx.Config.aws_release_bucket(),
       aws_region: opts[:aws_region] || DeployEx.Config.aws_region()
     ]
 
-    case DeployEx.ReleaseUploader.fetch_all_remote_releases(fetch_opts) do
-      {:ok, releases} ->
-        {qa_match, qa_releases} = find_release_match(releases, app_name, sha, "qa")
+    with {:error, _} <- find_sha_in_qa_releases(app_name, sha, release_fetch_opts),
+         {:error, _} <- find_sha_in_prod_releases(app_name, sha, release_fetch_opts) do
+      {:error, sha_not_found_error(app_name, sha, release_fetch_opts)}
+    end
+  end
 
-        {matching_release, candidate_releases} = if is_nil(qa_match) do
-            {fallback_match, fallback_releases} = find_release_match(releases, app_name, sha, nil)
-            {fallback_match, qa_releases ++ fallback_releases}
-          else
-            {qa_match, qa_releases}
-          end
+  defp find_sha_in_qa_releases(app_name, sha, fetch_opts) do
+    fetch_opts
+      |> Keyword.put(:prefix, "qa/#{app_name}/")
+      |> find_sha_in_releases(sha)
+  end
 
-        if is_nil(matching_release) do
-          suggestions = DeployExHelpers.format_release_suggestions(candidate_releases, sha)
-          {:error, ErrorMessage.not_found("no release found matching SHA '#{sha}' for app '#{app_name}'", %{suggestions: suggestions})}
-        else
-          full_sha = DeployExHelpers.extract_sha_from_release(matching_release)
+  defp find_sha_in_prod_releases(app_name, sha, fetch_opts) do
+    fetch_opts
+      |> Keyword.put(:prefix, "#{app_name}/")
+      |> find_sha_in_releases(sha)
+  end
 
-          if is_nil(full_sha) do
-            {:error, ErrorMessage.bad_request("couldn't extract SHA from release name")}
-          else
-            {:ok, full_sha}
-          end
-        end
+  defp find_sha_in_releases(fetch_opts, sha) do
+    with {:ok, releases} <- DeployEx.ReleaseUploader.fetch_all_remote_releases(fetch_opts),
+         release when not is_nil(release) <- Enum.find(releases, &String.contains?(&1, sha)),
+         full_sha when not is_nil(full_sha) <- DeployExHelpers.extract_sha_from_release(release) do
+      {:ok, full_sha}
+    else
+      nil -> {:error, :not_found}
+      {:error, _} = error -> error
+    end
+  end
 
-      {:error, _} = error ->
-        error
+  defp sha_not_found_error(app_name, sha, fetch_opts) do
+    qa_releases = fetch_opts |> Keyword.put(:prefix, "qa/#{app_name}/") |> fetch_release_keys()
+    prod_releases = fetch_opts |> Keyword.put(:prefix, "#{app_name}/") |> fetch_release_keys()
+    suggestions = DeployExHelpers.format_release_suggestions(qa_releases ++ prod_releases, sha)
+
+    ErrorMessage.not_found("no release found matching SHA '#{sha}' for app '#{app_name}'", %{suggestions: suggestions})
+  end
+
+  defp fetch_release_keys(opts) do
+    case DeployEx.ReleaseUploader.fetch_all_remote_releases(opts) do
+      {:ok, releases} -> releases
+      {:error, _} -> []
     end
   end
 
@@ -289,18 +304,6 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
       {:error, error} -> {:error, ErrorMessage.failed_dependency("ansible deploy failed", %{error: error})}
     end
   end
-
-  defp find_release_match(releases, app_name, sha, release_prefix) do
-    path_prefix = release_path_prefix(app_name, release_prefix)
-    app_releases = Enum.filter(releases, &String.starts_with?(&1, path_prefix))
-    matching = Enum.find(app_releases, &String.contains?(&1, sha))
-
-    {matching, app_releases}
-  end
-
-  defp release_path_prefix(app_name, nil), do: "#{app_name}/"
-  defp release_path_prefix(app_name, ""), do: "#{app_name}/"
-  defp release_path_prefix(app_name, release_prefix), do: "#{release_prefix}/#{app_name}/"
 
   defp output_success(qa_node, _opts) do
     Mix.shell().info([
