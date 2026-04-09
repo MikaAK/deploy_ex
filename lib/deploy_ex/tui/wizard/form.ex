@@ -160,15 +160,29 @@ defmodule DeployEx.TUI.Wizard.Form do
         :cancelled
 
       %ExRatatui.Event.Key{code: "up", kind: "press"} ->
-        new_focused = max(state.focused - 1, 0)
+        new_focused = case state.focused do
+          :submit when inputs === [] -> :submit
+          :submit -> length(inputs) - 1
+          0 -> 0
+          n -> n - 1
+        end
         form_loop(terminal, width, height, %{state | focused: new_focused, error: nil})
 
       %ExRatatui.Event.Key{code: "down", kind: "press"} ->
-        new_focused = min(state.focused + 1, length(inputs) - 1)
+        new_focused = case state.focused do
+          :submit -> :submit
+          n when n >= length(inputs) - 1 -> :submit
+          n -> n + 1
+        end
         form_loop(terminal, width, height, %{state | focused: new_focused, error: nil})
 
       %ExRatatui.Event.Key{code: "tab", kind: "press"} ->
-        new_focused = rem(state.focused + 1, max(length(inputs), 1))
+        input_count = length(inputs)
+        new_focused = case state.focused do
+          :submit -> 0
+          n when n >= input_count - 1 -> :submit
+          n -> n + 1
+        end
         form_loop(terminal, width, height, %{state | focused: new_focused, error: nil})
 
       %ExRatatui.Event.Key{code: "enter", kind: "press"} ->
@@ -195,28 +209,29 @@ defmodule DeployEx.TUI.Wizard.Form do
     end
   end
 
+  defp handle_enter(terminal, width, height, state, _current_input, _inputs)
+       when state.focused === :submit do
+    maybe_submit(terminal, width, height, state)
+  end
+
   defp handle_enter(terminal, width, height, state, current_input, inputs) do
     cond do
       current_input.type === :boolean ->
         new_state = maybe_toggle_boolean(state, current_input)
-
-        if state.focused === length(inputs) - 1 do
-          maybe_submit(terminal, width, height, new_state)
-        else
-          new_focused = min(state.focused + 1, length(inputs) - 1)
-          form_loop(terminal, width, height, %{new_state | focused: new_focused})
-        end
+        new_focused = advance_focus(state.focused, inputs)
+        form_loop(terminal, width, height, %{new_state | focused: new_focused})
 
       current_input.type === :select ->
         handle_select_input(terminal, width, height, state, current_input, inputs)
 
-      state.focused === length(inputs) - 1 ->
-        maybe_submit(terminal, width, height, state)
-
       true ->
-        new_focused = min(state.focused + 1, length(inputs) - 1)
+        new_focused = advance_focus(state.focused, inputs)
         form_loop(terminal, width, height, %{state | focused: new_focused})
     end
+  end
+
+  defp advance_focus(current, inputs) do
+    if current >= length(inputs) - 1, do: :submit, else: current + 1
   end
 
   defp handle_select_input(terminal, width, height, state, current_input, inputs) do
@@ -241,7 +256,7 @@ defmodule DeployEx.TUI.Wizard.Form do
           [selected] ->
             new_values = Map.put(state.values, current_input.key, selected)
             new_buffers = Map.put(state.text_buffers, current_input.key, selected)
-            new_focused = min(state.focused + 1, length(inputs) - 1)
+            new_focused = advance_focus(state.focused, inputs)
             form_loop(terminal, width, height, %{state | values: new_values, text_buffers: new_buffers, focused: new_focused})
 
           [] ->
@@ -377,7 +392,14 @@ defmodule DeployEx.TUI.Wizard.Form do
     }
 
     input_lines = build_input_lines(inputs, state)
-    content_text = Enum.join(input_lines, "\n")
+
+    submit_line = if state.focused === :submit do
+      "\n   ▸ [ OK ]"
+    else
+      "\n     [ OK ]"
+    end
+
+    content_text = Enum.join(input_lines, "\n") <> submit_line
 
     error_suffix = if state.error, do: "\n\n  ✗ #{state.error}", else: ""
 

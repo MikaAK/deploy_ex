@@ -138,12 +138,14 @@ defmodule Mix.Tasks.DeployEx.Upload do
   end
 
   defp upload_release(%ReleaseUploader.State{} = release_state, opts) do
-    Mix.shell.info([:green, "* uploading to S3 ", :reset, release_state.local_file])
+    qa_label = if opts[:qa_release], do: "for QA ", else: ""
+
+    Mix.shell.info([:green, "* uploading to S3 #{qa_label}", :reset, release_state.local_file])
 
     case ReleaseUploader.upload_release(release_state, opts) do
       {:ok, _} = res ->
         Mix.shell.info([
-          :green, "* uploaded to S3 ", :reset,
+          :green, "* uploaded to S3 #{qa_label}", :reset,
           release_state.local_file, :green, " as ", :reset,
           release_state.name
         ])
