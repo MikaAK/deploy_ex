@@ -286,7 +286,15 @@ defmodule DeployEx.QaNode do
     "#{@qa_state_prefix}/#{app_name}/#{instance_id}.json"
   end
 
-  def fetch_qa_state(app_name, instance_id, opts \\ []) do
+  def fetch_qa_state(app_name, opts) when is_list(opts) do
+    case fetch_all_qa_states_for_app(app_name, opts) do
+      {:ok, [state | _]} -> {:ok, state}
+      {:ok, []} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  def fetch_qa_state(app_name, instance_id, opts \\ []) when is_binary(instance_id) do
     region = opts[:region] || DeployEx.Config.aws_region()
     bucket = opts[:bucket] || DeployEx.Config.aws_release_bucket()
 

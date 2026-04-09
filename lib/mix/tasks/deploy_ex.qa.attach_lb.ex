@@ -34,7 +34,7 @@ defmodule Mix.Tasks.DeployEx.Qa.AttachLb do
            {:ok, target_groups} <- find_target_groups(qa_node, app_name, opts),
            {:ok, updated_qa_node} <- attach_to_target_groups(qa_node, target_groups, opts),
            :ok <- maybe_wait_for_healthy(updated_qa_node, target_groups, opts) do
-        if not opts[:quiet] do
+        if !opts[:quiet] do
           Mix.shell().info([
             :green, "\n✓ Attached ", :cyan, qa_node.instance_id,
             :green, " to ", :cyan, "#{length(target_groups)}",
@@ -106,7 +106,7 @@ defmodule Mix.Tasks.DeployEx.Qa.AttachLb do
   defp attach_to_target_groups(qa_node, target_groups, opts) do
     arns = Enum.map(target_groups, & &1.arn)
 
-    if not opts[:quiet] do
+    if !opts[:quiet] do
       Mix.shell().info("Attaching #{qa_node.instance_id} to #{length(arns)} target group(s)...")
     end
 
@@ -122,7 +122,7 @@ defmodule Mix.Tasks.DeployEx.Qa.AttachLb do
   end
 
   defp maybe_do_wait_for_healthy(qa_node, target_groups, opts) do
-    if not opts[:quiet] do
+    if !opts[:quiet] do
       Mix.shell().info("Waiting for health checks to pass...")
     end
 

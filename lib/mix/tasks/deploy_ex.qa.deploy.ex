@@ -149,7 +149,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
 
 
   defp run_ansible_deploy(qa_node, sha, opts) do
-    if not opts[:quiet] and not DeployEx.TUI.enabled?() do
+    if !opts[:quiet] and not DeployEx.TUI.enabled?() do
       Mix.shell().info("Deploying SHA #{String.slice(sha, 0, 7)} to #{qa_node.instance_name}...")
     end
 
