@@ -63,7 +63,7 @@ defmodule Mix.Tasks.DeployEx.Qa.AttachLb do
   defp resolve_qa_node(app_name, opts) do
     cond do
       is_binary(opts[:instance_id]) ->
-        {:ok, %DeployEx.QaNode{instance_id: opts[:instance_id]}}
+        {:ok, %DeployEx.QaNode{instance_id: opts[:instance_id], app_name: app_name}}
 
       is_binary(app_name) ->
         case DeployEx.QaNode.fetch_qa_state(app_name, opts) do
