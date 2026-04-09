@@ -310,8 +310,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
         {:ok, qa_node}
       else
-        arns = Enum.map(target_groups, & &1.arn)
-        DeployEx.QaNode.attach_to_load_balancer(qa_node, arns, opts)
+        DeployEx.QaNode.attach_to_load_balancer(qa_node, target_groups, opts)
       end
     end
   end

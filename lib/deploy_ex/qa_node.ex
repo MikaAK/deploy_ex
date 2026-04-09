@@ -118,17 +118,18 @@ defmodule DeployEx.QaNode do
     detach_from_load_balancer(qa_node, opts)
   end
 
-  @default_lb_ports [443, 80]
+  def attach_to_load_balancer(%__MODULE__{} = qa_node, target_groups, opts \\ []) when is_list(target_groups) do
+    override_port = opts[:port]
 
-  def attach_to_load_balancer(%__MODULE__{} = qa_node, target_group_arns, opts \\ []) when is_list(target_group_arns) do
-    ports = case opts[:port] do
-      port when is_integer(port) -> [port]
-      _ -> @default_lb_ports
-    end
-
-    results = for arn <- target_group_arns, port <- ports do
+    results = Enum.map(target_groups, fn tg ->
+      {arn, port} = target_group_arn_and_port(tg, override_port)
       DeployEx.AwsLoadBalancer.register_target(arn, qa_node.instance_id, port, opts)
-    end
+    end)
+
+    target_group_arns = Enum.map(target_groups, fn
+      %{arn: arn} -> arn
+      arn when is_binary(arn) -> arn
+    end)
 
     case Enum.find(results, &match?({:error, _}, &1)) do
       nil ->
@@ -147,14 +148,18 @@ defmodule DeployEx.QaNode do
 
   def detach_from_load_balancer(%__MODULE__{target_group_arns: []} = _qa_node, _opts), do: :ok
   def detach_from_load_balancer(%__MODULE__{} = qa_node, opts) do
-    ports = case opts[:port] do
-      port when is_integer(port) -> [port]
-      _ -> @default_lb_ports
-    end
+    results = Enum.flat_map(qa_node.target_group_arns, fn arn ->
+      case DeployEx.AwsLoadBalancer.describe_target_health(arn, opts) do
+        {:ok, targets} ->
+          targets
+            |> Enum.filter(&(&1.id === qa_node.instance_id))
+            |> Enum.map(fn target ->
+              DeployEx.AwsLoadBalancer.deregister_target(arn, qa_node.instance_id, target.port, opts)
+            end)
 
-    results = for arn <- qa_node.target_group_arns, port <- ports do
-      DeployEx.AwsLoadBalancer.deregister_target(arn, qa_node.instance_id, port, opts)
-    end
+        {:error, _} = error -> [error]
+      end
+    end)
 
     case Enum.find(results, &match?({:error, _}, &1)) do
       nil ->
@@ -170,6 +175,12 @@ defmodule DeployEx.QaNode do
         error
     end
   end
+
+  defp target_group_arn_and_port(%{arn: arn, port: port}, _override_port) when is_integer(port), do: {arn, port}
+  defp target_group_arn_and_port(%{arn: arn}, override_port) when is_integer(override_port), do: {arn, override_port}
+  defp target_group_arn_and_port(%{arn: arn}, _override_port), do: {arn, 443}
+  defp target_group_arn_and_port(arn, override_port) when is_binary(arn) and is_integer(override_port), do: {arn, override_port}
+  defp target_group_arn_and_port(arn, _override_port) when is_binary(arn), do: {arn, 443}
 
   defp build_instance_name(app_name, target_sha, environment, opts) do
     {:ok, display_name} = DeployEx.TerraformState.get_app_display_name(app_name, opts)

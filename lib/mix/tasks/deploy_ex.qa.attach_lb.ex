@@ -104,13 +104,11 @@ defmodule Mix.Tasks.DeployEx.Qa.AttachLb do
   end
 
   defp attach_to_target_groups(qa_node, target_groups, opts) do
-    arns = Enum.map(target_groups, & &1.arn)
-
     if !opts[:quiet] do
-      Mix.shell().info("Attaching #{qa_node.instance_id} to #{length(arns)} target group(s)...")
+      Mix.shell().info("Attaching #{qa_node.instance_id} to #{length(target_groups)} target group(s)...")
     end
 
-    DeployEx.QaNode.attach_to_load_balancer(qa_node, arns, opts)
+    DeployEx.QaNode.attach_to_load_balancer(qa_node, target_groups, opts)
   end
 
   defp maybe_wait_for_healthy(qa_node, target_groups, opts) do
