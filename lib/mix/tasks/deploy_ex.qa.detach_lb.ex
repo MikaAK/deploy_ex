@@ -9,9 +9,12 @@ defmodule Mix.Tasks.DeployEx.Qa.DetachLb do
   ```bash
   mix deploy_ex.qa.detach_lb my_app
   mix deploy_ex.qa.detach_lb my_app --target-group arn:aws:...
+  mix deploy_ex.qa.detach_lb --instance-id i-abc123 --target-group arn:aws:...
+  mix deploy_ex.qa.detach_lb my_app --instance-id i-abc123
   ```
 
   ## Options
+  - `--instance-id` - EC2 instance ID to detach directly (skips QA state lookup)
   - `--target-group` - Specific target group ARN (default: all attached)
   - `--quiet, -q` - Suppress output messages
   """
@@ -22,17 +25,12 @@ defmodule Mix.Tasks.DeployEx.Qa.DetachLb do
 
     with :ok <- DeployExHelpers.check_valid_project() do
       {opts, extra_args} = parse_args(args)
+      app_name = List.first(extra_args)
 
-      app_name = case extra_args do
-        [name | _] -> name
-        [] -> Mix.raise("App name is required. Usage: mix deploy_ex.qa.detach_lb <app_name>")
-      end
-
-      with {:ok, qa_node} <- fetch_and_verify_qa_node(app_name, opts),
-           :ok <- verify_attached(qa_node),
+      with {:ok, qa_node} <- resolve_qa_node(app_name, opts),
            {:ok, _updated} <- detach_from_target_groups(qa_node, opts) do
-        unless opts[:quiet] do
-          Mix.shell().info([:green, "\n✓ Detached QA node from load balancer", :reset])
+        if !opts[:quiet] do
+          Mix.shell().info([:green, "\n✓ Detached ", :cyan, qa_node.instance_id, :green, " from load balancer", :reset])
         end
       else
         {:error, error} -> Mix.raise(ErrorMessage.to_string(error))
@@ -44,32 +42,52 @@ defmodule Mix.Tasks.DeployEx.Qa.DetachLb do
     OptionParser.parse!(args,
       aliases: [q: :quiet],
       switches: [
+        instance_id: :string,
         target_group: :string,
         quiet: :boolean
       ]
     )
   end
 
-  defp fetch_and_verify_qa_node(app_name, opts) do
-    case DeployEx.QaNode.fetch_qa_state(app_name, opts) do
-      {:ok, nil} ->
-        {:error, ErrorMessage.not_found("no QA node found for app '#{app_name}'")}
+  defp resolve_qa_node(app_name, opts) do
+    cond do
+      is_binary(opts[:instance_id]) ->
+        qa_node = %DeployEx.QaNode{
+          instance_id: opts[:instance_id],
+          app_name: app_name,
+          load_balancer_attached?: true,
+          target_group_arns: target_group_arns_from_opts(opts)
+        }
 
-      {:ok, qa_node} ->
-        DeployEx.QaNode.verify_instance_exists(qa_node)
+        {:ok, qa_node}
 
-      error ->
-        error
+      is_binary(app_name) ->
+        case DeployEx.QaNode.fetch_qa_state(app_name, opts) do
+          {:ok, nil} ->
+            {:error, ErrorMessage.not_found("no QA node found for app '#{app_name}'")}
+
+          {:ok, qa_node} ->
+            DeployEx.QaNode.verify_instance_exists(qa_node)
+
+          error ->
+            error
+        end
+
+      true ->
+        Mix.raise("App name or --instance-id is required. Usage: mix deploy_ex.qa.detach_lb <app_name> or mix deploy_ex.qa.detach_lb --instance-id <id> --target-group <arn>")
     end
   end
 
-  defp verify_attached(%{load_balancer_attached?: false}) do
-    {:error, ErrorMessage.bad_request("QA node is not attached to any load balancer")}
+  defp target_group_arns_from_opts(opts) do
+    if is_binary(opts[:target_group]) do
+      [opts[:target_group]]
+    else
+      []
+    end
   end
-  defp verify_attached(_), do: :ok
 
   defp detach_from_target_groups(qa_node, opts) do
-    unless opts[:quiet] do
+    if !opts[:quiet] do
       Mix.shell().info("Detaching #{qa_node.instance_id} from target groups...")
     end
 
