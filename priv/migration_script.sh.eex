@@ -8,7 +8,7 @@ case "$COMMAND" in
   migrate)
     $APP_BIN eval "
       <%= for app <- @apps do %>
-      Application.load(:<%= app %>)<%= end %>
+      Application.load(:<%= app %>)<% end %>
 
       <%= inspect(@apps) %>
       |> Enum.flat_map(fn app ->
@@ -26,7 +26,7 @@ case "$COMMAND" in
     VERSION="${2:?Usage: $0 rollback VERSION}"
     $APP_BIN eval "
       <%= for app <- @apps do %>
-      Application.load(:<%= app %>)<%= end %>
+      Application.load(:<%= app %>)<% end %>
 
       <%= inspect(@apps) %>
       |> Enum.flat_map(fn app ->
