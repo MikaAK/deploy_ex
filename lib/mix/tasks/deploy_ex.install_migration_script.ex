@@ -1,7 +1,7 @@
 defmodule Mix.Tasks.DeployEx.InstallMigrationScript do
   use Mix.Task
 
-  @scripts_default_path Path.join(DeployEx.Config.deploy_folder(), "scripts")
+  @scripts_default_path Path.join(["rel", "overlays", "bin"])
 
   @shortdoc "Installs migration scripts for running Ecto migrations in releases"
   @moduledoc """
@@ -11,6 +11,10 @@ defmodule Mix.Tasks.DeployEx.InstallMigrationScript do
   `Ecto.Migrator.with_repo/3` to safely run migrations via `bin/<app> eval`.
   The scripts discover `:ecto_repos` from each application at runtime.
 
+  Scripts are written to `rel/overlays/bin/` so Mix releases automatically
+  copy them into the release tarball. After extraction on the server they
+  live alongside the release binary at `/srv/<app>/bin/migrate-<app>.sh`.
+
   Each generated script supports two commands:
   - `migrate` - Runs all pending migrations (default)
   - `rollback VERSION` - Rolls back to the given migration version
@@ -18,16 +22,17 @@ defmodule Mix.Tasks.DeployEx.InstallMigrationScript do
   ## Example
   ```bash
   mix deploy_ex.install_migration_script
+  mix release
 
   # Then on the server:
-  ./deploys/scripts/migrate-my_app.sh migrate
-  ./deploys/scripts/migrate-my_app.sh rollback 20240101120000
+  /srv/my_app/bin/migrate-my_app.sh migrate
+  /srv/my_app/bin/migrate-my_app.sh rollback 20240101120000
   ```
 
   ## Options
   - `force` - Overwrite existing migration scripts if present (alias: `f`)
   - `quiet` - Suppress output messages (alias: `q`)
-  - `directory` - Output directory for scripts (default: `./deploys/scripts`) (alias: `d`)
+  - `directory` - Output directory for scripts (default: `rel/overlays/bin`) (alias: `d`)
   """
 
   def run(args) do
