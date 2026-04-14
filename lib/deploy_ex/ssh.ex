@@ -94,6 +94,8 @@ defmodule DeployEx.SSH do
     abs_pem_file = Path.expand(pem_file)
     args = [
       "-i", abs_pem_file,
+      "-o", "StrictHostKeyChecking=no",
+      "-o", "UserKnownHostsFile=/dev/null",
       "-f", "-N",
       "-L", "#{local_port}:#{target_host}:#{target_port}",
       "admin@#{jump_server_ip}"
@@ -101,10 +103,9 @@ defmodule DeployEx.SSH do
 
     case System.cmd("ssh", args, stderr_to_stdout: true) do
       {_, 0} -> :ok
-      error when is_list(error) ->
-        error_string = List.to_string(error)
-        Mix.shell().error(error_string)
-        {:error, "Failed to setup SSH tunnel: #{error_string}"}
+      {output, _code} ->
+        Mix.shell().error(output)
+        {:error, "Failed to setup SSH tunnel: #{output}"}
     end
   end
 

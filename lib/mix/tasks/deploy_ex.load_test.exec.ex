@@ -66,7 +66,11 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
         end
 
         command = build_k6_command(script, prometheus_url, target_url)
-        run_k6_via_ssh(ip, pem_file, command)
+
+        case run_k6_via_ssh(ip, pem_file, command) do
+          :ok -> :ok
+          {:error, reason} -> Mix.raise(reason)
+        end
       else
         {:error, error} -> Mix.raise(ErrorMessage.to_string(error))
       end
@@ -153,6 +157,8 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
     stream_output(port)
   end
 
+  @idle_timeout_ms :timer.minutes(5)
+
   defp stream_output(port) do
     receive do
       {^port, {:data, data}} ->
@@ -161,9 +167,14 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
 
       {^port, {:exit_status, 0}} ->
         Mix.shell().info([:green, "\n✓ k6 test completed successfully"])
+        :ok
 
       {^port, {:exit_status, code}} ->
-        Mix.shell().error("\nk6 test exited with code #{code}")
+        {:error, "k6 test exited with code #{code}"}
+    after
+      @idle_timeout_ms ->
+        Port.close(port)
+        {:error, "k6 test produced no output for 5 minutes — aborting"}
     end
   end
 end

@@ -47,12 +47,19 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Upload do
           Mix.raise("Runner has no reachable IP address")
         end
 
-        Enum.each(scripts, fn script ->
-          upload_script(script, ip, pem_file, opts)
-        end)
+        case Enum.reduce_while(scripts, :ok, fn script, _acc ->
+          case upload_script(script, ip, pem_file, opts) do
+            :ok -> {:cont, :ok}
+            {:error, _} = err -> {:halt, err}
+          end
+        end) do
+          :ok ->
+            unless opts[:quiet] do
+              Mix.shell().info([:green, "\n✓ Uploaded #{length(scripts)} script(s) to #{ip}"])
+            end
 
-        unless opts[:quiet] do
-          Mix.shell().info([:green, "\n✓ Uploaded #{length(scripts)} script(s) to #{ip}"])
+          {:error, reason} ->
+            Mix.raise("Upload failed: #{reason}")
         end
       else
         {:error, error} -> Mix.raise(ErrorMessage.to_string(error))
@@ -145,8 +152,11 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Upload do
           Mix.shell().info([:green, "  ✓ ", :reset, filename])
         end
 
+        :ok
+
       {output, _} ->
         Mix.shell().error("  ✗ Failed to upload #{filename}: #{output}")
+        {:error, "#{filename}: #{output}"}
     end
   end
 end
