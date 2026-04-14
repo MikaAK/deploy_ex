@@ -56,6 +56,14 @@ defmodule Mix.Tasks.Ansible.Deploy do
 
       DeployExHelpers.check_file_exists!(Path.join(opts[:directory], "aws_ec2.yaml"))
 
+      if opts[:target_sha] do
+        Application.ensure_all_started(:hackney)
+        Application.ensure_all_started(:telemetry)
+        Application.ensure_all_started(:ex_aws)
+      end
+
+      opts = resolve_target_sha_prefix(opts)
+
       DeployEx.TUI.setup_no_tui(opts)
 
       playbooks = opts[:directory]
@@ -150,11 +158,63 @@ defmodule Mix.Tasks.Ansible.Deploy do
     end
   end
 
-  defp add_release_prefix_vars(command_list, %{qa: true}) do
-    command_list ++ ["--extra-vars \"release_prefix=qa release_state_prefix=release-state/qa\""]
+  defp add_release_prefix_vars(command_list, opts) do
+    cond do
+      opts[:resolved_release_prefix] === :qa ->
+        command_list ++ ["--extra-vars \"release_prefix=qa release_state_prefix=release-state/qa\""]
+
+      opts[:qa] === true ->
+        command_list ++ ["--extra-vars \"release_prefix=qa release_state_prefix=release-state/qa\""]
+
+      true ->
+        command_list
+    end
   end
 
-  defp add_release_prefix_vars(command_list, _opts), do: command_list
+  defp resolve_target_sha_prefix(opts) do
+    case opts[:target_sha] do
+      nil -> opts
+      sha -> resolve_sha_location(opts, sha)
+    end
+  end
+
+  defp resolve_sha_location(opts, sha) do
+    region = DeployEx.Config.aws_region()
+    bucket = DeployEx.Config.aws_release_bucket()
+
+    case DeployEx.ReleaseUploader.AwsManager.get_releases(region, bucket) do
+      {:ok, keys} ->
+        cond do
+          sha_in_prefix?(keys, sha, "qa/") ->
+            unless opts[:quiet] do
+              Mix.shell().info([:cyan, "Target SHA #{sha} found in qa prefix, deploying qa release"])
+            end
+
+            Keyword.put(opts, :resolved_release_prefix, :qa)
+
+          sha_in_non_qa?(keys, sha) ->
+            Keyword.put(opts, :resolved_release_prefix, :non_qa)
+
+          true ->
+            Mix.raise("Target SHA #{sha} not found in S3 bucket #{bucket} (searched both qa/ and non-qa prefixes)")
+        end
+
+      {:error, error} ->
+        Mix.raise("Failed to verify target SHA in S3: #{ErrorMessage.to_string(error)}")
+    end
+  end
+
+  defp sha_in_prefix?(keys, sha, prefix) do
+    Enum.any?(keys, &(String.starts_with?(&1, prefix) and String.contains?(&1, sha)))
+  end
+
+  defp sha_in_non_qa?(keys, sha) do
+    Enum.any?(keys, fn key ->
+      not String.starts_with?(key, "qa/") and
+        not String.starts_with?(key, "release-state/") and
+        String.contains?(key, sha)
+    end)
+  end
 
   defp exclude_qa_nodes(command_list, opts) do
     has_custom_limit = Enum.any?(command_list, &String.contains?(&1, "--limit"))
