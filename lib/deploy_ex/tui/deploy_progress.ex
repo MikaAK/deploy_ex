@@ -31,6 +31,12 @@ defmodule DeployEx.TUI.DeployProgress do
     timeout = Keyword.get(opts, :timeout, :timer.minutes(30))
     coordinator = self()
 
+    deploy_meta = %{
+      target_sha: Keyword.get(opts, :target_sha),
+      qa_release: Keyword.get(opts, :qa_release, false),
+      qa_nodes: Keyword.get(opts, :qa_nodes, false)
+    }
+
     app_names = Enum.map(app_playbooks, &extract_app_name/1)
 
     initial_states = Map.new(app_names, fn name ->
@@ -67,20 +73,20 @@ defmodule DeployEx.TUI.DeployProgress do
           |> DeployEx.Utils.reduce_status_tuples()
       end)
 
-      deploy_loop(terminal, width, height, initial_states, task, false)
+      deploy_loop(terminal, width, height, initial_states, task, false, deploy_meta)
     end)
     |> print_logs_after_tui()
   end
 
-  defp deploy_loop(terminal, width, height, states, task, cancelling) do
-    draw_deploy_status(terminal, width, height, states, cancelling)
+  defp deploy_loop(terminal, width, height, states, task, cancelling, deploy_meta) do
+    draw_deploy_status(terminal, width, height, states, cancelling, deploy_meta)
 
     case ExRatatui.poll_event(100) do
       %ExRatatui.Event.Resize{width: new_width, height: new_height} ->
-        deploy_loop(terminal, new_width, new_height, states, task, cancelling)
+        deploy_loop(terminal, new_width, new_height, states, task, cancelling, deploy_meta)
 
       %ExRatatui.Event.Key{code: "c", kind: "press", modifiers: ["ctrl"]} when not cancelling ->
-        deploy_loop(terminal, width, height, states, task, true)
+        deploy_loop(terminal, width, height, states, task, true, deploy_meta)
 
       %ExRatatui.Event.Key{code: "c", kind: "press", modifiers: ["ctrl"]} when cancelling ->
         case Task.shutdown(task, 5_000) do
@@ -94,12 +100,12 @@ defmodule DeployEx.TUI.DeployProgress do
 
         case Task.yield(task, 0) do
           {:ok, result} ->
-            draw_deploy_status(terminal, width, height, states, cancelling)
+            draw_deploy_status(terminal, width, height, states, cancelling, deploy_meta)
             Process.sleep(1000)
             {result, states}
 
           nil ->
-            deploy_loop(terminal, width, height, states, task, cancelling)
+            deploy_loop(terminal, width, height, states, task, cancelling, deploy_meta)
         end
     end
   end
@@ -181,7 +187,7 @@ defmodule DeployEx.TUI.DeployProgress do
   defp format_error(error) when is_binary(error), do: error
   defp format_error(error), do: inspect(error)
 
-  defp draw_deploy_status(terminal, width, height, states, cancelling) do
+  defp draw_deploy_status(terminal, width, height, states, cancelling, deploy_meta) do
     area = %Rect{x: 0, y: 0, width: width, height: height}
 
     [header_area, content_area, footer_area] = Layout.split(area, :vertical, [
@@ -193,8 +199,10 @@ defmodule DeployEx.TUI.DeployProgress do
     completed = Enum.count(states, fn {_, state} -> state.status in [:complete, :failed] end)
     total = map_size(states)
 
+    meta_label = deploy_meta_label(deploy_meta)
+
     header = %Widgets.Paragraph{
-      text: " Deploying Applications (#{completed}/#{total})",
+      text: " Deploying Applications (#{completed}/#{total})#{meta_label}",
       style: %Style{fg: :cyan, modifiers: [:bold]}
     }
 
@@ -219,14 +227,27 @@ defmodule DeployEx.TUI.DeployProgress do
 
     text = Enum.join(lines, "\n")
 
+    block_title = if deploy_meta[:qa_release] do
+      " Deploy Status [QA Release] "
+    else
+      " Deploy Status "
+    end
+
+    node_label = cond do
+      deploy_meta[:qa_nodes] -> "[QA]"
+      true -> "[PROD]"
+    end
+
+    border_color = if deploy_meta[:qa_release], do: :yellow, else: :blue
+
     content = %Widgets.Paragraph{
       text: text,
       style: %Style{fg: :white},
       block: %Widgets.Block{
-        title: " Deploy Status ",
+        title: " #{block_title} #{node_label} ",
         borders: [:all],
         border_type: :rounded,
-        border_style: %Style{fg: :blue}
+        border_style: %Style{fg: border_color}
       }
     }
 
@@ -260,6 +281,18 @@ defmodule DeployEx.TUI.DeployProgress do
       true ->
         :ignore
     end
+  end
+
+  defp deploy_meta_label(deploy_meta) do
+    parts = []
+
+    parts = if deploy_meta[:qa_release], do: parts ++ ["QA"], else: parts
+    parts = if deploy_meta[:target_sha], do: parts ++ [deploy_meta[:target_sha]], else: parts
+
+    node_type = if deploy_meta[:qa_nodes], do: "QA nodes", else: "PROD nodes"
+    parts = parts ++ [node_type]
+
+    " | #{Enum.join(parts, " -> ")}"
   end
 
   defp extract_app_name(playbook_path) do

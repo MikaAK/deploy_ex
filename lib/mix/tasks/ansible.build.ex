@@ -49,6 +49,7 @@ defmodule Mix.Tasks.Ansible.Build do
 
     with :ok <- DeployExHelpers.check_valid_project(),
          :ok <- ensure_ansible_directory_exists(opts[:directory], opts),
+         :ok <- sync_ansible_roles(opts[:directory], opts),
          :ok <- create_ansible_hosts_file(opts),
          :ok <- create_ansible_config_file(opts),
          :ok <- create_ansible_group_vars_file(opts),
@@ -341,6 +342,21 @@ defmodule Mix.Tasks.Ansible.Build do
       variables,
       opts
     )
+  end
+
+  defp sync_ansible_roles(directory, opts) do
+    priv_roles = DeployExHelpers.priv_folder("ansible/roles")
+    target_roles = Path.join(directory, "roles")
+
+    if File.dir?(priv_roles) and File.dir?(target_roles) do
+      unless opts[:quiet] do
+        Mix.shell().info([:green, "* syncing ", :reset, "ansible roles"])
+      end
+
+      File.cp_r!(priv_roles, target_roles)
+    end
+
+    :ok
   end
 
   defp remove_usless_copied_template_folder(opts) do

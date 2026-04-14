@@ -97,7 +97,10 @@ defmodule DeployEx.Utils do
   end
 
   def run_command_streaming(command, directory, line_callback, extra_opts \\ []) do
-    force_color = if DeployEx.TUI.enabled?(), do: ~c"true", else: ~c"false"
+    force_color = case :io.columns() do
+      {:ok, _} -> ~c"true"
+      _ -> ~c"false"
+    end
 
     env = [{~c"ANSIBLE_FORCE_COLOR", force_color} | Enum.map(System.get_env(), fn {k, v} ->
       {String.to_charlist(k), String.to_charlist(v)}

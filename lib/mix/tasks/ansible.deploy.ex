@@ -64,6 +64,8 @@ defmodule Mix.Tasks.Ansible.Deploy do
 
       opts = resolve_target_sha_prefix(opts)
 
+      print_deploy_header(opts)
+
       DeployEx.TUI.setup_no_tui(opts)
 
       playbooks = opts[:directory]
@@ -86,10 +88,15 @@ defmodule Mix.Tasks.Ansible.Deploy do
           DeployEx.Utils.run_command_streaming(command, opts[:directory], line_callback)
         end
 
-        res = DeployEx.TUI.DeployProgress.run(playbooks, run_fn,
+        deploy_opts = [
           max_concurrency: opts[:parallel],
-          timeout: @playbook_timeout
-        )
+          timeout: @playbook_timeout,
+          target_sha: opts[:target_sha],
+          qa_release: opts[:resolved_release_prefix] === :qa,
+          qa_nodes: opts[:qa] === true
+        ]
+
+        res = DeployEx.TUI.DeployProgress.run(playbooks, run_fn, deploy_opts)
 
         case res do
           {:ok, _} -> :ok
@@ -214,6 +221,32 @@ defmodule Mix.Tasks.Ansible.Deploy do
         not String.starts_with?(key, "release-state/") and
         String.contains?(key, sha)
     end)
+  end
+
+  defp print_deploy_header(opts) do
+    if opts[:quiet] do
+      :ok
+    else
+      node_target = cond do
+        opts[:qa] === true -> "QA nodes"
+        opts[:include_qa] === true -> "all nodes (including QA)"
+        true -> "production nodes"
+      end
+
+      release_info = case {opts[:target_sha], opts[:resolved_release_prefix]} do
+        {nil, _} -> "latest release"
+        {sha, :qa} -> "QA release #{sha}"
+        {sha, _} -> "release #{sha}"
+      end
+
+      Mix.shell().info([
+        :cyan, "\n== Deploy ",
+        :bright, release_info,
+        :reset, :cyan, " -> ",
+        :bright, node_target,
+        :reset, :cyan, " ==\n"
+      ])
+    end
   end
 
   defp exclude_qa_nodes(command_list, opts) do
