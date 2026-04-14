@@ -1,3 +1,5 @@
+deploy_s3_bucket: <%= DeployEx.Config.aws_release_bucket() %>
+
 aws_credentials:
   AWS_ACCESS_KEY_ID: "<INSERT_SECRET_OR_PRELOAD_ON_MACHINE>"
   AWS_SECRET_ACCESS_KEY: "<INSERT_SECRET_OR_PRELOAD_ON_MACHINE>"

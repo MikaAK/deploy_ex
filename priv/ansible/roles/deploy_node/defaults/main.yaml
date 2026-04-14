@@ -1,5 +1,5 @@
 app_name: ""
-bucket_name: ""
+bucket_name: "{{ deploy_s3_bucket }}"
 target_release_sha: ""
 release_prefix: ""
 release_state_prefix: "release-state"

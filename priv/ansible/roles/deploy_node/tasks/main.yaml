@@ -15,6 +15,11 @@
           {% endif %}
       register: aws_file_name
 
+    - name: Set local release path
+      set_fact:
+        s3_object_key: "{{ aws_file_name.stdout_lines[0] }}"
+        local_release_file: "{{ app_name }}/{{ aws_file_name.stdout_lines[0] | basename }}"
+
     - name: Create {{ app_name }} srv directory
       file:
         path: /srv/{{ app_name }}
@@ -24,8 +29,8 @@
       amazon.aws.aws_s3:
         bucket: "{{ bucket_name }}"
         mode: get
-        object: "{{ aws_file_name.stdout_lines[0] }}"
-        dest: /srv/{{ aws_file_name.stdout_lines[0] }}
+        object: "{{ s3_object_key }}"
+        dest: /srv/{{ local_release_file }}
 
     - name: Create /srv/{{ app_name }} directory
       file:
@@ -43,9 +48,9 @@
         group: root
         mode: 0755
 
-    - name: Untar {{ aws_file_name.stdout_lines[0] }}
+    - name: Untar {{ local_release_file }}
       unarchive:
-        src: /srv/{{ aws_file_name.stdout_lines[0] }}
+        src: /srv/{{ local_release_file }}
         dest: /srv/unpack-directory
         remote_src: true
 
@@ -70,7 +75,7 @@
 
     - name: Set release changed fact
       set_fact:
-        release_changed: "{{ existing_release != aws_file_name.stdout_lines[0] }}"
+        release_changed: "{{ existing_release != s3_object_key }}"
 
     - name: Fetch release history from S3
       amazon.aws.aws_s3:
@@ -94,7 +99,7 @@
 
     - name: Write new current release
       copy:
-        content: "{{ aws_file_name.stdout_lines[0] }}\n"
+        content: "{{ s3_object_key }}\n"
         dest: /tmp/current_release.txt
       when: release_changed | bool
 
@@ -116,7 +121,7 @@
 
     - name: Skip release state update (same version)
       debug:
-        msg: "Skipping release state update - already at {{ aws_file_name.stdout_lines[0] }}"
+        msg: "Skipping release state update - already at {{ s3_object_key }}"
       when: not (release_changed | bool)
 
     - name: Add erlang_systemd.service file to /etc/systemd/system/{{ app_name }}.service
@@ -164,7 +169,7 @@
         path: /srv/unpack-directory
         state: absent
 
-    - name: Start {{ app_name }} service with {{ aws_file_name.stdout_lines[0] }}
+    - name: Start {{ app_name }} service with {{ local_release_file }}
       systemd:
         daemon_reload: true
         name: "{{ app_name }}"

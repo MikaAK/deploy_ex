@@ -3,7 +3,6 @@
     AWS_USE_DUALSTACK_ENDPOINT: true
   vars:
     app_name: "<%= @app_name %>"
-    bucket_name: "<%= @aws_release_bucket %>"
     <%= if @port do %>app_port: <%= @port %><% end %>
   roles:
     - deploy_node

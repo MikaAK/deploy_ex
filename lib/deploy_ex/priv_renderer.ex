@@ -138,7 +138,6 @@ defmodule DeployEx.PrivRenderer do
 
   defp render_ansible_templates(priv_ansible, target_dir, opts) do
     app_name = opts[:app_name] || DeployExHelpers.underscored_project_name()
-    aws_release_bucket = opts[:aws_release_bucket] || DeployEx.Config.aws_release_bucket()
 
     # ansible.cfg
     ansible_cfg_vars = %{
@@ -187,7 +186,6 @@ defmodule DeployEx.PrivRenderer do
         no_logging: Keyword.get(opts, :no_logging, false),
         no_prometheus: Keyword.get(opts, :no_prometheus, false),
         app_name: release_name,
-        aws_release_bucket: aws_release_bucket,
         port: 80
       }
 

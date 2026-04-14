@@ -313,7 +313,6 @@ defmodule Mix.Tasks.Ansible.Build do
       no_logging: opts[:no_logging],
       no_prometheus: opts[:no_prometheus],
       app_name: app_name,
-      aws_release_bucket: opts[:aws_release_bucket],
       port: 80
     }
 

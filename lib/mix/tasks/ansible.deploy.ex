@@ -194,7 +194,10 @@ defmodule Mix.Tasks.Ansible.Deploy do
         cond do
           sha_in_prefix?(keys, sha, "qa/") ->
             unless opts[:quiet] do
-              Mix.shell().info([:cyan, "Target SHA #{sha} found in qa prefix, deploying qa release"])
+              Mix.shell().info([
+                "Target SHA ", :yellow, :bright, sha, :reset,
+                " found in ", :yellow, :bright, "QA", :reset, " prefix"
+              ])
             end
 
             Keyword.put(opts, :resolved_release_prefix, :qa)
@@ -227,25 +230,22 @@ defmodule Mix.Tasks.Ansible.Deploy do
     if opts[:quiet] do
       :ok
     else
-      node_target = cond do
-        opts[:qa] === true -> "QA nodes"
-        opts[:include_qa] === true -> "all nodes (including QA)"
-        true -> "production nodes"
+      {node_label, node_color} = cond do
+        opts[:qa] === true -> {"QA", :yellow}
+        opts[:include_qa] === true -> {"all (including QA)", :yellow}
+        true -> {"production", :green}
       end
 
-      release_info = case {opts[:target_sha], opts[:resolved_release_prefix]} do
-        {nil, _} -> "latest release"
-        {sha, :qa} -> "QA release #{sha}"
-        {sha, _} -> "release #{sha}"
+      release_parts = case {opts[:target_sha], opts[:resolved_release_prefix]} do
+        {nil, _} -> ["latest release"]
+        {sha, :qa} -> [:yellow, :bright, "QA", :reset, " release ", :yellow, :bright, sha, :reset]
+        {sha, _} -> ["release ", :yellow, :bright, sha, :reset]
       end
 
-      Mix.shell().info([
-        :cyan, "\n== Deploy ",
-        :bright, release_info,
-        :reset, :cyan, " -> ",
-        :bright, node_target,
-        :reset, :cyan, " ==\n"
-      ])
+      Mix.shell().info(
+        ["\n== Deploy "] ++ release_parts ++
+        [" -> ", node_color, :bright, node_label, :reset, " nodes ==\n"]
+      )
     end
   end
 
