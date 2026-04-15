@@ -130,9 +130,26 @@ defmodule DeployEx.TerraformState do
 
       case find_instance_display_name(state, snake_app_name) do
         {:ok, name} -> {:ok, name}
-        {:error, _} -> {:ok, default_display_name(app_name)}
+        {:error, _} -> get_display_name_from_ec2(app_name, opts)
       end
     else
+      {:error, _} -> get_display_name_from_ec2(app_name, opts)
+    end
+  end
+
+  defp get_display_name_from_ec2(app_name, opts) do
+    case DeployEx.AwsMachine.find_instance_ids_by_app_name(app_name, opts) do
+      {:ok, instances_map} ->
+        name = instances_map
+          |> Map.keys()
+          |> Enum.reject(&is_nil/1)
+          |> List.first()
+
+        case name do
+          nil -> {:ok, default_display_name(app_name)}
+          name -> {:ok, extract_base_name(name)}
+        end
+
       {:error, _} -> {:ok, default_display_name(app_name)}
     end
   end

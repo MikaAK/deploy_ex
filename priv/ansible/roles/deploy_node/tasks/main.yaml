@@ -54,75 +54,11 @@
         dest: /srv/unpack-directory
         remote_src: true
 
-    - name: Fetch current release from S3
-      amazon.aws.aws_s3:
-        bucket: "{{ bucket_name }}"
-        mode: get
-        object: "{{ release_state_prefix }}/{{ app_name }}/current_release.txt"
-        dest: /tmp/current_release.txt
-      register: current_release_fetch
-      ignore_errors: true
-
-    - name: Read current release content
-      slurp:
-        src: /tmp/current_release.txt
-      register: current_release_content
-      when: current_release_fetch is succeeded
-
-    - name: Set current release fact
-      set_fact:
-        existing_release: "{{ (current_release_content.content | default('') | b64decode | trim) if current_release_fetch is succeeded else '' }}"
-
-    - name: Set release changed fact
-      set_fact:
-        release_changed: "{{ existing_release != s3_object_key }}"
-
-    - name: Fetch release history from S3
-      amazon.aws.aws_s3:
-        bucket: "{{ bucket_name }}"
-        mode: get
-        object: "{{ release_state_prefix }}/{{ app_name }}/release_history.txt"
-        dest: /tmp/release_history.txt
-      register: release_history_fetch
-      ignore_errors: true
-      when: release_changed | bool
-
-    - name: Create empty release history if not exists
-      copy:
-        content: ""
-        dest: /tmp/release_history.txt
-      when: release_changed | bool and (release_history_fetch.failed | default(false))
-
-    - name: Append current release to history
-      shell: cat /tmp/current_release.txt >> /tmp/release_history.txt
-      when: release_changed | bool and current_release_fetch is succeeded
-
-    - name: Write new current release
-      copy:
-        content: "{{ s3_object_key }}\n"
-        dest: /tmp/current_release.txt
-      when: release_changed | bool
-
-    - name: Upload current release to S3
-      amazon.aws.aws_s3:
-        bucket: "{{ bucket_name }}"
-        mode: put
-        object: "{{ release_state_prefix }}/{{ app_name }}/current_release.txt"
-        src: /tmp/current_release.txt
-      when: release_changed | bool
-
-    - name: Upload release history to S3
-      amazon.aws.aws_s3:
-        bucket: "{{ bucket_name }}"
-        mode: put
-        object: "{{ release_state_prefix }}/{{ app_name }}/release_history.txt"
-        src: /tmp/release_history.txt
-      when: release_changed | bool
-
-    - name: Skip release state update (same version)
-      debug:
-        msg: "Skipping release state update - already at {{ s3_object_key }}"
-      when: not (release_changed | bool)
+    - name: Update release state for {{ app_name }}
+      ansible.builtin.script:
+        cmd: update_release_state.sh {{ bucket_name }} {{ release_state_prefix }} {{ app_name }} {{ s3_object_key }}
+      register: release_state_result
+      changed_when: "'changed' in release_state_result.stdout"
 
     - name: Add erlang_systemd.service file to /etc/systemd/system/{{ app_name }}.service
       template:
