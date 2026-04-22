@@ -27,20 +27,16 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
     with :ok <- DeployExHelpers.check_valid_project() do
       {opts, extra_args} = parse_args(args)
 
-      qa_nodes = find_qa_nodes_to_destroy(extra_args, opts)
-
-      case qa_nodes do
+      case select_nodes(extra_args, opts) do
         [] ->
-          Mix.shell().info([:yellow, "No QA nodes found to destroy"])
+          Mix.shell().info([:yellow, "No QA nodes to destroy"])
 
         nodes ->
           unless opts[:force] do
             prompt_confirmation(nodes)
           end
 
-          Enum.each(nodes, fn qa_node ->
-            destroy_qa_node(qa_node, opts)
-          end)
+          Enum.each(nodes, &destroy_qa_node(&1, opts))
 
           Mix.shell().info([:green, "\n✓ Destroyed #{length(nodes)} QA node(s)"])
       end
@@ -59,7 +55,24 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
     )
   end
 
-  defp find_qa_nodes_to_destroy(_extra_args, %{all: true} = opts) do
+  defp select_nodes(extra_args, opts) do
+    cond do
+      opts[:all] === true ->
+        find_all_qa_nodes(opts)
+
+      is_binary(opts[:instance_id]) ->
+        find_node_by_instance_id(opts[:instance_id], opts)
+
+      extra_args !== [] ->
+        [app_name | _] = extra_args
+        prompt_pick_nodes_for_app(app_name, opts)
+
+      true ->
+        Mix.raise("App name, --instance-id, or --all is required")
+    end
+  end
+
+  defp find_all_qa_nodes(opts) do
     case DeployEx.QaNode.list_all_qa_states(opts) do
       {:ok, app_names} ->
         Enum.flat_map(app_names, fn app_name ->
@@ -74,7 +87,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
     end
   end
 
-  defp find_qa_nodes_to_destroy(_extra_args, %{instance_id: instance_id} = opts) when not is_nil(instance_id) do
+  defp find_node_by_instance_id(instance_id, opts) do
     case DeployEx.QaNode.list_all_qa_states(opts) do
       {:ok, app_names} ->
         Enum.flat_map(app_names, fn app_name ->
@@ -89,16 +102,17 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
     end
   end
 
-  defp find_qa_nodes_to_destroy(extra_args, opts) do
-    case extra_args do
-      [app_name | _] ->
-        case DeployEx.QaNode.find_qa_nodes_for_app(app_name, opts) do
-          {:ok, nodes} -> nodes
-          _ -> []
-        end
+  defp prompt_pick_nodes_for_app(app_name, opts) do
+    case DeployEx.QaNode.find_qa_nodes_for_app(app_name, opts) do
+      {:ok, nodes} ->
+        {:ok, picked} = DeployEx.QaNode.pick_interactive(nodes,
+          title: "Select QA node(s) to destroy",
+          allow_all: true
+        )
+        picked
 
-      [] ->
-        Mix.raise("App name, --instance-id, or --all is required")
+      _ ->
+        []
     end
   end
 

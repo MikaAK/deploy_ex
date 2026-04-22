@@ -1,7 +1,7 @@
 defmodule Mix.Tasks.Ansible.Deploy do
   use Mix.Task
 
-  alias DeployEx.ReleaseUploader
+  alias DeployEx.{ReleaseLookup, ReleaseUploader}
 
   @ansible_default_path DeployEx.Config.ansible_folder_path()
   @playbook_timeout :timer.minutes(30)
@@ -56,15 +56,11 @@ defmodule Mix.Tasks.Ansible.Deploy do
 
       DeployExHelpers.check_file_exists!(Path.join(opts[:directory], "aws_ec2.yaml"))
 
-      if opts[:target_sha] do
+      if opts[:target_sha] || opts[:qa] === true do
         Application.ensure_all_started(:hackney)
         Application.ensure_all_started(:telemetry)
         Application.ensure_all_started(:ex_aws)
       end
-
-      opts = resolve_target_sha_prefix(opts)
-
-      print_deploy_header(opts)
 
       DeployEx.TUI.setup_no_tui(opts)
 
@@ -75,6 +71,11 @@ defmodule Mix.Tasks.Ansible.Deploy do
         |> DeployExHelpers.filter_only_or_except(opts[:only], opts[:except])
         |> reject_playbook_without_local_release(opts[:only_local_release])
         |> reject_playbook_without_mix_exs_release
+
+      opts = resolve_target_sha_from_lookup(opts, playbooks)
+      opts = resolve_target_sha_prefix(opts)
+
+      print_deploy_header(opts)
 
       if Enum.empty?(playbooks) do
         Mix.shell().info([:yellow, "Nothing to deploy"])
@@ -178,6 +179,57 @@ defmodule Mix.Tasks.Ansible.Deploy do
     end
   end
 
+  defp resolve_target_sha_from_lookup(opts, playbooks) do
+    cond do
+      opts[:target_sha] === "auto" -> resolve_auto_sha(opts, playbooks)
+      opts[:qa] === true and is_nil(opts[:target_sha]) -> prompt_qa_sha(opts, playbooks)
+      true -> opts
+    end
+  end
+
+  defp resolve_auto_sha(opts, playbooks) do
+    release_type = if opts[:qa] === true, do: :qa, else: :prod
+    first_app = first_app_name(playbooks)
+    lookup_opts = build_lookup_opts()
+
+    case ReleaseLookup.resolve_sha(first_app, release_type, :auto, lookup_opts) do
+      {:ok, sha} ->
+        unless opts[:quiet] do
+          Mix.shell().info([
+            :faint, "Auto-resolved ",
+            :yellow, :bright, to_string(release_type), :reset,
+            :faint, " SHA: ",
+            :yellow, :bright, sha, :reset
+          ])
+        end
+
+        Keyword.put(opts, :target_sha, sha)
+
+      {:error, error} ->
+        Mix.raise("Failed to auto-resolve SHA: #{ErrorMessage.to_string(error)}")
+    end
+  end
+
+  defp prompt_qa_sha(opts, playbooks) do
+    first_app = first_app_name(playbooks)
+    lookup_opts = build_lookup_opts()
+
+    case ReleaseLookup.resolve_sha(first_app, :qa, :prompt, lookup_opts) do
+      {:ok, sha} -> Keyword.put(opts, :target_sha, sha)
+      {:error, error} -> Mix.raise("No QA SHA selected: #{ErrorMessage.to_string(error)}")
+    end
+  end
+
+  defp first_app_name([]), do: Mix.raise("No playbooks found to determine target app")
+  defp first_app_name([first | _]), do: first |> Path.basename() |> String.replace(~r/\.[^.]+$/, "")
+
+  defp build_lookup_opts do
+    [
+      aws_region: DeployEx.Config.aws_region(),
+      aws_release_bucket: DeployEx.Config.aws_release_bucket()
+    ]
+  end
+
   defp resolve_target_sha_prefix(opts) do
     case opts[:target_sha] do
       nil -> opts
@@ -242,9 +294,15 @@ defmodule Mix.Tasks.Ansible.Deploy do
         {sha, _} -> ["release ", :yellow, :bright, sha, :reset]
       end
 
+      branch_parts = case ReleaseUploader.get_git_branch() do
+        {:ok, branch} -> [" on branch ", :cyan, branch, :reset]
+        {:error, _} -> []
+      end
+
       Mix.shell().info(
         ["\n== Deploy "] ++ release_parts ++
-        [" -> ", node_color, :bright, node_label, :reset, " nodes ==\n"]
+        [" -> ", node_color, :bright, node_label, :reset, " nodes"] ++
+        branch_parts ++ [" ==\n"]
       )
     end
   end

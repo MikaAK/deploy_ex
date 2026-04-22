@@ -43,7 +43,15 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
         [] -> Mix.raise("App name is required. Usage: mix deploy_ex.qa.create <app_name> --sha <sha>")
       end
 
-      sha = opts[:sha] || Mix.raise("--sha option is required")
+      sha = case resolve_sha_for_create(app_name, opts) do
+        {:ok, resolved} -> resolved
+        {:error, error} -> Mix.raise(ErrorMessage.to_string(error))
+      end
+
+      opts = case DeployEx.ReleaseUploader.get_git_branch() do
+        {:ok, branch} -> Keyword.put(opts, :git_branch, branch)
+        {:error, _} -> opts
+      end
 
       total_steps = 9
 
@@ -81,9 +89,10 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
   defp parse_args(args) do
     OptionParser.parse!(args,
-      aliases: [s: :sha, f: :force, q: :quiet],
+      aliases: [s: :sha, t: :tag, f: :force, q: :quiet],
       switches: [
         sha: :string,
+        tag: :string,
         instance_type: :string,
         skip_setup: :boolean,
         skip_deploy: :boolean,
@@ -205,10 +214,27 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
       subnet_id: infra.subnet_id,
       key_name: infra.key_name,
       iam_instance_profile: infra.iam_instance_profile,
-      instance_type: opts[:instance_type]
+      instance_type: opts[:instance_type],
+      instance_tag: opts[:tag],
+      git_branch: opts[:git_branch]
     }
 
     DeployEx.QaNode.create_instance(app_name, sha, params, opts)
+  end
+
+  defp resolve_sha_for_create(app_name, opts) do
+    case opts[:sha] do
+      nil ->
+        lookup_opts = [
+          aws_region: opts[:aws_region] || DeployEx.Config.aws_region(),
+          aws_release_bucket: opts[:aws_release_bucket] || DeployEx.Config.aws_release_bucket()
+        ]
+
+        DeployEx.ReleaseLookup.resolve_sha(app_name, :qa, :prompt, lookup_opts)
+
+      sha ->
+        {:ok, sha}
+    end
   end
 
   defp wait_for_instance(qa_node, _opts) do
@@ -348,6 +374,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
       "  Instance Name: ", :cyan, qa_node.instance_name, :reset, "\n",
       "  App: ", :cyan, qa_node.app_name, :reset, "\n",
       "  SHA: ", :cyan, qa_node.target_sha, :reset, "\n",
+      "  Tag: ", :cyan, qa_node.instance_tag || "—", :reset, "\n",
+      "  Branch: ", :cyan, qa_node.git_branch || "—", :reset, "\n",
       "  Public IP: ", :cyan, to_string(qa_node.public_ip || "pending"), :reset, "\n",
       "  IPv6: ", :cyan, to_string(qa_node.ipv6_address || "pending"), :reset, "\n",
       "  LB Attached: ", :cyan, to_string(qa_node.load_balancer_attached?), :reset, "\n",

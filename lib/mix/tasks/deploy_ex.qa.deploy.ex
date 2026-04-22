@@ -12,6 +12,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
 
   ## Options
   - `--sha, -s` - Target git SHA (required)
+  - `--instance-id, -i` - Target a specific QA instance when multiple exist
   - `--quiet, -q` - Suppress output messages
   - `--aws-region` - AWS region (default: from config)
   - `--aws-release-bucket` - S3 bucket for releases (default: from config)
@@ -49,7 +50,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
           unless opts[:quiet] do
             Mix.shell().info([
               :green, "\n✓ Deployed SHA ", :cyan, String.slice(full_sha, 0, 7),
-              :green, " to QA node ", :cyan, qa_node.instance_name, :reset
+              :green, " (branch ", :cyan, qa_node.git_branch || "—",
+              :green, ") to QA node ", :cyan, qa_node.instance_name, :reset
             ])
           end
 
@@ -66,16 +68,17 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
     with {:ok, qa_node} <- (progress.(1, "Fetching QA node..."); fetch_and_verify_qa_node(app_name, opts)),
          {:ok, full_sha} <- (progress.(2, "Validating SHA..."); validate_and_find_sha(app_name, sha, opts)),
          :ok <- (progress.(3, "Running ansible deploy..."); run_ansible_deploy(qa_node, full_sha, opts)),
-         {:ok, _updated} <- (progress.(4, "Updating QA state..."); update_qa_state_sha(qa_node, full_sha, opts)) do
-      {:ok, {qa_node, full_sha}}
+         {:ok, updated} <- (progress.(4, "Updating QA state..."); update_qa_state(qa_node, full_sha, opts)) do
+      {:ok, {updated, full_sha}}
     end
   end
 
   defp parse_args(args) do
     OptionParser.parse!(args,
-      aliases: [s: :sha, q: :quiet],
+      aliases: [s: :sha, i: :instance_id, q: :quiet],
       switches: [
         sha: :string,
+        instance_id: :string,
         quiet: :boolean,
         aws_region: :string,
         aws_release_bucket: :string,
@@ -85,15 +88,39 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
   end
 
   defp fetch_and_verify_qa_node(app_name, opts) do
-    case DeployEx.QaNode.fetch_qa_state(app_name, opts) do
-      {:ok, nil} ->
-        {:error, ErrorMessage.not_found("no QA node found for app '#{app_name}'")}
+    with {:ok, nodes} <- DeployEx.QaNode.find_qa_nodes_for_app(app_name, opts),
+         {:ok, chosen} <- choose_node(nodes, app_name, opts) do
+      DeployEx.QaNode.verify_instance_exists(chosen)
+    end
+  end
 
-      {:ok, qa_node} ->
-        DeployEx.QaNode.verify_instance_exists(qa_node)
+  defp choose_node([], app_name, _opts) do
+    {:error, ErrorMessage.not_found("no QA node found for app '#{app_name}'")}
+  end
 
-      error ->
-        error
+  defp choose_node(nodes, app_name, opts) do
+    case opts[:instance_id] do
+      nil ->
+        case DeployEx.QaNode.pick_interactive(nodes,
+               title: "Select QA node to deploy to",
+               allow_all: false
+             ) do
+          {:ok, [picked]} -> {:ok, picked}
+          {:ok, []} -> {:error, ErrorMessage.bad_request("no QA node selected")}
+        end
+
+      instance_id ->
+        case Enum.find(nodes, &(&1.instance_id === instance_id)) do
+          nil ->
+            {:error,
+             ErrorMessage.not_found(
+               "no QA node matching --instance-id #{instance_id} for app '#{app_name}'",
+               %{available_ids: Enum.map(nodes, & &1.instance_id)}
+             )}
+
+          node ->
+            {:ok, node}
+        end
     end
   end
 
@@ -164,8 +191,13 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
     end
   end
 
-  defp update_qa_state_sha(qa_node, sha, opts) do
-    updated = %{qa_node | target_sha: sha}
+  defp update_qa_state(qa_node, sha, opts) do
+    branch = case DeployEx.ReleaseUploader.get_git_branch() do
+      {:ok, b} -> b
+      {:error, _} -> qa_node.git_branch
+    end
+
+    updated = %{qa_node | target_sha: sha, git_branch: branch}
 
     case DeployEx.QaNode.save_qa_state(updated, opts) do
       {:ok, :saved} -> {:ok, updated}
