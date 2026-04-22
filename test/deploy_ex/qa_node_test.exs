@@ -3,6 +3,71 @@ defmodule DeployEx.QaNodeTest do
 
   alias DeployEx.QaNode
 
+  describe "use_public_ip_cert? roundtrip" do
+    test "to_json/from_json preserves use_public_ip_cert?: true" do
+      qa_node = %QaNode{
+        instance_id: "i-abc",
+        app_name: "my_app",
+        target_sha: "abc1234",
+        use_public_ip_cert?: true
+      }
+
+      decoded = qa_node |> QaNode.to_json() |> QaNode.from_json()
+      assert decoded.use_public_ip_cert? === true
+    end
+
+    test "from_json defaults use_public_ip_cert? to false when key absent (old state)" do
+      legacy_json = Jason.encode!(%{
+        "version" => 1,
+        "instance_id" => "i-old",
+        "app_name" => "my_app",
+        "target_sha" => "abc1234"
+      })
+
+      decoded = QaNode.from_json(legacy_json)
+      assert decoded.use_public_ip_cert? === false
+    end
+
+    test "build_qa_node_from_instance reads UsePublicIpCert tag as boolean" do
+      instance = %{
+        "instanceId" => "i-0xyz",
+        "ipAddress" => nil,
+        "privateIpAddress" => nil,
+        "instanceState" => %{"name" => "running"},
+        "launchTime" => "2024-01-15T10:00:00Z",
+        "tagSet" => %{
+          "item" => [
+            %{"key" => "InstanceGroup", "value" => "my_app_prod"},
+            %{"key" => "TargetSha", "value" => "abc1234"},
+            %{"key" => "UsePublicIpCert", "value" => "true"}
+          ]
+        }
+      }
+
+      qa_node = QaNode.build_qa_node_from_instance(instance)
+      assert qa_node.use_public_ip_cert? === true
+    end
+
+    test "build_qa_node_from_instance treats missing UsePublicIpCert tag as false" do
+      instance = %{
+        "instanceId" => "i-0xyz",
+        "ipAddress" => nil,
+        "privateIpAddress" => nil,
+        "instanceState" => %{"name" => "running"},
+        "launchTime" => "2024-01-15T10:00:00Z",
+        "tagSet" => %{
+          "item" => [
+            %{"key" => "InstanceGroup", "value" => "my_app_prod"},
+            %{"key" => "TargetSha", "value" => "abc1234"}
+          ]
+        }
+      }
+
+      qa_node = QaNode.build_qa_node_from_instance(instance)
+      assert qa_node.use_public_ip_cert? === false
+    end
+  end
+
   describe "to_json/1" do
     test "serializes a QaNode struct to JSON" do
       qa_node = %QaNode{

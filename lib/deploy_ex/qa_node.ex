@@ -21,6 +21,7 @@ defmodule DeployEx.QaNode do
     instance_name: String.t() | nil,
     state: String.t() | nil,
     created_at: String.t() | nil,
+    use_public_ip_cert?: boolean(),
     load_balancer_attached?: boolean(),
     target_group_arns: [String.t()]
   }
@@ -37,6 +38,7 @@ defmodule DeployEx.QaNode do
     :instance_name,
     :state,
     :created_at,
+    use_public_ip_cert?: false,
     load_balancer_attached?: false,
     target_group_arns: []
   ]
@@ -51,6 +53,7 @@ defmodule DeployEx.QaNode do
 
     instance_tag = params[:instance_tag]
     git_branch = params[:git_branch]
+    use_public_ip_cert? = params[:use_public_ip_cert] === true
     name_opts = Keyword.put(opts, :instance_tag, instance_tag)
     instance_name = build_instance_name(app_name, target_sha, environment, name_opts)
     instance_type = params[:instance_type] || @default_instance_type
@@ -70,6 +73,7 @@ defmodule DeployEx.QaNode do
     tags = base_tags
       |> maybe_append_tag({:InstanceTag, instance_tag})
       |> maybe_append_tag({:GitBranch, git_branch})
+      |> maybe_append_tag({:UsePublicIpCert, if(use_public_ip_cert?, do: "true", else: nil)})
 
     user_data = build_qa_user_data(app_name, target_sha, environment)
 
@@ -99,6 +103,7 @@ defmodule DeployEx.QaNode do
           git_branch: git_branch,
           instance_name: instance_name,
           created_at: DateTime.utc_now() |> DateTime.to_iso8601(),
+          use_public_ip_cert?: use_public_ip_cert?,
           load_balancer_attached?: false,
           target_group_arns: []
         }
@@ -526,6 +531,7 @@ defmodule DeployEx.QaNode do
       target_sha: tags["TargetSha"],
       instance_tag: tags["InstanceTag"],
       git_branch: tags["GitBranch"],
+      use_public_ip_cert?: tags["UsePublicIpCert"] === "true",
       public_ip: instance["ipAddress"],
       private_ip: instance["privateIpAddress"],
       instance_name: tags["Name"],
@@ -616,6 +622,7 @@ defmodule DeployEx.QaNode do
       "instance_name" => state.instance_name,
       "state" => state.state,
       "created_at" => state.created_at,
+      "use_public_ip_cert" => state.use_public_ip_cert?,
       "load_balancer_attached" => state.load_balancer_attached?,
       "target_group_arns" => state.target_group_arns
     }
@@ -641,6 +648,7 @@ defmodule DeployEx.QaNode do
       instance_name: map["instance_name"],
       state: map["state"],
       created_at: map["created_at"],
+      use_public_ip_cert?: map["use_public_ip_cert"] === true,
       load_balancer_attached?: map["load_balancer_attached"] || false,
       target_group_arns: map["target_group_arns"] || []
     }

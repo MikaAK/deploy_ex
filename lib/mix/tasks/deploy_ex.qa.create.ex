@@ -24,6 +24,9 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   - `--skip-setup` - Skip Ansible setup after creation
   - `--skip-deploy` - Skip deployment after setup
   - `--attach-lb` - Attach to load balancer after deployment
+  - `--public-ip-cert` - Issue Let's Encrypt cert for the node's public IP (short-lived
+    profile, HTTP-01 standalone). Use for standalone QA nodes not behind an LB. Persisted
+    in the QA state so ansible picks it up on every subsequent run.
   - `--force, -f` - Replace existing QA node without prompting
   - `--quiet, -q` - Suppress output messages
   - `--aws-region` - AWS region (default: from config)
@@ -101,6 +104,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
         skip_deploy: :boolean,
         skip_ami: :boolean,
         attach_lb: :boolean,
+        public_ip_cert: :boolean,
         force: :boolean,
         quiet: :boolean,
         aws_region: :string,
@@ -219,7 +223,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
       iam_instance_profile: infra.iam_instance_profile,
       instance_type: opts[:instance_type],
       instance_tag: opts[:tag],
-      git_branch: opts[:git_branch]
+      git_branch: opts[:git_branch],
+      use_public_ip_cert: opts[:public_ip_cert] === true
     }
 
     DeployEx.QaNode.create_instance(app_name, sha, params, opts)
@@ -349,7 +354,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     directory = @ansible_default_path
     setup_playbook = "setup/#{qa_node.app_name}.yaml"
 
-    command = "ansible-playbook #{setup_playbook} --limit '#{qa_node.instance_name},'"
+    extra_vars = qa_extra_vars(qa_node)
+    command = "ansible-playbook #{setup_playbook} --limit '#{qa_node.instance_name},'#{extra_vars}"
 
     case DeployEx.Utils.run_command(command, directory) do
       {:ok, _} -> :ok
@@ -361,13 +367,25 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     directory = @ansible_default_path
     playbook = "playbooks/#{qa_node.app_name}.yaml"
 
-    command = "ansible-playbook #{playbook} --limit '#{qa_node.instance_name},' --extra-vars 'target_release_sha=#{sha} release_prefix=qa release_state_prefix=release-state/qa'"
+    base_vars = "target_release_sha=#{sha} release_prefix=qa release_state_prefix=release-state/qa"
+    full_vars = base_vars <> cert_var(qa_node)
+    command = "ansible-playbook #{playbook} --limit '#{qa_node.instance_name},' --extra-vars '#{full_vars}'"
 
     case DeployEx.Utils.run_command(command, directory) do
       {:ok, _} -> :ok
       {:error, error} -> {:error, ErrorMessage.failed_dependency("ansible deploy failed", %{error: error})}
     end
   end
+
+  defp qa_extra_vars(qa_node) do
+    case cert_var(qa_node) do
+      "" -> ""
+      var -> " --extra-vars '#{String.trim_leading(var)}'"
+    end
+  end
+
+  defp cert_var(%DeployEx.QaNode{use_public_ip_cert?: true}), do: " letsencrypt_use_public_ip=true"
+  defp cert_var(_qa_node), do: ""
 
   defp output_success(qa_node, _opts) do
     Mix.shell().info([
