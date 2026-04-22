@@ -13,6 +13,8 @@ defmodule DeployEx.QaNode do
     instance_id: String.t() | nil,
     app_name: String.t(),
     target_sha: String.t(),
+    instance_tag: String.t() | nil,
+    git_branch: String.t() | nil,
     public_ip: String.t() | nil,
     ipv6_address: String.t() | nil,
     private_ip: String.t() | nil,
@@ -27,6 +29,8 @@ defmodule DeployEx.QaNode do
     :instance_id,
     :app_name,
     :target_sha,
+    :instance_tag,
+    :git_branch,
     :public_ip,
     :ipv6_address,
     :private_ip,
@@ -45,10 +49,13 @@ defmodule DeployEx.QaNode do
     resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
     environment = opts[:environment] || DeployEx.Config.env()
 
-    instance_name = build_instance_name(app_name, target_sha, environment, opts)
+    instance_tag = params[:instance_tag]
+    git_branch = params[:git_branch]
+    name_opts = Keyword.put(opts, :instance_tag, instance_tag)
+    instance_name = build_instance_name(app_name, target_sha, environment, name_opts)
     instance_type = params[:instance_type] || @default_instance_type
 
-    tags = [
+    base_tags = [
       {:Name, instance_name},
       {:Group, resource_group},
       {:InstanceGroup, "#{app_name}_#{environment}"},
@@ -59,6 +66,10 @@ defmodule DeployEx.QaNode do
       {:SetupComplete, "false"},
       {:Type, "Self Made"}
     ]
+
+    tags = base_tags
+      |> maybe_append_tag({:InstanceTag, instance_tag})
+      |> maybe_append_tag({:GitBranch, git_branch})
 
     user_data = build_qa_user_data(app_name, target_sha, environment)
 
@@ -84,6 +95,8 @@ defmodule DeployEx.QaNode do
           instance_id: instance_id,
           app_name: app_name,
           target_sha: target_sha,
+          instance_tag: instance_tag,
+          git_branch: git_branch,
           instance_name: instance_name,
           created_at: DateTime.utc_now() |> DateTime.to_iso8601(),
           load_balancer_attached?: false,
@@ -94,6 +107,45 @@ defmodule DeployEx.QaNode do
       error ->
         error
     end
+  end
+
+  @doc """
+  Interactive picker over a list of QaNode structs.
+
+  - 0 nodes → `{:ok, []}`
+  - 1 node  → `{:ok, [node]}` (no prompt)
+  - 2+ nodes → uses `DeployEx.TUI.Select` (TUI + console fallback) to let the user
+    pick one or all. Returns `{:ok, [picked]}`. Empty list means user cancelled.
+
+  Options: `:title` (default `"Select QA node"`), `:allow_all` (default `true`).
+  """
+  @spec pick_interactive([t()], keyword()) :: {:ok, [t()]}
+  def pick_interactive(nodes, opts \\ [])
+  def pick_interactive([], _opts), do: {:ok, []}
+  def pick_interactive([_] = nodes, _opts), do: {:ok, nodes}
+
+  def pick_interactive(nodes, opts) when is_list(nodes) do
+    labels = Enum.map(nodes, &format_picker_label/1)
+    label_to_node = labels |> Enum.zip(nodes) |> Map.new()
+
+    selected = DeployEx.TUI.Select.run(labels,
+      title: Keyword.get(opts, :title, "Select QA node"),
+      allow_all: Keyword.get(opts, :allow_all, true)
+    )
+
+    picked = Enum.map(selected, &Map.fetch!(label_to_node, &1))
+    {:ok, picked}
+  end
+
+  @doc false
+  @spec format_picker_label(t()) :: String.t()
+  def format_picker_label(%__MODULE__{} = node) do
+    short_sha = node.target_sha |> to_string() |> String.slice(0, 7)
+    branch = node.git_branch || "—"
+    tag_suffix = if node.instance_tag, do: " [#{node.instance_tag}]", else: ""
+    display = node.instance_name || node.app_name
+
+    "#{display}#{tag_suffix} (#{node.instance_id}, SHA: #{short_sha}, branch: #{branch})"
   end
 
   def terminate_instance(instance_id, opts \\ []) do
@@ -112,6 +164,9 @@ defmodule DeployEx.QaNode do
       :ok
     end
   end
+
+  defp maybe_append_tag(tags, {_key, value}) when is_nil(value) or value === "", do: tags
+  defp maybe_append_tag(tags, {key, value}), do: tags ++ [{key, value}]
 
   defp maybe_detach_from_load_balancer(%__MODULE__{load_balancer_attached?: false}, _opts), do: :ok
   defp maybe_detach_from_load_balancer(%__MODULE__{} = qa_node, opts) do
@@ -185,9 +240,26 @@ defmodule DeployEx.QaNode do
   defp build_instance_name(app_name, target_sha, environment, opts) do
     {:ok, display_name} = DeployEx.TerraformState.get_app_display_name(app_name, opts)
 
-    short_sha = String.slice(target_sha, 0, 7)
     timestamp = System.system_time(:second)
-    "#{display_name}-#{environment}-qa-#{short_sha}-#{timestamp}"
+    slug = instance_name_slug(target_sha, opts[:instance_tag])
+    "#{display_name}-#{environment}-qa-#{slug}-#{timestamp}"
+  end
+
+  defp instance_name_slug(target_sha, raw_tag) do
+    case sanitize_tag(raw_tag) do
+      tag when is_binary(tag) and tag !== "" -> tag
+      _ -> String.slice(target_sha, 0, 7)
+    end
+  end
+
+  @doc false
+  def sanitize_tag(nil), do: nil
+
+  def sanitize_tag(tag) when is_binary(tag) do
+    tag
+    |> String.downcase()
+    |> String.replace(~r/[ _]/, "-")
+    |> String.replace(~r/[^a-z0-9-]/, "")
   end
 
   defp build_qa_user_data(app_name, target_sha, environment) do
@@ -445,13 +517,15 @@ defmodule DeployEx.QaNode do
 
   defp extract_qa_instances(_), do: []
 
-  defp build_qa_node_from_instance(instance) do
+  def build_qa_node_from_instance(instance) do
     tags = parse_instance_tags(instance["tagSet"])
 
     %__MODULE__{
       instance_id: instance["instanceId"],
       app_name: tags["InstanceGroup"] |> String.split("_") |> List.first(),
       target_sha: tags["TargetSha"],
+      instance_tag: tags["InstanceTag"],
+      git_branch: tags["GitBranch"],
       public_ip: instance["ipAddress"],
       private_ip: instance["privateIpAddress"],
       instance_name: tags["Name"],
@@ -534,6 +608,8 @@ defmodule DeployEx.QaNode do
       "instance_id" => state.instance_id,
       "app_name" => state.app_name,
       "target_sha" => state.target_sha,
+      "instance_tag" => state.instance_tag,
+      "git_branch" => state.git_branch,
       "public_ip" => state.public_ip,
       "ipv6_address" => state.ipv6_address,
       "private_ip" => state.private_ip,
@@ -557,6 +633,8 @@ defmodule DeployEx.QaNode do
       instance_id: map["instance_id"],
       app_name: map["app_name"],
       target_sha: map["target_sha"],
+      instance_tag: map["instance_tag"],
+      git_branch: map["git_branch"],
       public_ip: map["public_ip"],
       ipv6_address: map["ipv6_address"],
       private_ip: map["private_ip"],

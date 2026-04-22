@@ -1,4 +1,4 @@
-- name: letsencrypt
+- name: letsencrypt (real cert via Cloudflare DNS)
   block:
     - name: Ensure Cloudflare API token is configured
       fail:
@@ -127,4 +127,59 @@
         mode: '0755'
         owner: root
         group: root
+  when: not letsencrypt_use_public_ip | bool
+  become: true
+
+- name: letsencrypt (self-signed for public IP — QA nodes)
+  block:
+    - name: Install openssl
+      apt:
+        name: openssl
+        state: present
+        update_cache: yes
+
+    - name: Ensure cert directory exists
+      file:
+        path: "/etc/letsencrypt/live/{{ ansible_default_ipv4.address }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+        recurse: yes
+
+    - name: Check existing self-signed cert expiry
+      shell: |
+        set -euo pipefail
+        CERT=/etc/letsencrypt/live/{{ ansible_default_ipv4.address }}/fullchain.pem
+        if [ ! -f "$CERT" ]; then
+          echo "missing"
+          exit 0
+        fi
+        EXPIRY=$(openssl x509 -in "$CERT" -noout -enddate | cut -d= -f2)
+        EXPIRY_EPOCH=$(date -d "$EXPIRY" +%s)
+        CURRENT_EPOCH=$(date +%s)
+        DAYS_LEFT=$(( (EXPIRY_EPOCH - CURRENT_EPOCH) / 86400 ))
+        if [ "$DAYS_LEFT" -lt 30 ]; then
+          echo "expiring"
+        else
+          echo "valid"
+        fi
+      register: ss_cert_status
+      changed_when: false
+
+    - name: Generate self-signed certificate for public IP
+      shell: |
+        set -euo pipefail
+        IP={{ ansible_default_ipv4.address }}
+        DIR=/etc/letsencrypt/live/$IP
+        openssl req -x509 -newkey rsa:4096 -nodes \
+          -keyout "$DIR/privkey.pem" \
+          -out "$DIR/fullchain.pem" \
+          -subj "/CN=$IP" \
+          -addext "subjectAltName=IP:$IP" \
+          -days {{ letsencrypt_self_signed_days }}
+        chmod 600 "$DIR/privkey.pem"
+        chmod 644 "$DIR/fullchain.pem"
+      when: ss_cert_status.stdout in ["missing", "expiring"]
+  when: letsencrypt_use_public_ip | bool
   become: true

@@ -190,4 +190,218 @@ defmodule DeployEx.QaNodeTest do
       assert QaNode.verify_instance_exists(nil) === {:ok, nil}
     end
   end
+
+  describe "to_json/1 and from_json/1 with new fields" do
+    test "round-trip preserves instance_tag and git_branch" do
+      original = %QaNode{
+        instance_id: "i-0abc123def456",
+        app_name: "my_app",
+        target_sha: "abc1234567890",
+        instance_tag: "my-feature",
+        git_branch: "feat/my-feature",
+        load_balancer_attached?: false,
+        target_group_arns: []
+      }
+
+      round_tripped = original |> QaNode.to_json() |> QaNode.from_json()
+
+      assert round_tripped.instance_tag === "my-feature"
+      assert round_tripped.git_branch === "feat/my-feature"
+    end
+
+    test "from_json on old JSON missing new keys produces nil for those fields" do
+      old_json = ~s({
+        "version": 1,
+        "instance_id": "i-0abc123",
+        "app_name": "my_app",
+        "target_sha": "abc1234",
+        "load_balancer_attached": false,
+        "target_group_arns": []
+      })
+
+      qa_node = QaNode.from_json(old_json)
+
+      assert is_nil(qa_node.instance_tag)
+      assert is_nil(qa_node.git_branch)
+    end
+
+    test "to_json includes instance_tag and git_branch keys" do
+      qa_node = %QaNode{
+        app_name: "my_app",
+        target_sha: "abc1234",
+        instance_tag: "v2",
+        git_branch: "main",
+        load_balancer_attached?: false,
+        target_group_arns: []
+      }
+
+      decoded = qa_node |> QaNode.to_json() |> Jason.decode!()
+
+      assert decoded["instance_tag"] === "v2"
+      assert decoded["git_branch"] === "main"
+    end
+  end
+
+  describe "build_qa_node_from_instance/1" do
+    test "extracts InstanceTag and GitBranch from EC2 tags" do
+      instance = %{
+        "instanceId" => "i-0abc123",
+        "ipAddress" => "54.1.2.3",
+        "privateIpAddress" => "10.0.0.1",
+        "launchTime" => "2024-01-15T10:00:00Z",
+        "instanceState" => %{"name" => "running"},
+        "tagSet" => %{
+          "item" => [
+            %{"key" => "InstanceGroup", "value" => "my_app_prod"},
+            %{"key" => "TargetSha", "value" => "abc1234567"},
+            %{"key" => "Name", "value" => "my_app-prod-qa-abc1234-1234567"},
+            %{"key" => "InstanceTag", "value" => "my-feature"},
+            %{"key" => "GitBranch", "value" => "feat/my-feature"}
+          ]
+        }
+      }
+
+      qa_node = QaNode.build_qa_node_from_instance(instance)
+
+      assert qa_node.instance_tag === "my-feature"
+      assert qa_node.git_branch === "feat/my-feature"
+    end
+
+    test "instance without InstanceTag or GitBranch tags produces nil for those fields" do
+      instance = %{
+        "instanceId" => "i-0abc123",
+        "ipAddress" => nil,
+        "privateIpAddress" => nil,
+        "launchTime" => "2024-01-15T10:00:00Z",
+        "instanceState" => %{"name" => "running"},
+        "tagSet" => %{
+          "item" => [
+            %{"key" => "InstanceGroup", "value" => "my_app_prod"},
+            %{"key" => "TargetSha", "value" => "abc1234567"}
+          ]
+        }
+      }
+
+      qa_node = QaNode.build_qa_node_from_instance(instance)
+
+      assert is_nil(qa_node.instance_tag)
+      assert is_nil(qa_node.git_branch)
+    end
+  end
+
+  describe "sanitize_tag/1" do
+    test "leaves already-clean tags unchanged" do
+      assert QaNode.sanitize_tag("my-feature") === "my-feature"
+    end
+
+    test "lowercases and replaces spaces with hyphens" do
+      assert QaNode.sanitize_tag("My Feature") === "my-feature"
+    end
+
+    test "replaces underscores with hyphens" do
+      assert QaNode.sanitize_tag("feature_123") === "feature-123"
+    end
+
+    test "strips characters not in [a-z0-9-]" do
+      assert QaNode.sanitize_tag("!!!") === ""
+    end
+
+    test "returns nil for nil input" do
+      assert QaNode.sanitize_tag(nil) === nil
+    end
+  end
+
+  describe "pick_interactive/2" do
+    test "returns {:ok, []} for empty list" do
+      assert QaNode.pick_interactive([]) === {:ok, []}
+    end
+
+    test "returns {:ok, [node]} for single-node list without prompting" do
+      node = %QaNode{
+        instance_id: "i-0abc123",
+        app_name: "my_app",
+        target_sha: "abc1234567890",
+        load_balancer_attached?: false,
+        target_group_arns: []
+      }
+
+      assert QaNode.pick_interactive([node]) === {:ok, [node]}
+    end
+  end
+
+  describe "format_picker_label (via pick_interactive)" do
+    test "label includes instance_name, instance_id, short sha, and branch" do
+      node = %QaNode{
+        instance_id: "i-0abc123",
+        instance_name: "my_app-prod-qa-abc1234-111",
+        app_name: "my_app",
+        target_sha: "abc1234567890",
+        git_branch: "feat/my-feature",
+        instance_tag: nil,
+        load_balancer_attached?: false,
+        target_group_arns: []
+      }
+
+      # Call format_picker_label via the public build of pick_interactive label logic.
+      # We use a single node so it returns without prompting, then verify the label format
+      # by calling the public function directly.
+      label = QaNode.format_picker_label(node)
+
+      assert label =~ "my_app-prod-qa-abc1234-111"
+      assert label =~ "i-0abc123"
+      assert label =~ "abc1234"
+      assert label =~ "feat/my-feature"
+    end
+
+    test "label includes instance_tag in brackets when present" do
+      node = %QaNode{
+        instance_id: "i-0abc123",
+        instance_name: "my_app-prod-qa-my-feature-111",
+        app_name: "my_app",
+        target_sha: "abc1234567890",
+        git_branch: "main",
+        instance_tag: "my-feature",
+        load_balancer_attached?: false,
+        target_group_arns: []
+      }
+
+      label = QaNode.format_picker_label(node)
+
+      assert label =~ "[my-feature]"
+    end
+
+    test "label uses em-dash for missing git_branch" do
+      node = %QaNode{
+        instance_id: "i-0abc123",
+        instance_name: "my_app-prod-qa-abc1234-111",
+        app_name: "my_app",
+        target_sha: "abc1234567890",
+        git_branch: nil,
+        instance_tag: nil,
+        load_balancer_attached?: false,
+        target_group_arns: []
+      }
+
+      label = QaNode.format_picker_label(node)
+
+      assert label =~ "branch: —"
+    end
+
+    test "label uses app_name when instance_name is nil" do
+      node = %QaNode{
+        instance_id: "i-0abc123",
+        instance_name: nil,
+        app_name: "my_app",
+        target_sha: "abc1234567890",
+        git_branch: nil,
+        instance_tag: nil,
+        load_balancer_attached?: false,
+        target_group_arns: []
+      }
+
+      label = QaNode.format_picker_label(node)
+
+      assert label =~ "my_app"
+    end
+  end
 end

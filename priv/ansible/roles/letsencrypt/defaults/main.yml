@@ -1,1 +1,3 @@
 letsencrypt_email: "admin@cheddarflow.com"
+letsencrypt_use_public_ip: false
+letsencrypt_self_signed_days: 365
