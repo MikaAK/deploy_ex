@@ -181,20 +181,28 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
     end
 
     directory = @ansible_default_path
-    playbook = "playbooks/#{qa_node.app_name}.yaml"
+    vars = deploy_vars(qa_node, sha)
 
-    base_vars = "target_release_sha=#{sha} release_prefix=qa release_state_prefix=release-state/qa"
-    full_vars = base_vars <> cert_var(qa_node)
-    command = "ansible-playbook #{playbook} --limit '#{qa_node.instance_name},' --extra-vars '#{full_vars}'"
+    DeployEx.QaPlaybook.with_temp_playbook(qa_node, :deploy, vars, directory, fn rel_path ->
+      command = "ansible-playbook #{rel_path} --limit '#{qa_node.instance_name},'"
 
-    case DeployEx.Utils.run_command(command, directory) do
-      {:ok, _} -> :ok
-      {:error, error} -> {:error, ErrorMessage.failed_dependency("ansible deploy failed", %{error: error})}
-    end
+      case DeployEx.Utils.run_command(command, directory) do
+        {:ok, _} -> :ok
+        {:error, error} -> {:error, ErrorMessage.failed_dependency("ansible deploy failed", %{error: error})}
+      end
+    end)
   end
 
-  defp cert_var(%DeployEx.QaNode{use_public_ip_cert?: true}), do: " letsencrypt_use_public_ip=true"
-  defp cert_var(_qa_node), do: ""
+  defp deploy_vars(qa_node, sha) do
+    [
+      target_release_sha: sha,
+      release_prefix: "qa",
+      release_state_prefix: "release-state/qa",
+      letsencrypt_use_public_ip: qa_node.use_public_ip_cert?,
+      git_branch: qa_node.git_branch,
+      instance_tag: qa_node.instance_tag
+    ]
+  end
 
   defp update_qa_state(qa_node, sha, opts) do
     branch = case DeployEx.ReleaseUploader.get_git_branch() do

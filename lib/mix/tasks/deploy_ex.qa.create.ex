@@ -24,6 +24,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   - `--skip-setup` - Skip Ansible setup after creation
   - `--skip-deploy` - Skip deployment after setup
   - `--attach-lb` - Attach to load balancer after deployment
+  - `--use-ami` - Boot from the app's pre-baked AMI (skips setup). Default is off for
+    QA — nodes boot from the base AMI and run setup fresh
   - `--public-ip-cert` - Issue Let's Encrypt cert for the node's public IP (short-lived
     profile, HTTP-01 standalone). Use for standalone QA nodes not behind an LB. Persisted
     in the QA state so ansible picks it up on every subsequent run.
@@ -41,6 +43,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
     with :ok <- DeployExHelpers.check_valid_project() do
       {opts, extra_args} = parse_args(args)
+      opts = default_skip_ami_for_qa(opts)
 
       DeployEx.TUI.setup_no_tui(opts)
 
@@ -103,6 +106,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
         skip_setup: :boolean,
         skip_deploy: :boolean,
         skip_ami: :boolean,
+        use_ami: :boolean,
         attach_lb: :boolean,
         public_ip_cert: :boolean,
         force: :boolean,
@@ -351,41 +355,48 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   defp maybe_attach_lb(qa_node, _opts), do: {:ok, qa_node}
 
   defp run_ansible_setup(qa_node, _opts) do
-    directory = @ansible_default_path
-    setup_playbook = "setup/#{qa_node.app_name}.yaml"
-
-    extra_vars = qa_extra_vars(qa_node)
-    command = "ansible-playbook #{setup_playbook} --limit '#{qa_node.instance_name},'#{extra_vars}"
-
-    case DeployEx.Utils.run_command(command, directory) do
-      {:ok, _} -> :ok
-      {:error, error} -> {:error, ErrorMessage.failed_dependency("ansible setup failed", %{error: error})}
-    end
+    run_qa_ansible(qa_node, :setup, setup_vars(qa_node), "ansible setup failed")
   end
 
   defp run_ansible_deploy(qa_node, sha, _opts) do
+    run_qa_ansible(qa_node, :deploy, deploy_vars(qa_node, sha), "ansible deploy failed")
+  end
+
+  defp run_qa_ansible(qa_node, kind, vars, failure_message) do
     directory = @ansible_default_path
-    playbook = "playbooks/#{qa_node.app_name}.yaml"
 
-    base_vars = "target_release_sha=#{sha} release_prefix=qa release_state_prefix=release-state/qa"
-    full_vars = base_vars <> cert_var(qa_node)
-    command = "ansible-playbook #{playbook} --limit '#{qa_node.instance_name},' --extra-vars '#{full_vars}'"
+    DeployEx.QaPlaybook.with_temp_playbook(qa_node, kind, vars, directory, fn rel_path ->
+      command = "ansible-playbook #{rel_path} --limit '#{qa_node.instance_name},'"
 
-    case DeployEx.Utils.run_command(command, directory) do
-      {:ok, _} -> :ok
-      {:error, error} -> {:error, ErrorMessage.failed_dependency("ansible deploy failed", %{error: error})}
-    end
+      case DeployEx.Utils.run_command(command, directory) do
+        {:ok, _} -> :ok
+        {:error, error} -> {:error, ErrorMessage.failed_dependency(failure_message, %{error: error})}
+      end
+    end)
   end
 
-  defp qa_extra_vars(qa_node) do
-    case cert_var(qa_node) do
-      "" -> ""
-      var -> " --extra-vars '#{String.trim_leading(var)}'"
-    end
+  defp setup_vars(qa_node) do
+    [
+      letsencrypt_use_public_ip: qa_node.use_public_ip_cert?,
+      git_branch: qa_node.git_branch,
+      instance_tag: qa_node.instance_tag
+    ]
   end
 
-  defp cert_var(%DeployEx.QaNode{use_public_ip_cert?: true}), do: " letsencrypt_use_public_ip=true"
-  defp cert_var(_qa_node), do: ""
+  defp deploy_vars(qa_node, sha) do
+    [
+      target_release_sha: sha,
+      release_prefix: "qa",
+      release_state_prefix: "release-state/qa",
+      letsencrypt_use_public_ip: qa_node.use_public_ip_cert?,
+      git_branch: qa_node.git_branch,
+      instance_tag: qa_node.instance_tag
+    ]
+  end
+
+  defp default_skip_ami_for_qa(opts) do
+    if opts[:use_ami], do: opts, else: Keyword.put(opts, :skip_ami, true)
+  end
 
   defp output_success(qa_node, _opts) do
     Mix.shell().info([
