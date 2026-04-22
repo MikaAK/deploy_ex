@@ -55,13 +55,21 @@ defmodule DeployEx.QaPlaybook do
   @doc false
   def render_playbook(%DeployEx.QaNode{} = qa_node, kind, vars) when kind in [:setup, :deploy] do
     shared = shared_playbook(kind, qa_node.app_name)
+    rendered = render_vars(vars)
 
-    """
-    ---
-    - import_playbook: #{shared}
-      vars:
-    #{render_vars(vars)}
-    """
+    if rendered === "" do
+      """
+      ---
+      - import_playbook: #{shared}
+      """
+    else
+      """
+      ---
+      - import_playbook: #{shared}
+        vars:
+      #{rendered}
+      """
+    end
   end
 
   defp shared_playbook(:setup, app_name), do: "../setup/#{app_name}.yaml"

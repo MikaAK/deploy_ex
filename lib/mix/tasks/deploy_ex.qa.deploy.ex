@@ -197,16 +197,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
   defp build_line_callback(nil), do: fn _line -> :ok end
   defp build_line_callback(tui_pid), do: fn line -> DeployEx.TUI.Progress.update_log(tui_pid, line) end
 
-  defp deploy_vars(qa_node, sha) do
-    [
-      target_release_sha: sha,
-      release_prefix: "qa",
-      release_state_prefix: "release-state/qa",
-      letsencrypt_use_public_ip: qa_node.use_public_ip_cert?,
-      git_branch: qa_node.git_branch,
-      instance_tag: qa_node.instance_tag
-    ]
-  end
+  defp deploy_vars(_qa_node, sha), do: [target_release_sha: sha]
 
   defp update_qa_state(qa_node, sha, opts) do
     branch = case DeployEx.ReleaseUploader.get_git_branch() do

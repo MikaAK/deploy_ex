@@ -59,6 +59,24 @@ defmodule DeployEx.QaPlaybookTest do
 
       assert yaml =~ ~s(instance_tag: "tag with \\"quotes\\"")
     end
+
+    test "omits the vars block entirely when no vars remain after filtering" do
+      qa_node = %QaNode{app_name: "my_app", instance_id: "i-abc", target_sha: "sha"}
+
+      yaml = QaPlaybook.render_playbook(qa_node, :setup, [])
+
+      assert yaml =~ "import_playbook: ../setup/my_app.yaml"
+      refute yaml =~ "vars:"
+    end
+
+    test "omits vars block when all provided vars are blank" do
+      qa_node = %QaNode{app_name: "my_app", instance_id: "i-abc", target_sha: "sha"}
+
+      yaml = QaPlaybook.render_playbook(qa_node, :deploy, git_branch: nil, instance_tag: "")
+
+      assert yaml =~ "import_playbook: ../playbooks/my_app.yaml"
+      refute yaml =~ "vars:"
+    end
   end
 
   describe "with_temp_playbook/5" do
