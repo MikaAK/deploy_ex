@@ -186,21 +186,21 @@ defmodule DeployEx.TUI.Wizard.Form do
         form_loop(terminal, width, height, %{state | focused: new_focused, error: nil})
 
       %ExRatatui.Event.Key{code: "enter", kind: "press"} ->
-        current_input = Enum.at(inputs, state.focused)
+        current_input = focused_input(inputs, state.focused)
         handle_enter(terminal, width, height, state, current_input, inputs)
 
       %ExRatatui.Event.Key{code: " ", kind: "press"} ->
-        current_input = Enum.at(inputs, state.focused)
+        current_input = focused_input(inputs, state.focused)
         new_state = maybe_toggle_boolean(state, current_input)
         form_loop(terminal, width, height, new_state)
 
       %ExRatatui.Event.Key{code: "backspace", kind: "press"} ->
-        current_input = Enum.at(inputs, state.focused)
+        current_input = focused_input(inputs, state.focused)
         new_state = handle_backspace(state, current_input)
         form_loop(terminal, width, height, new_state)
 
       %ExRatatui.Event.Key{code: key, kind: "press"} when byte_size(key) === 1 ->
-        current_input = Enum.at(inputs, state.focused)
+        current_input = focused_input(inputs, state.focused)
         new_state = handle_char(state, current_input, key)
         form_loop(terminal, width, height, new_state)
 
@@ -233,6 +233,9 @@ defmodule DeployEx.TUI.Wizard.Form do
   defp advance_focus(current, inputs) do
     if current >= length(inputs) - 1, do: :submit, else: current + 1
   end
+
+  defp focused_input(_inputs, :submit), do: nil
+  defp focused_input(inputs, index), do: Enum.at(inputs, index)
 
   defp handle_select_input(terminal, width, height, state, current_input, inputs) do
     choices_fn = current_input.choices_fn
