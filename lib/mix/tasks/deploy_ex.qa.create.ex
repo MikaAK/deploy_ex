@@ -11,12 +11,15 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   ## Example
   ```bash
   mix deploy_ex.qa.create my_app --sha abc1234
+  mix deploy_ex.qa.create my_app                           # prompts for QA SHA on current branch
+  mix deploy_ex.qa.create my_app --sha abc1234 --tag my-feature
   mix deploy_ex.qa.create my_app --sha abc1234 --attach-lb
   mix deploy_ex.qa.create my_app --sha abc1234 --skip-setup --skip-deploy
   ```
 
   ## Options
-  - `--sha, -s` - Target git SHA (required)
+  - `--sha, -s` - Target git SHA; if omitted, picks from QA releases on current branch
+  - `--tag, -t` - Custom label used in the instance name (replaces the short SHA)
   - `--instance-type` - EC2 instance type (default: t3.small)
   - `--skip-setup` - Skip Ansible setup after creation
   - `--skip-deploy` - Skip deployment after setup

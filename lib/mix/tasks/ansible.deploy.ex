@@ -21,6 +21,9 @@ defmodule Mix.Tasks.Ansible.Deploy do
   mix ansible.deploy --only app1 --only app2
   mix ansible.deploy --except app3
   mix ansible.deploy --target-sha 2ac12b
+  mix ansible.deploy --target-sha auto                 # newest prod release on current branch
+  mix ansible.deploy --qa --target-sha auto            # newest QA release on current branch
+  mix ansible.deploy --qa                              # prompt to pick a QA release
   ```
 
   ## Options
@@ -30,9 +33,11 @@ defmodule Mix.Tasks.Ansible.Deploy do
   - `copy-json-env-file` - Copy environment file and load into host environments
   - `only-local-release` - Only deploy if there's a local release available
   - `parallel` - Maximum number of concurrent ansible deploys (default: #{@playbook_max_concurrency})
-  - `target-sha` - Deploy a specific release SHA instead of latest
+  - `target-sha` - Deploy a specific release SHA, or `auto` to pick the newest release
+    on the current branch (QA if `--qa`, otherwise prod)
   - `include-qa` - Include QA nodes in deploy (default: excluded)
-  - `qa` - Target only QA nodes (excludes non-QA nodes)
+  - `qa` - Target only QA nodes (excludes non-QA nodes). Without `--target-sha`, prompts to
+    pick a QA release on the current branch. One SHA applies to all apps in the invocation.
   - `quiet` - Suppress output messages
   """
 
