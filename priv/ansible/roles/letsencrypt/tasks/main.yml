@@ -1,26 +1,64 @@
-- name: letsencrypt (real cert via Cloudflare DNS)
+- name: letsencrypt
   block:
-    - name: Ensure Cloudflare API token is configured
-      fail:
-        msg: "cloudflare_api_token is required for certbot DNS challenge (Zone:DNS:Edit)."
-      when: cloudflare_api_token is not defined or cloudflare_api_token | length == 0
+    - name: Compute certificate subject (domain or public IP)
+      set_fact:
+        letsencrypt_cert_subject: "{{ ansible_default_ipv4.address if (letsencrypt_use_public_ip | bool) else domain }}"
 
-    - name: Install required packages
+    # --- package install (differs by mode) ---
+
+    - name: Install certbot + Cloudflare DNS plugin (domain mode)
       apt:
         name:
           - certbot
           - python3-certbot-dns-cloudflare
         state: present
         update_cache: yes
+      when: not letsencrypt_use_public_ip | bool
 
-    - name: Create Cloudflare credentials file for certbot
+    # IP certs require certbot ≥ 4.0 for `--preferred-profile shortlived`.
+    # Debian/Ubuntu apt usually ships an older certbot, so install via snap.
+    - name: Install snapd (IP mode)
+      apt:
+        name: snapd
+        state: present
+        update_cache: yes
+      when: letsencrypt_use_public_ip | bool
+
+    - name: Install certbot via snap (IP mode)
+      command: snap install --classic certbot
+      args:
+        creates: /snap/bin/certbot
+      when: letsencrypt_use_public_ip | bool
+
+    - name: Symlink certbot into /usr/bin (IP mode)
+      file:
+        src: /snap/bin/certbot
+        dest: /usr/bin/certbot
+        state: link
+        force: true
+      when: letsencrypt_use_public_ip | bool
+
+    # --- Cloudflare credentials (domain mode only) ---
+
+    - name: Ensure Cloudflare API token is configured (domain mode)
+      fail:
+        msg: "cloudflare_api_token is required for certbot DNS challenge (Zone:DNS:Edit)."
+      when:
+        - not letsencrypt_use_public_ip | bool
+        - cloudflare_api_token is not defined or cloudflare_api_token | length == 0
+
+    - name: Create Cloudflare credentials file for certbot (domain mode)
       template:
         src: cloudflare-credentials.ini.j2
         dest: /etc/letsencrypt/cloudflare-credentials.ini
         mode: '0600'
         owner: root
         group: root
-      when: cloudflare_api_token is defined
+      when:
+        - not letsencrypt_use_public_ip | bool
+        - cloudflare_api_token is defined
+
+    # --- renewal scripts + systemd units (both modes; use cert_subject) ---
 
     - name: Create certificate renewal script
       template:
@@ -75,49 +113,40 @@
         name: cert-initial
         state: started
 
-    - name: Ensure certificates exist or generate them
+    # --- initial issuance (mode-specific challenge) ---
+
+    - name: Ensure Let's Encrypt certificate exists (domain mode — Cloudflare DNS-01)
       shell: |
-        #!/bin/bash
         set -euo pipefail
-
-        DOMAIN="{{ domain }}"
-        EMAIL="{{ letsencrypt_email }}"
-        CREDS_FILE="/etc/letsencrypt/cloudflare-credentials.ini"
-
-        # Check if Cloudflare credentials exist
-        if [ ! -f "$CREDS_FILE" ]; then
-            echo "Cloudflare credentials not found at $CREDS_FILE"
-            exit 1
-        fi
-
-        # Check if certificate exists and is valid for at least 7 days
-        if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-            EXPIRY=$(openssl x509 -in "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" -noout -enddate | cut -d= -f2)
-            EXPIRY_EPOCH=$(date -d "$EXPIRY" +%s)
-            CURRENT_EPOCH=$(date +%s)
-            DAYS_LEFT=$(( (EXPIRY_EPOCH - CURRENT_EPOCH) / 86400 ))
-
-            if [ $DAYS_LEFT -gt 7 ]; then
-                echo "Certificate is valid for $DAYS_LEFT days. No renewal needed."
-                exit 0
-            fi
-        fi
-
-        # Obtain or renew certificate using DNS challenge
-        echo "Obtaining/renewing certificate for $DOMAIN using DNS challenge..."
         certbot certonly \
-            --dns-cloudflare \
-            --dns-cloudflare-credentials "$CREDS_FILE" \
-            -d "$DOMAIN" \
-            --non-interactive \
-            --agree-tos \
-            --email "$EMAIL" \
-            --force-renewal
-
-        echo "Certificate obtained/renewed successfully"
-        /usr/local/bin/check-certificates.sh
+          --dns-cloudflare \
+          --dns-cloudflare-credentials /etc/letsencrypt/cloudflare-credentials.ini \
+          -d "{{ letsencrypt_cert_subject }}" \
+          --non-interactive \
+          --agree-tos \
+          --email "{{ letsencrypt_email }}"
       args:
-        creates: "/etc/letsencrypt/live/{{ domain }}/fullchain.pem"
+        creates: "/etc/letsencrypt/live/{{ letsencrypt_cert_subject }}/fullchain.pem"
+      when: not letsencrypt_use_public_ip | bool
+
+    # IP mode: HTTP-01 standalone against port 80 with the short-lived profile.
+    # Pre/post hooks briefly stop nginx so certbot can bind :80; they're stored in the
+    # renewal config and auto-applied by `certbot renew` on later runs.
+    - name: Ensure Let's Encrypt certificate exists (IP mode — HTTP-01 standalone, short-lived)
+      shell: |
+        set -euo pipefail
+        certbot certonly \
+          --standalone \
+          --preferred-profile shortlived \
+          -d "{{ letsencrypt_cert_subject }}" \
+          --non-interactive \
+          --agree-tos \
+          --email "{{ letsencrypt_email }}" \
+          --pre-hook "systemctl stop nginx 2>/dev/null || true" \
+          --post-hook "systemctl start nginx 2>/dev/null || true"
+      args:
+        creates: "/etc/letsencrypt/live/{{ letsencrypt_cert_subject }}/fullchain.pem"
+      when: letsencrypt_use_public_ip | bool
 
     - name: Set proper permissions for certificate files
       file:
@@ -127,59 +156,4 @@
         mode: '0755'
         owner: root
         group: root
-  when: not letsencrypt_use_public_ip | bool
-  become: true
-
-- name: letsencrypt (self-signed for public IP — QA nodes)
-  block:
-    - name: Install openssl
-      apt:
-        name: openssl
-        state: present
-        update_cache: yes
-
-    - name: Ensure cert directory exists
-      file:
-        path: "/etc/letsencrypt/live/{{ ansible_default_ipv4.address }}"
-        state: directory
-        owner: root
-        group: root
-        mode: '0755'
-        recurse: yes
-
-    - name: Check existing self-signed cert expiry
-      shell: |
-        set -euo pipefail
-        CERT=/etc/letsencrypt/live/{{ ansible_default_ipv4.address }}/fullchain.pem
-        if [ ! -f "$CERT" ]; then
-          echo "missing"
-          exit 0
-        fi
-        EXPIRY=$(openssl x509 -in "$CERT" -noout -enddate | cut -d= -f2)
-        EXPIRY_EPOCH=$(date -d "$EXPIRY" +%s)
-        CURRENT_EPOCH=$(date +%s)
-        DAYS_LEFT=$(( (EXPIRY_EPOCH - CURRENT_EPOCH) / 86400 ))
-        if [ "$DAYS_LEFT" -lt 30 ]; then
-          echo "expiring"
-        else
-          echo "valid"
-        fi
-      register: ss_cert_status
-      changed_when: false
-
-    - name: Generate self-signed certificate for public IP
-      shell: |
-        set -euo pipefail
-        IP={{ ansible_default_ipv4.address }}
-        DIR=/etc/letsencrypt/live/$IP
-        openssl req -x509 -newkey rsa:4096 -nodes \
-          -keyout "$DIR/privkey.pem" \
-          -out "$DIR/fullchain.pem" \
-          -subj "/CN=$IP" \
-          -addext "subjectAltName=IP:$IP" \
-          -days {{ letsencrypt_self_signed_days }}
-        chmod 600 "$DIR/privkey.pem"
-        chmod 644 "$DIR/fullchain.pem"
-      when: ss_cert_status.stdout in ["missing", "expiring"]
-  when: letsencrypt_use_public_ip | bool
   become: true
