@@ -90,7 +90,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
          :ok <- (progress.(5, "Waiting for instance to start..."); wait_for_instance(qa_node, opts)),
          {:ok, qa_node} <- (progress.(6, "Saving QA state..."); save_and_refresh_state(qa_node, opts)),
          :ok <- (progress.(7, "Waiting for SSH..."); wait_for_ssh_ready(qa_node)),
-         :ok <- (progress.(8, "Running setup & deploy..."); maybe_run_setup(qa_node, infra, opts); maybe_wait_for_deploy(qa_node, infra, opts)),
+         :ok <- (progress.(8, "Running setup & deploy..."); maybe_run_setup(qa_node, infra, tui_pid, opts); maybe_wait_for_deploy(qa_node, infra, tui_pid, opts)),
          {:ok, qa_node} <- (progress.(9, "Attaching load balancer..."); maybe_attach_lb(qa_node, opts)) do
       {:ok, qa_node}
     end
@@ -281,15 +281,15 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     end
   end
 
-  defp maybe_run_setup(_qa_node, _infra, %{skip_setup: true}), do: :ok
-  defp maybe_run_setup(_qa_node, %{using_app_ami: true}, _opts) do
+  defp maybe_run_setup(_qa_node, _infra, _tui_pid, %{skip_setup: true}), do: :ok
+  defp maybe_run_setup(_qa_node, %{using_app_ami: true}, _tui_pid, _opts) do
     if not DeployEx.TUI.enabled?() do
       Mix.shell().info([:green, "  ✓ ", :reset, "Skipping setup (using pre-configured AMI)"])
     end
 
     :ok
   end
-  defp maybe_run_setup(qa_node, _infra, opts) do
+  defp maybe_run_setup(qa_node, _infra, tui_pid, opts) do
     if not DeployEx.TUI.enabled?() do
       Mix.shell().info([:faint, "Waiting for SSH to be ready on ", :reset, :cyan, qa_node.instance_name, :reset, :faint, "..."])
     end
@@ -300,7 +300,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
       Mix.shell().info([:cyan, "Running Ansible setup for ", :bright, qa_node.instance_name, :reset, "..."])
     end
 
-    run_ansible_setup(qa_node, opts)
+    run_ansible_setup(qa_node, tui_pid, opts)
   end
 
   defp wait_for_ssh(ip, retries \\ 30) do
@@ -313,8 +313,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     end
   end
 
-  defp maybe_wait_for_deploy(_qa_node, _infra, %{skip_deploy: true}), do: :ok
-  defp maybe_wait_for_deploy(qa_node, %{using_app_ami: true}, _opts) do
+  defp maybe_wait_for_deploy(_qa_node, _infra, _tui_pid, %{skip_deploy: true}), do: :ok
+  defp maybe_wait_for_deploy(qa_node, %{using_app_ami: true}, _tui_pid, _opts) do
     if not DeployEx.TUI.enabled?() do
       Mix.shell().info([:faint, "Waiting for cloud-init to deploy release..."])
     end
@@ -327,12 +327,12 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
     :ok
   end
-  defp maybe_wait_for_deploy(qa_node, _infra, opts) do
+  defp maybe_wait_for_deploy(qa_node, _infra, tui_pid, opts) do
     if not DeployEx.TUI.enabled?() do
       Mix.shell().info([:cyan, "Deploying SHA ", :yellow, String.slice(qa_node.target_sha, 0, 7), :reset, :cyan, " to ", :bright, qa_node.instance_name, :reset, "..."])
     end
 
-    run_ansible_deploy(qa_node, qa_node.target_sha, opts)
+    run_ansible_deploy(qa_node, qa_node.target_sha, tui_pid, opts)
   end
 
   defp maybe_attach_lb(qa_node, %{attach_lb: true} = opts) do
@@ -354,26 +354,30 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
   defp maybe_attach_lb(qa_node, _opts), do: {:ok, qa_node}
 
-  defp run_ansible_setup(qa_node, _opts) do
-    run_qa_ansible(qa_node, :setup, setup_vars(qa_node), "ansible setup failed")
+  defp run_ansible_setup(qa_node, tui_pid, _opts) do
+    run_qa_ansible(qa_node, :setup, setup_vars(qa_node), tui_pid, "ansible setup failed")
   end
 
-  defp run_ansible_deploy(qa_node, sha, _opts) do
-    run_qa_ansible(qa_node, :deploy, deploy_vars(qa_node, sha), "ansible deploy failed")
+  defp run_ansible_deploy(qa_node, sha, tui_pid, _opts) do
+    run_qa_ansible(qa_node, :deploy, deploy_vars(qa_node, sha), tui_pid, "ansible deploy failed")
   end
 
-  defp run_qa_ansible(qa_node, kind, vars, failure_message) do
+  defp run_qa_ansible(qa_node, kind, vars, tui_pid, failure_message) do
     directory = @ansible_default_path
 
     DeployEx.QaPlaybook.with_temp_playbook(qa_node, kind, vars, directory, fn rel_path ->
       command = "ansible-playbook #{rel_path} --limit '#{qa_node.instance_name},'"
+      line_callback = build_line_callback(tui_pid)
 
-      case DeployEx.Utils.run_command(command, directory) do
-        {:ok, _} -> :ok
+      case DeployEx.Utils.run_command_streaming(command, directory, line_callback) do
+        :ok -> :ok
         {:error, error} -> {:error, ErrorMessage.failed_dependency(failure_message, %{error: error})}
       end
     end)
   end
+
+  defp build_line_callback(nil), do: fn _line -> :ok end
+  defp build_line_callback(tui_pid), do: fn line -> DeployEx.TUI.Progress.update_log(tui_pid, line) end
 
   defp setup_vars(qa_node) do
     [

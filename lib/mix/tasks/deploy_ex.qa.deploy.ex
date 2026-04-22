@@ -67,7 +67,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
 
     with {:ok, qa_node} <- (progress.(1, "Fetching QA node..."); fetch_and_verify_qa_node(app_name, opts)),
          {:ok, full_sha} <- (progress.(2, "Validating SHA..."); validate_and_find_sha(app_name, sha, opts)),
-         :ok <- (progress.(3, "Running ansible deploy..."); run_ansible_deploy(qa_node, full_sha, opts)),
+         :ok <- (progress.(3, "Running ansible deploy..."); run_ansible_deploy(qa_node, full_sha, tui_pid, opts)),
          {:ok, updated} <- (progress.(4, "Updating QA state..."); update_qa_state(qa_node, full_sha, opts)) do
       {:ok, {updated, full_sha}}
     end
@@ -175,7 +175,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
   end
 
 
-  defp run_ansible_deploy(qa_node, sha, opts) do
+  defp run_ansible_deploy(qa_node, sha, tui_pid, opts) do
     if !opts[:quiet] and not DeployEx.TUI.enabled?() do
       Mix.shell().info("Deploying SHA #{String.slice(sha, 0, 7)} to #{qa_node.instance_name}...")
     end
@@ -185,13 +185,17 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
 
     DeployEx.QaPlaybook.with_temp_playbook(qa_node, :deploy, vars, directory, fn rel_path ->
       command = "ansible-playbook #{rel_path} --limit '#{qa_node.instance_name},'"
+      line_callback = build_line_callback(tui_pid)
 
-      case DeployEx.Utils.run_command(command, directory) do
-        {:ok, _} -> :ok
+      case DeployEx.Utils.run_command_streaming(command, directory, line_callback) do
+        :ok -> :ok
         {:error, error} -> {:error, ErrorMessage.failed_dependency("ansible deploy failed", %{error: error})}
       end
     end)
   end
+
+  defp build_line_callback(nil), do: fn _line -> :ok end
+  defp build_line_callback(tui_pid), do: fn line -> DeployEx.TUI.Progress.update_log(tui_pid, line) end
 
   defp deploy_vars(qa_node, sha) do
     [

@@ -4,6 +4,9 @@ defmodule DeployEx.TUI.Progress do
   alias ExRatatui.Style
   alias ExRatatui.Widgets
 
+  @log_buffer_max 500
+  @ansi_regex ~r/\x1b\[[\d;]*[a-zA-Z]/
+
   @type step :: {String.t(), (-> :ok | {:ok, term()} | {:error, term()})}
 
   @spec run_steps(list(step()), keyword()) :: :ok | {:error, term()}
@@ -178,7 +181,8 @@ defmodule DeployEx.TUI.Progress do
         label: "Starting...",
         status: :running,
         result: nil,
-        cancelling: false
+        cancelling: false,
+        log_tail: []
       }
 
       worker = spawn_link(fn ->
@@ -194,9 +198,23 @@ defmodule DeployEx.TUI.Progress do
     send(tui_pid, {:tui_progress_update, ratio, label})
   end
 
+  @doc """
+  Streams a single log line into the TUI's log pane. ANSI escape sequences are
+  stripped; long lines are truncated to fit the pane width at draw time.
+  """
+  def update_log(tui_pid, line) do
+    send(tui_pid, {:tui_progress_log, sanitize_log_line(line)})
+  end
+
+  defp sanitize_log_line(line) do
+    line
+    |> to_string()
+    |> String.replace(@ansi_regex, "")
+    |> String.trim_trailing()
+  end
+
   defp stream_loop(terminal, width, height, title, state, worker, opts) do
-    display_label = if state.cancelling, do: state.label <> "  [Ctrl-C again to cancel]", else: state.label
-    draw_progress(terminal, width, height, title, display_label, state.ratio, 100, round(state.ratio * 100))
+    draw_stream_progress(terminal, width, height, title, state)
 
     case ExRatatui.poll_event(50) do
       %ExRatatui.Event.Resize{width: new_width, height: new_height} ->
@@ -215,8 +233,13 @@ defmodule DeployEx.TUI.Progress do
             new_state = %{state | ratio: ratio, label: label}
             stream_loop(terminal, width, height, title, new_state, worker, opts)
 
+          {:tui_progress_log, line} ->
+            new_state = %{state | log_tail: append_log_line(state.log_tail, line)}
+            stream_loop(terminal, width, height, title, new_state, worker, opts)
+
           {:tui_progress_done, result} ->
-            draw_progress(terminal, width, height, title, "Complete!", 1.0, 100, 100)
+            final_state = %{state | ratio: 1.0, label: "Complete!"}
+            draw_stream_progress(terminal, width, height, title, final_state)
             Process.sleep(500)
             result
         after
@@ -224,6 +247,100 @@ defmodule DeployEx.TUI.Progress do
             stream_loop(terminal, width, height, title, state, worker, opts)
         end
     end
+  end
+
+  defp append_log_line(log_tail, line) do
+    [line | Enum.take(log_tail, @log_buffer_max - 1)]
+  end
+
+  defp draw_stream_progress(terminal, width, height, title, state) do
+    display_label = stream_display_label(state)
+    area = %Rect{x: 0, y: 0, width: width, height: height}
+
+    [top_area, log_area, footer_area] = Layout.split(area, :vertical, [
+      {:length, 4},
+      {:min, 3},
+      {:length, 1}
+    ])
+
+    [gauge_area, label_area] = Layout.split(top_area, :vertical, [
+      {:length, 3},
+      {:length, 1}
+    ])
+
+    ExRatatui.draw(terminal, [
+      {build_gauge_widget(title, state.ratio), gauge_area},
+      {build_label_widget(display_label), label_area},
+      {build_log_widget(state.log_tail, log_area, width), log_area},
+      {build_footer_widget(state.cancelling), footer_area}
+    ])
+  end
+
+  defp stream_display_label(%{cancelling: true, label: label}), do: label <> "  [Ctrl-C again to cancel]"
+  defp stream_display_label(%{label: label}), do: label
+
+  defp build_gauge_widget(title, ratio) do
+    percent = round(ratio * 100)
+
+    %Widgets.Gauge{
+      ratio: min(ratio, 1.0),
+      label: "#{percent}% (#{percent}/100)",
+      gauge_style: %Style{fg: :cyan},
+      block: %Widgets.Block{
+        title: " #{title} ",
+        borders: [:all],
+        border_type: :rounded,
+        border_style: %Style{fg: :blue}
+      }
+    }
+  end
+
+  defp build_label_widget(label) do
+    %Widgets.Paragraph{
+      text: "  #{label}",
+      style: %Style{fg: :white, modifiers: [:bold]},
+      alignment: :left
+    }
+  end
+
+  defp build_log_widget(log_tail, log_area, width) do
+    %Widgets.Paragraph{
+      text: render_log_text(log_tail, log_area, width),
+      style: %Style{fg: :white},
+      block: %Widgets.Block{
+        title: " Output ",
+        borders: [:all],
+        border_type: :rounded,
+        border_style: %Style{fg: :cyan}
+      }
+    }
+  end
+
+  defp render_log_text([], _log_area, _width), do: "  Waiting for output..."
+
+  defp render_log_text(log_tail, log_area, width) do
+    visible_rows = max(log_area.height - 2, 1)
+    max_line_width = max(width - 4, 20)
+
+    log_tail
+    |> Enum.take(visible_rows)
+    |> Enum.reverse()
+    |> Enum.map_join("\n", &truncate_line(&1, max_line_width))
+  end
+
+  defp truncate_line(line, max_width) when byte_size(line) > max_width do
+    String.slice(line, 0, max_width - 1) <> "…"
+  end
+
+  defp truncate_line(line, _max_width), do: line
+
+  defp build_footer_widget(cancelling?) do
+    text = if cancelling?, do: "  Ctrl-C again to cancel", else: "  Ctrl-C twice to cancel"
+
+    %Widgets.Paragraph{
+      text: text,
+      style: %Style{fg: :white, modifiers: [:dim]}
+    }
   end
 
   defp draw_progress(terminal, width, height, title, label, ratio, total, current) do
