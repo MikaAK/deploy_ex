@@ -258,7 +258,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
       nil ->
         case DeployEx.QaNode.pick_interactive(nodes,
                title: "Select QA node to deploy to",
-               allow_all: false
+               allow_all: false,
+               always_prompt: true
              ) do
           {:ok, [picked]} -> {:ok, picked}
           {:ok, []} -> {:error, ErrorMessage.bad_request("no QA node selected")}

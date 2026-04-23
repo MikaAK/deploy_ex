@@ -6,12 +6,17 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
   Terminates one or more QA nodes, detaches them from any load balancers, and
   cleans up the S3 state.
 
-  Without `--instance-id` or `--all`, an app name selects from that app's QA
-  nodes — a single node is destroyed directly, multiple nodes open an
-  interactive picker so you can choose which to destroy (or select all).
+  - **No args** — opens an interactive picker across every QA node (every app)
+    so you can choose which to destroy (or select all).
+  - **App name** — picks from that app's QA nodes; a single node is destroyed
+    directly, multiple nodes open a picker.
+  - **`--instance-id`** — destroys the exact instance (no picker).
+  - **`--all`** — skips the picker and destroys every QA node (still prompts
+    for confirmation unless `--force`).
 
   ## Example
   ```bash
+  mix deploy_ex.qa.destroy                          # pick from every QA node
   mix deploy_ex.qa.destroy my_app                   # pick from my_app's QA nodes
   mix deploy_ex.qa.destroy my_app --instance-id i-0abc123
   mix deploy_ex.qa.destroy --all                    # destroy every QA node
@@ -20,7 +25,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
 
   ## Options
   - `--instance-id, -i` - Destroy a specific instance by ID (skips picker)
-  - `--all` - Destroy every QA node across all apps
+  - `--all` - Destroy every QA node across all apps (skips picker)
   - `--force, -f` - Skip confirmation prompt
   - `--quiet, -q` - Suppress output messages
   """
@@ -63,7 +68,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
   defp select_nodes(extra_args, opts) do
     cond do
       opts[:all] === true ->
-        find_all_qa_nodes(opts)
+        list_all_qa_nodes(opts)
 
       is_binary(opts[:instance_id]) ->
         find_node_by_instance_id(opts[:instance_id], opts)
@@ -73,11 +78,26 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
         prompt_pick_nodes_for_app(app_name, opts)
 
       true ->
-        Mix.raise("App name, --instance-id, or --all is required")
+        prompt_pick_across_all_qa_nodes(opts)
     end
   end
 
-  defp find_all_qa_nodes(opts) do
+  defp prompt_pick_across_all_qa_nodes(opts) do
+    case list_all_qa_nodes(opts) do
+      [] ->
+        []
+
+      nodes ->
+        {:ok, picked} = DeployEx.QaNode.pick_interactive(nodes,
+          title: "Select QA node(s) to destroy",
+          allow_all: true,
+          always_prompt: true
+        )
+        picked
+    end
+  end
+
+  defp list_all_qa_nodes(opts) do
     case DeployEx.QaNode.list_all_qa_states(opts) do
       {:ok, app_names} ->
         Enum.flat_map(app_names, fn app_name ->
@@ -112,7 +132,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
       {:ok, nodes} ->
         {:ok, picked} = DeployEx.QaNode.pick_interactive(nodes,
           title: "Select QA node(s) to destroy",
-          allow_all: true
+          allow_all: true,
+          always_prompt: true
         )
         picked
 

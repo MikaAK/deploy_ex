@@ -118,24 +118,40 @@ defmodule DeployEx.QaNode do
   Interactive picker over a list of QaNode structs.
 
   - 0 nodes → `{:ok, []}`
-  - 1 node  → `{:ok, [node]}` (no prompt)
+  - 1 node  → `{:ok, [node]}` (no prompt, unless `:always_prompt` is set)
   - 2+ nodes → uses `DeployEx.TUI.Select` (TUI + console fallback) to let the user
     pick one or all. Returns `{:ok, [picked]}`. Empty list means user cancelled.
 
-  Options: `:title` (default `"Select QA node"`), `:allow_all` (default `true`).
+  Set `always_prompt: true` to force the picker to render for single-node matches
+  too — useful when the caller wants the user to see and confirm their choice even
+  when the filter narrows to one node.
+
+  Options: `:title` (default `"Select QA node"`), `:allow_all` (default `true`),
+  `:always_prompt` (default `false`).
   """
   @spec pick_interactive([t()], keyword()) :: {:ok, [t()]}
   def pick_interactive(nodes, opts \\ [])
-  def pick_interactive([], _opts), do: {:ok, []}
-  def pick_interactive([_] = nodes, _opts), do: {:ok, nodes}
+
+  def pick_interactive([], opts) do
+    if always_prompt?(opts), do: run_picker([], opts), else: {:ok, []}
+  end
+
+  def pick_interactive([_] = nodes, opts) do
+    if always_prompt?(opts), do: run_picker(nodes, opts), else: {:ok, nodes}
+  end
 
   def pick_interactive(nodes, opts) when is_list(nodes) do
+    run_picker(nodes, opts)
+  end
+
+  defp run_picker(nodes, opts) do
     labels = Enum.map(nodes, &format_picker_label/1)
     label_to_node = labels |> Enum.zip(nodes) |> Map.new()
 
     selected = DeployEx.TUI.Select.run(labels,
       title: Keyword.get(opts, :title, "Select QA node"),
-      allow_all: Keyword.get(opts, :allow_all, true)
+      allow_all: Keyword.get(opts, :allow_all, true),
+      always_prompt: Keyword.get(opts, :always_prompt, false)
     )
 
     picked = Enum.map(selected, &Map.fetch!(label_to_node, &1))
