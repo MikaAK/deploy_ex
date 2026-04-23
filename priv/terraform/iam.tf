@@ -74,6 +74,15 @@ resource "aws_iam_role_policy" "ec2_instance_policy" {
           "ssm:PutParameter"
         ]
         Resource = "arn:aws:ssm:*:*:parameter/deploy_ex/${var.environment}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject"
+        ]
+        Resource = [
+          "arn:aws:s3:::*-elixir-deploys-${var.environment}/release-state/*"
+        ]
       }
     ]
   })

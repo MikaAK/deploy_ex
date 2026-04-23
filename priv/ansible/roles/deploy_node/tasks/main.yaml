@@ -1,6 +1,4 @@
 - name: setup_node
-  environment:
-    AWS_CONFIG_FILE: /home/admin/.aws/credentials
   block:
     - name: Populate service facts
       service_facts:

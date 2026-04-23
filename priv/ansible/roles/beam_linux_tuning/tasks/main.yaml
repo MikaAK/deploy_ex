@@ -1,5 +1,29 @@
 - name: beam_linux_tuning
   block:
+    - name: Gather active swap devices
+      command: swapon --show=NAME --noheadings
+      register: active_swap
+      changed_when: false
+
+    - name: Disable all active swap
+      command: swapoff -a
+      when: active_swap.stdout != ''
+
+    - name: Remove swap entries from /etc/fstab
+      replace:
+        path: /etc/fstab
+        regexp: '^([^#].*\sswap\s.*)$'
+        replace: '# \1'
+
+    - name: Remove common swapfile paths
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /swapfile
+        - /swap.img
+        - /var/swap
+
     - name: Copy limits.conf file to /etc/security/limits.conf
       copy:
         src: limits.conf
