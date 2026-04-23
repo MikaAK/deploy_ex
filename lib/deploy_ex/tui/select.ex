@@ -101,19 +101,13 @@ defmodule DeployEx.TUI.Select do
 
     case ExRatatui.poll_event(50) do
       %ExRatatui.Event.Key{code: "up", kind: "press"} ->
-        new_selected = max(state.selected - 1, 0)
-        loop(terminal, %{state | selected: new_selected}, {width, height})
+        loop(terminal, %{state | selected: max(state.selected - 1, 0)}, {width, height})
 
       %ExRatatui.Event.Key{code: "down", kind: "press"} ->
-        max_index = max(length(state.choices) - 1, 0)
-        new_selected = min(state.selected + 1, max_index)
-        loop(terminal, %{state | selected: new_selected}, {width, height})
-
-      %ExRatatui.Event.Key{code: " ", kind: "press"} when state.multi_select ->
-        loop(terminal, %{state | picked: toggle_pick(state.picked, state.selected)}, {width, height})
+        loop(terminal, %{state | selected: min(state.selected + 1, max_index(state))}, {width, height})
 
       %ExRatatui.Event.Key{code: "enter", kind: "press"} ->
-        resolve_enter(state)
+        handle_enter(terminal, state, {width, height})
 
       %ExRatatui.Event.Key{code: "a", kind: "press"} when state.allow_all ->
         state.choices
@@ -132,41 +126,57 @@ defmodule DeployEx.TUI.Select do
     end
   end
 
+  defp max_index(%{multi_select: true, choices: choices}), do: length(choices)
+  defp max_index(%{choices: choices}), do: max(length(choices) - 1, 0)
+
+  defp handle_enter(terminal, %{multi_select: true} = state, dimensions) do
+    if on_ok_row?(state) do
+      confirm_multi_select(state)
+    else
+      loop(terminal, %{state | picked: toggle_pick(state.picked, state.selected)}, dimensions)
+    end
+  end
+
+  defp handle_enter(_terminal, state, _dimensions) do
+    [Enum.at(state.choices, state.selected)]
+  end
+
+  defp on_ok_row?(%{selected: selected, choices: choices}), do: selected === length(choices)
+
   defp toggle_pick(picked, index) do
     if MapSet.member?(picked, index),
       do: MapSet.delete(picked, index),
       else: MapSet.put(picked, index)
   end
 
-  defp resolve_enter(%{multi_select: true, picked: picked} = state) do
-    if Enum.empty?(picked) do
-      [Enum.at(state.choices, state.selected)]
-    else
-      picked |> Enum.sort() |> Enum.map(&Enum.at(state.choices, &1))
-    end
-  end
-
-  defp resolve_enter(state) do
-    [Enum.at(state.choices, state.selected)]
+  defp confirm_multi_select(%{picked: picked, choices: choices}) do
+    picked |> Enum.sort() |> Enum.map(&Enum.at(choices, &1))
   end
 
   defp render_items(%{multi_select: true, picked: picked, choices: choices}) do
-    choices
-    |> Enum.with_index()
-    |> Enum.map(fn {choice, index} ->
-      marker = if MapSet.member?(picked, index), do: "[✓]", else: "[ ]"
-      "#{marker} #{choice}"
-    end)
+    toggles =
+      choices
+      |> Enum.with_index()
+      |> Enum.map(fn {choice, index} ->
+        marker = if MapSet.member?(picked, index), do: "[✓]", else: "[ ]"
+        "#{marker} #{choice}"
+      end)
+
+    toggles ++ [ok_row_label(picked)]
   end
 
   defp render_items(%{choices: choices}), do: choices
+
+  defp ok_row_label(picked) do
+    count = MapSet.size(picked)
+    "── ✔ OK — confirm selection (#{count} picked) ──"
+  end
 
   defp title_text(state) do
     hints =
       [
         "↑↓ navigate",
-        if(state.multi_select, do: "Space toggle", else: nil),
-        if(state.multi_select, do: "Enter confirm", else: "Enter select"),
+        if(state.multi_select, do: "Enter toggle/OK", else: "Enter select"),
         if(state.allow_all, do: "a=all", else: nil),
         "q=quit"
       ]
