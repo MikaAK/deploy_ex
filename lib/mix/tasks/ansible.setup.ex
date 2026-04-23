@@ -18,11 +18,22 @@ defmodule Mix.Tasks.Ansible.Setup do
   - Setting up server cleanup on termination
   - Installing the application release as a SystemD service
 
+  ### QA nodes
+
+  With `--include-qa`, QA nodes are picked up from the aws_ec2 inventory and
+  per-node context (Let's Encrypt cert mode, release prefix, git branch) is
+  derived automatically from their EC2 tags via inventory `compose:` mappings
+  — no extra flags or per-node playbooks needed. Nodes tagged
+  `UsePublicIpCert=true` (set by `mix deploy_ex.qa.create --public-ip-cert`)
+  will issue a Let's Encrypt cert against the node's public IP instead of a
+  DNS-based domain cert.
+
   ## Example
   ```bash
   mix ansible.setup
   mix ansible.setup --only app1 --only app2
   mix ansible.setup --except app3
+  mix ansible.setup --include-qa
   ```
 
   ## Options

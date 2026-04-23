@@ -43,7 +43,7 @@ defmodule DeployEx.TUI.DeployProgress do
       {name, %{status: :pending, current_task: "Waiting...", tasks_completed: 0, error: nil, output_tail: []}}
     end)
 
-    ExRatatui.run(fn terminal ->
+    DeployEx.TUI.run(fn terminal ->
       {width, height} = ExRatatui.terminal_size()
 
       task = Task.async(fn ->

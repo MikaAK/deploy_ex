@@ -15,6 +15,15 @@ defmodule Mix.Tasks.Ansible.Deploy do
   This will load your release onto each node and sets it up
   in a SystemD task.
 
+  ### QA nodes
+
+  With `--qa` or `--include-qa`, QA nodes are picked up from the aws_ec2
+  inventory and per-node context (release prefix, release state path, Let's
+  Encrypt cert mode) flows from EC2 tags into host vars via inventory
+  `compose:` mappings — the deploy role automatically reads from the `qa/`
+  S3 prefix and writes history under `release-state/qa/` for QA hosts, no
+  extra flags required.
+
   ## Example
   ```bash
   mix ansible.deploy

@@ -10,8 +10,14 @@ defmodule DeployEx.TUI.Select do
 
   @spec run(list(String.t()), keyword()) :: list(String.t())
   def run(choices, opts \\ [])
-  def run([], _opts), do: []
-  def run([choice], _opts), do: [choice]
+
+  def run([], opts) do
+    if always_prompt?(opts), do: run_tui([], opts), else: []
+  end
+
+  def run([choice] = choices, opts) do
+    if always_prompt?(opts), do: run_tui(choices, opts), else: [choice]
+  end
 
   def run(choices, opts) when is_list(choices) do
     if DeployEx.TUI.enabled?() do
@@ -19,6 +25,10 @@ defmodule DeployEx.TUI.Select do
     else
       run_console(choices, opts)
     end
+  end
+
+  defp always_prompt?(opts) do
+    Keyword.get(opts, :always_prompt, false) && DeployEx.TUI.enabled?()
   end
 
   defp run_console(choices, opts) do
@@ -46,10 +56,25 @@ defmodule DeployEx.TUI.Select do
   end
 
   @spec run_in_terminal(ExRatatui.terminal_ref(), list(String.t()), keyword()) :: list(String.t())
-  def run_in_terminal(_terminal_ref, [], _opts), do: []
-  def run_in_terminal(_terminal_ref, [choice], _opts), do: [choice]
+  def run_in_terminal(terminal, choices, opts \\ [])
+
+  def run_in_terminal(terminal, [], opts) do
+    if always_prompt_in_terminal?(opts), do: run_loop_in_terminal(terminal, [], opts), else: []
+  end
+
+  def run_in_terminal(terminal, [choice] = choices, opts) do
+    if always_prompt_in_terminal?(opts),
+      do: run_loop_in_terminal(terminal, choices, opts),
+      else: [choice]
+  end
 
   def run_in_terminal(terminal, choices, opts) when is_list(choices) do
+    run_loop_in_terminal(terminal, choices, opts)
+  end
+
+  defp always_prompt_in_terminal?(opts), do: Keyword.get(opts, :always_prompt, false)
+
+  defp run_loop_in_terminal(terminal, choices, opts) do
     allow_all = Keyword.get(opts, :allow_all, false)
     title = Keyword.get(opts, :title, "Select an option")
     {width, height} = ExRatatui.terminal_size()
@@ -69,7 +94,7 @@ defmodule DeployEx.TUI.Select do
     allow_all = Keyword.get(opts, :allow_all, false)
     title = Keyword.get(opts, :title, "Select an option")
 
-    ExRatatui.run(fn terminal ->
+    DeployEx.TUI.run(fn terminal ->
       {width, height} = ExRatatui.terminal_size()
 
       initial_state = %{

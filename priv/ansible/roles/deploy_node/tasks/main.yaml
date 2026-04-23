@@ -26,11 +26,9 @@
         state: directory
 
     - name: Download {{ app_name }} from S3
-      amazon.aws.aws_s3:
-        bucket: "{{ bucket_name }}"
-        mode: get
-        object: "{{ s3_object_key }}"
-        dest: /srv/{{ local_release_file }}
+      ansible.builtin.command:
+        cmd: aws s3 cp "s3://{{ bucket_name }}/{{ s3_object_key }}" "/srv/{{ local_release_file }}"
+        creates: "/srv/{{ local_release_file }}"
 
     - name: Create /srv/{{ app_name }} directory
       file:

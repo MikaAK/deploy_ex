@@ -3,19 +3,24 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
 
   @shortdoc "Destroys a QA node"
   @moduledoc """
-  Terminates a QA node and cleans up resources.
+  Terminates one or more QA nodes, detaches them from any load balancers, and
+  cleans up the S3 state.
+
+  Without `--instance-id` or `--all`, an app name selects from that app's QA
+  nodes — a single node is destroyed directly, multiple nodes open an
+  interactive picker so you can choose which to destroy (or select all).
 
   ## Example
   ```bash
-  mix deploy_ex.qa.destroy my_app
-  mix deploy_ex.qa.destroy --instance-id i-0abc123
-  mix deploy_ex.qa.destroy --all
-  mix deploy_ex.qa.destroy my_app --force
+  mix deploy_ex.qa.destroy my_app                   # pick from my_app's QA nodes
+  mix deploy_ex.qa.destroy my_app --instance-id i-0abc123
+  mix deploy_ex.qa.destroy --all                    # destroy every QA node
+  mix deploy_ex.qa.destroy my_app --force           # skip confirmation
   ```
 
   ## Options
-  - `--instance-id, -i` - Specific instance ID to destroy
-  - `--all` - Destroy all QA nodes
+  - `--instance-id, -i` - Destroy a specific instance by ID (skips picker)
+  - `--all` - Destroy every QA node across all apps
   - `--force, -f` - Skip confirmation prompt
   - `--quiet, -q` - Suppress output messages
   """

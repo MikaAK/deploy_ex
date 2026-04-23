@@ -498,7 +498,7 @@ defmodule Mix.Tasks.DeployEx.UpgradePriv do
   # SECTION: AI Review — TUI
 
   defp present_ai_review_tui(file_states, temp_dir, deploy_folder, backup_dir, header) do
-    result = ExRatatui.run(fn terminal ->
+    result = DeployEx.TUI.run(fn terminal ->
       {width, height} = ExRatatui.terminal_size()
       ai_review_loop(terminal, %{files: file_states, selected: 0}, width, height, header)
     end)

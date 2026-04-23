@@ -95,23 +95,30 @@ defmodule Mix.Tasks.DeployEx.Qa do
   defp print_command_help("create") do
     Mix.shell().info("""
 
-    #{IO.ANSI.cyan()}mix deploy_ex.qa.create#{IO.ANSI.reset()} - Creates a new QA node with a specific SHA
+    #{IO.ANSI.cyan()}mix deploy_ex.qa.create#{IO.ANSI.reset()} - Creates a new QA node
 
     #{IO.ANSI.yellow()}Usage:#{IO.ANSI.reset()}
-      mix deploy_ex.qa.create <app_name> --sha <sha>
+      mix deploy_ex.qa.create <app_name> [--sha <sha>]
 
     #{IO.ANSI.yellow()}Examples:#{IO.ANSI.reset()}
+      mix deploy_ex.qa.create my_app                          # prompt for QA SHA on current branch
       mix deploy_ex.qa.create my_app --sha abc1234
+      mix deploy_ex.qa.create my_app --sha abc1234 --tag my-feature
+      mix deploy_ex.qa.create my_app --sha abc1234 --public-ip-cert
       mix deploy_ex.qa.create my_app --sha abc1234 --attach-lb
       mix deploy_ex.qa.create my_app --sha abc1234 --skip-setup --skip-deploy
+      mix deploy_ex.qa.create my_app --sha abc1234 --use-ami
       mix deploy_ex.qa.create my_app --sha abc1234 --instance-type t3.medium
 
     #{IO.ANSI.yellow()}Options:#{IO.ANSI.reset()}
-      --sha, -s              Target git SHA (required)
+      --sha, -s              Target git SHA; if omitted, picks from QA releases on current branch
+      --tag, -t              Custom label used in the instance name (replaces the short SHA)
       --instance-type        EC2 instance type (default: t3.small)
       --skip-setup           Skip Ansible setup after creation
       --skip-deploy          Skip deployment after setup
       --attach-lb            Attach to load balancer after deployment
+      --use-ami              Boot from the app's pre-baked AMI (skips setup). Default off for QA
+      --public-ip-cert       Issue Let's Encrypt cert for the node's public IP (short-lived)
       --force, -f            Replace existing QA node without prompting
       --quiet, -q            Suppress output messages
       --aws-region           AWS region (default: from config)
@@ -119,12 +126,16 @@ defmodule Mix.Tasks.DeployEx.Qa do
 
     #{IO.ANSI.yellow()}Description:#{IO.ANSI.reset()}
       Creates a new EC2 instance configured as a QA node for the specified app.
-      The instance is tagged appropriately and can be managed via other QA commands.
+      The instance is tagged with QaNode=true, TargetSha, GitBranch, InstanceTag,
+      and UsePublicIpCert — the aws_ec2 inventory maps these to host vars so every
+      subsequent ansible run picks up the right per-node context automatically.
 
-      By default, after creating the instance, Ansible setup and deployment are
-      run automatically. Use --skip-setup and --skip-deploy to skip these steps.
+      By default QA nodes boot from the base AMI and run fresh setup + deploy.
+      Use --use-ami to boot from the app's pre-baked AMI (skips setup).
 
-      If a QA node already exists for the app, use --force to replace it.
+      Use --public-ip-cert for standalone QA nodes that need a valid cert on their
+      public IP (not behind a load balancer). The flag is persisted in S3 state so
+      ansible picks it up on every subsequent run.
     """)
   end
 
@@ -147,8 +158,10 @@ defmodule Mix.Tasks.DeployEx.Qa do
       --quiet, -q  Minimal output
 
     #{IO.ANSI.yellow()}Description:#{IO.ANSI.reset()}
-      Lists all QA nodes with their current status including instance ID,
-      SHA, state, IP addresses, and load balancer attachment status.
+      Lists all QA nodes with their current status: instance name, ID,
+      target SHA, custom tag, git branch, public IP, IPv6, load balancer
+      attachment, and creation time. JSON output exposes the same fields
+      (instance_tag, git_branch) for scripting.
     """)
   end
 
@@ -162,46 +175,57 @@ defmodule Mix.Tasks.DeployEx.Qa do
 
     #{IO.ANSI.yellow()}Examples:#{IO.ANSI.reset()}
       mix deploy_ex.qa.deploy my_app --sha def5678
+      mix deploy_ex.qa.deploy my_app --sha def5678 --instance-id i-0abc123
+      mix deploy_ex.qa.deploy my_app --sha def5678 --public-ip-cert
+      mix deploy_ex.qa.deploy my_app --sha def5678 --no-public-ip-cert
 
     #{IO.ANSI.yellow()}Options:#{IO.ANSI.reset()}
-      --sha, -s              Target git SHA (required)
-      --quiet, -q            Suppress output messages
-      --aws-region           AWS region (default: from config)
-      --aws-release-bucket   S3 bucket for releases (default: from config)
+      --sha, -s                              Target git SHA (required)
+      --instance-id, -i                      Target a specific QA instance when multiple exist
+      --public-ip-cert / --no-public-ip-cert Toggle public-IP LE cert mode (persisted to tag+state)
+      --quiet, -q                            Suppress output messages
+      --aws-region                           AWS region (default: from config)
+      --aws-release-bucket                   S3 bucket for releases (default: from config)
 
     #{IO.ANSI.yellow()}Description:#{IO.ANSI.reset()}
-      Deploys a different release version to an existing QA node. The SHA must
-      correspond to a release that exists in the S3 bucket.
+      Deploys a different release version to an existing QA node. The SHA is
+      resolved against both the qa/ and prod/ release prefixes in S3.
 
-      This runs Ansible deployment targeting only the QA node instance.
+      When multiple QA nodes exist for the app, an interactive picker lets you
+      choose which to redeploy (or pass --instance-id to pick directly). The
+      redeploy also updates the node's S3 state with the new SHA and current
+      git branch.
     """)
   end
 
   defp print_command_help("destroy") do
     Mix.shell().info("""
 
-    #{IO.ANSI.cyan()}mix deploy_ex.qa.destroy#{IO.ANSI.reset()} - Destroys a QA node
+    #{IO.ANSI.cyan()}mix deploy_ex.qa.destroy#{IO.ANSI.reset()} - Destroys one or more QA nodes
 
     #{IO.ANSI.yellow()}Usage:#{IO.ANSI.reset()}
       mix deploy_ex.qa.destroy <app_name>
 
     #{IO.ANSI.yellow()}Examples:#{IO.ANSI.reset()}
-      mix deploy_ex.qa.destroy my_app
-      mix deploy_ex.qa.destroy --instance-id i-0abc123
-      mix deploy_ex.qa.destroy --all
+      mix deploy_ex.qa.destroy my_app                   # pick from my_app's QA nodes
+      mix deploy_ex.qa.destroy my_app --instance-id i-0abc123
+      mix deploy_ex.qa.destroy --all                    # every QA node across all apps
       mix deploy_ex.qa.destroy my_app --force
 
     #{IO.ANSI.yellow()}Options:#{IO.ANSI.reset()}
-      --instance-id, -i  Specific instance ID to destroy
-      --all              Destroy all QA nodes
+      --instance-id, -i  Destroy a specific instance by ID (skips picker)
+      --all              Destroy every QA node across all apps
       --force, -f        Skip confirmation prompt
       --quiet, -q        Suppress output messages
 
     #{IO.ANSI.yellow()}Description:#{IO.ANSI.reset()}
-      Terminates the EC2 instance and cleans up the S3 state file.
+      Terminates the EC2 instance(s) and cleans up the S3 state file.
 
-      If the QA node is attached to a load balancer, it will be automatically
-      detached before termination.
+      With an app name and no --instance-id, a single node is destroyed
+      directly; multiple nodes open an interactive picker so you can choose
+      which to destroy (or select all).
+
+      Load-balancer-attached nodes are detached before termination.
     """)
   end
 

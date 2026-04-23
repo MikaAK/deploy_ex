@@ -3,7 +3,10 @@ defmodule Mix.Tasks.DeployEx.Qa.List do
 
   @shortdoc "Lists all active QA nodes"
   @moduledoc """
-  Lists all active QA nodes with their status.
+  Lists all active QA nodes with their status. Each entry shows the instance
+  name, ID, target SHA, custom tag, git branch, public IP, IPv6, load
+  balancer attachment, and creation time. JSON output exposes the same fields
+  (`instance_tag`, `git_branch`) for scripting.
 
   ## Example
   ```bash

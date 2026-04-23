@@ -121,7 +121,7 @@ defmodule DeployEx.TUI.DiffViewer do
   defp run_tui(old_content, lines, opts) do
     title = Keyword.get(opts, :title, "Diff Review")
 
-    result = ExRatatui.run(fn terminal ->
+    result = DeployEx.TUI.run(fn terminal ->
       {width, height} = ExRatatui.terminal_size()
 
       state = %{

@@ -41,7 +41,7 @@ defmodule DeployEx.TUI.Dashboard do
   defp run_tui(title, fetch_fn, render_fn, opts) do
     refresh_interval = Keyword.get(opts, :refresh_interval, 5000)
 
-    ExRatatui.run(fn terminal ->
+    DeployEx.TUI.run(fn terminal ->
       {width, height} = ExRatatui.terminal_size()
 
       state = %{

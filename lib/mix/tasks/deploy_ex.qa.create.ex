@@ -13,8 +13,10 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   mix deploy_ex.qa.create my_app --sha abc1234
   mix deploy_ex.qa.create my_app                           # prompts for QA SHA on current branch
   mix deploy_ex.qa.create my_app --sha abc1234 --tag my-feature
+  mix deploy_ex.qa.create my_app --sha abc1234 --public-ip-cert
   mix deploy_ex.qa.create my_app --sha abc1234 --attach-lb
   mix deploy_ex.qa.create my_app --sha abc1234 --skip-setup --skip-deploy
+  mix deploy_ex.qa.create my_app --sha abc1234 --use-ami
   ```
 
   ## Options
@@ -47,34 +49,111 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
       DeployEx.TUI.setup_no_tui(opts)
 
-      app_name = case extra_args do
-        [name | _] -> name
-        [] -> Mix.raise("App name is required. Usage: mix deploy_ex.qa.create <app_name> --sha <sha>")
-      end
-
-      sha = case resolve_sha_for_create(app_name, opts) do
-        {:ok, resolved} -> resolved
-        {:error, error} -> Mix.raise(ErrorMessage.to_string(error))
-      end
-
       opts = case DeployEx.ReleaseUploader.get_git_branch() do
         {:ok, branch} -> Keyword.put(opts, :git_branch, branch)
         {:error, _} -> opts
       end
 
-      total_steps = 9
-
-      result = DeployEx.TUI.Progress.run_stream(
-        "QA Node: #{app_name}",
-        fn tui_pid ->
-          run_qa_pipeline(tui_pid, app_name, sha, opts, total_steps)
-        end
-      )
-
-      case result do
-        {:ok, qa_node} -> output_success(qa_node, opts)
-        {:error, error} -> Mix.raise(ErrorMessage.to_string(error))
+      if DeployEx.TUI.enabled?() do
+        run_unified_flow(extra_args, opts)
+      else
+        run_console_flow(extra_args, opts)
       end
+    end
+  end
+
+  defp run_console_flow(extra_args, opts) do
+    app_name = resolve_app_name(extra_args)
+
+    sha = case resolve_sha_for_create(app_name, opts) do
+      {:ok, resolved} -> resolved
+      {:error, error} -> Mix.raise(ErrorMessage.to_string(error))
+    end
+
+    result = DeployEx.TUI.Progress.run_stream(
+      stream_title(app_name, sha, opts),
+      fn tui_pid -> run_qa_pipeline(tui_pid, app_name, sha, opts, 9) end
+    )
+
+    handle_final_result(result, opts)
+  end
+
+  defp run_unified_flow(extra_args, opts) do
+    {final_result, log_tail} =
+      DeployEx.TUI.run(fn terminal ->
+        with {:ok, app_name} <- resolve_app_in_terminal(extra_args, terminal),
+             {:ok, sha} <- resolve_sha_in_terminal(terminal, app_name, opts) do
+          title = stream_title(app_name, sha, opts)
+          work_fn = fn tui_pid -> run_qa_pipeline(tui_pid, app_name, sha, opts, 9) end
+          DeployEx.TUI.Progress.stream_in_terminal(terminal, title, work_fn, opts)
+        else
+          {:error, _} = err -> {err, []}
+        end
+      end)
+
+    DeployEx.TUI.Progress.print_log_tail_on_error(final_result, log_tail)
+    handle_final_result(final_result, opts)
+  end
+
+  defp handle_final_result({:ok, qa_node}, opts), do: output_success(qa_node, opts)
+  defp handle_final_result({:error, error}, _opts), do: Mix.raise(ErrorMessage.to_string(error))
+
+  defp stream_title(app_name, sha, opts) do
+    short_sha = String.slice(sha, 0, 7)
+    tag_part = if opts[:tag], do: " — tag #{opts[:tag]}", else: ""
+    "QA Node: #{app_name} (SHA #{short_sha}#{tag_part})"
+  end
+
+  defp resolve_app_in_terminal([name | _], _terminal), do: {:ok, name}
+  defp resolve_app_in_terminal([], terminal) do
+    case fetch_available_app_names_safe() do
+      {:ok, []} ->
+        {:error, ErrorMessage.not_found("no mix releases found in this project")}
+
+      {:ok, apps} ->
+        pick_app_in_terminal(terminal, apps)
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp pick_app_in_terminal(terminal, apps) do
+    case DeployEx.TUI.Select.run_in_terminal(terminal, apps,
+           title: "Select app to create QA node for",
+           allow_all: false,
+           always_prompt: true
+         ) do
+      [chosen] -> {:ok, chosen}
+      [] -> {:error, ErrorMessage.bad_request("no app selected")}
+    end
+  end
+
+  defp resolve_sha_in_terminal(terminal, app_name, opts) do
+    case opts[:sha] do
+      sha when is_binary(sha) ->
+        {:ok, sha}
+
+      nil ->
+        lookup_opts = [
+          aws_region: opts[:aws_region] || DeployEx.Config.aws_region(),
+          aws_release_bucket: opts[:aws_release_bucket] || DeployEx.Config.aws_release_bucket()
+        ]
+
+        DeployEx.ReleaseLookup.resolve_sha_any_in_terminal(
+          terminal,
+          app_name,
+          [:qa, :prod],
+          :prompt,
+          lookup_opts
+        )
+    end
+  end
+
+  defp fetch_available_app_names_safe do
+    case DeployExHelpers.fetch_mix_releases() do
+      {:ok, releases} -> {:ok, releases |> Keyword.keys() |> Enum.map(&to_string/1)}
+      {:error, e} -> {:error, ErrorMessage.failed_dependency("failed to fetch mix releases: #{e}")}
     end
   end
 
@@ -131,6 +210,28 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
       {:error, e} ->
         {:error, ErrorMessage.failed_dependency("failed to fetch mix releases: #{e}")}
+    end
+  end
+
+  defp resolve_app_name([name | _]), do: name
+  defp resolve_app_name([]) do
+    case fetch_available_app_names() do
+      [] -> Mix.raise("No mix releases found in this project. Define a release in mix.exs first.")
+      apps -> pick_app(apps)
+    end
+  end
+
+  defp fetch_available_app_names do
+    case DeployExHelpers.fetch_mix_releases() do
+      {:ok, releases} -> releases |> Keyword.keys() |> Enum.map(&to_string/1)
+      {:error, e} -> Mix.raise("Failed to fetch mix releases: #{e}")
+    end
+  end
+
+  defp pick_app(apps) do
+    case DeployEx.TUI.Select.run(apps, title: "Select app to create QA node for", allow_all: false) do
+      [chosen] -> chosen
+      [] -> Mix.raise("No app selected. Pass an app name as the first argument or pick one from the list.")
     end
   end
 
@@ -242,7 +343,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
           aws_release_bucket: opts[:aws_release_bucket] || DeployEx.Config.aws_release_bucket()
         ]
 
-        DeployEx.ReleaseLookup.resolve_sha(app_name, :qa, :prompt, lookup_opts)
+        DeployEx.ReleaseLookup.resolve_sha_any(app_name, [:qa, :prod], :prompt, lookup_opts)
 
       sha ->
         {:ok, sha}

@@ -6,6 +6,7 @@ defmodule DeployEx.TUI.Progress do
 
   @log_buffer_max 500
   @ansi_regex ~r/\x1b\[[\d;]*[a-zA-Z]/
+  @ansi_sgr_regex ~r/\x1b\[([\d;]*)m/
 
   @type step :: {String.t(), (-> :ok | {:ok, term()} | {:error, term()})}
 
@@ -41,7 +42,7 @@ defmodule DeployEx.TUI.Progress do
     title = Keyword.get(opts, :title, "Progress")
     total = length(steps)
 
-    {result, completed_steps} = ExRatatui.run(fn terminal ->
+    {result, completed_steps} = DeployEx.TUI.run(fn terminal ->
       {width, height} = ExRatatui.terminal_size()
       execute_steps(terminal, width, height, title, steps, total, 0, [])
     end)
@@ -171,46 +172,111 @@ defmodule DeployEx.TUI.Progress do
   end
 
   defp run_stream_tui(title, work_fn, opts) do
-    caller = self()
-
-    ExRatatui.run(fn terminal ->
-      {width, height} = ExRatatui.terminal_size()
-
-      state = %{
-        ratio: 0.0,
-        label: "Starting...",
-        status: :running,
-        result: nil,
-        cancelling: false,
-        log_tail: []
-      }
-
-      worker = spawn_link(fn ->
-        result = work_fn.(caller)
-        send(caller, {:tui_progress_done, result})
+    {result, log_tail} =
+      DeployEx.TUI.run(fn terminal ->
+        stream_in_terminal(terminal, title, work_fn, opts)
       end)
 
-      stream_loop(terminal, width, height, title, state, worker, opts)
-    end)
+    print_log_tail_on_error(result, log_tail)
+    result
   end
+
+  @doc """
+  Runs the streaming progress loop inside an already-open `ExRatatui` terminal.
+
+  Returns `{result, log_tail}` where `result` is whatever `work_fn/1` returned
+  and `log_tail` is the captured output pane lines (newest-first).
+
+  Callers that own the terminal lifecycle are responsible for invoking
+  `print_log_tail_on_error/2` AFTER the TUI session ends — the log tail can't
+  be flushed to stderr while the TUI still owns the screen.
+  """
+  @spec stream_in_terminal(term(), String.t(), (pid() -> term()), keyword()) :: {term(), [term()]}
+  def stream_in_terminal(terminal, title, work_fn, opts \\ []) do
+    {width, height} = ExRatatui.terminal_size()
+    caller = self()
+
+    state = %{
+      ratio: 0.0,
+      label: "Starting...",
+      status: :running,
+      result: nil,
+      cancelling: false,
+      log_tail: []
+    }
+
+    worker = spawn_link(fn ->
+      result = work_fn.(caller)
+      send(caller, {:tui_progress_done, result})
+    end)
+
+    stream_loop(terminal, width, height, title, state, worker, opts)
+  end
+
+  @doc """
+  Prints the captured log tail to stderr when the streamed work returned an
+  error. No-op on success. Must be called AFTER the TUI has exited.
+  """
+  def print_log_tail_on_error({:error, _}, [_ | _] = log_tail) do
+    tail_count = min(50, length(log_tail))
+
+    Mix.shell().error("\n────── last #{tail_count} log lines ──────")
+
+    log_tail
+    |> Enum.take(tail_count)
+    |> Enum.reverse()
+    |> Enum.each(fn {_color, text} -> Mix.shell().error(text) end)
+
+    Mix.shell().error("────── end log ──────\n")
+  end
+  def print_log_tail_on_error(_result, _log_tail), do: :ok
 
   def update_progress(tui_pid, ratio, label) do
     send(tui_pid, {:tui_progress_update, ratio, label})
   end
 
   @doc """
-  Streams a single log line into the TUI's log pane. ANSI escape sequences are
-  stripped; long lines are truncated to fit the pane width at draw time.
+  Streams a single log line into the TUI's log pane. The line's first SGR
+  color code is detected and preserved as the rendered foreground color;
+  remaining ANSI escapes are stripped and long lines are truncated to fit
+  the pane width at draw time.
   """
   def update_log(tui_pid, line) do
-    send(tui_pid, {:tui_progress_log, sanitize_log_line(line)})
+    send(tui_pid, {:tui_progress_log, parse_log_line(line)})
   end
 
-  defp sanitize_log_line(line) do
-    line
-    |> to_string()
-    |> String.replace(@ansi_regex, "")
-    |> String.trim_trailing()
+  defp parse_log_line(line) do
+    text = to_string(line)
+    color = detect_line_color(text)
+    plain = text |> String.replace(@ansi_regex, "") |> String.trim_trailing()
+    {color, plain}
+  end
+
+  defp detect_line_color(text) do
+    case Regex.run(@ansi_sgr_regex, text, capture: :all_but_first) do
+      nil -> nil
+      [params] -> sgr_params_to_color(params)
+    end
+  end
+
+  defp sgr_params_to_color(params) do
+    codes = String.split(params, ";")
+
+    cond do
+      "31" in codes -> :red
+      "32" in codes -> :green
+      "33" in codes -> :yellow
+      "34" in codes -> :blue
+      "35" in codes -> :magenta
+      "36" in codes -> :cyan
+      "91" in codes -> :light_red
+      "92" in codes -> :light_green
+      "93" in codes -> :light_yellow
+      "94" in codes -> :light_blue
+      "95" in codes -> :light_magenta
+      "96" in codes -> :light_cyan
+      true -> nil
+    end
   end
 
   defp stream_loop(terminal, width, height, title, state, worker, opts) do
@@ -225,7 +291,7 @@ defmodule DeployEx.TUI.Progress do
 
       %ExRatatui.Event.Key{code: "c", kind: "press", modifiers: ["ctrl"]} when state.cancelling ->
         Process.exit(worker, :kill)
-        {:error, :cancelled}
+        {{:error, :cancelled}, state.log_tail}
 
       _ ->
         receive do
@@ -241,7 +307,7 @@ defmodule DeployEx.TUI.Progress do
             final_state = %{state | ratio: 1.0, label: "Complete!"}
             draw_stream_progress(terminal, width, height, title, final_state)
             Process.sleep(500)
-            result
+            {result, final_state.log_tail}
         after
           0 ->
             stream_loop(terminal, width, height, title, state, worker, opts)
@@ -268,12 +334,15 @@ defmodule DeployEx.TUI.Progress do
       {:length, 1}
     ])
 
-    ExRatatui.draw(terminal, [
+    log_widgets = build_log_widgets(state.log_tail, log_area, width)
+
+    base_widgets = [
       {build_gauge_widget(title, state.ratio), gauge_area},
       {build_label_widget(display_label), label_area},
-      {build_log_widget(state.log_tail, log_area, width), log_area},
       {build_footer_widget(state.cancelling), footer_area}
-    ])
+    ]
+
+    ExRatatui.draw(terminal, base_widgets ++ log_widgets)
   end
 
   defp stream_display_label(%{cancelling: true, label: label}), do: label <> "  [Ctrl-C again to cancel]"
@@ -303,29 +372,53 @@ defmodule DeployEx.TUI.Progress do
     }
   end
 
-  defp build_log_widget(log_tail, log_area, width) do
-    %Widgets.Paragraph{
-      text: render_log_text(log_tail, log_area, width),
+  defp build_log_widgets([], log_area, _width) do
+    empty = %Widgets.Paragraph{
+      text: "  Waiting for output...",
       style: %Style{fg: :white},
-      block: %Widgets.Block{
-        title: " Output ",
-        borders: [:all],
-        border_type: :rounded,
-        border_style: %Style{fg: :cyan}
-      }
+      block: output_block()
     }
+
+    [{empty, log_area}]
   end
 
-  defp render_log_text([], _log_area, _width), do: "  Waiting for output..."
+  defp build_log_widgets(log_tail, log_area, width) do
+    inner_height = max(log_area.height - 2, 1)
+    inner_width = max(width - 4, 20)
 
-  defp render_log_text(log_tail, log_area, width) do
-    visible_rows = max(log_area.height - 2, 1)
-    max_line_width = max(width - 4, 20)
+    line_widgets =
+      log_tail
+      |> Enum.take(inner_height)
+      |> Enum.reverse()
+      |> Enum.with_index()
+      |> Enum.map(&build_log_line_widget(&1, log_area, inner_width))
 
-    log_tail
-    |> Enum.take(visible_rows)
-    |> Enum.reverse()
-    |> Enum.map_join("\n", &truncate_line(&1, max_line_width))
+    [{output_block(), log_area} | line_widgets]
+  end
+
+  defp build_log_line_widget({{color, text}, idx}, log_area, inner_width) do
+    rect = %Rect{
+      x: log_area.x + 1,
+      y: log_area.y + 1 + idx,
+      width: max(log_area.width - 2, 1),
+      height: 1
+    }
+
+    paragraph = %Widgets.Paragraph{
+      text: truncate_line(text, inner_width),
+      style: %Style{fg: color}
+    }
+
+    {paragraph, rect}
+  end
+
+  defp output_block do
+    %Widgets.Block{
+      title: " Output ",
+      borders: [:all],
+      border_type: :rounded,
+      border_style: %Style{fg: :cyan}
+    }
   end
 
   defp truncate_line(line, max_width) when byte_size(line) > max_width do

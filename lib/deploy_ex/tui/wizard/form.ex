@@ -10,7 +10,7 @@ defmodule DeployEx.TUI.Wizard.Form do
   @spec run(CommandRegistry.command_def()) :: result()
   def run(command) do
     if DeployEx.TUI.enabled?() do
-      ExRatatui.run(fn terminal ->
+      DeployEx.TUI.run(fn terminal ->
         {width, height} = ExRatatui.terminal_size()
         run_in_terminal(terminal, width, height, command)
       end)

@@ -142,6 +142,47 @@ defmodule DeployEx.QaNode do
     {:ok, picked}
   end
 
+  @doc """
+  Same as `pick_interactive/2` but reuses an already-open `ExRatatui` terminal
+  instead of opening a new TUI session. Set `always_prompt: true` to force the
+  picker to render even for single-node matches (useful when chaining pickers
+  in a unified-TUI flow so the user always sees and confirms their choice).
+  """
+  @spec pick_interactive_in_terminal(term(), [t()], keyword()) :: {:ok, [t()]}
+  def pick_interactive_in_terminal(terminal, nodes, opts \\ [])
+
+  def pick_interactive_in_terminal(terminal, [], opts) do
+    if always_prompt?(opts),
+      do: run_picker_in_terminal(terminal, [], opts),
+      else: {:ok, []}
+  end
+
+  def pick_interactive_in_terminal(terminal, [_] = nodes, opts) do
+    if always_prompt?(opts),
+      do: run_picker_in_terminal(terminal, nodes, opts),
+      else: {:ok, nodes}
+  end
+
+  def pick_interactive_in_terminal(terminal, nodes, opts) when is_list(nodes) do
+    run_picker_in_terminal(terminal, nodes, opts)
+  end
+
+  defp always_prompt?(opts), do: Keyword.get(opts, :always_prompt, false)
+
+  defp run_picker_in_terminal(terminal, nodes, opts) do
+    labels = Enum.map(nodes, &format_picker_label/1)
+    label_to_node = labels |> Enum.zip(nodes) |> Map.new()
+
+    selected = DeployEx.TUI.Select.run_in_terminal(terminal, labels,
+      title: Keyword.get(opts, :title, "Select QA node"),
+      allow_all: Keyword.get(opts, :allow_all, true),
+      always_prompt: Keyword.get(opts, :always_prompt, false)
+    )
+
+    picked = Enum.map(selected, &Map.fetch!(label_to_node, &1))
+    {:ok, picked}
+  end
+
   @doc false
   @spec format_picker_label(t()) :: String.t()
   def format_picker_label(%__MODULE__{} = node) do
@@ -168,6 +209,44 @@ defmodule DeployEx.QaNode do
          :ok <- delete_qa_state(qa_node, opts) do
       :ok
     end
+  end
+
+  @doc """
+  Sets or clears the `UsePublicIpCert` EC2 tag on a QA node and returns an
+  updated struct with the matching `use_public_ip_cert?` value.
+
+  `true` creates/updates the tag to `"true"`; `false` removes the tag
+  entirely (absence is interpreted as `false` by the aws_ec2 inventory
+  compose expression).
+  """
+  @spec set_use_public_ip_cert(t(), boolean(), keyword()) :: {:ok, t()} | {:error, ErrorMessage.t()}
+  def set_use_public_ip_cert(%__MODULE__{} = qa_node, enabled?, opts \\ []) when is_boolean(enabled?) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+
+    case update_public_ip_cert_tag(qa_node.instance_id, enabled?, region) do
+      :ok -> {:ok, %{qa_node | use_public_ip_cert?: enabled?}}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp update_public_ip_cert_tag(instance_id, true, region) do
+    [instance_id]
+    |> ExAws.EC2.create_tags([{"UsePublicIpCert", "true"}])
+    |> ExAws.request(region: region)
+    |> handle_tag_update_response()
+  end
+  defp update_public_ip_cert_tag(instance_id, false, region) do
+    [instance_id]
+    |> ExAws.EC2.delete_tags([{"UsePublicIpCert", "true"}])
+    |> ExAws.request(region: region)
+    |> handle_tag_update_response()
+  end
+
+  defp handle_tag_update_response({:ok, _}) do
+    :ok
+  end
+  defp handle_tag_update_response({:error, error}) do
+    {:error, ErrorMessage.failed_dependency("failed to update UsePublicIpCert tag", %{error: inspect(error)})}
   end
 
   defp maybe_append_tag(tags, {_key, value}) when is_nil(value) or value === "", do: tags

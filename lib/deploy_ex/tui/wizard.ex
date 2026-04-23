@@ -79,7 +79,7 @@ defmodule DeployEx.TUI.Wizard do
       height: 24
     }
 
-    ExRatatui.run(fn terminal ->
+    DeployEx.TUI.run(fn terminal ->
       {width, height} = ExRatatui.terminal_size()
       wizard_loop(terminal, %{initial_state | width: width, height: height})
     end)

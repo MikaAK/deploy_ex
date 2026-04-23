@@ -87,6 +87,98 @@ defmodule DeployEx.ReleaseLookup do
     end
   end
 
+  @doc """
+  Same as `resolve_sha/4` but searches multiple release types at once (e.g.
+  `[:qa, :prod]`). Labels in the interactive picker are prefixed with the type
+  so users can see which bucket each release lives in.
+  """
+  @spec resolve_sha_any(app_name :: String.t(), [release_type()], strategy(), opts()) ::
+          {:ok, String.t()} | {:error, ErrorMessage.t()}
+  def resolve_sha_any(app_name, release_types, strategy, opts \\ []) when is_list(release_types) do
+    with {:ok, all_releases} <- list_releases_multi(app_name, release_types, opts),
+         {:ok, filtered} <- filter_by_branch_history(all_releases, opts[:branch], opts) do
+      pick_release(strategy, filtered, all_releases, app_name, format_release_types(release_types))
+    end
+  end
+
+  @doc """
+  Same as `resolve_sha_any/4` but runs the interactive picker inside an
+  already-open `ExRatatui` terminal instead of opening a new TUI session.
+
+  Use from inside a `DeployEx.TUI.run/1` block when you want to chain pickers
+  with a progress screen without tearing the terminal down between steps.
+  """
+  @spec resolve_sha_any_in_terminal(term(), app_name :: String.t(), [release_type()], strategy(), opts()) ::
+          {:ok, String.t()} | {:error, ErrorMessage.t()}
+  def resolve_sha_any_in_terminal(terminal, app_name, release_types, strategy, opts \\ [])
+      when is_list(release_types) do
+    with {:ok, all_releases} <- list_releases_multi(app_name, release_types, opts),
+         {:ok, filtered} <- filter_by_branch_history(all_releases, opts[:branch], opts) do
+      pick_release_in_terminal(
+        terminal,
+        strategy,
+        filtered,
+        all_releases,
+        app_name,
+        format_release_types(release_types)
+      )
+    end
+  end
+
+  defp pick_release_in_terminal(_terminal, :auto, filtered, all_releases, app_name, release_type) do
+    pick_release(:auto, filtered, all_releases, app_name, release_type)
+  end
+
+  defp pick_release_in_terminal(_terminal, :prompt, [], [], app_name, release_type) do
+    not_found_error(app_name, release_type)
+  end
+
+  defp pick_release_in_terminal(terminal, :prompt, [], all_releases, _app_name, release_type) do
+    prompt_from_releases_in_terminal(terminal, all_releases, "Select #{release_type} release (any branch)")
+  end
+
+  defp pick_release_in_terminal(terminal, :prompt, [_single], [_, _ | _] = all_releases, _app_name, release_type) do
+    prompt_from_releases_in_terminal(terminal, all_releases, "Select #{release_type} release (any branch)")
+  end
+
+  defp pick_release_in_terminal(terminal, :prompt, [_single] = filtered, _all_releases, _app_name, release_type) do
+    prompt_from_releases_in_terminal(terminal, filtered, "Select #{release_type} release")
+  end
+
+  defp pick_release_in_terminal(terminal, :prompt, releases, _all_releases, _app_name, release_type) do
+    prompt_from_releases_in_terminal(terminal, releases, "Select #{release_type} release")
+  end
+
+  defp prompt_from_releases_in_terminal(terminal, releases, title) do
+    labels = Enum.map(releases, &format_release_label/1)
+
+    case DeployEx.TUI.Select.run_in_terminal(terminal, labels, title: title, always_prompt: true) do
+      [] ->
+        {:error, ErrorMessage.bad_request("no release selected")}
+
+      [chosen_label] ->
+        sha = find_sha_for_label(releases, labels, chosen_label)
+        {:ok, sha}
+    end
+  end
+
+  defp list_releases_multi(app_name, release_types, opts) do
+    fetched =
+      Enum.reduce_while(release_types, {:ok, []}, fn type, {:ok, acc} ->
+        case list_releases(app_name, type, opts) do
+          {:ok, releases} -> {:cont, {:ok, acc ++ releases}}
+          {:error, _} = error -> {:halt, error}
+        end
+      end)
+
+    case fetched do
+      {:ok, releases} -> {:ok, Enum.sort_by(releases, &(&1.timestamp || 0), :desc)}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp format_release_types(types), do: Enum.map_join(types, "/", &to_string/1)
+
   # PRIVATE
 
   defp releases_impl(opts), do: Keyword.get(opts, :releases_impl, @default_releases_impl)
@@ -150,8 +242,16 @@ defmodule DeployEx.ReleaseLookup do
     {:ok, hd(filtered).sha}
   end
 
-  defp pick_release(:prompt, [], _all_releases, app_name, release_type) do
+  defp pick_release(:prompt, [], [], app_name, release_type) do
     not_found_error(app_name, release_type)
+  end
+
+  defp pick_release(:prompt, [], all_releases, _app_name, release_type) do
+    prompt_from_releases(all_releases, "Select #{release_type} release (any branch)")
+  end
+
+  defp pick_release(:prompt, [_single], [_, _ | _] = all_releases, _app_name, release_type) do
+    prompt_from_releases(all_releases, "Select #{release_type} release (any branch)")
   end
 
   defp pick_release(:prompt, [single], _all_releases, _app_name, _release_type) do
@@ -159,8 +259,11 @@ defmodule DeployEx.ReleaseLookup do
   end
 
   defp pick_release(:prompt, releases, _all_releases, _app_name, release_type) do
+    prompt_from_releases(releases, "Select #{release_type} release")
+  end
+
+  defp prompt_from_releases(releases, title) do
     labels = Enum.map(releases, &format_release_label/1)
-    title = "Select #{release_type} release"
 
     case DeployEx.TUI.Select.run(labels, title: title) do
       [] ->
@@ -188,9 +291,9 @@ defmodule DeployEx.ReleaseLookup do
      )}
   end
 
-  defp format_release_label(%{short_sha: short_sha, timestamp: timestamp, key: key}) do
+  defp format_release_label(%{short_sha: short_sha, timestamp: timestamp, key: key, prefix: prefix}) do
     humanized = humanize_timestamp(timestamp)
-    "#{short_sha}  #{humanized}  (#{key})"
+    "[#{prefix}]  #{short_sha}  #{humanized}  (#{key})"
   end
 
   defp find_sha_for_label(releases, labels, chosen_label) do
