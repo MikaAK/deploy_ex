@@ -32,12 +32,12 @@ defmodule DeployExHelpers do
   def check_valid_project, do: DeployEx.ProjectContext.check_valid_project()
 
   def priv_folder(priv_subdirectory) do
-    local_path = Path.join(DeployEx.Config.deploy_folder(), priv_subdirectory)
+    priv_path = :deploy_ex |> :code.priv_dir() |> Path.join(priv_subdirectory)
 
-    if File.exists?(local_path) do
-      local_path
+    if File.exists?(priv_path) do
+      priv_path
     else
-      :deploy_ex |> :code.priv_dir() |> Path.join(priv_subdirectory)
+      Path.join(DeployEx.Config.deploy_folder(), priv_subdirectory)
     end
   end
 
