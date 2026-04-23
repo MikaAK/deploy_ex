@@ -75,55 +75,45 @@ defmodule DeployEx.TUI.Select do
   defp always_prompt_in_terminal?(opts), do: Keyword.get(opts, :always_prompt, false)
 
   defp run_loop_in_terminal(terminal, choices, opts) do
-    allow_all = Keyword.get(opts, :allow_all, false)
-    title = Keyword.get(opts, :title, "Select an option")
-    {width, height} = ExRatatui.terminal_size()
-
-    initial_state = %{
-      choices: choices,
-      selected: 0,
-      allow_all: allow_all,
-      title: title,
-      result: nil
-    }
-
-    loop(terminal, initial_state, width, height)
+    loop(terminal, build_initial_state(choices, opts), ExRatatui.terminal_size())
   end
 
   defp run_tui(choices, opts) do
-    allow_all = Keyword.get(opts, :allow_all, false)
-    title = Keyword.get(opts, :title, "Select an option")
-
     DeployEx.TUI.run(fn terminal ->
-      {width, height} = ExRatatui.terminal_size()
-
-      initial_state = %{
-        choices: choices,
-        selected: 0,
-        allow_all: allow_all,
-        title: title,
-        result: nil
-      }
-
-      loop(terminal, initial_state, width, height)
+      loop(terminal, build_initial_state(choices, opts), ExRatatui.terminal_size())
     end)
   end
 
-  defp loop(terminal, state, width, height) do
+  defp build_initial_state(choices, opts) do
+    %{
+      choices: choices,
+      selected: 0,
+      allow_all: Keyword.get(opts, :allow_all, false),
+      multi_select: Keyword.get(opts, :multi_select, false),
+      picked: MapSet.new(),
+      title: Keyword.get(opts, :title, "Select an option"),
+      result: nil
+    }
+  end
+
+  defp loop(terminal, state, {width, height}) do
     draw(terminal, state, width, height)
 
     case ExRatatui.poll_event(50) do
       %ExRatatui.Event.Key{code: "up", kind: "press"} ->
         new_selected = max(state.selected - 1, 0)
-        loop(terminal, %{state | selected: new_selected}, width, height)
+        loop(terminal, %{state | selected: new_selected}, {width, height})
 
       %ExRatatui.Event.Key{code: "down", kind: "press"} ->
         max_index = max(length(state.choices) - 1, 0)
         new_selected = min(state.selected + 1, max_index)
-        loop(terminal, %{state | selected: new_selected}, width, height)
+        loop(terminal, %{state | selected: new_selected}, {width, height})
+
+      %ExRatatui.Event.Key{code: " ", kind: "press"} when state.multi_select ->
+        loop(terminal, %{state | picked: toggle_pick(state.picked, state.selected)}, {width, height})
 
       %ExRatatui.Event.Key{code: "enter", kind: "press"} ->
-        [Enum.at(state.choices, state.selected)]
+        resolve_enter(state)
 
       %ExRatatui.Event.Key{code: "a", kind: "press"} when state.allow_all ->
         state.choices
@@ -135,28 +125,66 @@ defmodule DeployEx.TUI.Select do
         []
 
       %ExRatatui.Event.Resize{width: new_width, height: new_height} ->
-        loop(terminal, state, new_width, new_height)
+        loop(terminal, state, {new_width, new_height})
 
       _ ->
-        loop(terminal, state, width, height)
+        loop(terminal, state, {width, height})
     end
   end
 
-  defp draw(terminal, state, width, height) do
-    title_text = if state.allow_all do
-      " #{state.title} (↑↓ navigate, Enter select, a=all, q=quit) "
-    else
-      " #{state.title} (↑↓ navigate, Enter select, q=quit) "
-    end
+  defp toggle_pick(picked, index) do
+    if MapSet.member?(picked, index),
+      do: MapSet.delete(picked, index),
+      else: MapSet.put(picked, index)
+  end
 
+  defp resolve_enter(%{multi_select: true, picked: picked} = state) do
+    if Enum.empty?(picked) do
+      [Enum.at(state.choices, state.selected)]
+    else
+      picked |> Enum.sort() |> Enum.map(&Enum.at(state.choices, &1))
+    end
+  end
+
+  defp resolve_enter(state) do
+    [Enum.at(state.choices, state.selected)]
+  end
+
+  defp render_items(%{multi_select: true, picked: picked, choices: choices}) do
+    choices
+    |> Enum.with_index()
+    |> Enum.map(fn {choice, index} ->
+      marker = if MapSet.member?(picked, index), do: "[✓]", else: "[ ]"
+      "#{marker} #{choice}"
+    end)
+  end
+
+  defp render_items(%{choices: choices}), do: choices
+
+  defp title_text(state) do
+    hints =
+      [
+        "↑↓ navigate",
+        if(state.multi_select, do: "Space toggle", else: nil),
+        if(state.multi_select, do: "Enter confirm", else: "Enter select"),
+        if(state.allow_all, do: "a=all", else: nil),
+        "q=quit"
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(", ")
+
+    " #{state.title} (#{hints}) "
+  end
+
+  defp draw(terminal, state, width, height) do
     list_widget = %Widgets.List{
-      items: state.choices,
+      items: render_items(state),
       selected: state.selected,
       highlight_style: %Style{fg: :cyan, modifiers: [:bold]},
       highlight_symbol: " ▸ ",
       style: %Style{fg: :white},
       block: %Widgets.Block{
-        title: title_text,
+        title: title_text(state),
         borders: [:all],
         border_type: :rounded,
         border_style: %Style{fg: :blue}

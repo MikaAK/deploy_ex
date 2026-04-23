@@ -126,8 +126,11 @@ defmodule DeployEx.QaNode do
   too — useful when the caller wants the user to see and confirm their choice even
   when the filter narrows to one node.
 
+  Set `multi_select: true` to let the user toggle multiple nodes with Space before
+  confirming with Enter.
+
   Options: `:title` (default `"Select QA node"`), `:allow_all` (default `true`),
-  `:always_prompt` (default `false`).
+  `:always_prompt` (default `false`), `:multi_select` (default `false`).
   """
   @spec pick_interactive([t()], keyword()) :: {:ok, [t()]}
   def pick_interactive(nodes, opts \\ [])
@@ -151,7 +154,8 @@ defmodule DeployEx.QaNode do
     selected = DeployEx.TUI.Select.run(labels,
       title: Keyword.get(opts, :title, "Select QA node"),
       allow_all: Keyword.get(opts, :allow_all, true),
-      always_prompt: Keyword.get(opts, :always_prompt, false)
+      always_prompt: Keyword.get(opts, :always_prompt, false),
+      multi_select: Keyword.get(opts, :multi_select, false)
     )
 
     picked = Enum.map(selected, &Map.fetch!(label_to_node, &1))
@@ -192,7 +196,8 @@ defmodule DeployEx.QaNode do
     selected = DeployEx.TUI.Select.run_in_terminal(terminal, labels,
       title: Keyword.get(opts, :title, "Select QA node"),
       allow_all: Keyword.get(opts, :allow_all, true),
-      always_prompt: Keyword.get(opts, :always_prompt, false)
+      always_prompt: Keyword.get(opts, :always_prompt, false),
+      multi_select: Keyword.get(opts, :multi_select, false)
     )
 
     picked = Enum.map(selected, &Map.fetch!(label_to_node, &1))

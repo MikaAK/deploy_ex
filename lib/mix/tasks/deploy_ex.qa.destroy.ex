@@ -91,7 +91,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
         {:ok, picked} = DeployEx.QaNode.pick_interactive(nodes,
           title: "Select QA node(s) to destroy",
           allow_all: true,
-          always_prompt: true
+          always_prompt: true,
+          multi_select: true
         )
         picked
     end
@@ -133,7 +134,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
         {:ok, picked} = DeployEx.QaNode.pick_interactive(nodes,
           title: "Select QA node(s) to destroy",
           allow_all: true,
-          always_prompt: true
+          always_prompt: true,
+          multi_select: true
         )
         picked
 
