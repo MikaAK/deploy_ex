@@ -39,6 +39,7 @@ defmodule DeployEx.QaPlaybook do
       when kind in [:setup, :deploy] and is_list(vars) and is_binary(ansible_dir) and
              is_function(callback, 1) do
     ensure_tmp_dir!(ansible_dir)
+    DeployEx.AnsibleRoles.sync(ansible_dir)
 
     rel_path = Path.join(@tmp_dir, "#{qa_node.instance_id}-#{kind}.yml")
     abs_path = Path.join(ansible_dir, rel_path)
