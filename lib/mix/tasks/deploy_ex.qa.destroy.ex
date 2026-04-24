@@ -168,6 +168,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
       Mix.shell().info("Destroying #{qa_node.instance_name || qa_node.app_name} (#{qa_node.instance_id})...")
     end
 
+    restore_host_config(qa_node, opts)
+
     case DeployEx.QaNode.terminate_qa_node(qa_node, opts) do
       :ok ->
         unless opts[:quiet] do
@@ -176,6 +178,18 @@ defmodule Mix.Tasks.DeployEx.Qa.Destroy do
 
       {:error, error} ->
         Mix.shell().error("  ✗ Failed to destroy #{qa_node.instance_name || qa_node.instance_id}: #{ErrorMessage.to_string(error)}")
+    end
+  end
+
+  defp restore_host_config(qa_node, opts) do
+    backup_dir = DeployEx.QaHostRewrite.backup_dir(qa_node.app_name, qa_node.instance_id)
+
+    if File.exists?(backup_dir) do
+      unless opts[:quiet] do
+        Mix.shell().info([:faint, "Restoring host config from #{backup_dir}..."])
+      end
+
+      DeployEx.QaHostRewrite.restore(backup_dir, opts)
     end
   end
 end

@@ -20,6 +20,20 @@ defmodule DeployEx.ProjectContextTest do
       do: %{app_a: "test/support/fake_apps/app_a", app_b: "test/support/fake_apps/app_b"}
   end
 
+  defmodule FakeUmbrellaWithFixtures do
+    def umbrella?, do: true
+    def get, do: __MODULE__
+    def project, do: [apps_path: "test/support/fake_apps"]
+
+    def apps_paths,
+      do: %{
+        cfx_web: "test/support/fake_apps/cfx_web",
+        worker_app: "test/support/fake_apps/worker_app",
+        lib_thing: "test/support/fake_apps/lib_thing",
+        no_module: "test/support/fake_apps/no_module"
+      }
+  end
+
   defmodule FakeSingleAppMixProject do
     def umbrella?, do: false
     def get, do: __MODULE__
@@ -113,6 +127,50 @@ defmodule DeployEx.ProjectContextTest do
     test "returns default RedeployConfig when no deploy_ex opts" do
       {:ok, config} = ProjectContext.redeploy_config(:app_a, FakeUmbrellaMixProject)
       assert %DeployEx.ReleaseUploader.RedeployConfig{} = config
+    end
+  end
+
+  describe "module_prefix/2" do
+    test "extracts prefix from endpoint.ex (handles acronyms like CFX)" do
+      assert {:ok, "CFXWeb"} ===
+               ProjectContext.module_prefix("cfx_web", FakeUmbrellaWithFixtures)
+    end
+
+    test "falls back to application.ex when no endpoint exists" do
+      assert {:ok, "WorkerApp"} ===
+               ProjectContext.module_prefix("worker_app", FakeUmbrellaWithFixtures)
+    end
+
+    test "falls back to top-level module file when no endpoint or application" do
+      assert {:ok, "LibThing"} ===
+               ProjectContext.module_prefix("lib_thing", FakeUmbrellaWithFixtures)
+    end
+
+    test "returns error when no source files match" do
+      assert {:error, %ErrorMessage{code: :not_found}} =
+               ProjectContext.module_prefix("no_module", FakeUmbrellaWithFixtures)
+    end
+
+    test "returns error when app is not in the project" do
+      assert {:error, %ErrorMessage{code: :not_found}} =
+               ProjectContext.module_prefix("missing_app", FakeUmbrellaWithFixtures)
+    end
+  end
+
+  describe "module_prefix_or_camelize/2" do
+    test "returns the discovered prefix when found" do
+      assert "CFXWeb" ===
+               ProjectContext.module_prefix_or_camelize("cfx_web", FakeUmbrellaWithFixtures)
+    end
+
+    test "falls back to Macro.camelize when discovery fails" do
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          assert "NoModule" ===
+                   ProjectContext.module_prefix_or_camelize("no_module", FakeUmbrellaWithFixtures)
+        end)
+
+      assert log =~ "no_module"
     end
   end
 

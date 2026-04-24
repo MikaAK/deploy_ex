@@ -1,4 +1,6 @@
 defmodule DeployEx.ProjectContext do
+  require Logger
+
   alias DeployEx.ReleaseUploader.RedeployConfig
 
   @spec type(module()) :: :umbrella | :single_app
@@ -67,6 +69,52 @@ defmodule DeployEx.ProjectContext do
     end
   end
 
+  @doc """
+  Discovers the Elixir module prefix for an OTP app by reading its source files.
+
+  `Macro.camelize/1` is wrong for apps with acronyms (`cfx_web` becomes `CfxWeb`
+  instead of `CFXWeb`). This function reads the actual module name from disk in
+  priority order:
+
+  1. `apps/<app>/lib/**/endpoint.ex` — Phoenix app
+  2. `apps/<app>/lib/**/application.ex` — OTP application module
+  3. `apps/<app>/lib/<app>.ex` — plain library with a top-level module
+
+  Returns `{:error, %ErrorMessage{}}` if the app isn't in the project or no
+  recognizable module file is found.
+  """
+  @spec module_prefix(String.t(), module()) :: {:ok, String.t()} | {:error, ErrorMessage.t()}
+  def module_prefix(app_name, mix_project \\ Mix.Project) do
+    case app_path(app_name, mix_project) do
+      nil ->
+        {:error, ErrorMessage.not_found("app not found in project", %{app_name: app_name})}
+
+      path ->
+        discover_module_prefix_from_path(path, app_name)
+    end
+  end
+
+  @doc """
+  Like `module_prefix/2` but never fails — falls back to `Macro.camelize/1` with a
+  warning log when discovery fails. Useful for callers that need a best-effort
+  string and can tolerate a wrong prefix for acronym-containing apps.
+  """
+  @spec module_prefix_or_camelize(String.t(), module()) :: String.t()
+  def module_prefix_or_camelize(app_name, mix_project \\ Mix.Project) do
+    case module_prefix(app_name, mix_project) do
+      {:ok, prefix} ->
+        prefix
+
+      {:error, error} ->
+        Logger.warning(
+          "#{__MODULE__}: module prefix discovery failed for #{inspect(app_name)}, " <>
+            "falling back to Macro.camelize: #{inspect(error)}"
+        )
+
+        Macro.camelize(app_name)
+    end
+  end
+
   @spec check_valid_project(module()) :: :ok | {:error, ErrorMessage.t()}
   def check_valid_project(mix_project \\ Mix.Project) do
     project_module = mix_project.get()
@@ -86,6 +134,46 @@ defmodule DeployEx.ProjectContext do
          ErrorMessage.bad_request(
            "could not determine apps for this project — ensure mix.exs defines :app or :releases"
          )}
+    end
+  end
+
+  defp discover_module_prefix_from_path(app_path, app_name) do
+    case Enum.find_value(module_source_patterns(), &find_prefix_in_source(&1, app_path, app_name)) do
+      nil ->
+        {:error,
+         ErrorMessage.not_found("could not find Elixir module in app source", %{
+           app_name: app_name,
+           app_path: app_path
+         })}
+
+      prefix ->
+        {:ok, prefix}
+    end
+  end
+
+  defp module_source_patterns do
+    [
+      {"lib/**/endpoint.ex", ~r/defmodule\s+([\w.]+?)\.Endpoint\s+do/},
+      {"lib/**/application.ex", ~r/defmodule\s+([\w.]+?)\.Application\s+do/},
+      {"lib/<app>.ex", ~r/defmodule\s+([\w.]+?)\s+do/}
+    ]
+  end
+
+  defp find_prefix_in_source({"lib/<app>.ex", regex}, app_path, app_name) do
+    app_path |> Path.join("lib/#{app_name}.ex") |> extract_prefix(regex)
+  end
+
+  defp find_prefix_in_source({wildcard, regex}, app_path, _app_name) do
+    app_path |> Path.join(wildcard) |> Path.wildcard() |> Enum.find_value(&extract_prefix(&1, regex))
+  end
+
+  defp extract_prefix(file_path, regex) do
+    with true <- File.regular?(file_path),
+         {:ok, content} <- File.read(file_path),
+         [_, prefix] <- Regex.run(regex, content) do
+      prefix
+    else
+      _ -> nil
     end
   end
 end

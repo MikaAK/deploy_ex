@@ -146,10 +146,36 @@ defmodule DeployEx.LLMMerge do
   # SECTION: Model Setup
 
   defp build_model(opts) do
+    sanitize_langchain_app_env()
+
     case Keyword.get(opts, :llm_provider, DeployEx.Config.llm_provider()) do
       nil -> {:error, :not_configured}
-      {model_module, model_opts} -> {:ok, struct!(model_module, Map.new(model_opts))}
+      {model_module, model_opts} -> {:ok, struct!(model_module, model_opts |> sanitize_model_opts() |> Map.new())}
     end
+  end
+
+  defp sanitize_model_opts(model_opts) do
+    Enum.map(model_opts, fn
+      {:api_key, value} when is_binary(value) -> {:api_key, sanitize_api_key(value)}
+      other -> other
+    end)
+  end
+
+  defp sanitize_langchain_app_env do
+    Enum.each([:anthropic_key, :openai_key, :google_ai_key, :google_key], fn key ->
+      case Application.get_env(:langchain, key) do
+        value when is_binary(value) ->
+          sanitized = sanitize_api_key(value)
+          if sanitized !== value, do: Application.put_env(:langchain, key, sanitized)
+
+        _ ->
+          :ok
+      end
+    end)
+  end
+
+  defp sanitize_api_key(key) do
+    String.replace(key, ~r/[\s\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u, "")
   end
 
   # SECTION: Planning

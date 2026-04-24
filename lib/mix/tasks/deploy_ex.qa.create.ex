@@ -30,7 +30,11 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     QA — nodes boot from the base AMI and run setup fresh
   - `--public-ip-cert` - Issue Let's Encrypt cert for the node's public IP (short-lived
     profile, HTTP-01 standalone). Use for standalone QA nodes not behind an LB. Persisted
-    in the QA state so ansible picks it up on every subsequent run.
+    in the QA state so ansible picks it up on every subsequent run. Also triggers an
+    LLM-assisted rewrite of host config in the umbrella to point at the QA IP; originals
+    are restored on `qa.destroy`.
+  - `--skip-host-rewrite` - Skip the LLM host config rewrite that normally runs with
+    `--public-ip-cert`. Useful if you want to deploy with the existing config unchanged.
   - `--force, -f` - Replace existing QA node without prompting
   - `--quiet, -q` - Suppress output messages
   - `--aws-region` - AWS region (default: from config)
@@ -49,6 +53,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
       DeployEx.TUI.setup_no_tui(opts)
 
+      preflight_host_rewrite!(opts)
+
       opts = case DeployEx.ReleaseUploader.get_git_branch() do
         {:ok, branch} -> Keyword.put(opts, :git_branch, branch)
         {:error, _} -> opts
@@ -62,6 +68,52 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     end
   end
 
+  defp preflight_host_rewrite!(opts) do
+    if host_rewrite_will_run?(opts) do
+      check_llm_configured_or_raise()
+      check_working_tree_or_raise()
+    end
+  end
+
+  defp host_rewrite_will_run?(opts) do
+    opts[:public_ip_cert] === true and opts[:skip_host_rewrite] !== true
+  end
+
+  defp check_llm_configured_or_raise do
+    if is_nil(DeployEx.Config.llm_provider()) do
+      Mix.raise("""
+      --public-ip-cert triggers an LLM-assisted rewrite of host config so the QA node
+      serves traffic from its public IP, but no LLM provider is configured.
+
+      Either configure `:deploy_ex, :llm_provider` in config/*.exs (see
+      DeployEx.Config.llm_provider/0), or pass --skip-host-rewrite to provision the
+      node without touching config.
+      """)
+    end
+  end
+
+  defp check_working_tree_or_raise do
+    case DeployEx.QaHostRewrite.working_tree_clean?(File.cwd!()) do
+      {:ok, true} ->
+        :ok
+
+      {:ok, false} ->
+        Mix.raise("""
+        Working tree is dirty. --public-ip-cert will rewrite host config files in this
+        umbrella so the QA node serves traffic from its public IP. Those rewrites are
+        backed up and restored on `qa.destroy`, but the restore can't safely run on top
+        of unrelated uncommitted changes.
+
+        Either commit/stash your changes first, or pass --skip-host-rewrite to provision
+        the node without touching config.
+        """)
+
+      {:error, _} ->
+        Mix.shell().info([:yellow, "⚠ Could not check git status; continuing without clean-tree guard."])
+        :ok
+    end
+  end
+
   defp run_console_flow(extra_args, opts) do
     app_name = resolve_app_name(extra_args)
 
@@ -70,33 +122,74 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
       {:error, error} -> Mix.raise(ErrorMessage.to_string(error))
     end
 
-    result = DeployEx.TUI.Progress.run_stream(
-      stream_title(app_name, sha, opts),
-      fn tui_pid -> run_qa_pipeline(tui_pid, app_name, sha, opts, 9) end
+    title = stream_title(app_name, sha, opts)
+
+    provision_result = DeployEx.TUI.Progress.run_stream(
+      "Provision: #{title}",
+      fn tui_pid -> run_qa_provision(tui_pid, app_name, sha, opts, 6) end
     )
 
-    handle_final_result(result, opts)
+    case provision_result do
+      {:ok, {qa_node, infra}} ->
+        case maybe_rewrite_host_config(qa_node, opts) do
+          :ok ->
+            deploy_result = DeployEx.TUI.Progress.run_stream(
+              "Deploy: #{title}",
+              fn tui_pid -> run_qa_deploy(tui_pid, qa_node, infra, opts, 3) end
+            )
+            handle_final_result(deploy_result, opts)
+
+          {:error, _} = error ->
+            handle_final_result(error, opts)
+        end
+
+      {:error, _} = error ->
+        handle_final_result(error, opts)
+    end
   end
 
   defp run_unified_flow(extra_args, opts) do
-    {final_result, log_tail} =
+    {provision_result, log_tail} =
       DeployEx.TUI.run(fn terminal ->
         with {:ok, app_name} <- resolve_app_in_terminal(extra_args, terminal),
              {:ok, sha} <- resolve_sha_in_terminal(terminal, app_name, opts) do
           title = stream_title(app_name, sha, opts)
-          work_fn = fn tui_pid -> run_qa_pipeline(tui_pid, app_name, sha, opts, 9) end
-          DeployEx.TUI.Progress.stream_in_terminal(terminal, title, work_fn, opts)
+          work_fn = fn tui_pid -> run_qa_provision(tui_pid, app_name, sha, opts, 6) end
+          {result, tail} = DeployEx.TUI.Progress.stream_in_terminal(terminal, "Provision: #{title}", work_fn, opts)
+          {{result, title}, tail}
         else
-          {:error, _} = err -> {err, []}
+          {:error, _} = err -> {{err, nil}, []}
         end
       end)
 
-    DeployEx.TUI.Progress.print_log_tail_on_error(final_result, log_tail)
-    handle_final_result(final_result, opts)
+    DeployEx.TUI.Progress.print_log_tail_on_error(provision_result, log_tail)
+
+    case provision_result do
+      {{:ok, {qa_node, infra}}, title} ->
+        case maybe_rewrite_host_config(qa_node, opts) do
+          :ok -> run_deploy_phase_unified(qa_node, infra, opts, title)
+          {:error, _} = error -> handle_final_result(error, opts)
+        end
+
+      {{:error, _} = error, _title} ->
+        handle_final_result(error, opts)
+    end
+  end
+
+  defp run_deploy_phase_unified(qa_node, infra, opts, title) do
+    {deploy_result, log_tail} =
+      DeployEx.TUI.run(fn terminal ->
+        work_fn = fn tui_pid -> run_qa_deploy(tui_pid, qa_node, infra, opts, 3) end
+        DeployEx.TUI.Progress.stream_in_terminal(terminal, "Deploy: #{title}", work_fn, opts)
+      end)
+
+    DeployEx.TUI.Progress.print_log_tail_on_error(deploy_result, log_tail)
+    handle_final_result(deploy_result, opts)
   end
 
   defp handle_final_result({:ok, qa_node}, opts), do: output_success(qa_node, opts)
-  defp handle_final_result({:error, error}, _opts), do: Mix.raise(ErrorMessage.to_string(error))
+  defp handle_final_result({:error, %ErrorMessage{} = error}, _opts), do: Mix.raise(ErrorMessage.to_string(error))
+  defp handle_final_result({:error, error}, _opts), do: Mix.raise(inspect(error))
 
   defp stream_title(app_name, sha, opts) do
     short_sha = String.slice(sha, 0, 7)
@@ -157,7 +250,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     end
   end
 
-  defp run_qa_pipeline(tui_pid, app_name, sha, opts, total) do
+  defp run_qa_provision(tui_pid, app_name, sha, opts, total) do
     progress = fn step, label ->
       DeployEx.TUI.Progress.update_progress(tui_pid, step / total, label)
     end
@@ -167,12 +260,71 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
          {:ok, infra} <- (progress.(3, "Gathering infrastructure..."); gather_infrastructure(app_name, opts)),
          {:ok, qa_node} <- (progress.(4, "Creating QA node..."); create_qa_node(app_name, full_sha, infra, opts)),
          :ok <- (progress.(5, "Waiting for instance to start..."); wait_for_instance(qa_node, opts)),
-         {:ok, qa_node} <- (progress.(6, "Saving QA state..."); save_and_refresh_state(qa_node, opts)),
-         :ok <- (progress.(7, "Waiting for SSH..."); wait_for_ssh_ready(qa_node)),
-         :ok <- (progress.(8, "Running setup & deploy..."); maybe_run_setup(qa_node, infra, tui_pid, opts); maybe_wait_for_deploy(qa_node, infra, tui_pid, opts)),
-         {:ok, qa_node} <- (progress.(9, "Attaching load balancer..."); maybe_attach_lb(qa_node, opts)) do
+         {:ok, qa_node} <- (progress.(6, "Saving QA state..."); save_and_refresh_state(qa_node, opts)) do
+      {:ok, {qa_node, infra}}
+    end
+  end
+
+  defp run_qa_deploy(tui_pid, qa_node, infra, opts, total) do
+    progress = fn step, label ->
+      DeployEx.TUI.Progress.update_progress(tui_pid, step / total, label)
+    end
+
+    with :ok <- (progress.(1, "Waiting for SSH..."); wait_for_ssh_ready(qa_node)),
+         :ok <- (progress.(2, "Running setup & deploy..."); maybe_run_setup(qa_node, infra, tui_pid, opts); maybe_wait_for_deploy(qa_node, infra, tui_pid, opts)),
+         {:ok, qa_node} <- (progress.(3, "Attaching load balancer..."); maybe_attach_lb(qa_node, opts)) do
       {:ok, qa_node}
     end
+  end
+
+  defp maybe_rewrite_host_config(qa_node, opts) do
+    cond do
+      opts[:skip_host_rewrite] === true -> :ok
+      qa_node.use_public_ip_cert? !== true -> :ok
+      not is_binary(qa_node.public_ip) -> :ok
+      true -> run_host_rewrite(qa_node)
+    end
+  end
+
+  defp run_host_rewrite(qa_node) do
+    public_ip = qa_node.public_ip
+
+    Mix.shell().info([
+      "\n", :cyan, "── QA Host Rewrite ──", :reset,
+      "\nRewriting host config to route ", :bright, qa_node.app_name, :reset,
+      " through ", :cyan, "https://#{public_ip}", :reset, "\n"
+    ])
+
+    umbrella_root = File.cwd!()
+    app_name = qa_node.app_name
+    module_prefix = DeployEx.ProjectContext.module_prefix_or_camelize(app_name)
+
+    Mix.shell().info([:faint, "  Target app: :#{app_name} (module prefix: #{module_prefix})"])
+
+    with {:ok, candidates} <- DeployEx.QaHostRewrite.scan_candidates(umbrella_root, app_name, module_prefix),
+         :ok <- ensure_candidates_found(candidates),
+         {:ok, proposals} <- propose_rewrites(candidates, public_ip, app_name, module_prefix),
+         backup_dir = DeployEx.QaHostRewrite.backup_dir(app_name, qa_node.instance_id),
+         {:ok, _entries} <- DeployEx.QaHostRewrite.review_and_apply(proposals, backup_dir) do
+      Mix.shell().info([:green, "\n  ✓ Host rewrite complete. Originals backed up for restore on qa.destroy."])
+      :ok
+    else
+      :no_candidates ->
+        Mix.shell().info([:yellow, "  No host config candidates found; skipping rewrite."])
+        :ok
+
+      {:error, reason} ->
+        Mix.shell().error("  ✗ Host rewrite failed: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
+  defp ensure_candidates_found([]), do: :no_candidates
+  defp ensure_candidates_found(_list), do: :ok
+
+  defp propose_rewrites(candidates, public_ip, app_name, module_prefix) do
+    Mix.shell().info([:faint, "  Scanning #{length(candidates)} config file(s) with LLM..."])
+    DeployEx.QaHostRewrite.propose_rewrite(candidates, public_ip, app_name, module_prefix)
   end
 
   defp parse_args(args) do
@@ -185,6 +337,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
         skip_setup: :boolean,
         skip_deploy: :boolean,
         skip_ami: :boolean,
+        skip_host_rewrite: :boolean,
         use_ami: :boolean,
         attach_lb: :boolean,
         public_ip_cert: :boolean,
