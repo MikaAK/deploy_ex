@@ -29,6 +29,11 @@ defmodule DeployEx.QaHostRewrite do
 
   @backup_root "~/.deploy_ex/qa-host-rewrites"
   @manifest_filename "manifest.json"
+  @ip_placeholder "__qa_public_ip__"
+
+  @doc "The sentinel string the LLM uses for the public IP slot before substitution."
+  @spec ip_placeholder() :: String.t()
+  def ip_placeholder, do: @ip_placeholder
 
   @type proposal :: %{
           path: String.t(),
@@ -51,9 +56,15 @@ defmodule DeployEx.QaHostRewrite do
     host_patterns = host_patterns()
     app_patterns = app_patterns(app_name, module_prefix)
 
-    config_candidates =
+    app_local_config_candidates =
       umbrella_root
-      |> config_files()
+      |> app_local_config_files(app_name)
+      |> Enum.filter(&File.regular?/1)
+      |> Enum.filter(&any_pattern_matches?(&1, host_patterns))
+
+    project_config_candidates =
+      umbrella_root
+      |> project_config_files()
       |> Enum.filter(&File.regular?/1)
       |> Enum.filter(&any_pattern_matches?(&1, host_patterns))
       |> Enum.filter(&any_pattern_matches?(&1, app_patterns))
@@ -65,19 +76,19 @@ defmodule DeployEx.QaHostRewrite do
       |> Enum.filter(&any_pattern_matches?(&1, host_patterns))
 
     candidates =
-      (config_candidates ++ endpoint_candidates)
+      (app_local_config_candidates ++ project_config_candidates ++ endpoint_candidates)
       |> Enum.uniq()
       |> Enum.map(&%{path: &1, content: File.read!(&1)})
 
     {:ok, candidates}
   end
 
-  @spec propose_rewrite([%{path: String.t(), content: String.t()}], String.t(), String.t(), String.t(), keyword()) ::
+  @spec propose_rewrite([%{path: String.t(), content: String.t()}], String.t(), String.t(), keyword()) ::
           {:ok, [proposal()]} | {:error, term()}
-  def propose_rewrite(candidates, public_ip, app_name, module_prefix, opts \\ []) do
+  def propose_rewrite(candidates, app_name, module_prefix, opts \\ []) do
     proposals =
       candidates
-      |> Enum.map(&build_proposal(&1, public_ip, app_name, module_prefix, opts))
+      |> Enum.map(&build_proposal(&1, app_name, module_prefix, opts))
       |> Enum.reduce_while({:ok, []}, fn
         {:ok, proposal}, {:ok, acc} -> {:cont, {:ok, [proposal | acc]}}
         {:skip, _}, {:ok, acc} -> {:cont, {:ok, acc}}
@@ -90,18 +101,41 @@ defmodule DeployEx.QaHostRewrite do
     end
   end
 
-  @spec review_and_apply([proposal()], String.t(), keyword()) ::
-          {:ok, [manifest_entry()]} | {:error, term()}
-  def review_and_apply(proposals, backup_dir, opts \\ []) do
-    File.mkdir_p!(backup_dir)
-
-    entries =
+  @doc """
+  Shows a DiffViewer per proposal so the user can accept or reject. Returns the
+  proposals the user accepted, with the IP placeholder still in place. NO disk
+  writes here — call `apply_proposals/4` after the QA node is provisioned to
+  substitute the real public IP and persist.
+  """
+  @spec review_proposals([proposal()], keyword()) :: {:ok, [proposal()]}
+  def review_proposals(proposals, _opts \\ []) do
+    accepted =
       proposals
-      |> Enum.map(&review_one(&1, backup_dir, opts))
+      |> Enum.map(&review_proposal_in_memory/1)
       |> Enum.reject(&is_nil/1)
 
-    write_manifest(backup_dir, entries)
-    {:ok, entries}
+    {:ok, accepted}
+  end
+
+  @doc """
+  Substitutes the IP placeholder with `public_ip` in each accepted proposal,
+  backs up the originals to `backup_dir`, writes the substituted content, and
+  records a manifest for `restore/2`.
+  """
+  @spec apply_proposals([proposal()], String.t(), String.t(), keyword()) ::
+          {:ok, [manifest_entry()]} | {:error, term()}
+  def apply_proposals(accepted_proposals, public_ip, backup_dir, _opts \\ []) do
+    File.mkdir_p!(backup_dir)
+
+    case Enum.reduce_while(accepted_proposals, {:ok, []}, &substitute_and_write(&1, &2, public_ip, backup_dir)) do
+      {:ok, entries} ->
+        reversed = Enum.reverse(entries)
+        write_manifest(backup_dir, reversed)
+        {:ok, reversed}
+
+      {:error, _} = error ->
+        error
+    end
   end
 
   @spec restore(Path.t(), keyword()) :: :ok | {:error, term()}
@@ -155,7 +189,11 @@ defmodule DeployEx.QaHostRewrite do
     [~r/:#{Regex.escape(app_name)}\b/, ~r/\b#{Regex.escape(module_prefix)}\./]
   end
 
-  defp config_files(umbrella_root) do
+  defp app_local_config_files(umbrella_root, app_name) do
+    umbrella_root |> Path.join("apps/#{app_name}/config/*.exs") |> Path.wildcard()
+  end
+
+  defp project_config_files(umbrella_root) do
     umbrella_root |> Path.join("config/*.exs") |> Path.wildcard()
   end
 
@@ -172,8 +210,8 @@ defmodule DeployEx.QaHostRewrite do
 
   # SECTION: Proposal — LLM rewrite per file
 
-  defp build_proposal(%{path: path, content: content}, public_ip, app_name, module_prefix, opts) do
-    prompt = rewrite_prompt(path, content, public_ip, app_name, module_prefix)
+  defp build_proposal(%{path: path, content: content}, app_name, module_prefix, opts) do
+    prompt = rewrite_prompt(path, content, app_name, module_prefix)
 
     case DeployEx.LLMMerge.ask(prompt, opts) do
       {:ok, response} -> parse_llm_response(path, content, response)
@@ -221,7 +259,9 @@ defmodule DeployEx.QaHostRewrite do
     end
   end
 
-  defp rewrite_prompt(path, content, public_ip, app_name, module_prefix) do
+  defp rewrite_prompt(path, content, app_name, module_prefix) do
+    placeholder = @ip_placeholder
+
     """
     You are rewriting an Elixir/Phoenix umbrella config for a QA deployment.
 
@@ -231,18 +271,20 @@ defmodule DeployEx.QaHostRewrite do
       This was extracted directly from `apps/#{app_name}/lib/**/endpoint.ex`, so it
       is the authoritative name for this app's endpoint module.
 
-    A QA EC2 instance has just been provisioned with a public IP and a self-signed
-    SSL certificate. The target app will be reached at `https://#{public_ip}` instead
-    of the normal production domain.
+    A QA EC2 instance is being provisioned with a public IP and a self-signed SSL
+    certificate. The target app will be reached at `https://<QA_IP>` instead of the
+    normal production domain. The actual IP is not known yet, so use the literal
+    placeholder string `#{placeholder}` everywhere the QA IP would go. A later
+    deterministic step will substitute the real IP for that placeholder.
 
     Rewrite ONLY lines that apply to the target app. Specifically:
 
-    - `config :#{app_name}, <Mod>.Endpoint, url: [host: "..."]` → `host: "#{public_ip}"`
+    - `config :#{app_name}, <Mod>.Endpoint, url: [host: "..."]` → `host: "#{placeholder}"`
     - `config :#{app_name}, <Mod>.Endpoint, check_origin: [...]` → add
-      `"https://#{public_ip}"` while keeping existing entries
+      `"https://#{placeholder}"` while keeping existing entries
     - Session/cookie `:domain` on the target app's endpoint → set to `nil`
     - Hardcoded `https://<production-domain>` literals that refer to the target app's
-      own origin (CORS, absolute_url helpers, redirect URLs) → `https://#{public_ip}`
+      own origin (CORS, absolute_url helpers, redirect URLs) → `https://#{placeholder}`
 
     DO NOT touch any of the following:
 
@@ -275,27 +317,26 @@ defmodule DeployEx.QaHostRewrite do
        <rewritten file content>
        ```
 
+    Use the literal placeholder `#{placeholder}` — do NOT invent or guess an IP.
     Preserve all unrelated lines exactly. Do not reformat, do not add comments,
     do not change indentation of unchanged lines.
     """
   end
 
-  # SECTION: Review — DiffViewer per file + backup + write
+  # SECTION: Review — DiffViewer per file (in-memory only)
 
-  defp review_one(%{path: path, original: original, rewritten: rewritten, rationale: rationale}, backup_dir, _opts) do
+  defp review_proposal_in_memory(%{path: path, original: original, rewritten: rewritten, rationale: rationale} = proposal) do
     Mix.shell().info(["\n", :cyan, "── ", path, :reset])
     if rationale !== "", do: Mix.shell().info([:light_black, rationale])
 
+    Mix.shell().info([
+      :light_black,
+      "  (placeholder #{@ip_placeholder} will be replaced with the QA public IP after provisioning)"
+    ])
+
     case DeployEx.TUI.DiffViewer.run(original, rewritten, title: "QA host rewrite: #{path}") do
       {:ok, merged} when merged !== original ->
-        backup_file!(path, original, backup_dir)
-        File.write!(path, merged)
-
-        %{
-          path: path,
-          sha256_before: sha256(original),
-          sha256_after: sha256(merged)
-        }
+        %{proposal | rewritten: merged}
 
       {:ok, _same} ->
         Mix.shell().info([:yellow, "  skipped (no changes accepted)"])
@@ -304,6 +345,37 @@ defmodule DeployEx.QaHostRewrite do
       :cancelled ->
         Mix.shell().info([:yellow, "  cancelled"])
         nil
+    end
+  end
+
+  # SECTION: Apply — substitute placeholder, backup originals, write to disk
+
+  defp substitute_and_write(
+         %{path: path, original: original, rewritten: rewritten_with_placeholder},
+         {:ok, acc},
+         public_ip,
+         backup_dir
+       ) do
+    final = String.replace(rewritten_with_placeholder, @ip_placeholder, public_ip)
+
+    if String.contains?(final, @ip_placeholder) do
+      {:halt,
+       {:error,
+        ErrorMessage.internal_server_error(
+          "IP placeholder still present after substitution",
+          %{path: path, placeholder: @ip_placeholder}
+        )}}
+    else
+      backup_file!(path, original, backup_dir)
+      File.write!(path, final)
+
+      entry = %{
+        path: path,
+        sha256_before: sha256(original),
+        sha256_after: sha256(final)
+      }
+
+      {:cont, {:ok, [entry | acc]}}
     end
   end
 

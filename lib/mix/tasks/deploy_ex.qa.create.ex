@@ -126,12 +126,12 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
     provision_result = DeployEx.TUI.Progress.run_stream(
       "Provision: #{title}",
-      fn tui_pid -> run_qa_provision(tui_pid, app_name, sha, opts, 6) end
+      fn tui_pid -> run_qa_provision(tui_pid, app_name, sha, opts, 7) end
     )
 
     case provision_result do
-      {:ok, {qa_node, infra}} ->
-        case maybe_rewrite_host_config(qa_node, opts) do
+      {:ok, {qa_node, infra, host_rewrite_plan}} ->
+        case apply_host_rewrite(qa_node, host_rewrite_plan) do
           :ok ->
             deploy_result = DeployEx.TUI.Progress.run_stream(
               "Deploy: #{title}",
@@ -154,7 +154,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
         with {:ok, app_name} <- resolve_app_in_terminal(extra_args, terminal),
              {:ok, sha} <- resolve_sha_in_terminal(terminal, app_name, opts) do
           title = stream_title(app_name, sha, opts)
-          work_fn = fn tui_pid -> run_qa_provision(tui_pid, app_name, sha, opts, 6) end
+          work_fn = fn tui_pid -> run_qa_provision(tui_pid, app_name, sha, opts, 7) end
           {result, tail} = DeployEx.TUI.Progress.stream_in_terminal(terminal, "Provision: #{title}", work_fn, opts)
           {{result, title}, tail}
         else
@@ -165,8 +165,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     DeployEx.TUI.Progress.print_log_tail_on_error(provision_result, log_tail)
 
     case provision_result do
-      {{:ok, {qa_node, infra}}, title} ->
-        case maybe_rewrite_host_config(qa_node, opts) do
+      {{:ok, {qa_node, infra, host_rewrite_plan}}, title} ->
+        case apply_host_rewrite(qa_node, host_rewrite_plan) do
           :ok -> run_deploy_phase_unified(qa_node, infra, opts, title)
           {:error, _} = error -> handle_final_result(error, opts)
         end
@@ -257,11 +257,12 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
     with :ok <- (progress.(1, "Validating app name..."); validate_app_name(app_name)),
          {:ok, full_sha} <- (progress.(2, "Validating SHA..."); validate_and_find_sha(app_name, sha, opts)),
-         {:ok, infra} <- (progress.(3, "Gathering infrastructure..."); gather_infrastructure(app_name, opts)),
-         {:ok, qa_node} <- (progress.(4, "Creating QA node..."); create_qa_node(app_name, full_sha, infra, opts)),
-         :ok <- (progress.(5, "Waiting for instance to start..."); wait_for_instance(qa_node, opts)),
-         {:ok, qa_node} <- (progress.(6, "Saving QA state..."); save_and_refresh_state(qa_node, opts)) do
-      {:ok, {qa_node, infra}}
+         {:ok, host_rewrite_plan} <- (progress.(3, "Planning host config rewrite (LLM)..."); plan_host_rewrite(app_name, opts)),
+         {:ok, infra} <- (progress.(4, "Gathering infrastructure..."); gather_infrastructure(app_name, opts)),
+         {:ok, qa_node} <- (progress.(5, "Creating QA node..."); create_qa_node(app_name, full_sha, infra, opts)),
+         :ok <- (progress.(6, "Waiting for instance to start..."); wait_for_instance(qa_node, opts)),
+         {:ok, qa_node} <- (progress.(7, "Saving QA state..."); save_and_refresh_state(qa_node, opts)) do
+      {:ok, {qa_node, infra, host_rewrite_plan}}
     end
   end
 
@@ -277,40 +278,50 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     end
   end
 
-  defp maybe_rewrite_host_config(qa_node, opts) do
-    cond do
-      opts[:skip_host_rewrite] === true -> :ok
-      qa_node.use_public_ip_cert? !== true -> :ok
-      not is_binary(qa_node.public_ip) -> :ok
-      true -> run_host_rewrite(qa_node)
+  defp plan_host_rewrite(app_name, opts) do
+    if host_rewrite_will_run?(opts) do
+      do_plan_host_rewrite(app_name)
+    else
+      {:ok, :skip}
     end
   end
 
-  defp run_host_rewrite(qa_node) do
+  defp do_plan_host_rewrite(app_name) do
+    umbrella_root = File.cwd!()
+    module_prefix = DeployEx.ProjectContext.module_prefix_or_camelize(app_name)
+
+    with {:ok, candidates} <- DeployEx.QaHostRewrite.scan_candidates(umbrella_root, app_name, module_prefix),
+         {:ok, proposals} <- DeployEx.QaHostRewrite.propose_rewrite(candidates, app_name, module_prefix) do
+      {:ok, %{proposals: proposals, app_name: app_name, module_prefix: module_prefix}}
+    end
+  end
+
+  defp apply_host_rewrite(_qa_node, :skip), do: :ok
+  defp apply_host_rewrite(_qa_node, %{proposals: []}) do
+    Mix.shell().info([:yellow, "  No host config candidates found; skipping rewrite."])
+    :ok
+  end
+
+  defp apply_host_rewrite(qa_node, %{proposals: proposals, app_name: app_name, module_prefix: module_prefix}) do
     public_ip = qa_node.public_ip
 
     Mix.shell().info([
       "\n", :cyan, "── QA Host Rewrite ──", :reset,
-      "\nRewriting host config to route ", :bright, qa_node.app_name, :reset,
+      "\nRewriting host config to route ", :bright, app_name, :reset,
       " through ", :cyan, "https://#{public_ip}", :reset, "\n"
     ])
 
-    umbrella_root = File.cwd!()
-    app_name = qa_node.app_name
-    module_prefix = DeployEx.ProjectContext.module_prefix_or_camelize(app_name)
-
     Mix.shell().info([:faint, "  Target app: :#{app_name} (module prefix: #{module_prefix})"])
 
-    with {:ok, candidates} <- DeployEx.QaHostRewrite.scan_candidates(umbrella_root, app_name, module_prefix),
-         :ok <- ensure_candidates_found(candidates),
-         {:ok, proposals} <- propose_rewrites(candidates, public_ip, app_name, module_prefix),
+    with {:ok, accepted} <- DeployEx.QaHostRewrite.review_proposals(proposals),
+         :ok <- ensure_any_accepted(accepted),
          backup_dir = DeployEx.QaHostRewrite.backup_dir(app_name, qa_node.instance_id),
-         {:ok, _entries} <- DeployEx.QaHostRewrite.review_and_apply(proposals, backup_dir) do
+         {:ok, _entries} <- DeployEx.QaHostRewrite.apply_proposals(accepted, public_ip, backup_dir) do
       Mix.shell().info([:green, "\n  ✓ Host rewrite complete. Originals backed up for restore on qa.destroy."])
       :ok
     else
-      :no_candidates ->
-        Mix.shell().info([:yellow, "  No host config candidates found; skipping rewrite."])
+      :no_accepted ->
+        Mix.shell().info([:yellow, "  No host rewrites accepted; skipping."])
         :ok
 
       {:error, reason} ->
@@ -319,13 +330,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     end
   end
 
-  defp ensure_candidates_found([]), do: :no_candidates
-  defp ensure_candidates_found(_list), do: :ok
-
-  defp propose_rewrites(candidates, public_ip, app_name, module_prefix) do
-    Mix.shell().info([:faint, "  Scanning #{length(candidates)} config file(s) with LLM..."])
-    DeployEx.QaHostRewrite.propose_rewrite(candidates, public_ip, app_name, module_prefix)
-  end
+  defp ensure_any_accepted([]), do: :no_accepted
+  defp ensure_any_accepted(_list), do: :ok
 
   defp parse_args(args) do
     OptionParser.parse!(args,
