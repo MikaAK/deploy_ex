@@ -3,24 +3,29 @@ defmodule DeployEx.QaHostRewrite do
   Rewrites Phoenix/CORS/cookie host references in the umbrella being deployed so
   a QA node with a public IP SSL cert can serve the app directly from its IP.
 
-  Flow:
+  Flow (placeholder-based, two-stage):
 
-  1. `scan_candidates/1` — greps the umbrella for host-like config (endpoint
+  1. `scan_candidates/3` — greps the umbrella for host-like config (endpoint
      `url: [host: ...]`, `check_origin`, cookie `:domain`, hardcoded production
-     domains) and returns a list of `{path, chunk_text, start_line}` entries.
-     Only relevant file types (`.ex`, `.exs`) are scanned; whole-file content
-     is chunked to keep LLM prompts small.
+     domains). Searches `apps/<app>/config/*.exs` first, then project-level
+     `config/*.exs`, then `apps/<app>/lib/**/endpoint.ex`.
 
-  2. `propose_rewrite/3` — hands each chunk to the LLM via LangChain, asking for
-     a rewritten version that routes traffic to the QA IP. Returns a list of
-     `%{path, original, rewritten, rationale}` proposals.
+  2. `propose_rewrite/4` — asks the LLM to rewrite each candidate, using the
+     literal sentinel `__qa_public_ip__` (see `ip_placeholder/0`) anywhere a QA
+     IP would go. Pre-provision; no real IP needed yet.
 
-  3. `review_and_apply/3` — opens `DeployEx.TUI.DiffViewer` per-file. Accepted
-     files get backed up to the QA node's backup dir, then written to disk.
-     A `manifest.json` records every backup with sha256 of the original so
-     `restore/2` can detect drift later.
+  3. `review_proposals/3` — for each proposal, asks the user "Modify host
+     config for `<ModulePrefix>.Endpoint` at `<path>`? [y/n/c]". Renders in the
+     persistent progress UI's lower pane via `Progress.confirm/2`, or falls
+     back to `Mix.shell().yes?/1` in console mode. Returns the accepted
+     proposals (placeholder still in place) or `:cancelled`.
 
-  4. `restore/2` — reads the manifest and restores the originals. If a file's
+  4. `apply_proposals/4` — post-provision. Substitutes the placeholder with
+     the real `qa_node.public_ip`, backs up originals to the QA node's backup
+     dir, writes the substituted content, and records `manifest.json` with
+     sha256 entries so `restore/2` can detect drift later.
+
+  5. `restore/2` — reads the manifest and restores the originals. If a file's
      on-disk sha256 no longer matches what the manifest recorded as "rewritten"
      content, the user has modified it since — we prompt before overwriting.
 
@@ -102,19 +107,39 @@ defmodule DeployEx.QaHostRewrite do
   end
 
   @doc """
-  Shows a DiffViewer per proposal so the user can accept or reject. Returns the
-  proposals the user accepted, with the IP placeholder still in place. NO disk
-  writes here — call `apply_proposals/4` after the QA node is provisioned to
-  substitute the real public IP and persist.
-  """
-  @spec review_proposals([proposal()], keyword()) :: {:ok, [proposal()]}
-  def review_proposals(proposals, _opts \\ []) do
-    accepted =
-      proposals
-      |> Enum.map(&review_proposal_in_memory/1)
-      |> Enum.reject(&is_nil/1)
+  Asks the user to confirm each proposal — "Modify host config for
+  `<ModulePrefix>.Endpoint` at `<path>`? [y/n/c]". Returns the accepted
+  proposals (placeholder still in place; substituted later by
+  `apply_proposals/4`), or `:cancelled` if the user pressed C/cancel on any
+  proposal.
 
-    {:ok, accepted}
+  In TUI mode (`tui_pid` is a pid), the prompt is rendered in the lower pane
+  of the persistent progress UI via `DeployEx.TUI.Progress.confirm/2`. In
+  console mode (`tui_pid` is nil), falls back to `Mix.shell().yes?/1`.
+  """
+  @spec review_proposals([proposal()], String.t(), pid() | nil) ::
+          {:ok, [proposal()]} | :cancelled
+  def review_proposals(proposals, module_prefix, tui_pid) do
+    initial = {:ok, []}
+
+    proposals
+    |> Enum.reduce_while(initial, &collect_decision(&1, &2, module_prefix, tui_pid))
+    |> finalize_review()
+  end
+
+  defp collect_decision(proposal, {:ok, acc}, module_prefix, tui_pid) do
+    case DeployEx.TUI.Progress.confirm(tui_pid, confirm_prompt(proposal, module_prefix)) do
+      :yes -> {:cont, {:ok, [proposal | acc]}}
+      :no -> {:cont, {:ok, acc}}
+      :cancel -> {:halt, :cancelled}
+    end
+  end
+
+  defp finalize_review({:ok, accepted}), do: {:ok, Enum.reverse(accepted)}
+  defp finalize_review(:cancelled), do: :cancelled
+
+  defp confirm_prompt(%{path: path}, module_prefix) do
+    "Modify host config for #{module_prefix}.Endpoint at #{path}?"
   end
 
   @doc """
@@ -282,12 +307,13 @@ defmodule DeployEx.QaHostRewrite do
     - `config :#{app_name}, <Mod>.Endpoint, url: [host: "..."]` → `host: "#{placeholder}"`
     - `config :#{app_name}, <Mod>.Endpoint, check_origin: [...]` → add
       `"https://#{placeholder}"` while keeping existing entries
-    - Session/cookie `:domain` on the target app's endpoint → set to `nil`
     - Hardcoded `https://<production-domain>` literals that refer to the target app's
       own origin (CORS, absolute_url helpers, redirect URLs) → `https://#{placeholder}`
 
     DO NOT touch any of the following:
 
+    - Session/cookie `:domain` settings (in `endpoint.ex` or anywhere else) — leave
+      them exactly as they are. Do NOT change them to `nil` or any QA-specific value.
     - Other sibling apps' endpoints in the same file (e.g. other `config :other_app, ...`
       blocks — leave them exactly as they are, byte-for-byte)
     - Shared cluster/node DNS, libcluster epmd hosts, database URLs, Redis hosts
@@ -321,31 +347,6 @@ defmodule DeployEx.QaHostRewrite do
     Preserve all unrelated lines exactly. Do not reformat, do not add comments,
     do not change indentation of unchanged lines.
     """
-  end
-
-  # SECTION: Review — DiffViewer per file (in-memory only)
-
-  defp review_proposal_in_memory(%{path: path, original: original, rewritten: rewritten, rationale: rationale} = proposal) do
-    Mix.shell().info(["\n", :cyan, "── ", path, :reset])
-    if rationale !== "", do: Mix.shell().info([:light_black, rationale])
-
-    Mix.shell().info([
-      :light_black,
-      "  (placeholder #{@ip_placeholder} will be replaced with the QA public IP after provisioning)"
-    ])
-
-    case DeployEx.TUI.DiffViewer.run(original, rewritten, title: "QA host rewrite: #{path}") do
-      {:ok, merged} when merged !== original ->
-        %{proposal | rewritten: merged}
-
-      {:ok, _same} ->
-        Mix.shell().info([:yellow, "  skipped (no changes accepted)"])
-        nil
-
-      :cancelled ->
-        Mix.shell().info([:yellow, "  cancelled"])
-        nil
-    end
   end
 
   # SECTION: Apply — substitute placeholder, backup originals, write to disk

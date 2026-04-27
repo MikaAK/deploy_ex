@@ -202,7 +202,8 @@ defmodule DeployEx.TUI.Progress do
       status: :running,
       result: nil,
       cancelling: false,
-      log_tail: []
+      log_tail: [],
+      mode: :log
     }
 
     worker = spawn_link(fn ->
@@ -233,6 +234,30 @@ defmodule DeployEx.TUI.Progress do
 
   def update_progress(tui_pid, ratio, label) do
     send(tui_pid, {:tui_progress_update, ratio, label})
+  end
+
+  @doc """
+  Synchronously prompts the user for a yes/no confirmation in the lower pane
+  of the streaming progress UI. Returns `:yes`, `:no`, or `:cancel`.
+
+  In TUI mode, the log pane is replaced with a confirmation widget showing
+  the prompt. The progress gauge stays visible at the top. Y/N/C keys are
+  intercepted while the prompt is active.
+
+  In console mode (no TUI), falls back to `Mix.shell().yes?/1` and treats a
+  no/cancel as `:no`.
+  """
+  @spec confirm(pid() | nil, String.t()) :: :yes | :no | :cancel
+  def confirm(tui_pid, prompt) do
+    if DeployEx.TUI.enabled?() and is_pid(tui_pid) do
+      send(tui_pid, {:tui_progress_confirm_request, prompt, self()})
+
+      receive do
+        {:tui_progress_confirm_response, choice} -> choice
+      end
+    else
+      if Mix.shell().yes?(prompt), do: :yes, else: :no
+    end
   end
 
   @doc """
@@ -293,6 +318,12 @@ defmodule DeployEx.TUI.Progress do
         Process.exit(worker, :kill)
         {{:error, :cancelled}, state.log_tail}
 
+      %ExRatatui.Event.Key{code: code, kind: "press"} = ev ->
+        case maybe_handle_confirm_key(state, code, modifier_list(ev)) do
+          {:handled, new_state} -> stream_loop(terminal, width, height, title, new_state, worker, opts)
+          :ignore -> stream_loop(terminal, width, height, title, state, worker, opts)
+        end
+
       _ ->
         receive do
           {:tui_progress_update, ratio, label} ->
@@ -301,6 +332,10 @@ defmodule DeployEx.TUI.Progress do
 
           {:tui_progress_log, line} ->
             new_state = %{state | log_tail: append_log_line(state.log_tail, line)}
+            stream_loop(terminal, width, height, title, new_state, worker, opts)
+
+          {:tui_progress_confirm_request, prompt, reply_to} ->
+            new_state = %{state | mode: {:confirm, %{prompt: prompt, reply_to: reply_to}}}
             stream_loop(terminal, width, height, title, new_state, worker, opts)
 
           {:tui_progress_done, result} ->
@@ -315,6 +350,27 @@ defmodule DeployEx.TUI.Progress do
     end
   end
 
+  defp modifier_list(%ExRatatui.Event.Key{modifiers: nil}), do: []
+  defp modifier_list(%ExRatatui.Event.Key{modifiers: mods}) when is_list(mods), do: mods
+
+  defp maybe_handle_confirm_key(%{mode: {:confirm, %{reply_to: reply_to}}} = state, code, []) do
+    case confirm_choice_for_code(code) do
+      nil ->
+        :ignore
+
+      choice ->
+        send(reply_to, {:tui_progress_confirm_response, choice})
+        {:handled, %{state | mode: :log}}
+    end
+  end
+
+  defp maybe_handle_confirm_key(_state, _code, _mods), do: :ignore
+
+  defp confirm_choice_for_code(code) when code in ["y", "Y"], do: :yes
+  defp confirm_choice_for_code(code) when code in ["n", "N"], do: :no
+  defp confirm_choice_for_code(code) when code in ["c", "C", "Esc"], do: :cancel
+  defp confirm_choice_for_code(_), do: nil
+
   defp append_log_line(log_tail, line) do
     [line | Enum.take(log_tail, @log_buffer_max - 1)]
   end
@@ -323,7 +379,7 @@ defmodule DeployEx.TUI.Progress do
     display_label = stream_display_label(state)
     area = %Rect{x: 0, y: 0, width: width, height: height}
 
-    [top_area, log_area, footer_area] = Layout.split(area, :vertical, [
+    [top_area, lower_area, footer_area] = Layout.split(area, :vertical, [
       {:length, 4},
       {:min, 3},
       {:length, 1}
@@ -334,15 +390,69 @@ defmodule DeployEx.TUI.Progress do
       {:length, 1}
     ])
 
-    log_widgets = build_log_widgets(state.log_tail, log_area, width)
+    lower_widgets = build_lower_widgets(state, lower_area, width)
+    footer_widget = build_footer_widget(state)
 
     base_widgets = [
       {build_gauge_widget(title, state.ratio), gauge_area},
       {build_label_widget(display_label), label_area},
-      {build_footer_widget(state.cancelling), footer_area}
+      {footer_widget, footer_area}
     ]
 
-    ExRatatui.draw(terminal, base_widgets ++ log_widgets)
+    ExRatatui.draw(terminal, base_widgets ++ lower_widgets)
+  end
+
+  defp build_lower_widgets(%{mode: {:confirm, %{prompt: prompt}}}, lower_area, width) do
+    build_confirm_widgets(prompt, lower_area, width)
+  end
+
+  defp build_lower_widgets(%{log_tail: log_tail}, lower_area, width) do
+    build_log_widgets(log_tail, lower_area, width)
+  end
+
+  defp build_confirm_widgets(prompt, lower_area, width) do
+    inner_width = max(width - 4, 20)
+    prompt_text = "  " <> truncate_line(prompt, inner_width)
+    keys_text = "  [Y]es   [N]o   [C]ancel"
+
+    prompt_rect = %Rect{
+      x: lower_area.x + 1,
+      y: lower_area.y + 1,
+      width: max(lower_area.width - 2, 1),
+      height: 1
+    }
+
+    keys_rect = %Rect{
+      x: lower_area.x + 1,
+      y: lower_area.y + 3,
+      width: max(lower_area.width - 2, 1),
+      height: 1
+    }
+
+    prompt_widget = %Widgets.Paragraph{
+      text: prompt_text,
+      style: %Style{fg: :white, modifiers: [:bold]}
+    }
+
+    keys_widget = %Widgets.Paragraph{
+      text: keys_text,
+      style: %Style{fg: :cyan}
+    }
+
+    [
+      {confirm_block(), lower_area},
+      {prompt_widget, prompt_rect},
+      {keys_widget, keys_rect}
+    ]
+  end
+
+  defp confirm_block do
+    %Widgets.Block{
+      title: " Confirm ",
+      borders: [:all],
+      border_type: :rounded,
+      border_style: %Style{fg: :yellow}
+    }
   end
 
   defp stream_display_label(%{cancelling: true, label: label}), do: label <> "  [Ctrl-C again to cancel]"
@@ -427,7 +537,14 @@ defmodule DeployEx.TUI.Progress do
 
   defp truncate_line(line, _max_width), do: line
 
-  defp build_footer_widget(cancelling?) do
+  defp build_footer_widget(%{mode: {:confirm, _}}) do
+    %Widgets.Paragraph{
+      text: "  Press Y/N/C to respond",
+      style: %Style{fg: :white, modifiers: [:dim]}
+    }
+  end
+
+  defp build_footer_widget(%{cancelling: cancelling?}) do
     text = if cancelling?, do: "  Ctrl-C again to cancel", else: "  Ctrl-C twice to cancel"
 
     %Widgets.Paragraph{
