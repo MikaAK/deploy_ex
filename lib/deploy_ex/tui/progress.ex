@@ -165,6 +165,16 @@ defmodule DeployEx.TUI.Progress do
         Mix.shell().info([:faint, "  [#{percent}%] ", :reset, label])
         console_stream_loop(title, worker)
 
+      {:tui_progress_log, {_color, text}} ->
+        Mix.shell().info([:faint, text])
+        console_stream_loop(title, worker)
+
+      {:tui_progress_confirm_request, payload, reply_to} ->
+        if payload[:preview], do: Mix.shell().info(payload.preview)
+        choice = if Mix.shell().yes?(payload.prompt), do: :yes, else: :no
+        send(reply_to, {:tui_progress_confirm_response, choice})
+        console_stream_loop(title, worker)
+
       {:tui_progress_done, result} ->
         Mix.shell().info([:green, "  ✓ #{title} complete"])
         result
@@ -236,28 +246,38 @@ defmodule DeployEx.TUI.Progress do
     send(tui_pid, {:tui_progress_update, ratio, label})
   end
 
+  @type confirm_payload :: String.t() | %{prompt: String.t(), preview: String.t() | nil}
+
   @doc """
   Synchronously prompts the user for a yes/no confirmation in the lower pane
-  of the streaming progress UI. Returns `:yes`, `:no`, or `:cancel`.
+  of the streaming progress UI. Returns `:yes` or `:no`.
+
+  Accepts either a plain string prompt or a map `%{prompt, preview}` where
+  `preview` is unified-diff text rendered above the keys.
 
   In TUI mode, the log pane is replaced with a confirmation widget showing
-  the prompt. The progress gauge stays visible at the top. Y/N/C keys are
-  intercepted while the prompt is active.
+  the (wrapped) prompt + optional preview. The progress gauge stays visible
+  at the top. Y/N keys are intercepted while the prompt is active.
 
-  In console mode (no TUI), falls back to `Mix.shell().yes?/1` and treats a
-  no/cancel as `:no`.
+  In console mode (no TUI), falls back to printing the preview to stderr and
+  using `Mix.shell().yes?/1`.
   """
-  @spec confirm(pid() | nil, String.t()) :: :yes | :no | :cancel
-  def confirm(tui_pid, prompt) do
-    if DeployEx.TUI.enabled?() and is_pid(tui_pid) do
-      send(tui_pid, {:tui_progress_confirm_request, prompt, self()})
+  @spec confirm(pid() | nil, confirm_payload()) :: :yes | :no
+  def confirm(tui_pid, prompt) when is_binary(prompt) do
+    confirm(tui_pid, %{prompt: prompt, preview: nil})
+  end
 
-      receive do
-        {:tui_progress_confirm_response, choice} -> choice
-      end
-    else
-      if Mix.shell().yes?(prompt), do: :yes, else: :no
+  def confirm(tui_pid, %{prompt: _prompt} = payload) when is_pid(tui_pid) do
+    send(tui_pid, {:tui_progress_confirm_request, payload, self()})
+
+    receive do
+      {:tui_progress_confirm_response, choice} -> choice
     end
+  end
+
+  def confirm(_tui_pid, %{prompt: prompt} = payload) do
+    if payload[:preview], do: Mix.shell().info(payload.preview)
+    if Mix.shell().yes?(prompt), do: :yes, else: :no
   end
 
   @doc """
@@ -320,33 +340,41 @@ defmodule DeployEx.TUI.Progress do
 
       %ExRatatui.Event.Key{code: code, kind: "press"} = ev ->
         case maybe_handle_confirm_key(state, code, modifier_list(ev)) do
-          {:handled, new_state} -> stream_loop(terminal, width, height, title, new_state, worker, opts)
-          :ignore -> stream_loop(terminal, width, height, title, state, worker, opts)
+          {:handled, new_state} ->
+            stream_loop(terminal, width, height, title, new_state, worker, opts)
+
+          :ignore ->
+            drain_worker_messages(terminal, width, height, title, state, worker, opts)
         end
 
       _ ->
-        receive do
-          {:tui_progress_update, ratio, label} ->
-            new_state = %{state | ratio: ratio, label: label}
-            stream_loop(terminal, width, height, title, new_state, worker, opts)
+        drain_worker_messages(terminal, width, height, title, state, worker, opts)
+    end
+  end
 
-          {:tui_progress_log, line} ->
-            new_state = %{state | log_tail: append_log_line(state.log_tail, line)}
-            stream_loop(terminal, width, height, title, new_state, worker, opts)
+  defp drain_worker_messages(terminal, width, height, title, state, worker, opts) do
+    receive do
+      {:tui_progress_update, ratio, label} ->
+        new_state = %{state | ratio: ratio, label: label}
+        stream_loop(terminal, width, height, title, new_state, worker, opts)
 
-          {:tui_progress_confirm_request, prompt, reply_to} ->
-            new_state = %{state | mode: {:confirm, %{prompt: prompt, reply_to: reply_to}}}
-            stream_loop(terminal, width, height, title, new_state, worker, opts)
+      {:tui_progress_log, line} ->
+        new_state = %{state | log_tail: append_log_line(state.log_tail, line)}
+        stream_loop(terminal, width, height, title, new_state, worker, opts)
 
-          {:tui_progress_done, result} ->
-            final_state = %{state | ratio: 1.0, label: "Complete!"}
-            draw_stream_progress(terminal, width, height, title, final_state)
-            Process.sleep(500)
-            {result, final_state.log_tail}
-        after
-          0 ->
-            stream_loop(terminal, width, height, title, state, worker, opts)
-        end
+      {:tui_progress_confirm_request, payload, reply_to} ->
+        confirm_state = payload |> normalize_confirm_payload() |> Map.put(:reply_to, reply_to)
+        new_state = %{state | mode: {:confirm, confirm_state}}
+        stream_loop(terminal, width, height, title, new_state, worker, opts)
+
+      {:tui_progress_done, result} ->
+        final_state = %{state | ratio: 1.0, label: "Complete!"}
+        draw_stream_progress(terminal, width, height, title, final_state)
+        Process.sleep(500)
+        {result, final_state.log_tail}
+    after
+      0 ->
+        stream_loop(terminal, width, height, title, state, worker, opts)
     end
   end
 
@@ -368,8 +396,15 @@ defmodule DeployEx.TUI.Progress do
 
   defp confirm_choice_for_code(code) when code in ["y", "Y"], do: :yes
   defp confirm_choice_for_code(code) when code in ["n", "N"], do: :no
-  defp confirm_choice_for_code(code) when code in ["c", "C", "Esc"], do: :cancel
   defp confirm_choice_for_code(_), do: nil
+
+  defp normalize_confirm_payload(prompt) when is_binary(prompt) do
+    %{prompt: prompt, preview: nil}
+  end
+
+  defp normalize_confirm_payload(%{prompt: _} = payload) do
+    %{prompt: payload.prompt, preview: payload[:preview]}
+  end
 
   defp append_log_line(log_tail, line) do
     [line | Enum.take(log_tail, @log_buffer_max - 1)]
@@ -402,48 +437,77 @@ defmodule DeployEx.TUI.Progress do
     ExRatatui.draw(terminal, base_widgets ++ lower_widgets)
   end
 
-  defp build_lower_widgets(%{mode: {:confirm, %{prompt: prompt}}}, lower_area, width) do
-    build_confirm_widgets(prompt, lower_area, width)
+  defp build_lower_widgets(%{mode: {:confirm, payload}}, lower_area, width) do
+    build_confirm_widgets(payload, lower_area, width)
   end
 
   defp build_lower_widgets(%{log_tail: log_tail}, lower_area, width) do
     build_log_widgets(log_tail, lower_area, width)
   end
 
-  defp build_confirm_widgets(prompt, lower_area, width) do
+  defp build_confirm_widgets(%{prompt: prompt, preview: preview}, lower_area, width) do
     inner_width = max(width - 4, 20)
-    prompt_text = "  " <> truncate_line(prompt, inner_width)
-    keys_text = "  [Y]es   [N]o   [C]ancel"
+    inner_height = max(lower_area.height - 2, 1)
+    rect_width = max(lower_area.width - 4, 1)
 
-    prompt_rect = %Rect{
-      x: lower_area.x + 1,
-      y: lower_area.y + 1,
-      width: max(lower_area.width - 2, 1),
-      height: 1
-    }
+    styled_lines = build_styled_confirm_lines(prompt, preview, inner_width - 2)
+    line_widgets = render_styled_lines(styled_lines, lower_area, rect_width, inner_height)
 
-    keys_rect = %Rect{
-      x: lower_area.x + 1,
-      y: lower_area.y + 3,
-      width: max(lower_area.width - 2, 1),
-      height: 1
-    }
+    [{confirm_block(), lower_area} | line_widgets]
+  end
 
-    prompt_widget = %Widgets.Paragraph{
-      text: prompt_text,
-      style: %Style{fg: :white, modifiers: [:bold]}
-    }
+  defp build_styled_confirm_lines(prompt, preview, max_width) do
+    prompt_lines = prompt |> wrap_text(max_width) |> Enum.map(&styled(&1, :white, [:bold]))
+    preview_lines = build_preview_styled_lines(preview, max_width)
+    separator = if preview_lines === [], do: [], else: [styled(separator_text(max_width), :light_black, [])]
+    keys = [styled("[Y]es   [N]o", :cyan, [])]
 
-    keys_widget = %Widgets.Paragraph{
-      text: keys_text,
-      style: %Style{fg: :cyan}
-    }
+    prompt_lines ++ separator ++ preview_lines ++ [styled("", :white, [])] ++ keys
+  end
 
-    [
-      {confirm_block(), lower_area},
-      {prompt_widget, prompt_rect},
-      {keys_widget, keys_rect}
-    ]
+  defp build_preview_styled_lines(nil, _max_width), do: []
+  defp build_preview_styled_lines("", _max_width), do: []
+
+  defp build_preview_styled_lines(preview, max_width) do
+    preview
+    |> String.split("\n", trim: false)
+    |> Enum.flat_map(&wrap_text(&1, max_width))
+    |> Enum.map(fn line -> styled(line, preview_line_color(line), []) end)
+  end
+
+  defp render_styled_lines(styled_lines, lower_area, rect_width, inner_height) do
+    styled_lines
+    |> Enum.take(inner_height)
+    |> Enum.with_index()
+    |> Enum.map(fn {%{text: text, style: style}, idx} ->
+      rect = %Rect{x: lower_area.x + 2, y: lower_area.y + 1 + idx, width: rect_width, height: 1}
+      {%Widgets.Paragraph{text: text, style: style}, rect}
+    end)
+  end
+
+  defp styled(text, color, modifiers) do
+    %{text: text, style: %Style{fg: color, modifiers: modifiers}}
+  end
+
+  defp separator_text(max_width), do: String.duplicate("─", max(max_width - 2, 1))
+
+  defp preview_line_color(line) do
+    cond do
+      String.starts_with?(line, "+") -> :green
+      String.starts_with?(line, "-") -> :red
+      String.starts_with?(line, "@@") -> :cyan
+      true -> :light_black
+    end
+  end
+
+  defp wrap_text("", _max), do: [""]
+  defp wrap_text(text, max) when max <= 0, do: [text]
+
+  defp wrap_text(text, max) do
+    text
+    |> String.graphemes()
+    |> Enum.chunk_every(max)
+    |> Enum.map(&Enum.join/1)
   end
 
   defp confirm_block do

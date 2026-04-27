@@ -227,7 +227,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
          :ok <- (progress.(7, "Waiting for instance to start..."); wait_for_instance(qa_node, opts)),
          {:ok, qa_node} <- (progress.(8, "Saving QA state..."); save_and_refresh_state(qa_node, opts)),
          :ok <- (progress.(9, "Applying host config rewrite..."); maybe_apply_proposals(qa_node, plan, accepted)),
-         :ok <- (progress.(10, "Waiting for SSH..."); wait_for_ssh_ready(qa_node)),
+         :ok <- (progress.(10, "Waiting for SSH..."); wait_for_ssh_ready(qa_node, tui_pid)),
          :ok <- (progress.(11, "Running setup & deploy..."); run_setup_and_deploy(qa_node, infra, tui_pid, opts)),
          {:ok, qa_node} <- (progress.(12, "Attaching load balancer..."); maybe_attach_lb(qa_node, opts)) do
       {:ok, qa_node}
@@ -257,13 +257,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   defp maybe_review_proposals(%{proposals: []}, _tui_pid), do: {:ok, []}
 
   defp maybe_review_proposals(%{proposals: proposals, module_prefix: module_prefix}, tui_pid) do
-    case DeployEx.QaHostRewrite.review_proposals(proposals, module_prefix, tui_pid) do
-      {:ok, accepted} ->
-        {:ok, accepted}
-
-      :cancelled ->
-        {:error, ErrorMessage.bad_request("user cancelled host config review")}
-    end
+    DeployEx.QaHostRewrite.review_proposals(proposals, module_prefix, tui_pid)
   end
 
   defp maybe_apply_proposals(_qa_node, :skip, _accepted), do: :ok
@@ -463,12 +457,12 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     DeployEx.AwsMachine.wait_for_started([qa_node.instance_id])
   end
 
-  defp wait_for_ssh_ready(qa_node) do
+  defp wait_for_ssh_ready(qa_node, tui_pid) do
     if not DeployEx.TUI.enabled?() do
       Mix.shell().info([:faint, "Waiting for SSH to be ready on ", :reset, :cyan, qa_node.public_ip, :reset, :faint, "..."])
     end
 
-    wait_for_ssh(qa_node.public_ip)
+    wait_for_ssh(qa_node.public_ip, tui_pid)
   end
 
   defp save_and_refresh_state(qa_node, opts) do
@@ -497,41 +491,69 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
   defp maybe_run_setup(qa_node, _infra, tui_pid, opts) do
     if not DeployEx.TUI.enabled?() do
-      Mix.shell().info([:faint, "Waiting for SSH to be ready on ", :reset, :cyan, qa_node.instance_name, :reset, :faint, "..."])
-    end
-
-    wait_for_ssh(qa_node.public_ip)
-
-    if not DeployEx.TUI.enabled?() do
       Mix.shell().info([:cyan, "Running Ansible setup for ", :bright, qa_node.instance_name, :reset, "..."])
     end
 
     run_ansible_setup(qa_node, tui_pid, opts)
   end
 
-  defp wait_for_ssh(ip, retries \\ 30) do
-    case System.cmd("nc", ["-z", "-w", "5", ip, "22"], stderr_to_stdout: true) do
-      {_, 0} -> :ok
-      _ when retries > 0 ->
-        Process.sleep(5000)
-        wait_for_ssh(ip, retries - 1)
-      _ -> :ok
+  @ssh_max_attempts 24
+  @ssh_retry_sleep_ms 5_000
+  @ssh_probe_timeout_s "3"
+
+  defp wait_for_ssh(ip, tui_pid, attempt \\ 1) do
+    log_ssh_attempt(tui_pid, ip, attempt)
+
+    case System.cmd("nc", ["-z", "-w", @ssh_probe_timeout_s, ip, "22"], stderr_to_stdout: true) do
+      {_, 0} ->
+        log_ssh_ready(tui_pid, ip)
+        :ok
+
+      _ when attempt < @ssh_max_attempts ->
+        Process.sleep(@ssh_retry_sleep_ms)
+        wait_for_ssh(ip, tui_pid, attempt + 1)
+
+      _ ->
+        {:error,
+         ErrorMessage.failed_dependency(
+           "SSH did not open on #{ip}:22 after #{@ssh_max_attempts} attempts (~#{div(@ssh_max_attempts * @ssh_retry_sleep_ms, 1000)}s). Check the security group allows port 22 from your IP.",
+           %{ip: ip, attempts: @ssh_max_attempts}
+         )}
     end
   end
 
+  defp log_ssh_attempt(tui_pid, ip, attempt) when is_pid(tui_pid) do
+    DeployEx.TUI.Progress.update_log(
+      tui_pid,
+      "  ssh probe #{attempt}/#{@ssh_max_attempts} → #{ip}:22"
+    )
+  end
+
+  defp log_ssh_attempt(_tui_pid, _ip, _attempt), do: :ok
+
+  defp log_ssh_ready(tui_pid, ip) when is_pid(tui_pid) do
+    DeployEx.TUI.Progress.update_log(tui_pid, "  ✓ SSH ready on #{ip}:22")
+  end
+
+  defp log_ssh_ready(_tui_pid, _ip), do: :ok
+
   defp maybe_wait_for_deploy(_qa_node, _infra, _tui_pid, %{skip_deploy: true}), do: :ok
-  defp maybe_wait_for_deploy(qa_node, %{using_app_ami: true}, _tui_pid, _opts) do
+  defp maybe_wait_for_deploy(qa_node, %{using_app_ami: true}, tui_pid, _opts) do
     if not DeployEx.TUI.enabled?() do
       Mix.shell().info([:faint, "Waiting for cloud-init to deploy release..."])
     end
 
-    wait_for_ssh(qa_node.public_ip)
+    case wait_for_ssh(qa_node.public_ip, tui_pid) do
+      :ok ->
+        if not DeployEx.TUI.enabled?() do
+          Mix.shell().info([:green, "  ✓ ", :reset, "Release deployed via cloud-init"])
+        end
 
-    if not DeployEx.TUI.enabled?() do
-      Mix.shell().info([:green, "  ✓ ", :reset, "Release deployed via cloud-init"])
+        :ok
+
+      {:error, _} = error ->
+        error
     end
-
-    :ok
   end
   defp maybe_wait_for_deploy(qa_node, _infra, tui_pid, opts) do
     if not DeployEx.TUI.enabled?() do

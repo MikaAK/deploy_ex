@@ -108,39 +108,76 @@ defmodule DeployEx.QaHostRewrite do
 
   @doc """
   Asks the user to confirm each proposal — "Modify host config for
-  `<ModulePrefix>.Endpoint` at `<path>`? [y/n/c]". Returns the accepted
-  proposals (placeholder still in place; substituted later by
-  `apply_proposals/4`), or `:cancelled` if the user pressed C/cancel on any
-  proposal.
+  `<ModulePrefix>.Endpoint` at `<path>`?" with a unified-diff preview of
+  the change rendered below the prompt. Returns the accepted proposals
+  (placeholder still in place; substituted later by `apply_proposals/4`).
 
-  In TUI mode (`tui_pid` is a pid), the prompt is rendered in the lower pane
-  of the persistent progress UI via `DeployEx.TUI.Progress.confirm/2`. In
-  console mode (`tui_pid` is nil), falls back to `Mix.shell().yes?/1`.
+  In TUI mode (`tui_pid` is a pid), prompt + preview are rendered in the
+  lower pane of the persistent progress UI via
+  `DeployEx.TUI.Progress.confirm/2`. In console mode (`tui_pid` is nil),
+  the preview prints to stderr and `Mix.shell().yes?/1` collects the
+  decision.
   """
-  @spec review_proposals([proposal()], String.t(), pid() | nil) ::
-          {:ok, [proposal()]} | :cancelled
-  def review_proposals(proposals, module_prefix, tui_pid) do
-    initial = {:ok, []}
+  @preview_max_bytes 50_000
 
-    proposals
-    |> Enum.reduce_while(initial, &collect_decision(&1, &2, module_prefix, tui_pid))
-    |> finalize_review()
+  @spec review_proposals([proposal()], String.t(), pid() | nil) :: {:ok, [proposal()]}
+  def review_proposals(proposals, module_prefix, tui_pid) do
+    log(tui_pid, "Reviewing #{length(proposals)} host config file(s)...")
+
+    accepted =
+      proposals
+      |> Enum.with_index(1)
+      |> Enum.reduce([], &collect_proposal_decision(&1, &2, module_prefix, tui_pid, length(proposals)))
+
+    {:ok, Enum.reverse(accepted)}
   end
 
-  defp collect_decision(proposal, {:ok, acc}, module_prefix, tui_pid) do
-    case DeployEx.TUI.Progress.confirm(tui_pid, confirm_prompt(proposal, module_prefix)) do
-      :yes -> {:cont, {:ok, [proposal | acc]}}
-      :no -> {:cont, {:ok, acc}}
-      :cancel -> {:halt, :cancelled}
+  defp collect_proposal_decision({proposal, idx}, acc, module_prefix, tui_pid, total) do
+    log(tui_pid, "[#{idx}/#{total}] Building preview for #{proposal.path}...")
+    payload = confirm_payload(proposal, module_prefix)
+    log(tui_pid, "[#{idx}/#{total}] Awaiting confirmation for #{proposal.path}...")
+
+    case DeployEx.TUI.Progress.confirm(tui_pid, payload) do
+      :yes ->
+        log(tui_pid, "[#{idx}/#{total}] Accepted #{proposal.path}")
+        [proposal | acc]
+
+      :no ->
+        log(tui_pid, "[#{idx}/#{total}] Skipped #{proposal.path}")
+        acc
     end
   end
 
-  defp finalize_review({:ok, accepted}), do: {:ok, Enum.reverse(accepted)}
-  defp finalize_review(:cancelled), do: :cancelled
-
-  defp confirm_prompt(%{path: path}, module_prefix) do
-    "Modify host config for #{module_prefix}.Endpoint at #{path}?"
+  defp log(tui_pid, message) when is_pid(tui_pid) do
+    DeployEx.TUI.Progress.update_log(tui_pid, "  " <> message)
   end
+
+  defp log(_tui_pid, _message), do: :ok
+
+  defp confirm_payload(%{path: path, original: original, rewritten: rewritten}, module_prefix) do
+    %{
+      prompt: "Modify host config for #{module_prefix}.Endpoint at #{path}?",
+      preview: build_preview(original, rewritten)
+    }
+  end
+
+  defp build_preview(original, rewritten) when byte_size(original) > @preview_max_bytes or byte_size(rewritten) > @preview_max_bytes do
+    "(content too large for inline preview — #{byte_size(original)}/#{byte_size(rewritten)} bytes)"
+  end
+
+  defp build_preview(original, rewritten) do
+    old_lines = String.split(original, "\n")
+    new_lines = String.split(rewritten, "\n")
+
+    case List.myers_difference(old_lines, new_lines) do
+      [{:eq, _}] -> nil
+      diff -> diff |> Enum.flat_map(&format_diff_chunk/1) |> Enum.join("\n")
+    end
+  end
+
+  defp format_diff_chunk({:eq, _lines}), do: []
+  defp format_diff_chunk({:del, lines}), do: Enum.map(lines, &("- " <> &1))
+  defp format_diff_chunk({:ins, lines}), do: Enum.map(lines, &("+ " <> &1))
 
   @doc """
   Substitutes the IP placeholder with `public_ip` in each accepted proposal,
