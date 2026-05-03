@@ -19,6 +19,30 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   mix deploy_ex.qa.create my_app --sha abc1234 --use-ami
   ```
 
+  ## Wait for build (CI-gated deploys)
+
+  Pass `--wait-for-build` to commit + push the SSL/host rewrites and wait for
+  GitHub Actions to build the release artifact before deploying.
+
+      mix deploy_ex.qa.create cfx_web --public-ip-cert --wait-for-build --tag canary
+
+  Detection: scans `.github/workflows/*.yml` for the workflow whose `on.push.branches`
+  matches the QA branch and whose jobs (or sub-workflow jobs) run `mix deploy_ex.release`.
+
+  Branch resolution: if the current branch matches `^qa[\/-]` it is reused; otherwise
+  derives `qa/<app>-<tag>` (or `qa/<app>-<short_sha>` if `--tag` is omitted).
+
+  Options:
+    --build-workflow=<file>   Override workflow auto-detection
+    --build-job=<job_id>      Override job auto-detection within the workflow
+    --build-timeout=<minutes> Default 30. Max wait for the build to complete
+
+  On build failure, prompts with 4 options:
+    1. Destroy QA node + revert (full rollback)
+    2. Leave everything (no cleanup)
+    3. Destroy QA node only (keep commit + local files)
+    4. Revert LLM changes + repush (keep QA node, retry build)
+
   ## Options
   - `--sha, -s` - Target git SHA; if omitted, picks from QA releases on current branch
   - `--tag, -t` - Custom label used in the instance name (replaces the short SHA)
