@@ -323,6 +323,22 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
         input(:quiet, "Quiet", :boolean)
       ]
     },
+    %{
+      task: "deploy_ex.grafana.install_dashboard",
+      module: Mix.Tasks.DeployEx.Grafana.InstallDashboard,
+      category: "DeployEx",
+      inputs: [
+        input(:file, "Dashboard JSON file", :string, description: "Path to a local dashboard JSON file"),
+        input(:id, "Grafana.com dashboard ID", :integer, description: "Downloads latest revision from grafana.com"),
+        input(:grafana_ip, "Grafana IP", :string, description: "Manual Grafana node IP (skips EC2 discovery)"),
+        input(:grafana_port, "Grafana port", :integer, description: "Grafana port (default: 80)"),
+        input(:user, "Grafana user", :string, description: "Grafana admin username (default: admin)"),
+        input(:password, "Grafana password", :string, description: "Grafana admin password"),
+        input(:resource_group, "Resource group", :string, description: "AWS resource group for node discovery"),
+        input(:pem, "PEM file", :string, description: "Path to PEM file for SSH tunnel"),
+        input(:quiet, "Quiet", :boolean)
+      ]
+    },
 
     # ─── Autoscaling ───────────────────────────────────────────────────
     %{
