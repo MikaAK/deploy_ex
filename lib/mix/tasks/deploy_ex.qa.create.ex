@@ -114,6 +114,62 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     end
   end
 
+  defp validate_wait_for_build_preconditions(_opts, _umbrella_root, _app_name, false), do: {:ok, %{enabled?: false}}
+
+  defp validate_wait_for_build_preconditions(opts, umbrella_root, app_name, true) do
+    with :ok <- DeployEx.ToolInstaller.ensure_installed(:gh),
+         :ok <- DeployEx.GitHubActions.ensure_authenticated(),
+         {:ok, branch_resolution} <- resolve_branch(opts, umbrella_root, app_name),
+         {:ok, %{} = workflow} <- detect_or_override_workflow(opts, umbrella_root, branch_resolution) do
+      {:ok,
+       %{
+         enabled?: true,
+         workflow: workflow,
+         branch_resolution: branch_resolution
+       }}
+    end
+  end
+
+  defp detect_or_override_workflow(opts, umbrella_root, {_action, branch}) do
+    workflows_root = Path.join(umbrella_root, ".github/workflows")
+
+    case {opts[:build_workflow], opts[:build_job]} do
+      {wf, job} when is_binary(wf) and is_binary(job) ->
+        {:ok, %{file: wf, job_id: job}}
+
+      _ ->
+        DeployEx.GitHubActions.find_build_workflow(workflows_root, branch)
+    end
+  end
+
+  defp resolve_branch(opts, umbrella_root, app_name) do
+    sha = opts[:sha] || head_sha(umbrella_root)
+    tag = opts[:tag]
+
+    case DeployEx.GitOperations.resolve_qa_branch(umbrella_root, app_name, tag, sha) do
+      {:reuse_current, b} = result ->
+        if opts[:sha] && opts[:sha] !== sha do
+          {:error,
+           ErrorMessage.bad_request(
+             "already on qa branch #{b}; --sha conflicts with HEAD. Drop --sha or checkout a different branch first.",
+             %{}
+           )}
+        else
+          {:ok, result}
+        end
+
+      {:create_new, _b} = result ->
+        {:ok, result}
+    end
+  end
+
+  defp head_sha(repo_root) do
+    case DeployEx.Utils.run_command_with_return("git rev-parse HEAD", repo_root) do
+      {:ok, sha} -> String.trim(sha)
+      _ -> "HEAD"
+    end
+  end
+
   defp run_pipeline_tui(extra_args, opts) do
     {result, log_tail} =
       DeployEx.TUI.run(fn terminal ->
@@ -211,26 +267,59 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     end
   end
 
-  @pipeline_total_steps 12
+  @pipeline_total_steps_base 12
+  @pipeline_total_steps_wait_for_build 15
+
+  defp pipeline_total_steps(opts) do
+    if opts[:wait_for_build], do: @pipeline_total_steps_wait_for_build, else: @pipeline_total_steps_base
+  end
+
+  defp step_for(:validate_app, _opts), do: 1
+  defp step_for(:validate_sha, _opts), do: 2
+  defp step_for(:plan_rewrite, _opts), do: 3
+  defp step_for(:review_proposals, _opts), do: 4
+  defp step_for(:preflight_build, _opts), do: 5
+  defp step_for(:gather_infra, opts), do: if(opts[:wait_for_build], do: 6, else: 5)
+  defp step_for(:create_node, opts), do: if(opts[:wait_for_build], do: 7, else: 6)
+  defp step_for(:wait_instance, opts), do: if(opts[:wait_for_build], do: 8, else: 7)
+  defp step_for(:save_state, opts), do: if(opts[:wait_for_build], do: 9, else: 8)
+  defp step_for(:apply_rewrite, opts), do: if(opts[:wait_for_build], do: 10, else: 9)
+  defp step_for(:commit_push, _opts), do: 11
+  defp step_for(:wait_build, _opts), do: 12
+  defp step_for(:wait_ssh, opts), do: if(opts[:wait_for_build], do: 13, else: 10)
+  defp step_for(:setup_deploy, opts), do: if(opts[:wait_for_build], do: 14, else: 11)
+  defp step_for(:attach_lb, opts), do: if(opts[:wait_for_build], do: 15, else: 12)
 
   defp run_qa_pipeline_work(tui_pid, app_name, sha, opts) do
-    progress = fn step, label ->
-      DeployEx.TUI.Progress.update_progress(tui_pid, step / @pipeline_total_steps, label)
+    total_steps = pipeline_total_steps(opts)
+    umbrella_root = File.cwd!()
+
+    progress = fn key, label ->
+      DeployEx.TUI.Progress.update_progress(tui_pid, step_for(key, opts) / total_steps, label)
     end
 
-    with :ok <- (progress.(1, "Validating app name..."); validate_app_name(app_name)),
-         {:ok, full_sha} <- (progress.(2, "Validating SHA..."); validate_and_find_sha(app_name, sha, opts)),
-         {:ok, plan} <- (progress.(3, "Planning host config rewrite (LLM)..."); maybe_plan_host_rewrite(app_name, opts)),
-         {:ok, accepted} <- (progress.(4, "Confirming target files..."); maybe_review_proposals(plan, tui_pid)),
-         {:ok, infra} <- (progress.(5, "Gathering infrastructure..."); gather_infrastructure(app_name, opts)),
-         {:ok, qa_node} <- (progress.(6, "Creating QA node..."); create_qa_node(app_name, full_sha, infra, opts)),
-         :ok <- (progress.(7, "Waiting for instance to start..."); wait_for_instance(qa_node, opts)),
-         {:ok, qa_node} <- (progress.(8, "Saving QA state..."); save_and_refresh_state(qa_node, opts)),
-         :ok <- (progress.(9, "Applying host config rewrite..."); maybe_apply_proposals(qa_node, plan, accepted)),
-         :ok <- (progress.(10, "Waiting for SSH..."); wait_for_ssh_ready(qa_node, tui_pid)),
-         :ok <- (progress.(11, "Running setup & deploy..."); run_setup_and_deploy(qa_node, infra, tui_pid, opts)),
-         {:ok, qa_node} <- (progress.(12, "Attaching load balancer..."); maybe_attach_lb(qa_node, opts)) do
+    with :ok <- (progress.(:validate_app, "Validating app name..."); validate_app_name(app_name)),
+         {:ok, full_sha} <- (progress.(:validate_sha, "Validating SHA..."); validate_and_find_sha(app_name, sha, opts)),
+         {:ok, plan} <- (progress.(:plan_rewrite, "Planning host config rewrite (LLM)..."); maybe_plan_host_rewrite(app_name, opts)),
+         {:ok, accepted} <- (progress.(:review_proposals, "Confirming target files..."); maybe_review_proposals(plan, tui_pid)),
+         {:ok, _build_state} <- (maybe_progress_preflight(progress, opts); validate_wait_for_build_preconditions(opts, umbrella_root, app_name, opts[:wait_for_build] || false)),
+         {:ok, infra} <- (progress.(:gather_infra, "Gathering infrastructure..."); gather_infrastructure(app_name, opts)),
+         {:ok, qa_node} <- (progress.(:create_node, "Creating QA node..."); create_qa_node(app_name, full_sha, infra, opts)),
+         :ok <- (progress.(:wait_instance, "Waiting for instance to start..."); wait_for_instance(qa_node, opts)),
+         {:ok, qa_node} <- (progress.(:save_state, "Saving QA state..."); save_and_refresh_state(qa_node, opts)),
+         :ok <- (progress.(:apply_rewrite, "Applying host config rewrite..."); maybe_apply_proposals(qa_node, plan, accepted)),
+         :ok <- (progress.(:wait_ssh, "Waiting for SSH..."); wait_for_ssh_ready(qa_node, tui_pid)),
+         :ok <- (progress.(:setup_deploy, "Running setup & deploy..."); run_setup_and_deploy(qa_node, infra, tui_pid, opts)),
+         {:ok, qa_node} <- (progress.(:attach_lb, "Attaching load balancer..."); maybe_attach_lb(qa_node, opts)) do
       {:ok, qa_node}
+    end
+  end
+
+  defp maybe_progress_preflight(progress, opts) do
+    if opts[:wait_for_build] do
+      progress.(:preflight_build, "Validating wait-for-build preconditions...")
+    else
+      :ok
     end
   end
 
