@@ -18,7 +18,7 @@ mix ansible.deploy [--only app1]                  # deploy to EC2
 
 ### First-time Setup
 ```bash
-mix deploy_ex.full_setup -yak    # -y auto-approve, -a auto-pull AWS creds, -k skip-deploy
+mix deploy_ex.full_setup -ya     # -y auto-approve, -a auto-pull AWS creds (no deploy step; CI handles deploys)
 mix deploy_ex.install_github_action
 ```
 

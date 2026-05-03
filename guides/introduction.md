@@ -78,7 +78,7 @@ guides/                              # Documentation (this folder)
 
 ```
 1. mix deps.get                          # install deploy_ex
-2. mix deploy_ex.full_setup -yak         # generate files + provision infrastructure
+2. mix deploy_ex.full_setup -ya          # generate files + provision infrastructure
 3. mix deploy_ex.install_github_action   # set up CI/CD
 4. mix deploy_ex.release                 # build releases (change detection)
 5. mix deploy_ex.upload                  # upload to S3

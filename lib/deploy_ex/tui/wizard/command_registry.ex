@@ -49,7 +49,6 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.DeployEx.FullSetup,
       category: "DeployEx",
       inputs: [
-        input(:skip_deploy, "Skip deploy", :boolean, description: "Skip application deployment after server setup"),
         input(:skip_setup, "Skip setup wait", :boolean, description: "Skip waiting period between infra creation and setup")
       ]
     },

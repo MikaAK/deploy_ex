@@ -18,6 +18,147 @@ DeployEx ships **68 Mix tasks**, EEx templates for Terraform and Ansible, an int
 
 Optional services (toggle off with `--no-*`): Postgres, Redis, Grafana UI, Loki, Prometheus, Sentry.
 
+## Quickstart
+
+Each step is one action. Run them in order; deploys flow through GitHub Actions, not your machine.
+
+### Step 1 — Add the dependency
+
+Edit `mix.exs`:
+
+```elixir
+def deps do
+  [
+    {:deploy_ex, "~> 0.1"}
+  ]
+end
+```
+
+Make sure every release in `mix.exs` ends its `steps:` list with `:tar`.
+
+### Step 2 — Fetch deps
+
+```bash
+mix deps.get
+```
+
+### Step 3 — Bootstrap AWS infrastructure
+
+```bash
+mix deploy_ex.full_setup -ya
+```
+
+**What it does:** creates the Terraform state bucket + lock table, generates `./deploys/{terraform,ansible}/`, runs `terraform apply` to provision VPC + EC2 + RDS + S3 + IAM, then runs `ansible.setup` to bootstrap the instances. It does **not** deploy any release — that's CI's job (Step 6 onward).
+
+**Flags:** `-y` auto-approves terraform, `-a` pulls AWS credentials from `~/.aws/credentials` into Ansible group_vars, `-p` skips the wait + ansible.setup steps if you want infra-only.
+
+**Time:** 10–25 minutes for the first run (mostly EC2 instance boot and Ansible bootstrap).
+
+### Step 4 — Review per-app config
+
+```bash
+$EDITOR deploys/terraform/variables.tf
+```
+
+The `<app>_project` map declares per-app infrastructure: instance type, count, EBS, load balancer, autoscaling. Defaults are conservative (`t3.nano`, single instance, no LB) — adjust before applying real workloads. See [Terraform Variables](guides/reference/terraform_variables.md) for the schema.
+
+### Step 5 — Apply your config
+
+```bash
+mix terraform.plan
+mix terraform.apply -y
+```
+
+`plan` previews the diff — read it. `apply` executes.
+
+### Step 6 — Generate CI workflows
+
+```bash
+mix deploy_ex.install_github_action
+```
+
+Writes `.github/workflows/deploy-ex-release.yml` (build + upload + deploy on every push) and `.github/workflows/setup-new-nodes.yml` (every 15 min: detects instances missing the `SetupComplete` tag and runs `ansible.setup`).
+
+### Step 7 — Generate the migration script
+
+```bash
+mix deploy_ex.install_migration_script
+```
+
+Writes `rel/overlays/bin/migrate.sh` — Mix copies it into every release tarball, so on the server it lives at `/srv/<release>/bin/migrate.sh`.
+
+### Step 8 — Commit the generated files
+
+```bash
+git add .github rel/overlays deploys
+git commit -m "chore: deploy_ex bootstrap"
+```
+
+You own everything in `deploys/`. Subsequent `mix terraform.build` / `mix ansible.build` runs are additive — they merge new app entries into your customised files without overwriting them.
+
+### Step 9 — Add GitHub repository secrets
+
+In GitHub: **Settings → Secrets and variables → Actions → New repository secret**.
+
+| Secret | Value |
+|---|---|
+| `DEPLOY_EX_AWS_ACCESS_KEY_ID` | AWS access key (the deploy IAM user, not your console login) |
+| `DEPLOY_EX_AWS_SECRET_ACCESS_KEY` | matching secret key |
+| `EC2_PEM_FILE` | full contents of `deploys/terraform/*.pem`. Copy with `cat deploys/terraform/*.pem \| pbcopy` (macOS) |
+
+### Step 10 — Add runtime env-var secrets (`__DEPLOY_EX__*`)
+
+For every env var your app needs at compile or runtime, add a secret prefixed `__DEPLOY_EX__`. Examples:
+
+| Secret name | Becomes env var |
+|---|---|
+| `__DEPLOY_EX__DATABASE_URL` | `DATABASE_URL` |
+| `__DEPLOY_EX__SECRET_KEY_BASE` | `SECRET_KEY_BASE` |
+| `__DEPLOY_EX__SENTRY_DSN` | `SENTRY_DSN` |
+
+The prefix is stripped automatically. Available during `mix compile` (so runtime config can read them) and exported on deployed instances.
+
+### Step 11 — Allow workflow write permissions
+
+In GitHub: **Settings → Actions → General → Workflow permissions** — select **"Read and write permissions"**. Required for the workflow's auto-commit step (when `terraform.build` adds drift to `deploys/`).
+
+### Step 12 — Handle branch protections (if any)
+
+If you have branch protection on `main`, the auto-commit step will fail. Either:
+
+- **Disable protection on `main`** (simplest, fine for solo / small teams), or
+- **Add a PAT or GitHub App token with bypass permissions** and replace `${{ secrets.GITHUB_TOKEN }}` references in the workflow with your token. Document the rotation owner in your team runbook.
+
+See [Configuration → GitHub Actions Setup](guides/reference/configuration.md#github-actions-setup) for full details.
+
+### Step 13 — Trigger your first CI deploy
+
+```bash
+git push origin main
+```
+
+Watch progress at `https://github.com/<owner>/<repo>/actions`. The workflow:
+
+1. Compiles your project with `__DEPLOY_EX__*` secrets injected as env vars
+2. `mix deploy_ex.ssh.authorize` — whitelists the runner IP
+3. `mix deploy_ex.release` — builds changed apps only
+4. `mix deploy_ex.upload` — pushes tarballs to S3 (auto-`--qa` for `qa/*` branches)
+5. Writes the PEM file from the secret onto the runner
+6. `mix ansible.deploy --target-sha <sha>` — deploys to instances
+7. `mix deploy_ex.ssh.authorize -r` — deauthorizes the runner IP
+
+### Daily loop
+
+After Step 13, your day-to-day is just:
+
+```bash
+git push origin main          # CI handles release → upload → deploy
+```
+
+Change detection compares git SHAs, `mix.lock` diffs, and `mix deps.tree` — only changed apps rebuild. To roll back: `mix ansible.rollback` or `mix ansible.rollback --select` for a picker.
+
+For SSH and ops commands, see [SSH (Eval Pattern)](#ssh-eval-pattern) below.
+
 ## Prerequisites
 
 - **Git** (required for change detection)
@@ -29,54 +170,103 @@ Optional services (toggle off with `--no-*`): Postgres, Redis, Grafana UI, Loki,
 
 Every release in your `mix.exs` must end its `steps:` list with `:tar`.
 
-## Install
+## What `full_setup` Actually Does
 
-```elixir
-def deps do
-  [
-    {:deploy_ex, "~> 0.1"}
-  ]
+The `mix deploy_ex.full_setup` step from the Quickstart chains:
+
+1. `terraform.create_state_bucket` + `create_state_lock_table` — S3 + DynamoDB for Terraform state
+2. `terraform.build` → `apply` → `refresh` — generate and apply infra
+3. `ansible.build` → wait → `ping` → `setup` — generate inventory + bootstrap servers
+
+It stops there. Releases are deployed by CI (or manually with `mix deploy_ex.release && mix deploy_ex.upload && mix ansible.deploy`).
+
+## Filtering Releases and Rollbacks
+
+```bash
+mix deploy_ex.release --only app1 --only app2     # build subset
+mix deploy_ex.release --except app3               # exclude
+mix deploy_ex.release --force                     # rebuild everything
+
+mix ansible.deploy --target-sha abc1234           # specific SHA
+mix ansible.deploy --target-sha auto              # newest on current branch
+mix ansible.rollback                              # previous release
+mix ansible.rollback --select                     # interactive picker
+```
+
+Phoenix apps automatically run `mix assets.deploy` (esbuild + sass + tailwind + phx.digest) when assets are detected.
+
+## SSH (Eval Pattern)
+
+`mix deploy_ex.ssh -s` prints the ssh command instead of running it, so you can chain it into a shell:
+
+```bash
+eval "$(mix deploy_ex.ssh -s my_app)"             # SSH directly
+eval "$(mix deploy_ex.ssh -s --root my_app)"      # as root
+eval "$(mix deploy_ex.ssh -s --log my_app)"       # tail logs
+eval "$(mix deploy_ex.ssh -s --iex my_app)"       # remote IEx
+```
+
+Wrap it in a shell function so you can `my-app-ssh app_name --log` from anywhere:
+
+```bash
+# bash / zsh
+alias my-app-ssh='pushd ~/path/to/project >/dev/null && mix compile --quiet && eval "$(mix deploy_ex.ssh -s $@)" && popd >/dev/null'
+
+# fish
+function my-app-ssh
+  pushd ~/path/to/project &&
+  set ssh_command (mix deploy_ex.ssh $argv -s) &&
+  eval $ssh_command &&
+  popd
 end
 ```
 
-```bash
-mix deps.get
-```
-
-## Quick Start
+Authorise SSH access first — by default ingress is locked down:
 
 ```bash
-mix deploy_ex.full_setup -yak           # generate files + provision infra
-mix deploy_ex.install_github_action     # install CI workflows
-mix deploy_ex.install_migration_script  # generate the single migrate.sh overlay
-git add .github rel/overlays && git commit -m "chore: deploy_ex bootstrap"
+mix deploy_ex.ssh.authorize       # add current IP
+mix deploy_ex.ssh.authorize --remove
 ```
 
-Flags: `-y` auto-approves Terraform, `-a` pulls AWS credentials from `~/.aws/credentials` into Ansible, `-k` skips the deploy step, `-p` skips the wait/setup step.
+Full reference: [Connecting to Nodes](guides/how-to/connecting_to_nodes.md).
 
-The `full_setup` pipeline runs:
+## Managing Infrastructure (Terraform Variables)
 
-1. `terraform.create_state_bucket` + `create_state_lock_table`
-2. `terraform.build` → `apply` → `refresh`
-3. `ansible.build` → wait → `ping` → `setup`
-4. `deploy_ex.upload` → `ansible.deploy` (unless `-k`)
+Per-app infrastructure — instance type, count, EBS, load balancer, **autoscaling** — is declared in `deploys/terraform/variables.tf`. Edit the file, then `mix terraform.apply`. Don't manage scale or instance type via the AWS console; deploy_ex is the source of truth.
 
-## Day-to-day Deploys
+```hcl
+my_app_project = {
+  my_app = {
+    instance_type = "t3.small"
+    instance_count = 2
+
+    load_balancer = { enable = true, port = 80, instance_port = 4000 }
+
+    autoscaling = {
+      enable                  = true
+      min_size                = 2
+      max_size                = 10
+      desired_capacity        = 3
+      cpu_target_percent      = 60
+      ignore_capacity_changes = false   # see Terraform Variables guide
+    }
+  }
+}
+```
+
+Standard workflow:
 
 ```bash
-mix deploy_ex.release        # build changed apps (git + mix.lock + deps.tree diff)
-mix deploy_ex.upload         # upload to S3 (4-way parallel by default)
-mix ansible.deploy           # deploy to instances (or use --target-sha auto)
+mix terraform.plan          # preview changes
+mix terraform.apply         # apply
+mix ansible.build           # if instance count or apps changed
+mix ansible.setup --only my_app
+mix ansible.deploy --only my_app
 ```
 
-Filter with `--only app1 --only app2` or `--except app3`. `--force` rebuilds everything. Phoenix apps automatically run `mix assets.deploy` (esbuild + sass + tailwind + phx.digest).
+`mix deploy_ex.autoscale.scale` and `mix deploy_ex.autoscale.refresh` are runtime levers (manual override, rolling deploy) — they call AWS APIs directly and don't edit `variables.tf`. The `ignore_capacity_changes` flag controls whether those runtime overrides survive the next `terraform.apply`.
 
-Roll back:
-
-```bash
-mix ansible.rollback              # to previous release
-mix ansible.rollback --select     # interactive picker from history
-```
+The full schema (templates, scheduled scaling, EBS pool, multi-Launch-Template setups) is in [Terraform Variables](guides/reference/terraform_variables.md). Autoscaling internals: [Autoscaling Explanation](guides/explanation/autoscaling.md).
 
 ## QA Nodes
 

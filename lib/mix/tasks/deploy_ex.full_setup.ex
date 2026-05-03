@@ -1,9 +1,9 @@
 defmodule Mix.Tasks.DeployEx.FullSetup do
   use Mix.Task
 
-  @shortdoc "Performs complete infrastructure and application setup using Terraform and Ansible"
+  @shortdoc "Bootstraps AWS infrastructure and configures servers via Terraform and Ansible"
   @moduledoc """
-  Performs a complete setup of your infrastructure and application deployment using Terraform and Ansible.
+  Provisions AWS infrastructure with Terraform and bootstraps servers with Ansible.
 
   This task runs through the following steps:
   1. Builds and applies Terraform configuration to provision infrastructure
@@ -11,25 +11,28 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
   3. Waits for servers to fully initialize
   4. Pings servers to verify connectivity
   5. Runs Ansible setup to configure servers
-  6. Deploys the application (unless skipped)
+
+  Releases are deployed by your CI pipeline (see
+  `mix deploy_ex.install_github_action`). Once `full_setup` completes, push to
+  your main branch — or run `mix deploy_ex.release && mix deploy_ex.upload &&
+  mix ansible.deploy` locally — to deploy.
 
   ## Example
   ```bash
-  # Run complete setup with all confirmations
+  # Default — interactive
   mix deploy_ex.full_setup
 
-  # Skip confirmations and deploy automatically
+  # Auto-approve every prompt
   mix deploy_ex.full_setup --auto-approve
 
-  # Setup infrastructure but skip final deployment
-  mix deploy_ex.full_setup --skip-deploy
+  # Skip the wait + ansible.setup steps (infra-only)
+  mix deploy_ex.full_setup --skip-setup
   ```
 
   ## Options
   - `auto-approve` - Skip Terraform plan confirmation prompts (alias: `y`)
-  - `skip-deploy` - Skip application deployment after server setup (alias: `k`)
-  - `skip-setup` - Skip waiting period between infrastructure creation and setup (alias: `p`)
-  - `auto_pull_aws` - Automatically pull AWS credentials from host machine (alias: `a`)
+  - `skip-setup` - Skip waiting period and `ansible.setup` (alias: `p`)
+  - `auto_pull_aws` - Pull AWS credentials from `~/.aws/credentials` (alias: `a`)
   """
 
   alias Mix.Tasks.{Ansible, Terraform}
@@ -41,11 +44,6 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
     Terraform.Apply,
     Terraform.Refresh,
     Ansible.Build
-  ]
-
-  @post_setup_comands [
-    Mix.Tasks.DeployEx.Upload,
-    Ansible.Deploy
   ]
 
   @time_between_pre_post :timer.seconds(10)
@@ -64,7 +62,7 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
           run_setup_countdown(wait_seconds)
         end
 
-        ping_and_run_post_setup(args)
+        ping_and_run_setup(args)
       else
         Mix.raise(result)
       end
@@ -73,10 +71,9 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
 
   defp parse_args(args) do
     {opts, _extra_args} = OptionParser.parse!(args,
-      aliases: [k: :skip_deploy, p: :skip_setup],
+      aliases: [p: :skip_setup],
       switches: [
         skip_setup: :boolean,
-        skip_deploy: :boolean,
         no_tui: :boolean
       ]
     )
@@ -93,24 +90,23 @@ defmodule Mix.Tasks.DeployEx.FullSetup do
     end)
   end
 
-  defp ping_and_run_post_setup(args) do
+  defp ping_and_run_setup(args) do
     opts = parse_args(args)
 
     with :ok <- Ansible.Ping.run(args),
          :ok <- run_setup(opts, args) do
-
-      if !opts[:skip_deploy] do
-        Mix.shell().info([
-          :green, "* running post setup"
-        ])
-
-        run_commands(@post_setup_comands, args)
-      end
+      Mix.shell().info([
+        :green, "\n* infrastructure ready. Push to your main branch — or run ",
+        :bright, "mix deploy_ex.release && mix deploy_ex.upload && mix ansible.deploy",
+        :reset, :green, " — to deploy."
+      ])
     end
   end
 
   defp run_setup(opts, args) do
-    unless opts[:skip_setup] do
+    if opts[:skip_setup] do
+      :ok
+    else
       Mix.shell().info([
         :green, "* running instance setup"
       ])

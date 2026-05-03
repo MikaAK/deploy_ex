@@ -1,21 +1,57 @@
 # How to Connect to Nodes
 
-## Authorize SSH First
+## TL;DR — The `eval` Pattern
 
-By default, SSH ingress is locked down. Whitelist your current IP:
+`mix deploy_ex.ssh -s` (short for `--short`) prints the ssh command instead of running it, so you can pipe it into `eval` to connect:
 
 ```bash
-mix deploy_ex.ssh.authorize                       # add current IP to security group
+eval "$(mix deploy_ex.ssh -s my_app)"             # SSH directly
+eval "$(mix deploy_ex.ssh -s --root my_app)"      # as root
+eval "$(mix deploy_ex.ssh -s --log my_app)"       # tail journalctl
+eval "$(mix deploy_ex.ssh -s --iex my_app)"       # remote IEx
+```
+
+This is the **standard day-to-day pattern** for connecting to instances. App name can be a partial match — deploy_ex regex-matches it against instance tags, so `app` will find `my_app` if there's only one match.
+
+If SSH is blocked, run `mix deploy_ex.ssh.authorize` first (see below).
+
+## Shell Aliases
+
+Wrap the eval pattern in a function so you can run `my-app-ssh app_name --log` from anywhere on disk:
+
+**Bash / zsh:**
+
+```bash
+alias my-app-ssh='pushd ~/path/to/project >/dev/null && mix compile --quiet && eval "$(mix deploy_ex.ssh -s $@)" && popd >/dev/null'
+```
+
+**Fish:**
+
+```fish
+function my-app-ssh
+  pushd ~/path/to/project &&
+  set ssh_command (mix deploy_ex.ssh $argv -s) &&
+  eval $ssh_command &&
+  popd
+end
+```
+
+Now `my-app-ssh app --log`, `my-app-ssh app --iex`, etc. work from any directory.
+
+## Authorize SSH Access
+
+By default, SSH ingress on the security group is locked down. Whitelist your current IP first:
+
+```bash
+mix deploy_ex.ssh.authorize                       # add current IP
 mix deploy_ex.ssh.authorize --remove              # remove when done
 mix deploy_ex.ssh.authorize --ip 1.2.3.4          # add a specific IP
 mix deploy_ex.ssh.authorize --remove --ip 1.2.3.4
 ```
 
-Pass `--security-group-id <id>` to bypass auto-discovery. To turn this safeguard off entirely, edit `deploys/terraform/network.tf` and add `ssh-tcp` back to the public ingress list.
+Pass `--security-group-id <id>` to bypass auto-discovery. To turn the safeguard off entirely, edit `deploys/terraform/network.tf` and add `ssh-tcp` back to the public ingress list.
 
-## SSH Into an Instance
-
-App name can be a partial match — deploy_ex regex-matches it against instance tags.
+## SSH Flag Reference
 
 ```bash
 mix deploy_ex.ssh my_app                          # interactive picker if multiple instances
@@ -30,38 +66,6 @@ mix deploy_ex.ssh my_app --instance-id i-0abc123
 
 `--directory` (`-d`, default `./deploys/terraform`) controls where the PEM is searched.
 
-## Eval Pattern (one-liner SSH)
-
-`--short` (`-s`) prints the ssh command instead of running it, so you can wrap it in `eval` for shell aliases or scripts:
-
-```bash
-eval "$(mix deploy_ex.ssh -s my_app)"             # SSH directly
-eval "$(mix deploy_ex.ssh -s --root my_app)"      # as root
-eval "$(mix deploy_ex.ssh -s --log my_app)"       # tail logs
-eval "$(mix deploy_ex.ssh -s --iex my_app)"       # remote IEx
-```
-
-## Utility Aliases
-
-Wrap the eval pattern in a function so you can `my-app-ssh app_name --log` from anywhere.
-
-**Bash:**
-
-```bash
-alias my-app-ssh='pushd ~/Documents/path/to/project >/dev/null && mix compile --quiet && eval "$(mix deploy_ex.ssh -s $@)" && popd >/dev/null'
-```
-
-**Fish:**
-
-```fish
-function my-app-ssh
-  pushd ~/Documents/path/to/project &&
-  set ssh_command (mix deploy_ex.ssh $argv -s) &&
-  eval $ssh_command &&
-  popd
-end
-```
-
 ## View Logs
 
 ```bash
@@ -69,6 +73,12 @@ mix deploy_ex.ssh my_app --log                    # journalctl -u <app> in follo
 mix deploy_ex.ssh my_app --log -n 200             # last 200 lines
 mix deploy_ex.ssh my_app --log --all              # entire journal (no limit)
 mix deploy_ex.ssh my_app --log --log-user ubuntu  # use a non-root journalctl user
+```
+
+The eval pattern works with `--log` too:
+
+```bash
+eval "$(mix deploy_ex.ssh -s my_app --log -n 500)"
 ```
 
 ## Remote IEx Console

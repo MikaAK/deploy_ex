@@ -29,14 +29,13 @@ deploy_ex works with both umbrella and single-app Elixir projects. Single-app pr
 ## Step 2: Full Setup
 
 ```bash
-mix deploy_ex.full_setup -yak
+mix deploy_ex.full_setup -ya
 ```
 
 The flags:
 - `-y` — auto-approve Terraform plans
 - `-a` — auto-pull AWS credentials from `~/.aws/credentials` into Ansible group_vars
-- `-k` — skip the final deploy step (`--skip-deploy`)
-- `-p` — skip the wait/setup phase (`--skip-setup`)
+- `-p` — skip the wait + `ansible.setup` step (`--skip-setup`)
 
 This pipeline runs:
 
@@ -49,8 +48,8 @@ This pipeline runs:
 7. 10 second wait for instances to initialize
 8. `ansible.ping` — verify connectivity
 9. `ansible.setup` — bootstrap servers (BEAM tuning, monitoring agents, app user)
-10. `deploy_ex.upload` — upload release artifacts to S3
-11. `ansible.deploy` — deploy application
+
+It stops there. Releases are deployed by CI (Step 3 of this tutorial) — or manually after first push with `mix deploy_ex.release && mix deploy_ex.upload && mix ansible.deploy`.
 
 ## Step 3: Install CI/CD
 

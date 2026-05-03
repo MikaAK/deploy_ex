@@ -1,55 +1,17 @@
 # How Autoscaling Works
 
-deploy_ex provisions AWS Auto Scaling Groups with CPU-target scaling, dynamic EBS volume attachment, automatic release discovery, and Network Load Balancer integration. This page explains the mechanics — for commands, see the [autoscaling how-to](../how-to/autoscaling.md); for config, see [terraform variables](../reference/terraform_variables.md).
+deploy_ex provisions AWS Auto Scaling Groups via Terraform. Configuration lives in `deploys/terraform/variables.tf`; runtime levers live in `mix deploy_ex.autoscale.*`. This page explains the mechanics — for the schema see [Terraform Variables](../reference/terraform_variables.md#autoscaling), for commands see the [autoscaling how-to](../how-to/autoscaling.md).
 
-## Configuration
+## Source of Truth
 
-Enable autoscaling per app in `deploys/terraform/variables.tf`:
+Configuration is **declarative** in `variables.tf`. Runtime mutations from `mix deploy_ex.autoscale.scale` go directly to AWS via `UpdateAutoScalingGroup` — they don't touch the file. The `autoscaling.ignore_capacity_changes` flag controls whether those runtime mutations survive the next `terraform.apply`:
 
-```hcl
-my_app_project = {
-  my_app = {
-    name          = "My App"
-    instance_type = "t3.nano"
+| Flag value | Capacity owner | Manual scale persists across apply? |
+|------------|---------------|-------------------------------------|
+| `false` (default) | `variables.tf` | No — apply resets to declared value |
+| `true` | AWS / `mix deploy_ex.autoscale.scale` | Yes — Terraform stops managing capacity after first apply |
 
-    autoscaling = {
-      enable             = true
-      min_size           = 1
-      max_size           = 5
-      desired_capacity   = 2
-      cpu_target_percent = 60
-      scale_in_cooldown  = 300
-      scale_out_cooldown = 300
-    }
-
-    load_balancer = {
-      enable        = true
-      port          = 80
-      instance_port = 4000
-      health_check = {
-        path     = "/health"
-        protocol = "HTTP"
-      }
-    }
-
-    # EBS volumes attach dynamically; pool size = max_size
-    ebs = {
-      enable_secondary = true
-      secondary_size   = 32
-    }
-  }
-}
-```
-
-| Field | Purpose |
-|-------|---------|
-| `enable` | Turn autoscaling on for this app |
-| `min_size` | Hard floor — ASG never goes below this |
-| `max_size` | Hard ceiling — also defines EBS volume pool size |
-| `desired_capacity` | Initial instance count (Terraform ignores drift on this — see below) |
-| `cpu_target_percent` | Target average CPU; scaling tries to maintain it |
-| `scale_in_cooldown` | Seconds after a scale-in before another can fire |
-| `scale_out_cooldown` | Seconds after a scale-out before another can fire |
+Pick `false` if you want capacity declared in code; pick `true` if you scale frequently at runtime and don't want to track capacity in version control.
 
 ## Instance Lifecycle
 
@@ -73,6 +35,39 @@ When a new instance launches, it discovers the *correct* release version (not ju
 4. **Fall back to S3** if no peers exist (enables scale-from-zero)
 
 This avoids the classic ASG bug where a rolled-back release gets undone by a scale-out event.
+
+## Multi-Template Autoscaling
+
+For workloads with predictable schedules (business-hours scale-up, overnight scale-down, weekend off), use the `templates` field in the autoscaling block. Each named template has its own Launch Template and optional `scheduling` actions:
+
+```hcl
+templates = {
+  business_hours = {
+    instance_type = "t3.large"
+    min_size = 5; max_size = 20; desired_capacity = 10
+    scheduling = [{
+      name       = "weekday-up"
+      recurrence = "0 8 * * MON-FRI"
+      time_zone  = "America/Los_Angeles"
+      changes    = { min_size = 5, max_size = 20, desired_capacity = 10 }
+    }]
+  }
+  overnight = {
+    instance_type = "t3.small"
+    min_size = 1; max_size = 3; desired_capacity = 1
+    scheduling = [{
+      name       = "weekday-down"
+      recurrence = "0 19 * * MON-FRI"
+      time_zone  = "America/Los_Angeles"
+      changes    = { min_size = 1, max_size = 3, desired_capacity = 1 }
+    }]
+  }
+}
+```
+
+`switch_disable_delay_minutes` adds a buffer between schedule transitions so the previous schedule's actions are disabled before the next one's fire — useful when both templates would otherwise overlap and conflict.
+
+Without `templates`, you get one Launch Template using the top-level `instance_type` — most apps need only this.
 
 ## IAM Permissions
 
@@ -100,25 +95,25 @@ When `ebs.enable_secondary === true` with autoscaling:
 
 - A pool of EBS volumes equal to `max_size` is created (one per potential instance)
 - User-data discovers an unattached volume in the same AZ and attaches it
-- Filesystem detection — if the volume is fresh, it's formatted; otherwise mounted as-is
+- Filesystem detection — fresh volumes get formatted; otherwise mounted as-is
 - Volumes are AZ-pinned — they only attach to instances in the same availability zone
 
 ## Limitations
 
-- **Elastic IPs are not supported** with autoscaling (instances get dynamic IPs)
+- **Elastic IPs need `preserve_eip_for_single_instance_asg = true`** — otherwise EIP allocation conflicts with ASG-owned ENIs
 - **EBS pool size is fixed** at `max_size` — you can't scale-out beyond that without provisioning more volumes
 - **EBS volumes are AZ-specific** — uneven AZ load can leave volumes stranded
 - **`instance_count` is ignored** when `autoscaling.enable === true`
 
 ## Deployment Strategies
 
-Three options when shipping a new release to autoscaled instances:
+Three options when shipping a new release:
 
 ### Strategy 1 — Ansible deploy (fast)
 
 ```bash
 mix deploy_ex.upload
-mix ansible.deploy
+mix ansible.deploy --only my_app
 ```
 
 - All instances update simultaneously
@@ -131,7 +126,7 @@ mix ansible.deploy
 
 ```bash
 mix deploy_ex.upload
-mix deploy_ex.autoscale.refresh <app> --wait
+mix deploy_ex.autoscale.refresh my_app --wait
 ```
 
 - AWS replaces instances gradually, maintaining a healthy floor
@@ -141,15 +136,15 @@ mix deploy_ex.autoscale.refresh <app> --wait
 - Pro: zero downtime, gradual rollout
 - Con: slower; uses extra capacity during refresh
 
-Use `--strategy ReplaceRootVolume` for in-place root volume swaps when you don't want full instance churn.
+Use `--strategy ReplaceRootVolume` for in-place root-volume swaps when you don't want full instance churn.
 
 ### Strategy 3 — Manual scale cycle (test environments)
 
 ```bash
 mix deploy_ex.upload
-mix deploy_ex.autoscale.scale <app> 0
+mix deploy_ex.autoscale.scale my_app 0
 sleep 30
-mix deploy_ex.autoscale.scale <app> 3
+mix deploy_ex.autoscale.scale my_app 3
 ```
 
 - Forces every instance to be brand new
@@ -158,7 +153,7 @@ mix deploy_ex.autoscale.scale <app> 3
 
 ## See also
 
-- [How to manage autoscaling](../how-to/autoscaling.md) — commands
-- [Terraform variables](../reference/terraform_variables.md) — full schema
+- [How to manage autoscaling](../how-to/autoscaling.md) — runtime commands
+- [Terraform variables — autoscaling schema](../reference/terraform_variables.md#autoscaling)
 - [Troubleshooting → Autoscaling](../how-to/troubleshooting.md#autoscaling)
 - [Clustering](../how-to/clustering.md) — libcluster + EC2Tag

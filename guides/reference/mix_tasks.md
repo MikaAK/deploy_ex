@@ -38,10 +38,9 @@ Interactive TUI wizard listing every task with search + form-based input.
 - `--no-tui` — fall back to console help text.
 
 ### `mix deploy_ex.full_setup`
-Run `terraform.create_state_bucket → create_state_lock_table → build → apply → refresh → ansible.build → wait → ping → setup → upload → ansible.deploy` in sequence.
+Run `terraform.create_state_bucket → create_state_lock_table → build → apply → refresh → ansible.build → wait → ping → setup` in sequence. Stops after `ansible.setup` — releases are deployed by CI or by running `mix deploy_ex.release && mix deploy_ex.upload && mix ansible.deploy` separately.
 - `-y` / `--auto-approve` — auto-approve Terraform plans (forwarded to terraform.apply)
 - `-a` / `--auto-pull-aws` — pull AWS credentials from `~/.aws/credentials` into Ansible group_vars
-- `-k` / `--skip-deploy` — skip the final upload + ansible.deploy
 - `-p` / `--skip-setup` — skip the wait + ansible.setup steps
 - `--no-tui` — disable progress UI
 
