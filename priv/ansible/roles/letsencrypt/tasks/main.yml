@@ -179,16 +179,26 @@
       set_fact:
         qa_public_ip: "{{ imds_public_ipv4.content }}"
 
-    # --pre-hook / --post-hook stop + start nginx around issuance so certbot can bind :80.
-    # They get persisted in the cert's renewal config, so snap's built-in
-    # snap.certbot.renew.timer handles nginx cycling on its own during renewals.
+    # certbot's -d flag goes through DNSName() which rejects IPs client-side
+    # ("will not issue certificates for a bare IP address") even though LE's
+    # shortlived profile DOES support IPs. --ip-address is the correct flag for
+    # IP SANs and bypasses the DNS sanity check.
+    #
+    # --required-profile (vs --preferred-profile) forces the request to fail if
+    # the CA can't honor shortlived, which is the only profile that issues for
+    # IPs today.
+    #
+    # --pre-hook / --post-hook stop + start nginx around issuance so certbot can
+    # bind :80. They get persisted in the cert's renewal config, so snap's
+    # built-in snap.certbot.renew.timer handles nginx cycling on its own during
+    # renewals.
     - name: Obtain Let's Encrypt short-lived cert for public IP
       shell: |
         set -euo pipefail
         certbot certonly \
           --standalone \
-          --preferred-profile shortlived \
-          -d "{{ qa_public_ip }}" \
+          --required-profile shortlived \
+          --ip-address "{{ qa_public_ip }}" \
           --non-interactive \
           --agree-tos \
           --email "{{ letsencrypt_email }}" \
