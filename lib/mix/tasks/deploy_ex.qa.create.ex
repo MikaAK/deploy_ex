@@ -309,6 +309,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
          {:ok, qa_node} <- (progress.(:save_state, "Saving QA state..."); save_and_refresh_state(qa_node, opts)),
          {:ok, entries} <- (progress.(:apply_rewrite, "Applying host config rewrite..."); maybe_apply_proposals(qa_node, plan, accepted)),
          {:ok, qa_node} <- (maybe_progress_commit_push(progress, opts); commit_and_push_rewrites(qa_node, build_state, entries, opts[:wait_for_build] || false, tui_pid)),
+         :ok <- (maybe_progress_wait_build(progress, opts); wait_for_build_step(qa_node, build_state, opts, tui_pid)),
          :ok <- (progress.(:wait_ssh, "Waiting for SSH..."); wait_for_ssh_ready(qa_node, tui_pid)),
          :ok <- (progress.(:setup_deploy, "Running setup & deploy..."); run_setup_and_deploy(qa_node, infra, tui_pid, opts)),
          {:ok, qa_node} <- (progress.(:attach_lb, "Attaching load balancer..."); maybe_attach_lb(qa_node, opts)) do
@@ -386,6 +387,57 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
 
   defp umbrella_root, do: File.cwd!()
+
+  defp maybe_progress_wait_build(progress, opts) do
+    if opts[:wait_for_build] do
+      progress.(:wait_build, "Waiting for build workflow...")
+    else
+      :ok
+    end
+  end
+
+  defp wait_for_build_step(qa_node, build_state, opts, tui_pid) do
+    case wait_for_build(qa_node, build_state, opts[:wait_for_build] || false, opts, tui_pid) do
+      {:ok, :skipped} ->
+        :ok
+
+      {:ok, _run_id} ->
+        DeployEx.TUI.Progress.update_log(tui_pid, "  Build succeeded.")
+        :ok
+
+      {:error, reason} ->
+        raise "build failed: #{inspect(reason)}"
+    end
+  end
+
+  defp wait_for_build(_qa_node, _build_state, false, _opts, _tui_pid), do: {:ok, :skipped}
+
+  defp wait_for_build(qa_node, build_state, true, opts, tui_pid) do
+    {_action, branch} = build_state.branch_resolution
+    %{file: workflow_file, job_id: job_id} = build_state.workflow
+
+    log_fn = fn line -> DeployEx.TUI.Progress.update_log(tui_pid, "  " <> line) end
+    timeout_ms = (opts[:build_timeout] || 30) * 60 * 1_000
+
+    with {:ok, run_id} <- DeployEx.GitHubActions.find_run_id(branch, qa_node.target_sha, workflow_file),
+         {:ok, _run} <-
+           DeployEx.GitHubActions.wait_for_run(run_id, job_id,
+             log_fn: log_fn,
+             timeout_ms: timeout_ms
+           ) do
+      {:ok, run_id}
+    else
+      {:error, reason} ->
+        {:error, %{reason: reason, run_id: find_known_run_id(branch, qa_node.target_sha, workflow_file)}}
+    end
+  end
+
+  defp find_known_run_id(branch, sha, workflow_file) do
+    case DeployEx.GitHubActions.find_run_id(branch, sha, workflow_file, retry_max: 1) do
+      {:ok, id} -> id
+      _ -> nil
+    end
+  end
 
   defp parse_args(args) do
     OptionParser.parse!(args,
