@@ -482,6 +482,22 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
 
   defp maybe_run_setup(_qa_node, _infra, _tui_pid, %{skip_setup: true}), do: :ok
+
+  defp maybe_run_setup(%{use_public_ip_cert?: true} = qa_node, _infra, tui_pid, opts) do
+    if not DeployEx.TUI.enabled?() do
+      Mix.shell().info([
+        :cyan,
+        "Running Ansible setup for ",
+        :bright,
+        qa_node.instance_name,
+        :reset,
+        " — required by --public-ip-cert (provisions Let's Encrypt cert)..."
+      ])
+    end
+
+    run_ansible_setup(qa_node, tui_pid, opts)
+  end
+
   defp maybe_run_setup(_qa_node, %{using_app_ami: true}, _tui_pid, _opts) do
     if not DeployEx.TUI.enabled?() do
       Mix.shell().info([:green, "  ✓ ", :reset, "Skipping setup (using pre-configured AMI)"])
@@ -489,6 +505,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
     :ok
   end
+
   defp maybe_run_setup(qa_node, _infra, tui_pid, opts) do
     if not DeployEx.TUI.enabled?() do
       Mix.shell().info([:cyan, "Running Ansible setup for ", :bright, qa_node.instance_name, :reset, "..."])
@@ -607,7 +624,11 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   defp build_line_callback(nil), do: fn _line -> :ok end
   defp build_line_callback(tui_pid), do: fn line -> DeployEx.TUI.Progress.update_log(tui_pid, line) end
 
+  defp setup_vars(%{use_public_ip_cert?: true}), do: [letsencrypt_use_public_ip: true]
   defp setup_vars(_qa_node), do: []
+
+  defp deploy_vars(%{use_public_ip_cert?: true}, sha),
+    do: [target_release_sha: sha, letsencrypt_use_public_ip: true]
   defp deploy_vars(_qa_node, sha), do: [target_release_sha: sha]
 
   defp default_skip_ami_for_qa(opts) do
