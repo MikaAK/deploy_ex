@@ -1,0 +1,11 @@
+name: docs
+on:
+  push:
+    branches:
+      - 'qa-**'
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "build docs"
+      - run: echo "no release built here"

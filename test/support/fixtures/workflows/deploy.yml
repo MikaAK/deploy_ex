@@ -1,0 +1,13 @@
+name: deploy
+on:
+  workflow_call:
+jobs:
+  deploy:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build release
+        run: mix deploy_ex.release
+      - name: Upload release
+        run: mix deploy_ex.upload

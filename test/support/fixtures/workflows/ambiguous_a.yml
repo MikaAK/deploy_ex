@@ -1,0 +1,10 @@
+name: build-a
+on:
+  push:
+    branches:
+      - 'qa/**'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: mix deploy_ex.release
