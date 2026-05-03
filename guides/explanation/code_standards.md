@@ -95,9 +95,21 @@ ExRatatui widgets use event loop pattern with `q`/`Ctrl+C` to quit, with console
 ## Testing
 
 - ExUnit with `async: true` where possible
-- No mocking libraries — use dependency injection (e.g. `ProjectContext` accepts `mix_project` param)
-- Fixture files for parser tests in `test/deploy_ex/release_uploader/update_validator/`
+- No mocking libraries — use dependency injection (e.g. `ProjectContext` accepts `mix_project` param, `ReleaseLookup` accepts a git impl)
+- Fixture trees: `test/support/fake_apps/` for project introspection, `test/support/fixtures/workflows/` for GitHub Actions tests
 - `refute` over `assert !` or `assert not`
 - Never `Application.put_env/3` in tests
+
+## Git & GitHub
+
+- All GitHub interactions go through the `gh` CLI (via `DeployEx.GitHubActions`) — never construct API URLs by hand.
+- Git operations go through `DeployEx.GitOperations` (resolve QA branch, commit + push, revert + push, delete remote). Never shell `git` directly from a Mix task.
+- Default behaviour: rebase, not merge. Force-pushes on QA branches use `--force-with-lease`.
+
+## LLM Integration
+
+- LLM calls go through `DeployEx.LLMMerge` (`merge_file/3`, `plan/2`, `review_action/4`, `execute_merge/3`).
+- LLM-using tasks must check `DeployEx.Config.llm_provider/0` for `nil` and raise a clear error if not configured.
+- `QaHostRewrite.scan_candidates/3` is the canonical example of "use LLM only when needed" — content is grep-filtered locally first, then proposals run through the LLM.
 
 See also: [Testing Guide](../reference/testing.md) | [System Architecture](architecture.md)

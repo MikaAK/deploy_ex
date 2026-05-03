@@ -3,36 +3,40 @@ defmodule Mix.Tasks.DeployEx.InstallMigrationScript do
 
   @scripts_default_path Path.join(["rel", "overlays", "bin"])
 
-  @shortdoc "Installs migration scripts for running Ecto migrations in releases"
+  @shortdoc "Installs a migration script for running Ecto migrations in releases"
   @moduledoc """
-  Generates shell scripts for running Ecto database migrations in release deployments.
+  Generates a single shell script for running Ecto database migrations in
+  release deployments.
 
-  For each configured release, a migration script is generated that uses
-  `Ecto.Migrator.with_repo/3` to safely run migrations via `bin/<app> eval`.
-  The scripts discover `:ecto_repos` from each application at runtime.
+  One script is written per repo (not per app or release). Mix copies the
+  `rel/overlays/bin/` directory into every release tarball, so the same
+  `migrate.sh` ends up at `/srv/<release>/bin/migrate.sh` on each server.
 
-  Scripts are written to `rel/overlays/bin/` so Mix releases automatically
-  copy them into the release tarball. After extraction on the server they
-  live alongside the release binary at `/srv/<app>/bin/migrate-<app>.sh`.
+  At runtime the script:
+  1. Derives its own release name from its filesystem location (so the same
+     file works inside any release).
+  2. Loads every umbrella app, skipping apps not packaged in the current
+     release.
+  3. Collects `:ecto_repos` from each loaded app and runs migrations.
 
-  Each generated script supports two commands:
-  - `migrate` - Runs all pending migrations (default)
-  - `rollback VERSION` - Rolls back to the given migration version
+  The script supports two commands:
+  - `migrate` - run all pending migrations (default)
+  - `rollback VERSION` - roll back to the given migration version
 
   ## Example
   ```bash
   mix deploy_ex.install_migration_script
   mix release
 
-  # Then on the server:
-  /srv/my_app/bin/migrate-my_app.sh migrate
-  /srv/my_app/bin/migrate-my_app.sh rollback 20240101120000
+  # Then on the server (works identically for every release):
+  /srv/my_app/bin/migrate.sh migrate
+  /srv/my_app/bin/migrate.sh rollback 20240101120000
   ```
 
   ## Options
-  - `force` - Overwrite existing migration scripts if present (alias: `f`)
+  - `force` - Overwrite the existing script if present (alias: `f`)
   - `quiet` - Suppress output messages (alias: `q`)
-  - `directory` - Output directory for scripts (default: `rel/overlays/bin`) (alias: `d`)
+  - `directory` - Output directory (default: `rel/overlays/bin`) (alias: `d`)
   """
 
   def run(args) do
@@ -41,27 +45,19 @@ defmodule Mix.Tasks.DeployEx.InstallMigrationScript do
       |> Keyword.put_new(:directory, @scripts_default_path)
 
     migration_script_template_path = DeployExHelpers.priv_folder("migration_script.sh.eex")
+    output_path = Path.join(opts[:directory], "migrate.sh")
 
-    with :ok <- DeployExHelpers.check_valid_project(),
-         {:ok, releases} <- DeployExHelpers.release_apps_by_release_name() do
+    with :ok <- DeployExHelpers.check_valid_project() do
       File.mkdir_p!(opts[:directory])
 
-      Enum.each(releases, fn {release_name, apps} ->
-        app_name = to_string(release_name)
-        output_path = Path.join(opts[:directory], "migrate-#{app_name}.sh")
+      DeployExHelpers.write_template(
+        migration_script_template_path,
+        output_path,
+        %{apps: DeployExHelpers.project_apps()},
+        opts
+      )
 
-        DeployExHelpers.write_template(
-          migration_script_template_path,
-          output_path,
-          %{
-            app_name: app_name,
-            apps: Enum.map(apps, &String.to_atom/1)
-          },
-          opts
-        )
-
-        File.chmod!(output_path, 0o755)
-      end)
+      File.chmod!(output_path, 0o755)
     else
       {:error, e} -> Mix.raise(to_string(e))
     end

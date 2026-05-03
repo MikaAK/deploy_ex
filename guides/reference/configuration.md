@@ -1,40 +1,50 @@
-# Configuration Guide
+# Configuration Reference
 
-## Application Config
-
-All configuration is accessed via `DeployEx.Config`. Set values in your project's `config/config.exs`:
+All configuration is accessed through `DeployEx.Config`. Override defaults in your project's `config/config.exs`:
 
 ```elixir
 config :deploy_ex,
   aws_region: "us-west-2",
   aws_resource_group: "MyApp Backend",
   aws_release_bucket: "myapp-elixir-deploys-prod",
-  deploy_folder: "./deploys"
+  deploy_folder: "./deploys",
+  llm_provider: {LangChain.ChatModels.ChatAnthropic, model: "claude-3-5-sonnet-latest"}
 ```
 
-### Config Keys Reference
+## Config Keys
 
-| Key | Default | Description |
-|-----|---------|-------------|
+| Key | Default | Purpose |
+|-----|---------|---------|
 | `aws_region` | `"us-west-2"` | Primary AWS region |
 | `aws_log_region` | `"us-west-2"` | Region for log bucket |
-| `aws_log_bucket` | `"{project}-backend-logs-{env}"` | S3 bucket for Loki logs |
-| `aws_release_bucket` | `"{project}-elixir-deploys-{env}"` | S3 bucket for release artifacts |
-| `aws_release_state_bucket` | `"{project}-elixir-release-state-{env}"` | S3 bucket for release tracking state |
-| `aws_release_state_lock_table` | `"{project}-terraform-state-lock-{env}"` | DynamoDB table for Terraform state locking |
-| `deploy_folder` | `"./deploys"` | Local directory for generated Terraform/Ansible files |
-| `aws_resource_group` | `"{ProjectName} Backend"` | AWS resource group tag value |
-| `aws_project_name` | `"{project-kebab-case}"` | Project name for AWS resource naming |
+| `aws_log_bucket` | `"<project>-backend-logs-<env>"` | Loki/log archive S3 bucket |
+| `aws_release_bucket` | `"<project>-elixir-deploys-<env>"` | Release artifact S3 bucket |
+| `aws_release_state_bucket` | `"<project>-elixir-release-state-<env>"` | Release tracking + history bucket |
+| `aws_terraform_state_lock_table` | `"<project>-terraform-state-lock-<env>"` | DynamoDB table for Terraform state locking (read via `Config.aws_release_state_lock_table/0`) |
+| `deploy_folder` | `"./deploys"` | Local directory for rendered Terraform/Ansible files |
+| `aws_resource_group` | `"<TitleCase Project> Backend"` | Value of the `Group` tag on every AWS resource |
+| `aws_project_name` | kebab-case project name | Used in resource naming |
+| `aws_iam_instance_profile` | `nil` | Override IAM instance profile (otherwise auto-discovered) |
 | `aws_base_ami_name` | `"debian-13"` | Base AMI name filter |
-| `aws_base_ami_architecture` | `"x86_64"` | AMI architecture |
-| `aws_base_ami_owner` | `"136693071363"` (Debian official) | AMI owner account |
+| `aws_base_ami_architecture` | `"x86_64"` | Base AMI architecture (`x86_64` or `arm64`) |
+| `aws_base_ami_owner` | `"136693071363"` (Debian) | AMI owner account ID |
 | `aws_security_group_id` | `nil` | Override security group (otherwise discovered by prefix) |
-| `aws_iam_instance_profile` | `nil` | IAM instance profile for EC2 |
-| `aws_names_include_env?` | `false` | Include environment in AWS resource names |
-| `terraform_backend` | `:s3` | Terraform state backend (`:s3` or `:local`) |
-| `terraform_default_args` | `[]` | Default Terraform CLI args per command |
-| `tui_enabled` | `true` | Enable terminal UI (auto-disabled in CI) |
-| `iac_tool` | `"terraform"` | Infrastructure-as-code tool name |
+| `aws_names_include_env` | `false` | Include env suffix in resource names |
+| `terraform_backend` | `:s3` | `:s3` or `:local` |
+| `terraform_default_args` | `[]` | Per-command default CLI args (see below) |
+| `iac_tool` | `"terraform"` | Tool name (use `"tofu"` for OpenTofu) |
+| `tui_enabled` | `true` | Enable TUI (auto-disabled outside TTYs) |
+| `llm_provider` | `nil` | Required for `--ai-review` / `--llm-merge` / `--public-ip-cert`. `{module, opts}` tuple consumed by LangChain |
+| `env` | `to_string(Mix.env())` | Environment name used in defaults |
+
+The kebab-case project name is derived from your top-level Mix project. `<env>` defaults to `Mix.env()` (`prod` / `dev` / `test`). Unless you set `aws_names_include_env: true`, the env suffix is folded into the bucket names but not the resource group label.
+
+## Computed Paths
+
+| Function | Returns |
+|----------|---------|
+| `DeployEx.Config.terraform_folder_path/0` | `<deploy_folder>/terraform` |
+| `DeployEx.Config.ansible_folder_path/0` | `<deploy_folder>/ansible` |
 
 ## Environment Variables
 
@@ -42,21 +52,21 @@ config :deploy_ex,
 |----------|---------|
 | `AWS_ACCESS_KEY_ID` | AWS credentials |
 | `AWS_SECRET_ACCESS_KEY` | AWS credentials |
-| `AWS_PROFILE` | AWS CLI profile name (default: `"default"`) |
-| `CI` | Set to `"true"` in CI — configures erlexec for root, disables TUI |
-| `DEPLOY_EX_TUI_ENABLED` | Override TUI enabled state (`"true"` / `"false"`) |
+| `AWS_PROFILE` | AWS CLI profile (default `"default"`) |
+| `CI` | When `"true"`, configures erlexec for root and disables the TUI |
+| `DEPLOY_EX_TUI_ENABLED` | `"true"` / `"false"` override for `tui_enabled` |
 
 ### AWS Credential Chain
 
-ExAws resolves credentials in order:
-1. Explicit env var (`AWS_ACCESS_KEY_ID`)
+ExAws resolves credentials in this order:
+1. Explicit env vars (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`)
 2. System environment lookup
-3. AWS CLI profile (`~/.aws/credentials`, profile from `AWS_PROFILE`)
+3. AWS CLI profile (`~/.aws/credentials` matched against `AWS_PROFILE`)
 4. EC2 instance role
 
 ## Redeploy Config
 
-Control which file changes trigger a redeploy per release. Configure in your root `mix.exs`:
+Control which file changes trigger a release rebuild. Add to your root `mix.exs`:
 
 ```elixir
 releases: [
@@ -65,9 +75,9 @@ releases: [
     deploy_ex: [
       redeploy_config: [
         my_app: [
-          whitelist: ["apps/my_app/lib/my_app\\.ex$"],
+          whitelist: ["apps/my_app/lib/my_app\\.ex$"]
           # OR
-          blacklist: ["apps/my_app/test/.*"]
+          # blacklist: ["apps/my_app/test/.*"]
         ]
       ]
     ]
@@ -75,45 +85,42 @@ releases: [
 ]
 ```
 
-- **whitelist** — only redeploy when matched files change
-- **blacklist** — redeploy on any change except matched files
+- **whitelist** — only redeploy when matching files change
+- **blacklist** — redeploy on any change *except* matching files
 
-## Terraform Variables
+## Terraform Defaults
 
-Override Terraform defaults with `--var-file`:
-
-```bash
-mix terraform.apply --var-file prod.tfvars
-```
-
-Target specific resources:
-
-```bash
-mix terraform.apply --target module.aws_instance_my_app
-```
-
-Default args can be set per command in config:
+Pin per-command defaults so you don't repeat them every invocation:
 
 ```elixir
 config :deploy_ex,
   terraform_default_args: [
-    apply: [auto_approve: true, var_file: "prod.tfvars"]
+    apply: [auto_approve: true, var_file: "prod.tfvars"],
+    plan: [var_file: "prod.tfvars"]
   ]
+```
+
+The keys are matched as regexes against the command name, so `:apply` matches both `terraform.apply` and `apply`. Args become `--auto-approve --var-file prod.tfvars` on the wire.
+
+You can still override per call:
+
+```bash
+mix terraform.apply --var-file staging.tfvars
+mix terraform.plan --target module.aws_instance_my_app
 ```
 
 ## Optional Services
 
-Toggle monitoring and infrastructure services when generating files:
+`mix terraform.build`, `mix ansible.build`, and `mix deploy_ex.full_setup` accept these toggle flags:
 
-| Flag | Service | Default |
-|------|---------|---------|
-| `--no-database` | PostgreSQL (RDS) | enabled |
-| `--no-redis` | Redis | enabled |
-| `--no-grafana` | Grafana UI | enabled |
-| `--no-loki` | Grafana Loki (logging) | enabled |
-| `--no-prometheus` | Prometheus (metrics) | enabled |
-| `--no-sentry` | Sentry (error tracking) | enabled |
+| Flag | Disables |
+|------|----------|
+| `--no-database` | RDS Postgres (terraform only) |
+| `--no-redis` | Redis + Redis Stack (terraform only) |
+| `--no-grafana` | Grafana UI |
+| `--no-loki` | Grafana Loki + Alloy log shipping |
+| `--no-prometheus` | Prometheus + node_exporter |
+| `--no-sentry` | Sentry |
+| `--no-logging` | All log shipping (Loki + Alloy) |
 
-Pass these to `mix terraform.build`, `mix ansible.build`, or `mix deploy_ex.full_setup`.
-
-See also: [Deployment Guide](../tutorials/getting_started.md) | [API Reference](../reference/mix_tasks.md)
+See also: [Mix Tasks Reference](mix_tasks.md) | [Architecture](../explanation/architecture.md)

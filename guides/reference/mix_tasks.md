@@ -1,118 +1,254 @@
-# API Reference — Mix Tasks
+# Mix Tasks Reference
 
-Universal options available on most tasks: `--only` (multi), `--except` (multi), `--force`/`-f`, `--quiet`/`-q`, `--no-tui`
+Complete catalog of all 68 Mix tasks. Run `mix help <task>` for the full moduledoc, or `mix deploy_ex` to launch an interactive wizard that exposes the same surface.
 
-## Core Deployment
+**Conventions:**
+- `--only` and `--except` accept multiple invocations and filter by app name.
+- `--qa` typically *restricts* to QA hosts; `--include-qa` *adds* QA hosts to the prod set.
+- `--no-tui` disables the ExRatatui UI on tasks that use it.
+- `--force` / `-f` skips confirmation prompts; `--quiet` / `-q` suppresses non-error output.
 
-| Task | Description | Key Options |
-|------|-------------|-------------|
-| `mix deploy_ex` | Interactive wizard for all commands | `--no-tui` |
-| `mix deploy_ex.full_setup` | Complete infrastructure + app setup | `-y` auto-approve, `-a` auto-pull AWS, `-k` skip-deploy, `-p` skip-setup |
-| `mix deploy_ex.full_drop` | Remove all DeployEx infrastructure | |
-| `mix deploy_ex.release` | Build releases for changed apps | `-f` force, `--only`/`--except`, `-r` recompile, `--aws-region`, `--aws-bucket` |
-| `mix deploy_ex.upload` | Upload releases to S3 | `--parallel`, `--qa`, `--aws-region`, `--aws-bucket` |
-| `mix deploy_ex.remake` | Replace + redeploy an app node | `--no-deploy` |
+## Quick Reference
+
+| Task | Description |
+|------|-------------|
+| `mix deploy_ex` | Interactive TUI wizard for every command |
+| `mix deploy_ex.full_setup` | Bootstrap infra + deploy in one shot |
+| `mix deploy_ex.full_drop` | Tear everything down (infra + ./deploys + workflows + state bucket) |
+| `mix deploy_ex.release` | Build releases for changed apps |
+| `mix deploy_ex.upload` | Upload releases to S3 |
+| `mix deploy_ex.export_priv` | Render templates into `./deploys/` for user customisation |
+| `mix deploy_ex.upgrade_priv` | Merge upstream priv changes into `./deploys/` |
+| `mix deploy_ex.install_github_action` | Install CI/CD workflows |
+| `mix deploy_ex.install_migration_script` | Generate the single `migrate.sh` overlay |
+| `mix terraform.*` | Provision / inspect / tear down AWS infra |
+| `mix ansible.*` | Build / setup / deploy / rollback / ping |
+| `mix deploy_ex.qa.*` | QA node lifecycle |
+| `mix deploy_ex.autoscale.*` | ASG capacity + instance refresh |
+| `mix deploy_ex.load_test.*` | k6 load test runners |
+| `mix deploy_ex.ssh*` | SSH access + IP whitelist |
+| `mix deploy_ex.instance.*` / `find_nodes` / `select_node` | Inventory and health |
+| `mix deploy_ex.{start,stop,restart}_app`, `restart_machine`, `remake` | App lifecycle |
+| `mix deploy_ex.grafana.install_dashboard` | Install Grafana dashboards |
+
+## Setup & Lifecycle
+
+### `mix deploy_ex`
+Interactive TUI wizard listing every task with search + form-based input.
+- `--no-tui` — fall back to console help text.
+
+### `mix deploy_ex.full_setup`
+Run `terraform.create_state_bucket → create_state_lock_table → build → apply → refresh → ansible.build → wait → ping → setup → upload → ansible.deploy` in sequence.
+- `-y` / `--auto-approve` — auto-approve Terraform plans (forwarded to terraform.apply)
+- `-a` / `--auto-pull-aws` — pull AWS credentials from `~/.aws/credentials` into Ansible group_vars
+- `-k` / `--skip-deploy` — skip the final upload + ansible.deploy
+- `-p` / `--skip-setup` — skip the wait + ansible.setup steps
+- `--no-tui` — disable progress UI
+
+### `mix deploy_ex.full_drop`
+Destroy all infra and remove deploy_ex artifacts. Calls `terraform.drop`, deletes `./deploys/`, removes `.github/workflows/deploy-ex-release.yml` + helper scripts, and drops the state bucket and lock table. **Destructive, no flags.**
+
+### `mix deploy_ex.install_github_action`
+Generate `.github/workflows/deploy-ex-release.yml` and `.github/workflows/setup-new-nodes.yml` plus helper shell scripts.
+- `-d, --pem-directory` — terraform dir holding the PEM (default `./deploys/terraform`)
+- `-p, --pem` — explicit PEM filename
+- `-f, --force` — overwrite existing files
+- `-q, --quiet`
+
+### `mix deploy_ex.install_migration_script`
+Render a single `rel/overlays/bin/migrate.sh` for the repo. Mix copies overlays into every release tarball, so the same script lands at `/srv/<release>/bin/migrate.sh` on each server. The script derives its release name from its own filesystem location, loads every umbrella app it can (skipping apps not bundled in the current release), and runs `Ecto.Migrator.with_repo/3` for every `:ecto_repos` it finds. Accepts `migrate` (default) or `rollback <VERSION>`.
+- `-d, --directory` — output dir (default `rel/overlays/bin`)
+- `-f, --force` — overwrite
+- `-q, --quiet`
+
+### `mix deploy_ex.export_priv`
+Render priv EEx templates with the project's config and copy to `./deploys/`. Writes `.deploy_ex_manifest.exs` (sha256 per file, deploy_ex version) so `upgrade_priv` can later detect user modifications.
+- `-f, --force` — overwrite existing files
+- `-q, --quiet`
+
+### `mix deploy_ex.upgrade_priv`
+Sync upstream priv changes into your customised `./deploys/`. Three modes:
+
+- (default) **Interactive** — category summary + per-hunk DiffViewer
+- `--ai-review` — LLM proposes accept/reject per file; you confirm
+- `--llm-merge` — LLM applies all changes autonomously (creates timestamped backup)
+
+Both LLM modes require `:deploy_ex, :llm_provider` configured.
 
 ## Terraform
 
-| Task | Description | Key Options |
-|------|-------------|-------------|
-| `mix terraform.init` | Initialize Terraform | `-d` directory, `-u` upgrade |
-| `mix terraform.build` | Generate .tf files from templates | `--no-database`, `--no-loki`, `--no-grafana`, `--no-redis`, `--no-prometheus`, `--no-sentry`, `--env`, `--aws-region` |
-| `mix terraform.plan` | Preview infrastructure changes | `--var-file`, `--target` (multi) |
-| `mix terraform.apply` | Provision infrastructure | `-y` auto-approve, `--var-file`, `--target` (multi) |
-| `mix terraform.refresh` | Sync Terraform state with AWS | `-d` directory |
-| `mix terraform.output` | Display Terraform outputs | `-s` short (JSON) |
-| `mix terraform.replace` | Replace EC2 instances | `-n` node, `-s` string match, `--all`, `-y` auto-approve |
-| `mix terraform.drop` | Destroy all infrastructure | `-y` auto-approve, `--target` (multi) |
-| `mix terraform.generate_pem` | Extract PEM from state | `--backend`, `--bucket`, `--region`, `--output-file` |
-| `mix terraform.show_password` | Show database password | `--backend`, `--bucket`, `--region` |
-| `mix terraform.create_state_bucket` | Create S3 state bucket | |
-| `mix terraform.create_state_lock_table` | Create DynamoDB lock table | |
-| `mix terraform.drop_state_bucket` | Delete state bucket | |
-| `mix terraform.drop_state_lock_table` | Delete lock table | |
-| `mix terraform.create_ebs_snapshot` | Snapshot EBS volumes | `--description`, `--include-root`, `--aws-region` |
-| `mix terraform.delete_ebs_snapshot` | Delete EBS snapshots | `--snapshot-ids`, `--all`, `--max-age-days` |
-| `mix terraform.dump_database` | pg_dump via SSH tunnel | `--format` (custom/text), `--schema-only`, `--output`, `--local-port` |
-| `mix terraform.restore_database` | pg_restore via SSH tunnel | `--local`, `--clean`, `--jobs`, `--schema-only` |
+| Task | Switches |
+|------|----------|
+| `mix terraform.init` | `-d directory`, `-u upgrade` |
+| `mix terraform.build` | `-d directory`, `-f force`, `-q quiet`, `-v verbose`, `--aws-region`, `--env`, `--no-database`, `--no-loki`, `--no-grafana`, `--no-redis`, `--no-prometheus`, `--no-sentry`, `--no-logging` |
+| `mix terraform.plan` | `-d directory`, `-f force`, `-q quiet` (forwards remaining args to `terraform plan`, e.g. `--var-file`, `--target`) |
+| `mix terraform.apply` | `-d directory`, `-y auto-approve`, `-f force`, `-q quiet` (forwards `--var-file`, `--target`) |
+| `mix terraform.refresh` | `-d directory`, `-f force`, `-q quiet` |
+| `mix terraform.output` | `-d directory`, `-s short` (JSON output) |
+| `mix terraform.replace` | `-n node` (integer count), `-s string` (substring match), `--all`, `-d directory`, `-y auto-approve`, `--resource-group`, `--region` |
+| `mix terraform.drop` | `-d directory`, `-y auto-approve`, `-f force`, `-q quiet` |
+| `mix terraform.generate_pem` | `-d directory`, `-o output-file`, `-b backend`, `--bucket`, `--region` |
+| `mix terraform.show_password` | `-d directory`, `-q quiet`, `-b backend`, `--bucket`, `--region` |
+| `mix terraform.create_state_bucket` | (no switches; uses `:aws_region`) |
+| `mix terraform.create_state_lock_table` | (no switches) |
+| `mix terraform.drop_state_bucket` | (no switches) |
+| `mix terraform.drop_state_lock_table` | (no switches) |
+| `mix terraform.create_ebs_snapshot <app>` | `--description`, `--include-root`, `--aws-region`, `--resource-group` |
+| `mix terraform.delete_ebs_snapshot [app]` | `--snapshot-ids` (comma-separated), `--all`, `-f force`, `--max-age-days` (integer), `--aws-region`, `--resource-group` |
+| `mix terraform.dump_database` | `-d directory`, `-o output`, `-s schema-only`, `-p local-port`, `-i identifier`, `-f format` (custom\|text), `--pem`, `-b backend`, `--bucket`, `--region`, `--resource-group` |
+| `mix terraform.restore_database <file>` | `-d directory`, `-l local`, `-s schema-only`, `-p local-port`, `--clean`, `--jobs <n>`, `--pem`, `-b backend`, `--bucket`, `--state-region`, `--resource-group` |
 
 ## Ansible
 
-| Task | Description | Key Options |
-|------|-------------|-------------|
-| `mix ansible.build` | Generate Ansible config + playbooks | `-a` auto-pull AWS, `-h` host-only, `-n` new-only, `--no-loki`, `--no-prometheus` |
-| `mix ansible.setup` | Initial server configuration | `--parallel`, `--only`/`--except`, `--include-qa` |
-| `mix ansible.deploy` | Deploy to instances | `--only`/`--except`, `-t` target-sha, `--qa`, `--parallel`, `--copy-json-env-file` |
-| `mix ansible.ping` | Test connectivity | |
-| `mix ansible.rollback` | Rollback to previous release | `--select` (interactive) |
+| Task | Switches |
+|------|----------|
+| `mix ansible.build` | `-d directory`, `-f force`, `-q quiet`, `-a auto-pull-aws`, `-h host-only`, `-n new-only`, `--terraform-directory`, `--aws-release-bucket`, `--no-database` (n/a here), `--no-loki`, `--no-grafana`, `--no-prometheus`, `--no-sentry`, `--no-logging` |
+| `mix ansible.setup` | `-d directory`, `-f force`, `-q quiet`, `--only`, `--except`, `--parallel <n>`, `--include-qa`, `--no-tui` |
+| `mix ansible.deploy` | `-d directory`, `-l only-local-release`, `-t target-sha` (`auto` resolves newest SHA on branch), `--only`, `--except`, `--copy-json-env-file`, `--parallel <n>`, `--include-qa`, `--qa`, `--no-tui`, `-q quiet` |
+| `mix ansible.ping` | `-d directory` |
+| `mix ansible.rollback` | `-d directory`, `-s select` (interactive picker), `-f force`, `-q quiet` |
 
-## Instance Management
+`mix ansible.deploy --target-sha auto` picks the newest prod release on the current branch (or QA release if `--qa` is set). With `--qa` and no `--target-sha`, you get an interactive QA release picker.
 
-| Task | Description | Key Options |
-|------|-------------|-------------|
-| `mix deploy_ex.ssh` | SSH into instance | `--root`, `--log`, `--iex`, `--whitelist`, `-i` index, `--qa`, `-l` list |
-| `mix deploy_ex.ssh.authorize` | Add SSH key to instances | |
-| `mix deploy_ex.restart_app` | Restart app systemd service | `-p` pem |
-| `mix deploy_ex.start_app` | Start app service | |
-| `mix deploy_ex.stop_app` | Stop app service | |
-| `mix deploy_ex.restart_machine` | Reboot EC2 instance | |
-| `mix deploy_ex.find_nodes` | Find instances by tags | `--tag` (multi), `--format` (table/json/ids), `--setup-complete` |
-| `mix deploy_ex.select_node` | Interactive node selection | |
-| `mix deploy_ex.instance.status` | Instance status dashboard | `-e` environment |
-| `mix deploy_ex.instance.health` | Instance health checks | `--qa`, `--all` |
-| `mix deploy_ex.download_file` | Download file from S3 | |
+## Release Management
+
+| Task | Switches |
+|------|----------|
+| `mix deploy_ex.release` | `-f force`, `-q quiet`, `-r recompile`, `--only`, `--except`, `--all`, `--aws-region`, `--aws-release-bucket` |
+| `mix deploy_ex.upload` | `-f force`, `-q quiet`, `--qa`, `--parallel <n>` (default 4), `--aws-region`, `--aws-release-bucket` |
+| `mix deploy_ex.list_app_release_history <app>` | `-l limit`, `-r region`, `-b bucket` |
+| `mix deploy_ex.list_available_releases` | `-a app` |
+| `mix deploy_ex.view_current_release <app>` | `-r region`, `-b bucket` |
+| `mix deploy_ex.remake <node>` | `--no-deploy`, `--no-tui` (chains `terraform.replace → wait → ansible.setup → ansible.deploy`) |
+
+## App Lifecycle
+
+| Task | Switches |
+|------|----------|
+| `mix deploy_ex.start_app [app]` | `-d directory`, `-p pem`, `-f force`, `-q quiet`, `--resource-group`, `--no-tui` |
+| `mix deploy_ex.stop_app [app]` | (same as start_app) |
+| `mix deploy_ex.restart_app [app]` | (same as start_app) |
+| `mix deploy_ex.restart_machine [app]` | `--aws-region`, `--resource-group`, `-f force`, `-q quiet`, `--no-tui` |
+| `mix deploy_ex.download_file [app]` | `-d directory`, `-p pem`, `-f force`, `-q quiet`, `--resource-group` |
+
+## Instances & Inventory
+
+| Task | Switches |
+|------|----------|
+| `mix deploy_ex.find_nodes` | `-t tag` (repeatable, `KEY=VALUE`), `--setup-complete`, `--setup-incomplete`, `-f format` (table\|json\|ids), `-r region`, `--resource-group`, `-q quiet` |
+| `mix deploy_ex.select_node [app]` | `-s short`, `--qa`, `-r region`, `--resource-group` |
+| `mix deploy_ex.instance.status` | `-e environment` |
+| `mix deploy_ex.instance.health` | `-q qa` (yes — `q` aliases `qa`), `-a all` |
+| `mix deploy_ex.load_balancer.health [app]` | `--qa`, `-w watch` (live dashboard), `--json`, `-q quiet`, `--no-tui` |
+
+## SSH
+
+### `mix deploy_ex.ssh [app]`
+Picker-based SSH with log/IEx modes.
+- `-d directory` — terraform dir holding the PEM (default `./deploys/terraform`)
+- `-p, --pem` — explicit PEM file
+- `-i index` — pick the nth instance
+- `-s short` — print the ssh command instead of running it
+- `--instance-id <id>` — target a specific instance (repeatable)
+- `--qa` — restrict picker to QA nodes
+- `-l, --list` — list candidates and exit
+- `--root` — connect as root (`sudo -i`)
+- `--log` — `journalctl -u <app>` follow mode
+- `-n, --log-count <n>` / `--all` / `--log-user <user>`
+- `--iex` — `bin/<app> remote` to attach to the running BEAM
+- `--resource-group`, `-f force`, `-q quiet`
+
+### `mix deploy_ex.ssh.authorize`
+Manage IP ingress on the security group.
+- `-r, --remove` — remove instead of add
+- `--ip <addr>` — explicit IP (default = current public IP)
+- `--region`
+- `--security-group-id <id>` — bypass auto-discovery
+- `-f force`, `-q quiet`
 
 ## QA Nodes
 
-| Task | Description | Key Options |
-|------|-------------|-------------|
-| `mix deploy_ex.qa` | QA commands overview | |
-| `mix deploy_ex.qa.create` | Create QA instance | `-s` sha (required), `--instance-type`, `--attach-lb`, `--skip-setup`, `--skip-deploy` |
-| `mix deploy_ex.qa.deploy` | Deploy SHA to QA node | `-s` sha (required) |
-| `mix deploy_ex.qa.destroy` | Terminate QA instance | `-i` instance-id, `--all` |
-| `mix deploy_ex.qa.list` | List QA nodes | |
-| `mix deploy_ex.qa.attach_lb` | Attach to load balancer | |
-| `mix deploy_ex.qa.detach_lb` | Detach from load balancer | |
-| `mix deploy_ex.qa.cleanup` | Remove terminated nodes from state | |
+### `mix deploy_ex.qa <app>`
+Overview / quick start (no flags).
+
+### `mix deploy_ex.qa.create <app>`
+- `-s, --sha` — target SHA (prompts if omitted)
+- `-t, --tag` — instance label (replaces short SHA in name)
+- `--instance-type` (default `t3.small`)
+- `--skip-setup`, `--skip-deploy`, `--skip-ami`, `--skip-host-rewrite`
+- `--use-ami` — boot from app AMI
+- `--attach-lb` — register with load balancer after deploy
+- `--public-ip-cert` — Let's Encrypt cert + LLM-assisted host rewrite
+- `--wait-for-build` — commit + push QA branch, wait for GitHub Actions
+- `--build-workflow <file>` / `--build-job <id>` / `--build-timeout <minutes>` (default 30)
+- `-f force`, `-q quiet`, `--no-tui`
+- `--aws-region`, `--aws-release-bucket`
+
+### `mix deploy_ex.qa.deploy <app>`
+- `-s, --sha` (required outside TUI mode)
+- `-i, --instance-id` — pick a specific QA node
+- `--public-ip-cert` / `--no-public-ip-cert` — toggle cert mode (persisted to state)
+- `-q quiet`, `--aws-region`, `--aws-release-bucket`
+
+### `mix deploy_ex.qa.destroy [app]`
+- `-i, --instance-id` — destroy a specific instance
+- `--all` — destroy every QA node across every app
+- `-f force`, `-q quiet`
+
+### `mix deploy_ex.qa.list`
+- `-a, --app <app>` — filter by app
+- `--json`
+- `-q quiet`
+
+### `mix deploy_ex.qa.attach_lb [app]`
+- `--instance-id`
+- `--target-group <arn>`
+- `--port <int>` (default 4000)
+- `--wait` — block until target healthy
+- `-q quiet`
+
+### `mix deploy_ex.qa.detach_lb [app]`
+- `--instance-id`
+- `--target-group <arn>`
+- `-q quiet`
+
+### `mix deploy_ex.qa.cleanup`
+- `--dry-run`
+- `-f force`, `-q quiet`
 
 ## Autoscaling
 
-| Task | Description | Key Options |
-|------|-------------|-------------|
-| `mix deploy_ex.autoscale.refresh` | Trigger ASG instance refresh | `-s` strategy (Rolling/ReplaceRootVolume), `-a` availability, `-w` wait |
-| `mix deploy_ex.autoscale.refresh_status` | Check refresh progress | |
-| `mix deploy_ex.autoscale.scale` | Set desired capacity | `--desired` |
-| `mix deploy_ex.autoscale.status` | Show ASG status | |
+| Task | Switches |
+|------|----------|
+| `mix deploy_ex.autoscale.status <app>` | (uses `:aws_region` and `:env`) |
+| `mix deploy_ex.autoscale.scale <app> <desired>` | `-e environment`, `-u update-limits` (also raise min/max if needed) |
+| `mix deploy_ex.autoscale.refresh <app>` | `-e environment`, `-s strategy` (Rolling\|ReplaceRootVolume), `-a availability` (launch-first\|terminate-first), `--min-healthy-percentage`, `--max-healthy-percentage`, `--instance-warmup` (sec, default 300), `-w wait`, `--skip-matching`, `--no-tui` |
+| `mix deploy_ex.autoscale.refresh_status <app>` | (no switches; reports active or last refresh) |
 
 ## Load Testing
 
-| Task | Description | Key Options |
-|------|-------------|-------------|
-| `mix deploy_ex.load_test` | Load test commands overview | |
-| `mix deploy_ex.load_test.init` | Scaffold k6 test scripts | |
-| `mix deploy_ex.load_test.create_instance` | Provision k6 runner EC2 | `--instance-type` |
-| `mix deploy_ex.load_test.destroy_instance` | Terminate runner | `-i` instance-id, `--all` |
-| `mix deploy_ex.load_test.list` | List active runners | `--json` |
-| `mix deploy_ex.load_test.upload` | Upload scripts to runner | `--script` |
-| `mix deploy_ex.load_test.exec` | Execute k6 test | `--script`, `--target-url`, `--prometheus-url` |
+| Task | Switches |
+|------|----------|
+| `mix deploy_ex.load_test` | (overview, no flags) |
+| `mix deploy_ex.load_test.init` | (scaffolds k6 scripts under `./load_tests/`) |
+| `mix deploy_ex.load_test.create_instance` | `--instance-type`, `--resource-group`, `--pem`, `-f force`, `-q quiet` |
+| `mix deploy_ex.load_test.destroy_instance` | `-i instance-id`, `--all`, `-f force`, `-q quiet` |
+| `mix deploy_ex.load_test.list` | `--json`, `-q quiet` |
+| `mix deploy_ex.load_test.upload` | `-i instance-id`, `--script <path>`, `--pem`, `-q quiet` |
+| `mix deploy_ex.load_test.exec` | `-i instance-id`, `--script <path>`, `--target-url`, `--prometheus-url`, `--pem`, `-q quiet` |
 
 ## Monitoring
 
-| Task | Description | Key Options |
-|------|-------------|-------------|
-| `mix deploy_ex.load_balancer.health` | Load balancer health status | |
-| `mix deploy_ex.grafana.install_dashboard` | Install Grafana dashboard | `--id` (dashboard ID) |
+### `mix deploy_ex.grafana.install_dashboard`
+Install dashboards via SSH-tunnelled Grafana API.
+- `-f, --file <path>` — local dashboard JSON
+- `--id <int>` — dashboard ID from grafana.com
+- `--grafana-ip` / `--grafana-port` (default 80)
+- `--user` / `--password`
+- `--pem`, `--resource-group`, `-q quiet`
 
-## Utility
+## See also
 
-| Task | Description | Key Options |
-|------|-------------|-------------|
-| `mix deploy_ex.export_priv` | Export priv templates to ./deploys/ | |
-| `mix deploy_ex.upgrade_priv` | Sync priv changes into ./deploys/ | `--llm-merge` |
-| `mix deploy_ex.install_github_action` | Generate CI/CD workflows | |
-| `mix deploy_ex.install_migration_script` | Generate migration scripts | |
-| `mix deploy_ex.list_available_releases` | List releases in S3 | |
-| `mix deploy_ex.list_app_release_history` | Show release history | |
-| `mix deploy_ex.view_current_release` | Show current deployed release | |
-
-See also: [Deployment Guide](../tutorials/getting_started.md) | [Configuration Guide](../reference/configuration.md)
+- [System Architecture](../explanation/architecture.md) — diagrams of the full pipeline
+- [Configuration](configuration.md) — all `:deploy_ex` config keys
+- [Codebase Summary](codebase_summary.md) — module inventory

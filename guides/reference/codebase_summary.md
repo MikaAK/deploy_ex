@@ -2,110 +2,140 @@
 
 ## File Inventory
 
-| Directory | Files | LOC (approx) | Purpose |
-|-----------|-------|---------------|---------|
-| `lib/deploy_ex/` | 38 | ~5,800 | Core library modules |
-| `lib/deploy_ex/release_uploader/` | 6 | ~500 | Release management subsystem |
-| `lib/deploy_ex/tui/` | 6 | ~1,600 | Terminal UI components |
-| `lib/mix/tasks/` | 73 | ~6,000 | Mix task CLI interface |
-| `lib/mix/deploy_ex_helpers.ex` | 1 | ~330 | Shared task helpers |
-| `priv/terraform/` | 13 | ~1,200 | Terraform templates + modules |
-| `priv/ansible/` | 30+ | ~2,000 | Ansible templates + roles |
-| `test/` | 12 | ~800 | Tests + fixtures |
-| **Total** | **~170 source** | **~18,000** | |
+| Directory | Files | Purpose |
+|-----------|-------|---------|
+| `lib/deploy_ex/` | 50+ `.ex` files | Core library (AWS wrappers, orchestration, QA, priv pipeline, TUI) |
+| `lib/deploy_ex/release_uploader/` | 6 | Release management subsystem |
+| `lib/deploy_ex/release_lookup/` | 1 | Git-backed release filter |
+| `lib/deploy_ex/tui/` | 7 | TUI screens (wizard, dashboard, diff viewer, progress) |
+| `lib/deploy_ex/tui/wizard/` | 2 | Wizard form + command registry |
+| `lib/mix/tasks/` | 68 | Mix task CLI surface |
+| `lib/mix/deploy_ex_helpers.ex` | 1 | Shared helpers (project introspection, SSH, file I/O) |
+| `priv/terraform/` | 13 + 3 modules | Terraform templates (.tf, .tf.eex) and modules |
+| `priv/ansible/` | 30+ | Ansible roles, playbooks, group_vars, inventories |
+| `test/` | 20 | Tests + fixtures |
 
-## Module Inventory by Subsystem
+## Module Inventory
 
-### AWS Services (9 modules, ~1,950 LOC)
+### AWS Wrappers (`lib/deploy_ex/aws_*.ex`)
 
-| Module | LOC | Purpose |
-|--------|-----|---------|
-| `AwsMachine` | 446 | EC2 instance lifecycle, discovery by tags |
-| `AwsAutoscaling` | 406 | Auto Scaling Group operations |
-| `AwsInfrastructure` | 299 | Subnet, VPC, AMI, IAM discovery |
-| `AwsLoadBalancer` | 220 | ELBv2 target group management |
-| `AwsDatabase` | 139 | RDS instance discovery |
-| `AwsSecurityGroup` | 114 | Security group lookup |
-| `AwsBucket` | 105 | S3 bucket operations |
-| `AwsDynamoDB` | 84 | DynamoDB table operations |
-| `AwsIpWhitelister` | 59 | Security group ingress rules |
+| Module | Purpose |
+|--------|---------|
+| `AwsMachine` | EC2 lifecycle, tag-based discovery, instance group queries |
+| `AwsAutoscaling` | ASG describe, scale, instance refresh, scaling policies |
+| `AwsInfrastructure` | VPC, subnet, key pair, IAM profile, AMI lookups |
+| `AwsLoadBalancer` | ELBv2 target group register/deregister + health waits |
+| `AwsDatabase` | RDS describe, password retrieval (via TerraformState) |
+| `AwsSecurityGroup` | Security group lookup by prefix or VPC |
+| `AwsBucket` | S3 create/list/delete with recursive truncation |
+| `AwsDynamodb` | DynamoDB CRUD for the state lock table |
+| `AwsIpWhitelister` | Authorize/revoke /32 SSH ingress on a SG |
 
-### Release Management (8 modules, ~430 LOC)
+### Orchestration
 
-| Module | LOC | Purpose |
-|--------|-----|---------|
-| `ReleaseUploader` | 149 | Release coordination (build, validate, upload) |
-| `UpdateValidator` | 256 | Change detection (git diff, deps tree, lock file) |
-| `ReleaseTracker` | 120 | S3-backed current/history tracking |
-| `State` | 88 | Release state struct and builders |
-| `RedeployConfig` | 68 | Whitelist/blacklist config parser |
-| `AwsManager` | 35 | Low-level S3 release operations |
-| `MixDepsTreeParser` | 40 | `mix deps.tree` output parser |
-| `MixLockFileDiffParser` | 22 | `mix.lock` git diff parser |
+| Module | Purpose |
+|--------|---------|
+| `Terraform` | CLI wrapper, arg parsing, output JSON, instance/IP extraction |
+| `TerraformState` | S3/local state reader; `get_output/get_resource_attribute` |
+| `Ansible` | Argument parsing for ansible-playbook |
+| `AnsibleRoles` | Sync `priv/ansible/roles/` into `./deploys/ansible/roles/` |
+| `Utils` | Shell execution wrappers + status tuple aggregation |
+| `SSH` | Erlang SSH client + `ssh -L` tunnels + port allocation |
+| `SystemdController` | Build `systemctl start/stop/restart` commands |
+| `IpFinder` | Whoami service for current public IP |
 
-### Infrastructure (8 modules, ~700 LOC)
+### Release Management
 
-| Module | LOC | Purpose |
-|--------|-----|---------|
-| `Utils` | 187 | Shell execution, error aggregation |
-| `Terraform` | 175 | Terraform CLI wrapper |
-| `TerraformState` | 175 | Terraform state reader (local/S3) |
-| `SSH` | 134 | SSH connections, tunneling, command execution |
-| `Config` | 92 | Runtime configuration with defaults |
-| `PrivManifest` | 93 | Template manifest tracking (SHA256) |
-| `SystemdController` | 26 | Systemd service management |
-| `Ansible` | 26 | Ansible argument parsing |
+| Module | Purpose |
+|--------|---------|
+| `ReleaseUploader` | Top-level coordination (build, validate, upload) |
+| `ReleaseUploader.State` | Release struct |
+| `ReleaseUploader.AwsManager` | S3 upload + tagging |
+| `ReleaseUploader.RedeployConfig` | Whitelist/blacklist parser |
+| `ReleaseUploader.UpdateValidator` | Change detection across git + lock + deps tree |
+| `ReleaseUploader.UpdateValidator.MixDepsTreeParser` | Parse `mix deps.tree` (file: `mix_dep_tree_parser.ex`) |
+| `ReleaseUploader.UpdateValidator.MixLockFileDiffParser` | Parse `git diff -- mix.lock` |
+| `ReleaseLookup` | Interactive release picker (TUI + git filter) |
+| `ReleaseLookup.GitImpl` | `git rev-list` wrapper |
+| `ReleaseTracker` | S3-backed `current_release` and `release_history` |
+| `ReleaseController` | Thin delegating layer to ReleaseTracker |
 
-### TUI (7 modules, ~1,630 LOC)
+### Priv Pipeline
 
-| Module | LOC | Purpose |
-|--------|-----|---------|
-| `TUI.Wizard.CommandRegistry` | 866 | Command metadata for wizard |
-| `TUI.Wizard.Form` | 444 | Dynamic form builder |
-| `TUI.Wizard` | 394 | Interactive command wizard |
-| `TUI.Progress` | 310 | Progress bar and task tracking |
-| `TUI.DeployProgress` | 270 | Deployment progress tracking |
-| `TUI.Select` | 157 | Multi-select widget |
-| `TUI.Dashboard` | 136 | Real-time dashboard |
-| `TUI` | 28 | Feature flag and setup |
+| Module | Purpose |
+|--------|---------|
+| `PrivRenderer` | Render priv/terraform + priv/ansible EEx templates to a temp dir |
+| `ChangePlanner` | Compare rendered tree vs `./deploys/`; classify rename / split / merge |
+| `Diff` | Unified diff via `diff -u`, parse hunks, apply selectively |
+| `LLMMerge` | LangChain-based two-way merge + proposal review |
+| `PrivManifest` | SHA256 manifest read/write/lookup; generates `.deploy_ex_manifest.exs` |
 
-### Specialized Operations (5 modules, ~1,140 LOC)
+### QA Pipeline
 
-| Module | LOC | Purpose |
-|--------|-----|---------|
-| `QaNode` | 603 | QA instance lifecycle + S3 state |
-| `K6Runner` | 428 | k6 load testing runner instances |
-| `Grafana` | 130 | Dashboard management via SSH tunnel |
-| `LlmMerge` | 85 | Optional AI-assisted template merging |
-| `IpFinder` | 9 | External IP detection |
+| Module | Purpose |
+|--------|---------|
+| `QaNode` | EC2 lifecycle, S3 state, LB attach/detach, interactive picker |
+| `QaPlaybook` | Per-QA-node throwaway Ansible playbook generation |
+| `QaHostRewrite` | LLM-driven rewrite of Phoenix endpoint config for public-IP TLS |
+| `GitOperations` | Resolve QA branch, commit + push, revert + push, delete remote |
+| `GitHubActions` | Workflow detection (yml glob match), gh-CLI run polling |
+| `K6Runner` | Load-test EC2 runner mirror of QaNode |
+
+### TUI
+
+| Module | Purpose |
+|--------|---------|
+| `TUI` | Logger silencing + setup helpers |
+| `TUI.Wizard` | Top-level interactive command browser |
+| `TUI.Wizard.CommandRegistry` | Metadata for every Mix task |
+| `TUI.Wizard.Form` | Dynamic form builder for arguments |
+| `TUI.Select` | Single + multi-select picker |
+| `TUI.Progress` | Step-by-step progress bar |
+| `TUI.DeployProgress` | Specialized deploy progress rendering |
+| `TUI.Dashboard` | Live dashboard (e.g. load_balancer.health --watch) |
+| `TUI.DiffViewer` | Per-hunk diff review with accept/reject |
+
+### Other
+
+| Module | Purpose |
+|--------|---------|
+| `Config` | All runtime config access |
+| `ProjectContext` | Umbrella vs single-app abstraction |
+| `Grafana` | Dashboard install via SSH-tunnelled Grafana API |
+| `ToolInstaller` | Detect platform, install terraform/ansible/gh |
 
 ## Key Dependencies
 
-| Package | Version | Purpose | Type |
-|---------|---------|---------|------|
-| `ex_aws` | ~> 2.3 | AWS SDK wrapper | Runtime |
-| `ex_aws_s3` | ~> 2.3 | S3 operations | Runtime |
-| `ex_aws_ec2` | ~> 2.0 | EC2 operations | Runtime |
-| `ex_aws_rds` | ~> 2.0 | RDS operations | Runtime |
-| `ex_aws_dynamo` | ~> 4.2 | DynamoDB operations | Runtime |
-| `ex_aws_elastic_load_balancing` | ~> 3.0 | ELB operations | Runtime |
-| `jason` | ~> 1.3 | JSON encoding/decoding | Runtime |
-| `error_message` | ~> 0.2 | Structured error tuples | Runtime |
-| `req` | ~> 0.3 | HTTP client | Runtime |
-| `hackney` | ~> 1.18 | HTTP adapter for ExAws | Runtime |
-| `sweet_xml` | ~> 0.7 | XPath XML parsing | Runtime |
-| `elixir_xml_to_map` | ~> 3.0 | XML to map conversion | Runtime |
-| `exexec` | ~> 0.2 | Interactive process execution | Runtime |
-| `ex_ratatui` | ~> 0.4 | Terminal UI rendering | Runtime |
-| `langchain` | ~> 0.6 | LLM integration (optional) | Optional |
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `ex_aws` | ~> 2.3 | AWS SDK core |
+| `ex_aws_s3` | ~> 2.3 | S3 |
+| `ex_aws_ec2` | ~> 2.0 | EC2 |
+| `ex_aws_rds` | ~> 2.0 | RDS |
+| `ex_aws_dynamo` | ~> 4.2 | DynamoDB |
+| `ex_aws_elastic_load_balancing` | ~> 3.0 | ELB / ALB |
+| `jason` | ~> 1.3 | JSON encode/decode |
+| `error_message` | ~> 0.2 | `%ErrorMessage{}` structured errors |
+| `req` | ~> 0.3 | HTTP client (Grafana, IpFinder) |
+| `hackney` | ~> 1.18 | HTTP adapter for ExAws |
+| `sweet_xml` | ~> 0.7 | XPath XML extraction |
+| `elixir_xml_to_map` | ~> 3.0 | XML to map for AWS responses |
+| `exexec` | ~> 0.2 | Interactive PTY commands |
+| `erlexec` | ~> 2.0 | OS process execution |
+| `configparser_ex` | >= 4.0.0 | Parse `~/.aws/credentials` |
+| `ex_ratatui` | ~> 0.4 | Terminal UI rendering |
+| `langchain` | ~> 0.6 | LLM integration (used by QaHostRewrite, LLMMerge, upgrade_priv `--ai-review`/`--llm-merge`) |
+| `yaml_elixir` | ~> 2.11 | Parse `.github/workflows/*.yml` |
 
 ## Entry Points
 
-The primary interface is Mix tasks in `lib/mix/tasks/`. All tasks:
-1. Call `DeployExHelpers.check_valid_project()` to validate project type
-2. Parse CLI args with `OptionParser`
-3. Delegate to core modules in `lib/deploy_ex/`
+The primary interface is Mix tasks in `lib/mix/tasks/`. Every task:
 
-The TUI wizard (`mix deploy_ex`) provides a browsable interface to all tasks.
+1. Calls `DeployExHelpers.check_valid_project()` to validate it's running in a Mix project
+2. Parses CLI args with `OptionParser`
+3. Optionally calls `DeployEx.TUI.setup_no_tui(opts)` to honor `--no-tui`
+4. Delegates to core modules in `lib/deploy_ex/`
 
-See also: [System Architecture](architecture.md) | [Project Overview](../introduction.md)
+The TUI wizard (`mix deploy_ex`) provides a browsable interface to every task with form-based input.
+
+See also: [System Architecture](../explanation/architecture.md) | [Project Overview](../introduction.md)

@@ -2,46 +2,50 @@
 set -euo pipefail
 
 COMMAND="${1:-migrate}"
-APP_BIN="/srv/<%= @app_name %>/bin/<%= @app_name %>"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RELEASE_NAME="$(basename "$(dirname "$SCRIPT_DIR")")"
+APP_BIN="$SCRIPT_DIR/$RELEASE_NAME"
+
+if [[ ! -x "$APP_BIN" ]]; then
+  echo "Could not find release bin at $APP_BIN" >&2
+  exit 1
+fi
 
 case "$COMMAND" in
   migrate)
-    $APP_BIN eval "
-      <%= for app <- @apps do %>
-      Application.load(:<%= app %>)<% end %>
-
-      <%= inspect(@apps) %>
-      |> Enum.flat_map(fn app ->
-        case Application.fetch_env(app, :ecto_repos) do
-          {:ok, repos} -> repos
-          :error -> []
-        end
-      end)
-      |> Enum.each(fn repo ->
-        {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :up, all: true))
-      end)
-    "
+    MIGRATOR_CALL='{:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :up, all: true))'
     ;;
   rollback)
     VERSION="${2:?Usage: $0 rollback VERSION}"
-    $APP_BIN eval "
-      <%= for app <- @apps do %>
-      Application.load(:<%= app %>)<% end %>
-
-      <%= inspect(@apps) %>
-      |> Enum.flat_map(fn app ->
-        case Application.fetch_env(app, :ecto_repos) do
-          {:ok, repos} -> repos
-          :error -> []
-        end
-      end)
-      |> Enum.each(fn repo ->
-        {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :down, to: $VERSION))
-      end)
-    "
+    MIGRATOR_CALL="{:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :down, to: $VERSION))"
     ;;
   *)
     echo "Usage: $0 {migrate|rollback VERSION}"
     exit 1
     ;;
 esac
+
+$APP_BIN eval "
+  apps = [<%= Enum.map_join(@apps, ", ", &":#{&1}") %>]
+
+  loaded =
+    Enum.flat_map(apps, fn app ->
+      case Application.load(app) do
+        :ok -> [app]
+        {:error, {:already_loaded, ^app}} -> [app]
+        {:error, _} -> []
+      end
+    end)
+
+  repos =
+    loaded
+    |> Enum.flat_map(fn app ->
+      case Application.fetch_env(app, :ecto_repos) do
+        {:ok, repos} -> repos
+        :error -> []
+      end
+    end)
+    |> Enum.uniq()
+
+  Enum.each(repos, fn repo -> $MIGRATOR_CALL end)
+"
