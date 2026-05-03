@@ -45,4 +45,22 @@ defmodule DeployEx.GitHubActionsTest do
       assert {:error, %ErrorMessage{code: :not_found}} = result
     end
   end
+
+  describe "ensure_authenticated/1" do
+    test "returns :ok when gh auth status exits 0" do
+      shell = fn "gh auth status", _dir, _opts -> {:ok, "Logged in to github.com as foo"} end
+      assert :ok = GitHubActions.ensure_authenticated(shell: shell)
+    end
+
+    test "returns error with hint when gh auth status fails" do
+      shell = fn "gh auth status", _dir, _opts ->
+        {:error, ErrorMessage.internal_server_error("not logged in", %{})}
+      end
+
+      assert {:error, %ErrorMessage{code: :unauthorized, message: msg}} =
+               GitHubActions.ensure_authenticated(shell: shell)
+
+      assert msg =~ "gh auth login"
+    end
+  end
 end

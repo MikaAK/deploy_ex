@@ -130,4 +130,28 @@ defmodule DeployEx.GitHubActions do
   end
 
   defp step_runs_release?(_step), do: false
+
+  @doc """
+  Checks `gh auth status`. Returns `:ok` if logged in, otherwise an
+  `:unauthorized` ErrorMessage hinting at `gh auth login`.
+
+  `opts[:shell]` injects a `(command, dir, opts) -> {:ok, output} | {:error, ErrorMessage}`
+  function for testing. Defaults to `DeployEx.Utils.run_command_with_return/3`.
+  """
+  @spec ensure_authenticated(keyword()) :: :ok | {:error, ErrorMessage.t()}
+  def ensure_authenticated(opts \\ []) do
+    shell = Keyword.get(opts, :shell, &DeployEx.Utils.run_command_with_return/3)
+
+    case shell.("gh auth status", ".", []) do
+      {:ok, _output} ->
+        :ok
+
+      {:error, _error} ->
+        {:error,
+         ErrorMessage.unauthorized(
+           "gh CLI is not authenticated. Run: gh auth login",
+           %{}
+         )}
+    end
+  end
 end
