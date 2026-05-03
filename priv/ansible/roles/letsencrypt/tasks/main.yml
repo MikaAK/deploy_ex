@@ -154,6 +154,31 @@
         state: link
         force: true
 
+    # ansible_default_ipv4 reflects the EC2 primary NIC (private 10.x); LE won't
+    # issue against that. Pull the public IPv4 from IMDSv2 instead. Token TTL is
+    # the call-site lifetime — long enough for the cert request, short enough to
+    # not linger.
+    - name: Get IMDSv2 token
+      uri:
+        url: http://169.254.169.254/latest/api/token
+        method: PUT
+        headers:
+          X-aws-ec2-metadata-token-ttl-seconds: "300"
+        return_content: true
+      register: imds_token
+
+    - name: Read public IPv4 from EC2 instance metadata
+      uri:
+        url: http://169.254.169.254/latest/meta-data/public-ipv4
+        headers:
+          X-aws-ec2-metadata-token: "{{ imds_token.content }}"
+        return_content: true
+      register: imds_public_ipv4
+
+    - name: Bind qa_public_ip to the IMDSv2 result
+      set_fact:
+        qa_public_ip: "{{ imds_public_ipv4.content }}"
+
     # --pre-hook / --post-hook stop + start nginx around issuance so certbot can bind :80.
     # They get persisted in the cert's renewal config, so snap's built-in
     # snap.certbot.renew.timer handles nginx cycling on its own during renewals.
@@ -163,14 +188,14 @@
         certbot certonly \
           --standalone \
           --preferred-profile shortlived \
-          -d "{{ ansible_default_ipv4.address }}" \
+          -d "{{ qa_public_ip }}" \
           --non-interactive \
           --agree-tos \
           --email "{{ letsencrypt_email }}" \
           --pre-hook "systemctl stop nginx 2>/dev/null || true" \
           --post-hook "systemctl start nginx 2>/dev/null || true"
       args:
-        creates: "/etc/letsencrypt/live/{{ ansible_default_ipv4.address }}/fullchain.pem"
+        creates: "/etc/letsencrypt/live/{{ qa_public_ip }}/fullchain.pem"
 
     - name: Set proper permissions for certificate files
       file:
