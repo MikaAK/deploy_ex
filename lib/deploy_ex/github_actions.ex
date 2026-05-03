@@ -23,9 +23,111 @@ defmodule DeployEx.GitHubActions do
     Regex.match?(~r/^#{regex_source}$/, branch)
   end
 
+  @release_command_signature "mix deploy_ex.release"
+
+  @doc """
+  Scans `<workflows_root>/*.yml` and returns `{:ok, %{file:, job_id:}}` for the
+  workflow + job that builds a release for `qa_branch`.
+
+  Detection logic:
+  1. Parse each workflow file.
+  2. Keep workflows whose `on.push.branches` patterns match `qa_branch` via
+     `branch_glob_match?/2`.
+  3. Among those, find a job whose steps include a `run:` containing
+     `mix deploy_ex.release` — either directly OR by following a
+     `uses: ./.github/workflows/<sub>.yml` reference into the sub-workflow's
+     run steps.
+  4. If exactly one candidate matches, return it. If multiple, return :conflict.
+     If none, return :not_found.
+  """
+  @spec find_build_workflow(Path.t(), String.t()) ::
+          {:ok, %{file: String.t(), job_id: String.t()}} | {:error, ErrorMessage.t()}
+  def find_build_workflow(workflows_root, qa_branch) do
+    workflows = list_workflows(workflows_root)
+
+    candidates =
+      workflows
+      |> Enum.filter(&workflow_triggers_on_branch?(&1, qa_branch))
+      |> Enum.flat_map(&find_release_jobs(&1, workflows))
+
+    case candidates do
+      [%{file: _, job_id: _} = match] ->
+        {:ok, match}
+
+      [] ->
+        {:error,
+         ErrorMessage.not_found(
+           "no workflow runs `#{@release_command_signature}` for branch #{qa_branch}",
+           %{workflows_scanned: Enum.map(workflows, & &1.basename)}
+         )}
+
+      multiple ->
+        {:error,
+         ErrorMessage.conflict(
+           "multiple workflows match for branch #{qa_branch}; pass --build-workflow to disambiguate",
+           %{candidates: multiple}
+         )}
+    end
+  end
+
   defp escape_segment(segment) do
     segment
     |> Regex.escape()
     |> String.replace("\\*", "[^/]*")
   end
+
+  defp list_workflows(workflows_root) do
+    workflows_root
+    |> Path.join("*.{yml,yaml}")
+    |> Path.wildcard()
+    |> Enum.map(&parse_workflow/1)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp parse_workflow(path) do
+    case YamlElixir.read_from_file(path) do
+      {:ok, parsed} -> %{basename: Path.basename(path), path: path, parsed: parsed}
+      {:error, _} -> nil
+    end
+  end
+
+  defp workflow_triggers_on_branch?(%{parsed: parsed}, branch) do
+    parsed
+    |> get_in(["on", "push", "branches"])
+    |> List.wrap()
+    |> Enum.any?(&branch_glob_match?(&1, branch))
+  end
+
+  defp find_release_jobs(%{basename: basename, parsed: parsed}, all_workflows) do
+    parsed
+    |> Map.get("jobs", %{})
+    |> Enum.filter(fn {_id, job} -> job_runs_release?(job, all_workflows) end)
+    |> Enum.map(fn {id, _job} -> %{file: basename, job_id: id} end)
+  end
+
+  defp job_runs_release?(%{"steps" => steps}, _all) when is_list(steps) do
+    Enum.any?(steps, &step_runs_release?/1)
+  end
+
+  defp job_runs_release?(%{"uses" => "./" <> sub_path}, all_workflows) do
+    sub_basename = Path.basename(sub_path)
+
+    case Enum.find(all_workflows, &(&1.basename === sub_basename)) do
+      nil ->
+        false
+
+      sub ->
+        sub.parsed
+        |> Map.get("jobs", %{})
+        |> Enum.any?(fn {_id, job} -> job_runs_release?(job, all_workflows) end)
+    end
+  end
+
+  defp job_runs_release?(_job, _all), do: false
+
+  defp step_runs_release?(%{"run" => run}) when is_binary(run) do
+    String.contains?(run, @release_command_signature)
+  end
+
+  defp step_runs_release?(_step), do: false
 end

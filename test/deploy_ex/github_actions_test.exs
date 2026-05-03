@@ -3,7 +3,9 @@ defmodule DeployEx.GitHubActionsTest do
 
   alias DeployEx.GitHubActions
 
-  @fixtures_root Path.expand("../support/fixtures/workflows", __DIR__)
+  @happy_root Path.expand("../support/fixtures/workflows/happy", __DIR__)
+  @ambiguous_root Path.expand("../support/fixtures/workflows/ambiguous", __DIR__)
+  @no_deploy_root Path.expand("../support/fixtures/workflows/no_deploy", __DIR__)
 
   describe "branch_glob_match?/2" do
     test "matches qa/cfx_web-canary against qa/**" do
@@ -24,6 +26,23 @@ defmodule DeployEx.GitHubActionsTest do
 
     test "does not match qa-foo against qa/**" do
       refute GitHubActions.branch_glob_match?("qa/**", "qa-foo")
+    end
+  end
+
+  describe "find_build_workflow/2" do
+    test "picks pipeline.yml when its sub-workflow runs deploy_ex.release for the qa branch" do
+      result = GitHubActions.find_build_workflow(@happy_root, "qa/cfx_web-canary")
+      assert {:ok, %{file: "cfx_pipeline.yml", job_id: "deploy-qa"}} = result
+    end
+
+    test "returns :conflict when 2+ workflows match" do
+      result = GitHubActions.find_build_workflow(@ambiguous_root, "qa/cfx_web-canary")
+      assert {:error, %ErrorMessage{code: :conflict}} = result
+    end
+
+    test "returns :not_found when no workflow runs deploy_ex.release" do
+      result = GitHubActions.find_build_workflow(@no_deploy_root, "qa-foo")
+      assert {:error, %ErrorMessage{code: :not_found}} = result
     end
   end
 end
