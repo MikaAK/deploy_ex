@@ -210,4 +210,86 @@ defmodule DeployEx.GitHubActions do
       {:error, _} -> :not_yet
     end
   end
+
+  @default_poll_interval_ms 15_000
+  @default_timeout_ms 30 * 60 * 1_000
+
+  @doc """
+  Polls `gh run view <run_id> --json status,conclusion,jobs` and returns
+  `{:ok, run}` when the target job conclusion is success, `{:error, :build_failed}`
+  if the target or any non-target job fails (which would skip the target),
+  or `{:error, :timeout}` after `timeout_ms`.
+
+  Options:
+  * `:poll_interval_ms` — default 15_000
+  * `:timeout_ms` — default 30 * 60 * 1_000 (30 min)
+  * `:log_fn` — `(line :: String.t() -> any)` per-poll status emitter
+  * `:shell` — test shim
+  """
+  @spec wait_for_run(integer(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, :build_failed | :timeout | ErrorMessage.t()}
+  def wait_for_run(run_id, target_job_name, opts \\ []) do
+    shell = Keyword.get(opts, :shell, &DeployEx.Utils.run_command_with_return/3)
+    poll_interval_ms = Keyword.get(opts, :poll_interval_ms, @default_poll_interval_ms)
+    timeout_ms = Keyword.get(opts, :timeout_ms, @default_timeout_ms)
+    log_fn = Keyword.get(opts, :log_fn, fn _line -> :ok end)
+
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+    poll_loop(run_id, target_job_name, deadline, poll_interval_ms, shell, log_fn)
+  end
+
+  defp poll_loop(run_id, target_job_name, deadline, interval_ms, shell, log_fn) do
+    if System.monotonic_time(:millisecond) >= deadline do
+      {:error, :timeout}
+    else
+      case fetch_run(run_id, shell) do
+        {:ok, run} -> evaluate_run(run, target_job_name, deadline, interval_ms, shell, log_fn, run_id)
+        {:error, _} = err -> err
+      end
+    end
+  end
+
+  defp fetch_run(run_id, shell) do
+    cmd = "gh run view #{run_id} --json status,conclusion,jobs"
+
+    case shell.(cmd, ".", []) do
+      {:ok, output} -> Jason.decode(output)
+      {:error, _} = err -> err
+    end
+  end
+
+  defp evaluate_run(run, target_job_name, deadline, interval_ms, shell, log_fn, run_id) do
+    jobs = Map.get(run, "jobs", [])
+    log_jobs(jobs, log_fn)
+
+    cond do
+      any_job_failed?(jobs) ->
+        {:error, :build_failed}
+
+      target_succeeded?(jobs, target_job_name) ->
+        {:ok, run}
+
+      true ->
+        Process.sleep(interval_ms)
+        poll_loop(run_id, target_job_name, deadline, interval_ms, shell, log_fn)
+    end
+  end
+
+  defp any_job_failed?(jobs) do
+    Enum.any?(jobs, fn job ->
+      Map.get(job, "conclusion") in ["failure", "cancelled", "skipped"]
+    end)
+  end
+
+  defp target_succeeded?(jobs, name) do
+    Enum.any?(jobs, fn job ->
+      Map.get(job, "name") === name and Map.get(job, "conclusion") === "success"
+    end)
+  end
+
+  defp log_jobs(jobs, log_fn) do
+    Enum.each(jobs, fn job ->
+      log_fn.("#{Map.get(job, "name")}: #{Map.get(job, "status")} (#{Map.get(job, "conclusion") || "—"})")
+    end)
+  end
 end

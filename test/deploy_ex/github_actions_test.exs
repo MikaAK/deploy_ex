@@ -114,4 +114,77 @@ defmodule DeployEx.GitHubActionsTest do
                )
     end
   end
+
+  describe "wait_for_run/3" do
+    @successful_run %{
+      "status" => "completed",
+      "conclusion" => "success",
+      "jobs" => [
+        %{"name" => "deploy-qa", "status" => "completed", "conclusion" => "success"}
+      ]
+    }
+
+    @target_failed_run %{
+      "status" => "completed",
+      "conclusion" => "failure",
+      "jobs" => [
+        %{"name" => "deploy-qa", "status" => "completed", "conclusion" => "failure"}
+      ]
+    }
+
+    @dep_failed_run %{
+      "status" => "in_progress",
+      "conclusion" => nil,
+      "jobs" => [
+        %{"name" => "mix-compile-prod", "status" => "completed", "conclusion" => "failure"},
+        %{"name" => "deploy-qa", "status" => "queued", "conclusion" => nil}
+      ]
+    }
+
+    test "returns {:ok, run} when target job conclusion is success" do
+      shell = fn _cmd, _dir, _opts -> {:ok, Jason.encode!(@successful_run)} end
+
+      assert {:ok, _run} =
+               GitHubActions.wait_for_run(123, "deploy-qa",
+                 shell: shell,
+                 poll_interval_ms: 0,
+                 timeout_ms: 1_000
+               )
+    end
+
+    test "returns :build_failed when target job conclusion is failure" do
+      shell = fn _cmd, _dir, _opts -> {:ok, Jason.encode!(@target_failed_run)} end
+
+      assert {:error, :build_failed} =
+               GitHubActions.wait_for_run(123, "deploy-qa",
+                 shell: shell,
+                 poll_interval_ms: 0,
+                 timeout_ms: 1_000
+               )
+    end
+
+    test "aborts early when a non-target job fails (dep would skip target)" do
+      shell = fn _cmd, _dir, _opts -> {:ok, Jason.encode!(@dep_failed_run)} end
+
+      assert {:error, :build_failed} =
+               GitHubActions.wait_for_run(123, "deploy-qa",
+                 shell: shell,
+                 poll_interval_ms: 0,
+                 timeout_ms: 1_000
+               )
+    end
+
+    test "returns :timeout when timeout_ms exceeded" do
+      shell = fn _cmd, _dir, _opts ->
+        {:ok, Jason.encode!(%{"status" => "in_progress", "conclusion" => nil, "jobs" => []})}
+      end
+
+      assert {:error, :timeout} =
+               GitHubActions.wait_for_run(123, "deploy-qa",
+                 shell: shell,
+                 poll_interval_ms: 1,
+                 timeout_ms: 5
+               )
+    end
+  end
 end
