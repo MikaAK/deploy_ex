@@ -63,4 +63,55 @@ defmodule DeployEx.GitHubActionsTest do
       assert msg =~ "gh auth login"
     end
   end
+
+  describe "find_run_id/4" do
+    test "returns the run_id from gh run list output" do
+      shell = fn cmd, _dir, _opts ->
+        assert cmd =~ "gh run list"
+        assert cmd =~ "--branch=qa/cfx_web-canary"
+        assert cmd =~ "--commit=abc1234"
+        assert cmd =~ "--workflow=pipeline.yml"
+        {:ok, ~s([{"databaseId":12345,"status":"in_progress","conclusion":null,"name":"Pipeline"}])}
+      end
+
+      assert {:ok, 12345} =
+               GitHubActions.find_run_id("qa/cfx_web-canary", "abc1234", "pipeline.yml",
+                 shell: shell,
+                 retry_interval_ms: 0,
+                 retry_max: 1
+               )
+    end
+
+    test "retries while no run is found, succeeds on second attempt" do
+      counter = :counters.new(1, [])
+
+      shell = fn _cmd, _dir, _opts ->
+        :counters.add(counter, 1, 1)
+
+        if :counters.get(counter, 1) === 1 do
+          {:ok, "[]"}
+        else
+          {:ok, ~s([{"databaseId":99,"status":"queued","conclusion":null,"name":"P"}])}
+        end
+      end
+
+      assert {:ok, 99} =
+               GitHubActions.find_run_id("b", "s", "w.yml",
+                 shell: shell,
+                 retry_interval_ms: 0,
+                 retry_max: 5
+               )
+    end
+
+    test "returns :not_found after retry budget exhausted" do
+      shell = fn _cmd, _dir, _opts -> {:ok, "[]"} end
+
+      assert {:error, %ErrorMessage{code: :not_found}} =
+               GitHubActions.find_run_id("b", "s", "w.yml",
+                 shell: shell,
+                 retry_interval_ms: 0,
+                 retry_max: 3
+               )
+    end
+  end
 end

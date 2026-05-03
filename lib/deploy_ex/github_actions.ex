@@ -154,4 +154,60 @@ defmodule DeployEx.GitHubActions do
          )}
     end
   end
+
+  @default_retry_interval_ms 5_000
+  @default_retry_max 12
+
+  @doc """
+  Looks up the GitHub Actions run ID for the most recent run matching
+  `branch` + `sha` + `workflow_file`. Retries up to `retry_max` times every
+  `retry_interval_ms` if no run is found yet (the run takes a few seconds to
+  register after `git push`).
+
+  `opts[:shell]` injects a fake shell for tests.
+  """
+  @spec find_run_id(String.t(), String.t(), String.t(), keyword()) ::
+          {:ok, integer()} | {:error, ErrorMessage.t()}
+  def find_run_id(branch, sha, workflow_file, opts \\ []) do
+    shell = Keyword.get(opts, :shell, &DeployEx.Utils.run_command_with_return/3)
+    retry_interval_ms = Keyword.get(opts, :retry_interval_ms, @default_retry_interval_ms)
+    retry_max = Keyword.get(opts, :retry_max, @default_retry_max)
+
+    cmd =
+      "gh run list --branch=#{branch} --commit=#{sha} --workflow=#{workflow_file} " <>
+        "--json databaseId,status,conclusion,name --limit 1"
+
+    Enum.reduce_while(1..retry_max, nil, fn attempt, _acc ->
+      case shell.(cmd, ".", []) do
+        {:ok, output} ->
+          case extract_run_id(output) do
+            {:ok, _id} = ok ->
+              {:halt, ok}
+
+            :not_yet when attempt < retry_max ->
+              Process.sleep(retry_interval_ms)
+              {:cont, nil}
+
+            :not_yet ->
+              {:halt,
+               {:error,
+                ErrorMessage.not_found(
+                  "no workflow run found for #{branch} @ #{sha} after #{retry_max} attempts",
+                  %{branch: branch, sha: sha, workflow: workflow_file}
+                )}}
+          end
+
+        {:error, _} = err ->
+          {:halt, err}
+      end
+    end)
+  end
+
+  defp extract_run_id(json_output) do
+    case Jason.decode(json_output) do
+      {:ok, [%{"databaseId" => id} | _]} -> {:ok, id}
+      {:ok, []} -> :not_yet
+      {:error, _} -> :not_yet
+    end
+  end
 end
