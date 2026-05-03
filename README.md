@@ -6,17 +6,68 @@ Add full AWS deployment to any Elixir application — umbrella or single-app —
 
 DeployEx ships **68 Mix tasks**, EEx templates for Terraform and Ansible, an interactive TUI wizard, smart change-detection releases, ephemeral QA nodes with optional CI-gated deploys, and a priv-template upgrade pipeline with optional LLM-assisted merging.
 
-## Features
+## What You Get as a Developer
 
-- **Infrastructure** — VPC, EC2, RDS, ALB, IAM, security groups, S3 buckets, DynamoDB state lock
-- **Configuration** — Ansible roles for BEAM tuning, Loki + Alloy log shipping, Prometheus, Grafana, Redis, Let's Encrypt
-- **Releases** — Build only changed apps (git diff + mix.lock + deps tree), upload in parallel, track current + history in S3
-- **QA nodes** — Ephemeral EC2 instances per SHA, optional public-IP TLS via LLM-assisted host rewrite, optional `--wait-for-build` to gate on GitHub Actions
-- **Priv pipeline** — `export_priv` to take ownership of templates, `upgrade_priv` with interactive / AI-assisted / autonomous LLM merge
-- **TUI** — Wizard, dashboards, per-hunk diff viewer; auto-disables in CI / non-TTY
-- **CI** — `gh`-CLI–based workflow detection, branch glob matching, run polling
+You write Elixir. deploy_ex handles the rest — but exposes everything as plain Mix tasks so you can drop into any layer when you need to.
 
-Optional services (toggle off with `--no-*`): Postgres, Redis, Grafana UI, Loki, Prometheus, Sentry.
+### Push to main, get a deploy
+```bash
+git push origin main
+```
+GitHub Actions builds, uploads, and deploys via Ansible. Only apps that actually changed rebuild — change detection runs against `git diff`, `mix.lock`, and `mix deps.tree`. Phoenix asset pipelines (esbuild, sass, tailwind, phx.digest) run automatically when assets are detected.
+
+### Multiple releases? Each gets its own EC2 fleet
+Define them in `mix.exs` as releases. Each release becomes an EC2 instance group with its own systemd unit, optional load balancer, optional autoscaling group, and per-app log/metric streams. Umbrella apps can be split into multiple deployable services, or bundled into one — your call.
+
+### Roll back without leaving your terminal
+```bash
+mix ansible.rollback              # last release
+mix ansible.rollback --select     # interactive history picker
+```
+Release history lives in S3 alongside the artifacts.
+
+### Test a real branch on real infrastructure
+```bash
+mix deploy_ex.qa.create my_app --sha abc1234 --tag canary
+```
+Spins up an ephemeral EC2 instance running that exact SHA, optionally attaches it to your load balancer, and (if you opt in) fronts it with a Let's Encrypt cert on its public IP. `mix deploy_ex.qa.destroy` cleans everything up.
+
+### Connect to a running node
+```bash
+eval "$(mix deploy_ex.ssh -s my_app --iex)"   # remote IEx
+eval "$(mix deploy_ex.ssh -s my_app --log)"   # tail journalctl
+eval "$(mix deploy_ex.ssh -s my_app --root)"  # sudo shell
+```
+The `eval` pattern means you can wrap it in shell aliases — `my-app-iex` from anywhere.
+
+### Run Ecto migrations against deployed instances
+```bash
+ssh into a node, then: /srv/<app>/bin/migrate.sh migrate
+# or rollback:         /srv/<app>/bin/migrate.sh rollback 20240101120000
+```
+A single `migrate.sh` ships in every release tarball; it discovers `:ecto_repos` from your loaded apps automatically.
+
+### Cluster nodes automatically
+deploy_ex tags every instance with `Group` and `InstanceGroup`. Pair with [`libcluster_ec2_tag_strategy`](https://github.com/MikaAK/libcluster_ec2_tag_strategy) and your nodes find each other on boot — no static IP lists, no DNS configuration. `Node.list()` works.
+
+### Take ownership of the templates when you outgrow defaults
+```bash
+mix deploy_ex.export_priv          # render templates into ./deploys/ — now they're yours
+# ... edit anything ...
+mix deploy_ex.upgrade_priv         # later: merge upstream changes back in
+```
+Three upgrade modes — interactive per-hunk, LLM-assisted review, or fully autonomous merge. Modifications are tracked by SHA256 so unmodified files update silently.
+
+### Browse every command interactively
+```bash
+mix deploy_ex
+```
+TUI wizard with search, form-based inputs, and progress streams. Auto-disables in CI / non-TTY environments.
+
+### What's underneath (when you need to know)
+Terraform for AWS provisioning (VPC, EC2, RDS, ALB, IAM, S3, DynamoDB state lock). Ansible for server config (BEAM tuning, log shipping, monitoring agents). All templates live in `priv/` and render to `./deploys/` — fully owned by you, never overwritten by deploy_ex updates.
+
+Optional services, toggle off with `--no-*` at build time: Postgres, Redis, Grafana UI, Loki, Prometheus, Sentry.
 
 ## Quickstart
 
