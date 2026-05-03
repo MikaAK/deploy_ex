@@ -137,4 +137,32 @@ defmodule DeployEx.GitOperationsTest do
       refute add_cmd =~ "git add ."
     end
   end
+
+  describe "revert_and_push/2" do
+    test "runs git revert HEAD --no-edit && git push" do
+      Process.put(:cmds, [])
+
+      shell = fn cmd, _dir, _opts ->
+        Process.put(:cmds, [cmd | Process.get(:cmds)])
+        {:ok, ""}
+      end
+
+      assert :ok = GitOperations.revert_and_push("/repo", shell: shell)
+
+      cmds = Enum.reverse(Process.get(:cmds))
+      assert Enum.any?(cmds, &(&1 === "git revert HEAD --no-edit"))
+      assert Enum.any?(cmds, &(&1 === "git push"))
+    end
+  end
+
+  describe "delete_remote_branch/3" do
+    test "runs git push origin --delete <branch>" do
+      shell = fn cmd, _dir, _opts ->
+        assert cmd === "git push origin --delete qa/cfx_web-canary"
+        {:ok, ""}
+      end
+
+      assert :ok = GitOperations.delete_remote_branch("/repo", "qa/cfx_web-canary", shell: shell)
+    end
+  end
 end

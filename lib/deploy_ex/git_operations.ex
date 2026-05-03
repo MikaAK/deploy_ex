@@ -87,4 +87,27 @@ defmodule DeployEx.GitOperations do
   defp quote_files(files), do: files |> Enum.map(&shell_escape/1) |> Enum.join(" ")
 
   defp shell_escape(value), do: ~s|'#{String.replace(value, "'", "'\\''")}'|
+
+  @doc """
+  Reverts HEAD with `--no-edit` (no commit message editor) then pushes.
+  No force, no rewrite — leaves an audit trail.
+  """
+  @spec revert_and_push(Path.t(), keyword()) :: :ok | {:error, ErrorMessage.t()}
+  def revert_and_push(repo_root, opts \\ []) do
+    shell = Keyword.get(opts, :shell, &DeployEx.Utils.run_command_with_return/3)
+
+    with :ok <- run_step(shell, repo_root, "git revert HEAD --no-edit"),
+         :ok <- run_step(shell, repo_root, "git push") do
+      :ok
+    end
+  end
+
+  @doc """
+  Deletes a branch from origin via `git push origin --delete <branch>`.
+  """
+  @spec delete_remote_branch(Path.t(), String.t(), keyword()) :: :ok | {:error, ErrorMessage.t()}
+  def delete_remote_branch(repo_root, branch, opts \\ []) do
+    shell = Keyword.get(opts, :shell, &DeployEx.Utils.run_command_with_return/3)
+    run_step(shell, repo_root, "git push origin --delete #{branch}")
+  end
 end
