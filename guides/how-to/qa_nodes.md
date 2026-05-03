@@ -100,12 +100,51 @@ Destroying a QA node also detaches it from any load balancer and restores the ho
 
 ## Targeting QA Nodes from Other Tasks
 
-Most tasks accept `--qa` (or `--include-qa`) to target QA hosts:
+Two flags control whether QA nodes are included:
 
-- `mix ansible.deploy --qa --target-sha auto`
-- `mix ansible.setup --include-qa`
-- `mix deploy_ex.ssh my_app --qa`
-- `mix deploy_ex.instance.health --qa`
-- `mix deploy_ex.load_balancer.health --qa`
+| Flag | Behaviour |
+|------|-----------|
+| `--qa` | Target **only** QA nodes (excludes prod) |
+| `--include-qa` | Include QA nodes **alongside** prod |
 
-See also: [Mix Tasks Reference](../reference/mix_tasks.md) | [QA pipeline architecture](../explanation/architecture.md#qa-pipeline)
+Examples:
+
+```bash
+mix ansible.deploy --only my_app --qa                # deploy to QA only
+mix ansible.deploy --only my_app --include-qa        # prod + QA together
+mix ansible.deploy --qa --target-sha auto            # newest QA release on current branch
+mix ansible.setup --only my_app --include-qa
+mix deploy_ex.ssh my_app --qa
+mix deploy_ex.instance.health --qa
+mix deploy_ex.load_balancer.health --qa
+```
+
+QA releases are stored under `qa/<app>/` in the release bucket and tracked at `release-state/qa/<app>/` — prod tooling ignores them automatically.
+
+## QA Node Tags
+
+Every QA node carries:
+
+| Tag | Value |
+|-----|-------|
+| `Name` | `<app>-qa-<short_sha>-<timestamp>` (or `<app>-qa-<tag>` if `--tag` was used) |
+| `Group` | Same as production (used by libcluster) |
+| `InstanceGroup` | `<app>` — used by Ansible playbook targeting |
+| `QaNode` | `true` — used by `--qa` / `--include-qa` filters |
+| `TargetSha` | Full git SHA |
+| `InstanceTag` | Custom label from `--tag` (if provided) |
+| `UsePublicIpCert` | `true` / `false` — drives the `--public-ip-cert` mode |
+| `ManagedBy` | `DeployEx` |
+| `SetupComplete` | `true` after `ansible.setup` finishes |
+
+## How QA Nodes Work
+
+**State.** Persisted to S3 at `qa-nodes/<app>/<instance_id>.json` and mirrored on EC2 tags. Multiple QA nodes per app are supported — operations always verify state against AWS before acting.
+
+**Infrastructure discovery.** QA nodes reuse the production security group, subnet, and IAM profile. AMI is auto-discovered: first the per-app AMI tagged with `App` + `Environment` + `ManagedBy: DeployEx`, then the base Debian AMI. No Terraform state dependency — the QA pipeline calls AWS APIs directly.
+
+**Cloud-init bootstrap.** User-data deploys the `--sha` automatically on first boot, so `--skip-deploy` is rarely needed.
+
+**Load balancer attachment.** Optional — useful for canary testing or A/B deploys. Health checks behave identically to prod targets.
+
+See also: [Mix Tasks Reference](../reference/mix_tasks.md) | [QA pipeline architecture](../explanation/architecture.md#qa-pipeline) | [Troubleshooting](troubleshooting.md)

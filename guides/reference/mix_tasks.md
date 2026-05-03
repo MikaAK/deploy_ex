@@ -247,8 +247,21 @@ Install dashboards via SSH-tunnelled Grafana API.
 - `--user` / `--password`
 - `--pem`, `--resource-group`, `-q quiet`
 
+## Ansible Argument Passthrough
+
+Any flag deploy_ex doesn't recognise is forwarded to `ansible-playbook` verbatim — useful for passing through:
+
+| Ansible flag | Purpose |
+|---|---|
+| `--inventory` | [Custom inventory file](https://docs.ansible.com/ansible/latest/inventory_guide/intro_inventory.html) |
+| `--limit` | [Restrict playbook to matching hosts](https://docs.ansible.com/ansible/latest/inventory_guide/intro_patterns.html) |
+| `--extra-vars` (or `-e`) | Set extra variables: `--extra-vars bucket_name="my-bucket"` |
+| `--tags` / `--skip-tags` | Run only / skip specific Ansible tags |
+
 ## See also
 
 - [System Architecture](../explanation/architecture.md) — diagrams of the full pipeline
-- [Configuration](configuration.md) — all `:deploy_ex` config keys
+- [Configuration](configuration.md) — all `:deploy_ex` config keys, universal options, IaC switching, GitHub Actions secrets
+- [Terraform Variables](terraform_variables.md) — per-app infrastructure schema
 - [Codebase Summary](codebase_summary.md) — module inventory
+- [Troubleshooting](../how-to/troubleshooting.md) — common problems and fixes

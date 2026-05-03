@@ -118,10 +118,36 @@ mix deploy_ex.upgrade_priv --llm-merge   # autonomous LLM merge (with backup)
 
 See [Managing Infrastructure](../how-to/managing_infrastructure.md) for the full priv-upgrade workflow.
 
+## Multiple Phoenix Apps (Umbrella Only)
+
+If your umbrella has more than one Phoenix app, configure `:dart_sass`, `:tailwind`, and `:esbuild` per-app — change the key from `:default` to each app's atom and set `cd` + `NODE_PATH` correctly:
+
+```elixir
+# config/config.exs
+config :esbuild,
+  version: "0.17.11",
+  my_web: [
+    args: ~w(js/app.js --bundle --target=es2017 --outdir=../priv/static/assets),
+    cd: Path.expand("../apps/my_web/assets", __DIR__),
+    env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
+  ],
+  admin_web: [
+    args: ~w(js/app.js --bundle --target=es2017 --outdir=../priv/static/assets),
+    cd: Path.expand("../apps/admin_web/assets", __DIR__),
+    env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
+  ]
+```
+
+Same pattern for `tailwind` and `dart_sass`. `mix deploy_ex.release` discovers the per-app pipelines automatically and runs them on the right `cd` during the build step.
+
 ## Next Steps
 
 - [How to Deploy Releases](../how-to/deploying_releases.md) — rollback, target specific apps, CI/CD
 - [How to Use QA Nodes](../how-to/qa_nodes.md) — ephemeral test instances + `--wait-for-build`
 - [How to Manage Infrastructure](../how-to/managing_infrastructure.md) — terraform, priv upgrades, EBS snapshots
+- [How to Set Up Monitoring](../how-to/monitoring.md) — Grafana, Loki, Prometheus, Sentry
+- [How to Cluster Your Nodes](../how-to/clustering.md) — libcluster + EC2Tag strategy
+- [Troubleshooting](../how-to/troubleshooting.md) — common problems and fixes
 - [Configuration Reference](../reference/configuration.md) — all config keys and env vars
 - [Mix Tasks Reference](../reference/mix_tasks.md) — every command with its switches
+- [Terraform Variables Reference](../reference/terraform_variables.md) — per-app infrastructure schema

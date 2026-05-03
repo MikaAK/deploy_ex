@@ -145,22 +145,27 @@ mix deploy_ex.full_drop                  # destroy + remove ./deploys + .github 
 The [`guides/`](guides/) folder is the canonical documentation:
 
 - [Introduction](guides/introduction.md)
-- **Tutorial** — [Getting Started](guides/tutorials/getting_started.md)
+- **Tutorial** — [Getting Started](guides/tutorials/getting_started.md) (covers multi-Phoenix-app config)
 - **How-to**
   - [Deploying Releases](guides/how-to/deploying_releases.md)
-  - [QA Nodes](guides/how-to/qa_nodes.md)
-  - [Connecting to Nodes](guides/how-to/connecting_to_nodes.md)
-  - [Managing Infrastructure](guides/how-to/managing_infrastructure.md)
-  - [Autoscaling](guides/how-to/autoscaling.md)
+  - [QA Nodes](guides/how-to/qa_nodes.md) — including `--wait-for-build`, public-IP TLS, QA tag schema
+  - [Connecting to Nodes](guides/how-to/connecting_to_nodes.md) — SSH, eval pattern, alias recipes
+  - [Managing Infrastructure](guides/how-to/managing_infrastructure.md) — terraform, priv upgrades, EBS, teardown
+  - [Autoscaling](guides/how-to/autoscaling.md) — scale, refresh, deployment strategies
   - [Database Operations](guides/how-to/database_operations.md)
-  - [Load Testing](guides/how-to/load_testing.md)
+  - [Load Testing](guides/how-to/load_testing.md) — k6 runners + Prometheus remote-write
+  - [Monitoring](guides/how-to/monitoring.md) — Grafana, Loki, Prometheus, Sentry, dashboards
+  - [Clustering](guides/how-to/clustering.md) — libcluster + EC2Tag strategy
+  - **[Troubleshooting](guides/how-to/troubleshooting.md)** — Ansible, SSH, autoscaling, RDS upgrades, monitoring, tags
 - **Reference**
   - [Mix Tasks](guides/reference/mix_tasks.md) — every task with switches
-  - [Configuration](guides/reference/configuration.md) — every config key
+  - [Configuration](guides/reference/configuration.md) — every config key, universal options, IaC switching, GitHub secrets
+  - [Terraform Variables](guides/reference/terraform_variables.md) — per-app infrastructure schema
   - [Codebase Summary](guides/reference/codebase_summary.md) — module inventory
   - [Testing](guides/reference/testing.md)
 - **Explanation**
   - [System Architecture](guides/explanation/architecture.md) — diagrams of every pipeline
+  - [Autoscaling Internals](guides/explanation/autoscaling.md) — instance lifecycle, version consistency, IAM, deployment strategies
   - [Code Standards](guides/explanation/code_standards.md)
 
 Or run `mix deploy_ex` to launch the interactive TUI wizard for live discovery.
@@ -176,11 +181,24 @@ mix test test/deploy_ex/foo_test.exs:42
 
 No mocks — dependency injection via parameters. See [Testing Guide](guides/reference/testing.md) and [Code Standards](guides/explanation/code_standards.md) before submitting changes.
 
-## Goals
+## Goals / Roadmap
 
-- 0.1.0 once Hex publishing, secret automation (no AWS keys committed to group_vars), and rollback flows are stable.
-- First-class support for OpenTofu (`iac_tool: "tofu"`) at parity with Terraform.
-- Full erlexec OTP 27+ support — once erlexec drops the OTP 26 build issue.
+- [x] Deploy rollbacks
+- [x] S3-backed Terraform state
+- [x] Subnet AZ dispersal in networking layer
+- [x] OpenTofu support via `:iac_tool`
+- [ ] Canary deploys
+- [ ] Automated IP whitelist removal lambda (paired with `mix deploy_ex.ssh.authorize`)
+- [ ] Sentry integration (currently WIP)
+- [ ] Vault integration
+- [ ] Static way to set up Redis from apps
+- [ ] Auto-run `ansible.setup` on nodes created via GitHub Actions
+
+## Credits
+
+Big thanks to [@alevan](https://github.com/alevan) for figuring out the Ansible side of things and providing the foundation for everything in `priv/ansible/`. This project wouldn't exist without his help.
+
+Also leans on [`libcluster_ec2_tag_strategy`](https://github.com/MikaAK/libcluster_ec2_tag_strategy) for cluster discovery — see [Clustering](guides/how-to/clustering.md).
 
 ## License
 
