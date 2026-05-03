@@ -406,7 +406,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
         :ok
 
       {:error, reason} ->
-        raise "build failed: #{inspect(reason)}"
+        handle_build_failure(qa_node, build_state, reason, opts, tui_pid)
     end
   end
 
@@ -435,6 +435,49 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   defp find_known_run_id(branch, sha, workflow_file) do
     case DeployEx.GitHubActions.find_run_id(branch, sha, workflow_file, retry_max: 1) do
       {:ok, id} -> id
+      _ -> nil
+    end
+  end
+
+  defp handle_build_failure(qa_node, build_state, %{reason: reason, run_id: run_id}, opts, tui_pid) do
+    workflow_url = build_workflow_url(run_id)
+    preamble = "Build failed (#{inspect(reason)})\nWorkflow run: #{workflow_url}\n\n"
+
+    destroy? = DeployEx.TUI.Progress.confirm(tui_pid, preamble <> "Destroy the QA node?") === :yes
+    revert? = DeployEx.TUI.Progress.confirm(tui_pid, "Revert local + remote SSL/host rewrites?") === :yes
+
+    apply_failure_choices(destroy?, revert?, qa_node, build_state, opts)
+    System.halt(1)
+  end
+
+  defp apply_failure_choices(destroy?, revert?, qa_node, build_state, opts) do
+    if revert?, do: revert_pushed_changes(qa_node, build_state, opts)
+    if destroy?, do: DeployEx.QaNode.terminate_qa_node(qa_node, opts)
+    :ok
+  end
+
+  defp revert_pushed_changes(qa_node, %{branch_resolution: {action, branch}}, opts) do
+    backup_dir = DeployEx.QaHostRewrite.backup_dir(qa_node.app_name, qa_node.instance_id)
+    DeployEx.QaHostRewrite.restore(backup_dir, opts)
+
+    case action do
+      :create_new -> DeployEx.GitOperations.delete_remote_branch(umbrella_root(), branch)
+      :reuse_current -> DeployEx.GitOperations.revert_and_push(umbrella_root())
+    end
+  end
+
+  defp build_workflow_url(run_id) when is_integer(run_id) do
+    case github_repo_slug() do
+      slug when is_binary(slug) -> "https://github.com/#{slug}/actions/runs/#{run_id}"
+      _ -> "(workflow run URL unavailable)"
+    end
+  end
+
+  defp build_workflow_url(_run_id), do: "(workflow run URL unavailable)"
+
+  defp github_repo_slug do
+    case DeployEx.Utils.run_command_with_return("gh repo view --json nameWithOwner --jq .nameWithOwner", umbrella_root()) do
+      {:ok, slug} -> String.trim(slug)
       _ -> nil
     end
   end
