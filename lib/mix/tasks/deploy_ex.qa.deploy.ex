@@ -353,8 +353,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
   defp build_line_callback(nil), do: fn _line -> :ok end
   defp build_line_callback(tui_pid), do: fn line -> DeployEx.TUI.Progress.update_log(tui_pid, line) end
 
-  defp deploy_vars(%{use_public_ip_cert?: true} = qa_node, sha),
-    do: [target_release_sha: sha, letsencrypt_use_public_ip: true, qa_public_ip: qa_node.public_ip]
+  defp deploy_vars(%{use_public_ip_cert?: true}, sha),
+    do: [target_release_sha: sha, letsencrypt_use_public_ip: true]
   defp deploy_vars(_qa_node, sha), do: [target_release_sha: sha]
 
   defp update_qa_state(qa_node, sha, opts) do
