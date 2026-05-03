@@ -19,7 +19,12 @@ defmodule Mix.Tasks.DeployEx.Qa.CreateTest do
         quiet: :boolean,
         aws_region: :string,
         aws_release_bucket: :string,
-        no_tui: :boolean
+        no_tui: :boolean,
+        public_ip_cert: :boolean,
+        wait_for_build: :boolean,
+        build_workflow: :string,
+        build_job: :string,
+        build_timeout: :integer
       ]
     )
   end
@@ -79,6 +84,28 @@ defmodule Mix.Tasks.DeployEx.Qa.CreateTest do
     test "-f alias parses to opts[:force] === true" do
       {opts, _extra} = parse_args(["-f"])
       assert opts[:force] === true
+    end
+  end
+
+  describe "parse_args/1 wait-for-build options" do
+    test "--wait-for-build parses to opts[:wait_for_build]" do
+      {opts, _} = parse_args(["--wait-for-build"])
+      assert opts[:wait_for_build] === true
+    end
+
+    test "--build-workflow parses to opts[:build_workflow]" do
+      {opts, _} = parse_args(["--build-workflow", "pipeline.yml"])
+      assert opts[:build_workflow] === "pipeline.yml"
+    end
+
+    test "--build-job parses to opts[:build_job]" do
+      {opts, _} = parse_args(["--build-job", "deploy-qa"])
+      assert opts[:build_job] === "deploy-qa"
+    end
+
+    test "--build-timeout parses to opts[:build_timeout]" do
+      {opts, _} = parse_args(["--build-timeout", "60"])
+      assert opts[:build_timeout] === 60
     end
   end
 end

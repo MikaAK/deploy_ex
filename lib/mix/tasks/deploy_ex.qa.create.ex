@@ -291,7 +291,11 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
         quiet: :boolean,
         aws_region: :string,
         aws_release_bucket: :string,
-        no_tui: :boolean
+        no_tui: :boolean,
+        wait_for_build: :boolean,
+        build_workflow: :string,
+        build_job: :string,
+        build_timeout: :integer
       ]
     )
   end
