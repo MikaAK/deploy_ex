@@ -624,11 +624,12 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   defp build_line_callback(nil), do: fn _line -> :ok end
   defp build_line_callback(tui_pid), do: fn line -> DeployEx.TUI.Progress.update_log(tui_pid, line) end
 
-  defp setup_vars(%{use_public_ip_cert?: true}), do: [letsencrypt_use_public_ip: true]
+  defp setup_vars(%{use_public_ip_cert?: true} = qa_node),
+    do: [letsencrypt_use_public_ip: true, qa_public_ip: qa_node.public_ip]
   defp setup_vars(_qa_node), do: []
 
-  defp deploy_vars(%{use_public_ip_cert?: true}, sha),
-    do: [target_release_sha: sha, letsencrypt_use_public_ip: true]
+  defp deploy_vars(%{use_public_ip_cert?: true} = qa_node, sha),
+    do: [target_release_sha: sha, letsencrypt_use_public_ip: true, qa_public_ip: qa_node.public_ip]
   defp deploy_vars(_qa_node, sha), do: [target_release_sha: sha]
 
   defp default_skip_ami_for_qa(opts) do
