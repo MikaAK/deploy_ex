@@ -75,6 +75,7 @@ defmodule DeployEx.TUI.Wizard do
       command_selected: 0,
       search_query: "",
       search_selected: 0,
+      help_visible: true,
       width: 80,
       height: 24
     }
@@ -97,6 +98,9 @@ defmodule DeployEx.TUI.Wizard do
 
       %ExRatatui.Event.Key{code: "q", kind: "press"} when state.screen === :category_select ->
         nil
+
+      %ExRatatui.Event.Key{code: "?", kind: "press"} ->
+        wizard_loop(terminal, %{state | help_visible: not state.help_visible})
 
       event ->
         handle_event(terminal, state, event)
@@ -260,15 +264,13 @@ defmodule DeployEx.TUI.Wizard do
 
   defp draw(terminal, state) do
     area = %Rect{x: 0, y: 0, width: state.width, height: state.height}
+    command = current_command(state)
+    show_help_panel? = state.help_visible and not is_nil(command)
 
-    [header_area, content_area, footer_area] = Layout.split(area, :vertical, [
-      {:length, 3},
-      {:min, 3},
-      {:length, 1}
-    ])
+    {header_area, content_area, help_area, footer_area} = split_main_area(area, show_help_panel?)
 
     header = %Widgets.Paragraph{
-      text: "  DeployEx Wizard  —  ↑↓ navigate  Enter select  / search",
+      text: "  DeployEx Wizard  —  ↑↓ navigate  Enter select  / search  ? help",
       style: %Style{fg: :cyan, modifiers: [:bold]},
       block: %Widgets.Block{
         borders: [:bottom],
@@ -283,8 +285,66 @@ defmodule DeployEx.TUI.Wizard do
       style: %Style{fg: :white, modifiers: [:dim]}
     }
 
-    ExRatatui.draw(terminal, [{header, header_area}, {footer, footer_area}] ++ content_widgets)
+    help_widgets = build_help_widgets(command, help_area)
+
+    base_widgets = [{header, header_area}, {footer, footer_area}]
+    ExRatatui.draw(terminal, base_widgets ++ content_widgets ++ help_widgets)
   end
+
+  defp split_main_area(area, true) do
+    [header, content, help, footer] = Layout.split(area, :vertical, [
+      {:length, 3},
+      {:min, 3},
+      {:length, 8},
+      {:length, 1}
+    ])
+
+    {header, content, help, footer}
+  end
+
+  defp split_main_area(area, false) do
+    [header, content, footer] = Layout.split(area, :vertical, [
+      {:length, 3},
+      {:min, 3},
+      {:length, 1}
+    ])
+
+    {header, content, nil, footer}
+  end
+
+  defp build_help_widgets(nil, _area), do: []
+  defp build_help_widgets(_command, nil), do: []
+
+  defp build_help_widgets(command, help_area) do
+    widget = %Widgets.Paragraph{
+      text: help_text_for(command),
+      style: %Style{fg: :white},
+      wrap: true,
+      block: %Widgets.Block{
+        title: " Help — #{command.task}  (press ? to hide) ",
+        borders: [:all],
+        border_type: :rounded,
+        border_style: %Style{fg: :light_blue}
+      }
+    }
+
+    [{widget, help_area}]
+  end
+
+  defp help_text_for(command) do
+    moduledoc = CommandRegistry.moduledoc_for(command)
+    if moduledoc === "", do: CommandRegistry.shortdoc_for(command), else: moduledoc
+  end
+
+  defp current_command(%{screen: {:command_select, category}, command_selected: idx}) do
+    category |> CommandRegistry.commands_for_category() |> Enum.at(idx)
+  end
+
+  defp current_command(%{screen: {:search_overlay, query, _}, search_selected: idx}) do
+    query |> CommandRegistry.search() |> Enum.at(idx)
+  end
+
+  defp current_command(_state), do: nil
 
   defp build_screen_content(%{screen: :category_select} = state, content_area) do
     categories = CommandRegistry.categories()
@@ -308,7 +368,7 @@ defmodule DeployEx.TUI.Wizard do
       }
     }
 
-    {[{widget, content_area}], "↑↓ navigate  Enter select  / search  q quit"}
+    {[{widget, content_area}], "↑↓ navigate  Enter select  / search  ? help  q quit"}
   end
 
   defp build_screen_content(%{screen: {:command_select, category}} = state, content_area) do
@@ -334,7 +394,7 @@ defmodule DeployEx.TUI.Wizard do
       }
     }
 
-    {[{widget, content_area}], "↑↓ navigate  Enter select  / search  b/Esc back"}
+    {[{widget, content_area}], "↑↓ navigate  Enter select  / search  ? help  b/Esc back"}
   end
 
   defp build_screen_content(%{screen: {:search_overlay, query, _return}} = state, content_area) do
@@ -379,7 +439,7 @@ defmodule DeployEx.TUI.Wizard do
     }
 
     {[{search_widget, search_area}, {results_widget, results_area}],
-     "↑↓ navigate  Enter run  Backspace delete char  Esc cancel search"}
+     "↑↓ navigate  Enter run  ? help  Backspace delete char  Esc cancel search"}
   end
 
   defp build_screen_content(_state, content_area) do
