@@ -132,4 +132,20 @@ defmodule DeployEx.ToolInstallerTest do
       assert {:error, _} = ToolInstaller.install_command(:terraform, {:error, :unsupported_platform})
     end
   end
+
+  describe "install_command/2 :gh" do
+    test "returns brew install for macOS" do
+      assert {"brew install gh", "."} = ToolInstaller.install_command(:gh, :macos)
+    end
+
+    test "returns apt install pipeline for Debian" do
+      {cmd, _dir} = ToolInstaller.install_command(:gh, :debian)
+      assert cmd =~ "apt"
+      assert cmd =~ "gh"
+    end
+
+    test "returns error for Windows" do
+      assert {:error, %ErrorMessage{code: :bad_request}} = ToolInstaller.install_command(:gh, :windows)
+    end
+  end
 end

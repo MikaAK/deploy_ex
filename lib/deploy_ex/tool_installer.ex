@@ -56,6 +56,13 @@ defmodule DeployEx.ToolInstaller do
     end
   end
 
+  def ensure_installed(:gh) do
+    case System.find_executable("gh") do
+      nil -> install_tool(:gh)
+      _path -> :ok
+    end
+  end
+
   @doc false
   @spec install_command(atom(), atom() | {:error, :unsupported_platform}) ::
           {String.t(), String.t()} | {:error, ErrorMessage.t()}
@@ -72,6 +79,7 @@ defmodule DeployEx.ToolInstaller do
   def install_command(:terraform, :macos), do: {"brew install terraform", "."}
   def install_command(:tofu, :macos), do: {"brew install opentofu", "."}
   def install_command(:ansible, :macos), do: {"brew install ansible", "."}
+  def install_command(:gh, :macos), do: {"brew install gh", "."}
 
   # SECTION: Debian/Ubuntu
 
@@ -100,6 +108,19 @@ defmodule DeployEx.ToolInstaller do
     {"pip3 install --user ansible boto3 botocore", "."}
   end
 
+  def install_command(:gh, :debian) do
+    cmd = Enum.join([
+      "type -p curl >/dev/null || (sudo apt update && sudo apt install -y curl)",
+      "curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg",
+      "sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg",
+      "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main\" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null",
+      "sudo apt update",
+      "sudo apt install -y gh"
+    ], " && ")
+
+    {cmd, "."}
+  end
+
   # SECTION: Alpine
 
   def install_command(:terraform, :alpine) do
@@ -111,6 +132,7 @@ defmodule DeployEx.ToolInstaller do
   end
 
   def install_command(:ansible, :alpine), do: {"apk add --no-cache ansible", "."}
+  def install_command(:gh, :alpine), do: {"sudo apk add --no-cache github-cli", "."}
 
   # SECTION: Amazon Linux
 
@@ -138,6 +160,8 @@ defmodule DeployEx.ToolInstaller do
   def install_command(:ansible, :amazon_linux) do
     {"pip3 install --user ansible boto3 botocore", "."}
   end
+
+  def install_command(:gh, :amazon_linux), do: {"sudo dnf install -y gh", "."}
 
   defp install_tool(tool) do
     platform = detect_platform()
