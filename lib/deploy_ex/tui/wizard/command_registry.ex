@@ -49,7 +49,6 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.DeployEx.FullSetup,
       category: "DeployEx",
       inputs: [
-        input(:auto_approve, "Auto-approve Terraform", :boolean, description: "Skip Terraform plan confirmation"),
         input(:skip_deploy, "Skip deploy", :boolean, description: "Skip application deployment after server setup"),
         input(:skip_setup, "Skip setup wait", :boolean, description: "Skip waiting period between infra creation and setup")
       ]
@@ -58,9 +57,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       task: "deploy_ex.full_drop",
       module: Mix.Tasks.DeployEx.FullDrop,
       category: "DeployEx",
-      inputs: [
-        input(:force, "Force", :boolean, description: "Skip confirmation prompts")
-      ]
+      inputs: []
     },
     %{
       task: "deploy_ex.install_github_action",
@@ -68,7 +65,9 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       category: "DeployEx",
       inputs: [
         input(:force, "Force overwrite", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:quiet, "Quiet", :boolean),
+        input(:pem_directory, "Use pem directory", :boolean, description: "Treat PEM as directory path"),
+        input(:pem, "PEM file", :string, description: "Path to PEM key")
       ]
     },
     %{
@@ -77,7 +76,8 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       category: "DeployEx",
       inputs: [
         input(:force, "Force overwrite", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:quiet, "Quiet", :boolean),
+        input(:directory, "Directory", :string, description: "Output directory")
       ]
     },
     %{
@@ -104,7 +104,13 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       category: "DeployEx",
       inputs: [
         input(:force, "Force rebuild", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:quiet, "Quiet", :boolean),
+        input(:recompile, "Recompile", :boolean, description: "Force recompilation"),
+        input(:aws_region, "AWS region", :string),
+        input(:aws_release_bucket, "AWS release bucket", :string),
+        input(:only, "Only app(s)", :string, description: "Comma-separated app names to release"),
+        input(:except, "Except app(s)", :string, description: "Comma-separated app names to skip"),
+        input(:all, "All apps", :boolean, description: "Release every configured app")
       ]
     },
     %{
@@ -114,7 +120,10 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       inputs: [
         input(:force, "Force", :boolean),
         input(:quiet, "Quiet", :boolean),
-        input(:aws_region, "AWS region", :string, description: "Override AWS region")
+        input(:aws_region, "AWS region", :string, description: "Override AWS region"),
+        input(:aws_release_bucket, "AWS release bucket", :string),
+        input(:parallel, "Max concurrency", :integer),
+        input(:qa, "QA upload", :boolean, description: "Upload to the QA prefix")
       ]
     },
     %{
@@ -127,8 +136,11 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
+        input(:directory, "Directory", :string),
         input(:force, "Force", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:quiet, "Quiet", :boolean),
+        input(:pem, "PEM file", :string),
+        input(:resource_group, "Resource group", :string)
       ]
     },
     %{
@@ -142,6 +154,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
         input(:aws_region, "AWS region", :string),
+        input(:resource_group, "Resource group", :string),
         input(:force, "Force", :boolean),
         input(:quiet, "Quiet", :boolean)
       ]
@@ -156,8 +169,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
-        input(:force, "Force", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:no_deploy, "Skip deploy", :boolean, description: "Skip Ansible deploy after replace + setup")
       ]
     },
     %{
@@ -170,8 +182,11 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
+        input(:directory, "Directory", :string),
         input(:force, "Force", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:quiet, "Quiet", :boolean),
+        input(:pem, "PEM file", :string),
+        input(:resource_group, "Resource group", :string)
       ]
     },
     %{
@@ -184,8 +199,11 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
+        input(:directory, "Directory", :string),
         input(:force, "Force", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:quiet, "Quiet", :boolean),
+        input(:pem, "PEM file", :string),
+        input(:resource_group, "Resource group", :string)
       ]
     },
     %{
@@ -198,12 +216,22 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
-        input(:index, "Instance index", :integer, description: "Connect to a specific instance (0-based)"),
-        input(:log, "View logs", :boolean),
-        input(:iex, "IEx remote", :boolean),
+        input(:directory, "Directory", :string),
+        input(:force, "Force", :boolean),
+        input(:quiet, "Quiet", :boolean),
+        input(:short, "Short output", :boolean, description: "Print SSH command only"),
         input(:root, "Root access", :boolean),
+        input(:log, "View logs", :boolean),
+        input(:log_count, "Log line count", :integer),
+        input(:log_user, "Log user", :string),
+        input(:all, "All instances", :boolean),
+        input(:iex, "IEx remote", :boolean),
+        input(:pem, "PEM file", :string),
+        input(:resource_group, "Resource group", :string),
+        input(:index, "Instance index", :integer, description: "Connect to a specific instance (0-based)"),
         input(:list, "List instances", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:qa, "QA only", :boolean),
+        input(:instance_id, "Instance ID", :string, description: "Specific instance ID")
       ]
     },
     %{
@@ -212,7 +240,11 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       category: "DeployEx",
       inputs: [
         input(:force, "Force", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:quiet, "Quiet", :boolean),
+        input(:remove, "Remove rule", :boolean, description: "Remove the authorized rule instead of adding"),
+        input(:ip, "IP address", :string),
+        input(:region, "AWS region", :string),
+        input(:security_group_id, "Security group ID", :string)
       ]
     },
     %{
@@ -225,8 +257,20 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
-        input(:file, "Remote file path", :string, required: true),
-        input(:quiet, "Quiet", :boolean)
+        input(:remote_path, "Remote path", :string,
+          required: true,
+          positional: true,
+          description: "Path of the file on the remote host"
+        ),
+        input(:local_path, "Local path", :string,
+          positional: true,
+          description: "Optional local destination path"
+        ),
+        input(:directory, "Directory", :string),
+        input(:force, "Force", :boolean),
+        input(:quiet, "Quiet", :boolean),
+        input(:resource_group, "Resource group", :string),
+        input(:pem, "PEM file", :string)
       ]
     },
     %{
@@ -234,10 +278,12 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.DeployEx.FindNodes,
       category: "DeployEx",
       inputs: [
-        input(:app_name, "App name", :select,
-          positional: true,
-          choices_fn: &__MODULE__.fetch_app_names/0
-        ),
+        input(:tag, "Tag filter", :string, description: "Repeatable tag filter (Key=Value)"),
+        input(:setup_complete, "Setup complete", :boolean),
+        input(:setup_incomplete, "Setup incomplete", :boolean),
+        input(:format, "Output format", :string),
+        input(:region, "AWS region", :string),
+        input(:resource_group, "Resource group", :string),
         input(:quiet, "Quiet", :boolean)
       ]
     },
@@ -246,10 +292,10 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.DeployEx.SelectNode,
       category: "DeployEx",
       inputs: [
-        input(:app_name, "App name", :select,
-          positional: true,
-          choices_fn: &__MODULE__.fetch_app_names/0
-        )
+        input(:short, "Short output", :boolean),
+        input(:qa, "QA only", :boolean),
+        input(:region, "AWS region", :string),
+        input(:resource_group, "Resource group", :string)
       ]
     },
     %{
@@ -261,7 +307,10 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           required: true,
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
-        )
+        ),
+        input(:limit, "Limit", :integer),
+        input(:region, "AWS region", :string),
+        input(:bucket, "S3 bucket", :string)
       ]
     },
     %{
@@ -269,7 +318,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.DeployEx.ListAvailableReleases,
       category: "DeployEx",
       inputs: [
-        input(:quiet, "Quiet", :boolean)
+        input(:app, "App filter", :string, description: "Filter by app name")
       ]
     },
     %{
@@ -281,7 +330,9 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           required: true,
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
-        )
+        ),
+        input(:region, "AWS region", :string),
+        input(:bucket, "S3 bucket", :string)
       ]
     },
     %{
@@ -293,8 +344,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
-        input(:aws_region, "AWS region", :string),
-        input(:quiet, "Quiet", :boolean)
+        input(:environment, "Environment", :string)
       ]
     },
     %{
@@ -306,8 +356,8 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
-        input(:aws_region, "AWS region", :string),
-        input(:quiet, "Quiet", :boolean)
+        input(:qa, "QA only", :boolean),
+        input(:all, "All instances", :boolean)
       ]
     },
     %{
@@ -319,7 +369,9 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
+        input(:qa, "QA only", :boolean),
         input(:watch, "Watch (auto-refresh)", :boolean),
+        input(:json, "JSON output", :boolean),
         input(:quiet, "Quiet", :boolean)
       ]
     },
@@ -382,9 +434,14 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
-        input(:wait, "Wait for completion", :boolean),
         input(:environment, "Environment", :string),
-        input(:quiet, "Quiet", :boolean)
+        input(:strategy, "Strategy", :string, description: "Refresh strategy"),
+        input(:availability, "Availability", :string),
+        input(:min_healthy_percentage, "Min healthy %", :integer),
+        input(:max_healthy_percentage, "Max healthy %", :integer),
+        input(:instance_warmup, "Instance warmup", :integer),
+        input(:wait, "Wait for completion", :boolean),
+        input(:skip_matching, "Skip matching", :boolean)
       ]
     },
     %{
@@ -393,10 +450,12 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       category: "Autoscaling",
       inputs: [
         input(:app_name, "App name", :select,
+          required: true,
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
-        input(:environment, "Environment", :string)
+        input(:environment, "Environment", :string),
+        input(:all, "All refreshes", :boolean, description: "Show all historical refreshes")
       ]
     },
 
@@ -411,13 +470,24 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
-        input(:sha, "Git SHA", :string, required: true, description: "Target git SHA to deploy"),
+        input(:sha, "Git SHA", :string, description: "Target git SHA to deploy"),
+        input(:tag, "Tag", :string, description: "Custom label used in the instance name (replaces the short SHA)"),
         input(:instance_type, "Instance type", :string, default: "t3.small"),
         input(:skip_setup, "Skip setup", :boolean),
         input(:skip_deploy, "Skip deploy", :boolean),
+        input(:skip_ami, "Skip AMI", :boolean),
+        input(:skip_host_rewrite, "Skip host rewrite", :boolean),
+        input(:use_ami, "Use AMI", :boolean, description: "Boot from the app's pre-baked AMI (skips setup)"),
         input(:attach_lb, "Attach to load balancer", :boolean),
+        input(:public_ip_cert, "Public IP cert", :boolean, description: "Issue Let's Encrypt cert for the public IP"),
         input(:force, "Force", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:quiet, "Quiet", :boolean),
+        input(:aws_region, "AWS region", :string),
+        input(:aws_release_bucket, "AWS release bucket", :string),
+        input(:wait_for_build, "Wait for build", :boolean, description: "Wait for the GitHub Actions build to finish before creating"),
+        input(:build_workflow, "Build workflow", :string, description: "GitHub Actions workflow file (e.g. release.yml)"),
+        input(:build_job, "Build job", :string, description: "GitHub Actions job name to wait on"),
+        input(:build_timeout, "Build timeout (s)", :integer, description: "Timeout in seconds when waiting for the build")
       ]
     },
     %{
@@ -426,10 +496,11 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       category: "QA",
       inputs: [
         input(:app_name, "App name", :select,
-          required: true,
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
+        input(:instance_id, "Instance ID", :string, description: "Destroy a specific instance by ID"),
+        input(:all, "All QA nodes", :boolean, description: "Destroy every QA node across all apps"),
         input(:force, "Force", :boolean),
         input(:quiet, "Quiet", :boolean)
       ]
@@ -439,6 +510,8 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.DeployEx.Qa.List,
       category: "QA",
       inputs: [
+        input(:app, "App filter", :string, description: "Filter by app name"),
+        input(:json, "JSON output", :boolean),
         input(:quiet, "Quiet", :boolean)
       ]
     },
@@ -452,9 +525,12 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
-        input(:sha, "Git SHA", :string, required: true),
-        input(:force, "Force", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:sha, "Git SHA", :string),
+        input(:instance_id, "Instance ID", :string, description: "Target a specific QA instance when multiple exist"),
+        input(:public_ip_cert, "Public IP cert", :boolean, description: "Toggle public-IP LE cert mode"),
+        input(:quiet, "Quiet", :boolean),
+        input(:aws_region, "AWS region", :string),
+        input(:aws_release_bucket, "AWS release bucket", :string)
       ]
     },
     %{
@@ -467,6 +543,10 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
+        input(:instance_id, "Instance ID", :string),
+        input(:target_group, "Target group ARN", :string, description: "Specific target group ARN (default: auto-discover)"),
+        input(:port, "Port", :integer, description: "Port to register (default: 4000)"),
+        input(:wait, "Wait for healthy", :boolean, description: "Wait for health check to pass"),
         input(:quiet, "Quiet", :boolean)
       ]
     },
@@ -480,6 +560,8 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
+        input(:instance_id, "Instance ID", :string),
+        input(:target_group, "Target group ARN", :string, description: "Specific target group ARN (default: all attached)"),
         input(:quiet, "Quiet", :boolean)
       ]
     },
@@ -488,6 +570,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.DeployEx.Qa.Cleanup,
       category: "QA",
       inputs: [
+        input(:dry_run, "Dry run", :boolean, description: "Show what would be cleaned without taking action"),
         input(:force, "Force", :boolean),
         input(:quiet, "Quiet", :boolean)
       ]
@@ -499,9 +582,19 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.Ansible.Build,
       category: "Ansible",
       inputs: [
-        input(:directory, "Ansible directory", :string),
+        input(:new_only, "New only", :boolean, description: "Only render new files; skip existing"),
         input(:force, "Force overwrite", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:host_only, "Host only", :boolean),
+        input(:quiet, "Quiet", :boolean),
+        input(:directory, "Ansible directory", :string),
+        input(:terraform_directory, "Terraform directory", :string),
+        input(:auto_pull_aws, "Auto pull from AWS", :boolean),
+        input(:aws_release_bucket, "AWS release bucket", :string),
+        input(:no_logging, "Disable logging", :boolean),
+        input(:no_loki, "Disable Loki", :boolean),
+        input(:no_sentry, "Disable Sentry", :boolean),
+        input(:no_grafana, "Disable Grafana", :boolean),
+        input(:no_prometheus, "Disable Prometheus", :boolean)
       ]
     },
     %{
@@ -509,14 +602,16 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.Ansible.Deploy,
       category: "Ansible",
       inputs: [
+        input(:directory, "Ansible directory", :string),
+        input(:quiet, "Quiet", :boolean),
         input(:only, "Only app(s)", :string, description: "Comma-separated app names to deploy"),
         input(:except, "Except app(s)", :string, description: "Comma-separated app names to skip"),
-        input(:target_sha, "Target SHA", :string, description: "Deploy specific release SHA"),
+        input(:copy_json_env_file, "Copy JSON env file", :string, description: "Path to env JSON file to upload"),
         input(:parallel, "Max concurrency", :integer, default: 4),
         input(:only_local_release, "Only local releases", :boolean),
+        input(:target_sha, "Target SHA", :string, description: "Deploy specific release SHA"),
         input(:include_qa, "Include QA nodes", :boolean),
-        input(:qa, "QA nodes only", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:qa, "QA nodes only", :boolean)
       ]
     },
     %{
@@ -524,8 +619,9 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.Ansible.Ping,
       category: "Ansible",
       inputs: [
-        input(:directory, "Ansible directory", :string),
-        input(:quiet, "Quiet", :boolean)
+        input(:inventory, "Inventory file", :string),
+        input(:limit, "Limit hosts", :string, description: "Restrict to a specific host or group"),
+        input(:extra_vars, "Extra vars", :string, description: "Repeatable extra-var argument forwarded to ansible")
       ]
     },
     %{
@@ -537,9 +633,10 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
-        input(:sha, "Target SHA", :string, description: "Rollback to this SHA"),
+        input(:directory, "Ansible directory", :string),
         input(:force, "Force", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:quiet, "Quiet", :boolean),
+        input(:select, "Select", :boolean, description: "Interactively pick the SHA to roll back to")
       ]
     },
     %{
@@ -547,10 +644,13 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.Ansible.Setup,
       category: "Ansible",
       inputs: [
+        input(:directory, "Ansible directory", :string),
         input(:only, "Only app(s)", :string),
         input(:except, "Except app(s)", :string),
-        input(:directory, "Ansible directory", :string),
-        input(:quiet, "Quiet", :boolean)
+        input(:force, "Force", :boolean),
+        input(:quiet, "Quiet", :boolean),
+        input(:parallel, "Max concurrency", :integer),
+        input(:include_qa, "Include QA nodes", :boolean)
       ]
     },
 
@@ -560,9 +660,10 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.Terraform.Apply,
       category: "Terraform",
       inputs: [
-        input(:auto_approve, "Auto-approve", :boolean),
         input(:directory, "Terraform directory", :string),
-        input(:quiet, "Quiet", :boolean)
+        input(:force, "Force", :boolean),
+        input(:quiet, "Quiet", :boolean),
+        input(:auto_approve, "Auto-approve", :boolean)
       ]
     },
     %{
@@ -571,32 +672,31 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       category: "Terraform",
       inputs: [
         input(:directory, "Terraform directory", :string),
-        input(:aws_region, "AWS region", :string),
-        input(:aws_bucket, "AWS release bucket", :string),
-        input(:aws_log_bucket, "AWS log bucket", :string),
-        input(:env, "Environment", :string),
         input(:force, "Force overwrite", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:quiet, "Quiet", :boolean),
+        input(:verbose, "Verbose", :boolean),
+        input(:aws_region, "AWS region", :string),
+        input(:env, "Environment", :string),
+        input(:no_database, "Disable database", :boolean),
+        input(:no_logging, "Disable logging", :boolean),
+        input(:no_loki, "Disable Loki", :boolean),
+        input(:no_sentry, "Disable Sentry", :boolean),
+        input(:no_grafana, "Disable Grafana", :boolean),
+        input(:no_redis, "Disable Redis", :boolean),
+        input(:no_prometheus, "Disable Prometheus", :boolean)
       ]
     },
     %{
       task: "terraform.create_state_bucket",
       module: Mix.Tasks.Terraform.CreateStateBucket,
       category: "Terraform",
-      inputs: [
-        input(:aws_region, "AWS region", :string),
-        input(:force, "Force", :boolean),
-        input(:quiet, "Quiet", :boolean)
-      ]
+      inputs: []
     },
     %{
       task: "terraform.create_state_lock_table",
       module: Mix.Tasks.Terraform.CreateStateLockTable,
       category: "Terraform",
-      inputs: [
-        input(:aws_region, "AWS region", :string),
-        input(:quiet, "Quiet", :boolean)
-      ]
+      inputs: []
     },
     %{
       task: "terraform.create_ebs_snapshot",
@@ -608,8 +708,10 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
+        input(:description, "Description", :string),
         input(:aws_region, "AWS region", :string),
-        input(:quiet, "Quiet", :boolean)
+        input(:resource_group, "Resource group", :string),
+        input(:include_root, "Include root volume", :boolean)
       ]
     },
     %{
@@ -621,8 +723,12 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
+        input(:snapshot_ids, "Snapshot IDs", :string, description: "Comma-separated snapshot IDs"),
+        input(:all, "All snapshots", :boolean),
+        input(:force, "Force", :boolean),
         input(:aws_region, "AWS region", :string),
-        input(:quiet, "Quiet", :boolean)
+        input(:resource_group, "Resource group", :string),
+        input(:max_age_days, "Max age (days)", :integer)
       ]
     },
     %{
@@ -630,41 +736,44 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.Terraform.Drop,
       category: "Terraform",
       inputs: [
-        input(:auto_approve, "Auto-approve", :boolean),
         input(:directory, "Terraform directory", :string),
-        input(:quiet, "Quiet", :boolean)
+        input(:force, "Force", :boolean),
+        input(:quiet, "Quiet", :boolean),
+        input(:auto_approve, "Auto-approve", :boolean)
       ]
     },
     %{
       task: "terraform.drop_state_bucket",
       module: Mix.Tasks.Terraform.DropStateBucket,
       category: "Terraform",
-      inputs: [
-        input(:aws_region, "AWS region", :string),
-        input(:force, "Force", :boolean),
-        input(:quiet, "Quiet", :boolean)
-      ]
+      inputs: []
     },
     %{
       task: "terraform.drop_state_lock_table",
       module: Mix.Tasks.Terraform.DropStateLockTable,
       category: "Terraform",
-      inputs: [
-        input(:aws_region, "AWS region", :string),
-        input(:quiet, "Quiet", :boolean)
-      ]
+      inputs: []
     },
     %{
       task: "terraform.dump_database",
       module: Mix.Tasks.Terraform.DumpDatabase,
       category: "Terraform",
       inputs: [
-        input(:app_name, "App name", :select,
+        input(:database_name, "Database name", :string,
           positional: true,
-          choices_fn: &__MODULE__.fetch_app_names/0
+          description: "Database to dump (interactive picker if omitted)"
         ),
         input(:directory, "Terraform directory", :string),
-        input(:quiet, "Quiet", :boolean)
+        input(:output, "Output file", :string),
+        input(:schema_only, "Schema only", :boolean),
+        input(:local_port, "Local port", :integer),
+        input(:identifier, "DB identifier", :string),
+        input(:format, "Format", :string),
+        input(:resource_group, "Resource group", :string),
+        input(:pem, "PEM file", :string),
+        input(:backend, "Backend", :string),
+        input(:bucket, "S3 bucket", :string),
+        input(:region, "AWS region", :string)
       ]
     },
     %{
@@ -673,7 +782,10 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       category: "Terraform",
       inputs: [
         input(:directory, "Terraform directory", :string),
-        input(:quiet, "Quiet", :boolean)
+        input(:output_file, "Output file", :string),
+        input(:backend, "Backend", :string),
+        input(:bucket, "S3 bucket", :string),
+        input(:region, "AWS region", :string)
       ]
     },
     %{
@@ -682,7 +794,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       category: "Terraform",
       inputs: [
         input(:directory, "Terraform directory", :string),
-        input(:quiet, "Quiet", :boolean)
+        input(:upgrade, "Upgrade providers", :boolean)
       ]
     },
     %{
@@ -691,7 +803,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       category: "Terraform",
       inputs: [
         input(:directory, "Terraform directory", :string),
-        input(:quiet, "Quiet", :boolean)
+        input(:short, "Short output", :boolean)
       ]
     },
     %{
@@ -700,6 +812,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       category: "Terraform",
       inputs: [
         input(:directory, "Terraform directory", :string),
+        input(:force, "Force", :boolean),
         input(:quiet, "Quiet", :boolean)
       ]
     },
@@ -709,6 +822,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       category: "Terraform",
       inputs: [
         input(:directory, "Terraform directory", :string),
+        input(:force, "Force", :boolean),
         input(:quiet, "Quiet", :boolean)
       ]
     },
@@ -721,9 +835,13 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
           positional: true,
           choices_fn: &__MODULE__.fetch_app_names/0
         ),
+        input(:string, "Match string", :string, description: "Match a specific resource address fragment"),
         input(:directory, "Terraform directory", :string),
-        input(:force, "Force", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:node, "Node index", :integer),
+        input(:all, "All matches", :boolean),
+        input(:auto_approve, "Auto-approve", :boolean),
+        input(:resource_group, "Resource group", :string),
+        input(:region, "AWS region", :string)
       ]
     },
     %{
@@ -731,12 +849,25 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.Terraform.RestoreDatabase,
       category: "Terraform",
       inputs: [
-        input(:app_name, "App name", :select,
-          positional: true,
-          choices_fn: &__MODULE__.fetch_app_names/0
+        input(:database_name, "Database name", :string,
+          required: true,
+          positional: true
+        ),
+        input(:dump_file, "Dump file", :string,
+          required: true,
+          positional: true
         ),
         input(:directory, "Terraform directory", :string),
-        input(:quiet, "Quiet", :boolean)
+        input(:local, "Local restore", :boolean),
+        input(:schema_only, "Schema only", :boolean),
+        input(:local_port, "Local port", :integer),
+        input(:clean, "Clean before restore", :boolean),
+        input(:jobs, "Parallel jobs", :integer),
+        input(:resource_group, "Resource group", :string),
+        input(:pem, "PEM file", :string),
+        input(:backend, "Backend", :string),
+        input(:bucket, "S3 bucket", :string),
+        input(:state_region, "State region", :string)
       ]
     },
     %{
@@ -745,7 +876,10 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       category: "Terraform",
       inputs: [
         input(:directory, "Terraform directory", :string),
-        input(:quiet, "Quiet", :boolean)
+        input(:quiet, "Quiet", :boolean),
+        input(:backend, "Backend", :string),
+        input(:bucket, "S3 bucket", :string),
+        input(:region, "AWS region", :string)
       ]
     },
 
@@ -756,7 +890,10 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       category: "Load Test",
       inputs: [
         input(:instance_type, "Instance type", :string),
-        input(:quiet, "Quiet", :boolean)
+        input(:force, "Force", :boolean),
+        input(:quiet, "Quiet", :boolean),
+        input(:resource_group, "Resource group", :string),
+        input(:pem, "PEM file", :string)
       ]
     },
     %{
@@ -764,6 +901,8 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.DeployEx.LoadTest.DestroyInstance,
       category: "Load Test",
       inputs: [
+        input(:instance_id, "Instance ID", :string),
+        input(:all, "All runners", :boolean),
         input(:force, "Force", :boolean),
         input(:quiet, "Quiet", :boolean)
       ]
@@ -773,9 +912,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.DeployEx.LoadTest,
       category: "Load Test",
       inputs: [
-        input(:duration, "Duration (seconds)", :integer),
-        input(:rate, "Request rate", :integer),
-        input(:quiet, "Quiet", :boolean)
+        input(:command, "Command help", :string, description: "Show help for a specific load_test subcommand")
       ]
     },
     %{
@@ -783,6 +920,16 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.DeployEx.LoadTest.Exec,
       category: "Load Test",
       inputs: [
+        input(:app_name, "App name", :select,
+          required: true,
+          positional: true,
+          choices_fn: &__MODULE__.fetch_app_names/0
+        ),
+        input(:script, "Script filename", :string),
+        input(:target_url, "Target URL", :string),
+        input(:prometheus_url, "Prometheus URL", :string),
+        input(:instance_id, "Instance ID", :string),
+        input(:pem, "PEM file", :string),
         input(:quiet, "Quiet", :boolean)
       ]
     },
@@ -791,8 +938,11 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.DeployEx.LoadTest.Init,
       category: "Load Test",
       inputs: [
-        input(:force, "Force", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:app_name, "App name", :select,
+          required: true,
+          positional: true,
+          choices_fn: &__MODULE__.fetch_app_names/0
+        )
       ]
     },
     %{
@@ -800,6 +950,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.DeployEx.LoadTest.List,
       category: "Load Test",
       inputs: [
+        input(:json, "JSON output", :boolean),
         input(:quiet, "Quiet", :boolean)
       ]
     },
@@ -808,6 +959,14 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.DeployEx.LoadTest.Upload,
       category: "Load Test",
       inputs: [
+        input(:app_name, "App name", :select,
+          required: true,
+          positional: true,
+          choices_fn: &__MODULE__.fetch_app_names/0
+        ),
+        input(:script, "Script path", :string, description: "Path to a specific script (default: all scripts for the app)"),
+        input(:instance_id, "Instance ID", :string),
+        input(:pem, "PEM file", :string),
         input(:quiet, "Quiet", :boolean)
       ]
     }
