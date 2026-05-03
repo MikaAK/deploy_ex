@@ -243,7 +243,10 @@ defmodule DeployEx.QaHostRewrite do
       ~r/url:\s*\[/,
       ~r/:domain\s*=>/,
       ~r/domain:\s*["']/,
-      ~r/https?:\/\/[^"'\s]+\.(com|io|dev|net|org)/
+      ~r/https?:\/\/[^"'\s]+\.(com|io|dev|net|org)/,
+      ~r/keyfile:/,
+      ~r/certfile:/,
+      ~r|/etc/letsencrypt/live/|
     ]
   end
 
@@ -346,6 +349,15 @@ defmodule DeployEx.QaHostRewrite do
       `"https://#{placeholder}"` while keeping existing entries
     - Hardcoded `https://<production-domain>` literals that refer to the target app's
       own origin (CORS, absolute_url helpers, redirect URLs) → `https://#{placeholder}`
+    - SSL `keyfile:` / `certfile:` paths under `/etc/letsencrypt/live/<old-host>/` —
+      replace ONLY the `<old-host>` directory segment with `#{placeholder}`. Keep the
+      `/etc/letsencrypt/live/` prefix and the `privkey.pem` / `fullchain.pem` filename
+      unchanged. The Ansible letsencrypt role provisions the QA cert at
+      `/etc/letsencrypt/live/<QA_IP>/`, so the deployed app must read from that path.
+      This applies to both bare string literals AND the default arg of
+      `System.get_env("SSL_KEY_PATH", "/etc/letsencrypt/live/<old-host>/privkey.pem")`
+      (and the equivalent `SSL_CERT_PATH` form) — rewrite the default, leave the env
+      var name alone.
 
     DO NOT touch any of the following:
 
