@@ -175,9 +175,9 @@
         return_content: true
       register: imds_public_ipv4
 
-    - name: Bind qa_public_ip to the IMDSv2 result
+    - name: Bind node_public_ip to the IMDSv2 result
       set_fact:
-        qa_public_ip: "{{ imds_public_ipv4.content }}"
+        node_public_ip: "{{ imds_public_ipv4.content }}"
 
     # certbot's -d flag goes through DNSName() which rejects IPs client-side
     # ("will not issue certificates for a bare IP address") even though LE's
@@ -198,14 +198,14 @@
         certbot certonly \
           --standalone \
           --required-profile shortlived \
-          --ip-address "{{ qa_public_ip }}" \
+          --ip-address "{{ node_public_ip }}" \
           --non-interactive \
           --agree-tos \
           --email "{{ letsencrypt_email }}" \
           --pre-hook "systemctl stop nginx 2>/dev/null || true" \
           --post-hook "systemctl start nginx 2>/dev/null || true"
       args:
-        creates: "/etc/letsencrypt/live/{{ qa_public_ip }}/fullchain.pem"
+        creates: "/etc/letsencrypt/live/{{ node_public_ip }}/fullchain.pem"
 
     - name: Set proper permissions for certificate files
       file:
