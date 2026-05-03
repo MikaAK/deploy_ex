@@ -40,4 +40,101 @@ defmodule DeployEx.GitOperationsTest do
                )
     end
   end
+
+  describe "commit_and_push/5" do
+    test "creates new branch from base_sha, stages files, force-with-lease push" do
+      Process.put(:cmds, [])
+
+      shell = fn cmd, _dir, _opts ->
+        Process.put(:cmds, [cmd | Process.get(:cmds)])
+
+        cond do
+          cmd =~ "git checkout -B" -> {:ok, ""}
+          cmd =~ "git add" -> {:ok, ""}
+          cmd =~ "git commit" -> {:ok, ""}
+          cmd =~ "git push" -> {:ok, ""}
+          cmd =~ "git rev-parse HEAD" -> {:ok, "newsha1234567890\n"}
+        end
+      end
+
+      result =
+        GitOperations.commit_and_push(
+          "/repo",
+          "qa/cfx_web-canary",
+          ["apps/cfx_web/config/prod.exs"],
+          "qa: rewrite host config for cfx_web",
+          shell: shell,
+          create_new?: true,
+          base_sha: "deadbeef"
+        )
+
+      assert {:ok, "newsha1234567890"} = result
+
+      cmds = Enum.reverse(Process.get(:cmds))
+      assert Enum.any?(cmds, &(&1 =~ "git checkout -B qa/cfx_web-canary deadbeef"))
+      assert Enum.any?(cmds, &(&1 =~ "git add"))
+      assert Enum.any?(cmds, &(&1 =~ "git push --force-with-lease -u origin qa/cfx_web-canary"))
+    end
+
+    test "regular push for reused branch (no checkout, no force)" do
+      shell = fn cmd, _dir, _opts ->
+        cond do
+          cmd =~ "git add" ->
+            {:ok, ""}
+
+          cmd =~ "git commit" ->
+            {:ok, ""}
+
+          cmd =~ "git push" ->
+            refute cmd =~ "force"
+            refute cmd =~ "checkout"
+            {:ok, ""}
+
+          cmd =~ "git rev-parse HEAD" ->
+            {:ok, "abc\n"}
+        end
+      end
+
+      assert {:ok, "abc"} =
+               GitOperations.commit_and_push(
+                 "/repo",
+                 "qa-existing",
+                 ["foo.exs"],
+                 "msg",
+                 shell: shell,
+                 create_new?: false
+               )
+    end
+
+    test "stages only the listed files" do
+      Process.put(:add_cmd, nil)
+
+      shell = fn cmd, _dir, _opts ->
+        if cmd =~ "git add" do
+          Process.put(:add_cmd, cmd)
+        end
+
+        cond do
+          cmd =~ "git rev-parse HEAD" -> {:ok, "x"}
+          true -> {:ok, ""}
+        end
+      end
+
+      _ =
+        GitOperations.commit_and_push(
+          "/repo",
+          "b",
+          ["a.exs", "b.exs"],
+          "m",
+          shell: shell,
+          create_new?: false
+        )
+
+      add_cmd = Process.get(:add_cmd)
+      assert add_cmd =~ "a.exs"
+      assert add_cmd =~ "b.exs"
+      refute add_cmd =~ "git add -A"
+      refute add_cmd =~ "git add ."
+    end
+  end
 end
