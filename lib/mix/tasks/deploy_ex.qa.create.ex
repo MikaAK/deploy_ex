@@ -302,12 +302,13 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
          {:ok, full_sha} <- (progress.(:validate_sha, "Validating SHA..."); validate_and_find_sha(app_name, sha, opts)),
          {:ok, plan} <- (progress.(:plan_rewrite, "Planning host config rewrite (LLM)..."); maybe_plan_host_rewrite(app_name, opts)),
          {:ok, accepted} <- (progress.(:review_proposals, "Confirming target files..."); maybe_review_proposals(plan, tui_pid)),
-         {:ok, _build_state} <- (maybe_progress_preflight(progress, opts); validate_wait_for_build_preconditions(opts, umbrella_root, app_name, opts[:wait_for_build] || false)),
+         {:ok, build_state} <- (maybe_progress_preflight(progress, opts); validate_wait_for_build_preconditions(opts, umbrella_root, app_name, opts[:wait_for_build] || false)),
          {:ok, infra} <- (progress.(:gather_infra, "Gathering infrastructure..."); gather_infrastructure(app_name, opts)),
          {:ok, qa_node} <- (progress.(:create_node, "Creating QA node..."); create_qa_node(app_name, full_sha, infra, opts)),
          :ok <- (progress.(:wait_instance, "Waiting for instance to start..."); wait_for_instance(qa_node, opts)),
          {:ok, qa_node} <- (progress.(:save_state, "Saving QA state..."); save_and_refresh_state(qa_node, opts)),
-         :ok <- (progress.(:apply_rewrite, "Applying host config rewrite..."); maybe_apply_proposals(qa_node, plan, accepted)),
+         {:ok, entries} <- (progress.(:apply_rewrite, "Applying host config rewrite..."); maybe_apply_proposals(qa_node, plan, accepted)),
+         {:ok, qa_node} <- (maybe_progress_commit_push(progress, opts); commit_and_push_rewrites(qa_node, build_state, entries, opts[:wait_for_build] || false, tui_pid)),
          :ok <- (progress.(:wait_ssh, "Waiting for SSH..."); wait_for_ssh_ready(qa_node, tui_pid)),
          :ok <- (progress.(:setup_deploy, "Running setup & deploy..."); run_setup_and_deploy(qa_node, infra, tui_pid, opts)),
          {:ok, qa_node} <- (progress.(:attach_lb, "Attaching load balancer..."); maybe_attach_lb(qa_node, opts)) do
@@ -349,18 +350,42 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     DeployEx.QaHostRewrite.review_proposals(proposals, module_prefix, tui_pid)
   end
 
-  defp maybe_apply_proposals(_qa_node, :skip, _accepted), do: :ok
-  defp maybe_apply_proposals(_qa_node, _plan, :skip), do: :ok
-  defp maybe_apply_proposals(_qa_node, _plan, []), do: :ok
+  defp maybe_apply_proposals(_qa_node, :skip, _accepted), do: {:ok, []}
+  defp maybe_apply_proposals(_qa_node, _plan, :skip), do: {:ok, []}
+  defp maybe_apply_proposals(_qa_node, _plan, []), do: {:ok, []}
 
   defp maybe_apply_proposals(qa_node, %{app_name: app_name}, accepted) do
     backup_dir = DeployEx.QaHostRewrite.backup_dir(app_name, qa_node.instance_id)
+    DeployEx.QaHostRewrite.apply_proposals(accepted, qa_node.public_ip, backup_dir)
+  end
 
-    case DeployEx.QaHostRewrite.apply_proposals(accepted, qa_node.public_ip, backup_dir) do
-      {:ok, _entries} -> :ok
+  defp maybe_progress_commit_push(progress, opts) do
+    if opts[:wait_for_build] do
+      progress.(:commit_push, "Committing & pushing QA branch...")
+    else
+      :ok
+    end
+  end
+
+  defp commit_and_push_rewrites(qa_node, _build_state, _entries, false, _tui_pid), do: {:ok, qa_node}
+
+  defp commit_and_push_rewrites(qa_node, build_state, entries, true, _tui_pid) do
+    {action, branch} = build_state.branch_resolution
+    files = Enum.map(entries, &(&1.path))
+    short = String.slice(qa_node.target_sha || "", 0, 7)
+    message = "qa: rewrite host config for #{qa_node.app_name} (#{short})"
+    base_sha = if action === :create_new, do: qa_node.target_sha, else: nil
+
+    case DeployEx.GitOperations.commit_and_push(umbrella_root(), branch, files, message,
+           create_new?: action === :create_new,
+           base_sha: base_sha
+         ) do
+      {:ok, new_sha} -> {:ok, %{qa_node | target_sha: new_sha}}
       {:error, _} = error -> error
     end
   end
+
+  defp umbrella_root, do: File.cwd!()
 
   defp parse_args(args) do
     OptionParser.parse!(args,
