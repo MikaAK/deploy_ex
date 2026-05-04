@@ -18,31 +18,21 @@
         s3_object_key: "{{ aws_file_name.stdout_lines[0] }}"
         local_release_file: "{{ app_name }}/{{ aws_file_name.stdout_lines[0] | basename }}"
 
-    - name: Create {{ app_name }} srv directory
+    - name: Create release directories
       file:
-        path: /srv/{{ app_name }}
+        path: "{{ item }}"
         state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - /srv/{{ app_name }}
+        - /srv/unpack-directory
 
     - name: Download {{ app_name }} from S3
       ansible.builtin.command:
         cmd: aws s3 cp "s3://{{ bucket_name }}/{{ s3_object_key }}" "/srv/{{ local_release_file }}"
         creates: "/srv/{{ local_release_file }}"
-
-    - name: Create /srv/{{ app_name }} directory
-      file:
-        path: /srv/{{ app_name }}
-        state: directory
-        owner: root
-        group: root
-        mode: 0755
-
-    - name: Create /srv/unpack-directory directory
-      file:
-        path: /srv/unpack-directory
-        state: directory
-        owner: root
-        group: root
-        mode: 0755
 
     - name: Untar {{ local_release_file }}
       unarchive:
@@ -62,49 +52,30 @@
         dest: /etc/systemd/system/{{ app_name }}.service
         owner: root
         group: root
-        mode: 0644
-      # when: app_name == item
-      # loop: "{{ erlang_systemd }}"
+        mode: '0644'
 
-    - name: Add environment varaibles to systemd.service file
-      lineinfile:
-        path: /etc/systemd/system/{{ app_name }}.service
-        insertafter: RestartSec=5
-        line: "Environment=\"{{ item }}\""
-      loop: "{{ system_env }}"
-
-    - name: Enable {{ app_name }} service
+    - name: Enable {{ app_name }} service and reload systemd (out of critical path)
       systemd:
         name: "{{ app_name }}"
         enabled: true
-
-    - name: Stop {{ app_name }} service
-      systemd:
-        name: "{{ app_name }}"
-        state: stopped
-      when: ansible_facts.services[ app_name ] is not defined
-
-    - name: Delete old /srv/{{ app_name }} directory
-      file:
-        path: /srv/{{ app_name }}
-        state: absent
-
-    - name: Copy /srv/unpack-directory directory to /srv/{{ app_name }}
-      copy:
-        src: /srv/unpack-directory/
-        dest: /srv/{{ app_name }}/
-        mode: 0755
-        remote_src: true
-
-    - name: Delete /srv/unpack-directory directory
-      file:
-        path: /srv/unpack-directory
-        state: absent
-
-    - name: Start {{ app_name }} service with {{ local_release_file }}
-      systemd:
         daemon_reload: true
-        name: "{{ app_name }}"
-        state: started
+
+    - name: Atomic swap into /srv/{{ app_name }} and restart {{ app_name }}
+      shell: |
+        set -euo pipefail
+        rm -rf /srv/{{ app_name }}.old
+        systemctl stop {{ app_name }}.service || true
+        if [ -d /srv/{{ app_name }} ]; then
+          mv /srv/{{ app_name }} /srv/{{ app_name }}.old
+        fi
+        mv /srv/unpack-directory /srv/{{ app_name }}
+        systemctl start {{ app_name }}.service
+      args:
+        executable: /bin/bash
+
+    - name: Cleanup previous release (post-swap, no downtime impact)
+      file:
+        path: /srv/{{ app_name }}.old
+        state: absent
 
   become: true

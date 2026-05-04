@@ -15,6 +15,9 @@ Environment=PORT={{ app_port }}
 {% for env in extra_env %}
 Environment={{ env }}
 {% endfor %}
+{% for env in system_env %}
+Environment="{{ env }}"
+{% endfor %}
 SyslogIdentifier={{ app_name }}
 RemainAfterExit=no
 LimitNOFILE={{ open_files_limit }}

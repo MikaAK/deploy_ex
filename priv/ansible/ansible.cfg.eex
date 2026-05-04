@@ -12,3 +12,4 @@ enable_plugins = aws_ec2
 
 [ssh_connection]
 ssh_args = -o StrictHostKeyChecking=accept-new
+pipelining = True
