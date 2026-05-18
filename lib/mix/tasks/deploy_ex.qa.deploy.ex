@@ -9,6 +9,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
   ```bash
   mix deploy_ex.qa.deploy my_app --sha def5678
   mix deploy_ex.qa.deploy my_app --sha def5678 --instance-id i-0abc123
+  mix deploy_ex.qa.deploy my_app --sha def5678 --git-branch qa/my_app-canary
   mix deploy_ex.qa.deploy my_app --sha def5678 --public-ip-cert       # enable cert mode
   mix deploy_ex.qa.deploy my_app --sha def5678 --no-public-ip-cert    # disable cert mode
   ```
@@ -16,6 +17,9 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
   ## Options
   - `--sha, -s` - Target git SHA (required)
   - `--instance-id, -i` - Target a specific QA instance when multiple exist
+  - `--git-branch` - Auto-select the QA node whose `git_branch` matches. Required
+    for non-interactive use (GitHub Actions); errors with `:conflict` when more
+    than one node shares the branch.
   - `--public-ip-cert` / `--no-public-ip-cert` - Toggle public-IP Let's Encrypt cert
     mode before the deploy. Updates the `UsePublicIpCert` EC2 tag and S3 state so
     ansible picks up the new mode on this run and every subsequent one. Omit the
@@ -135,12 +139,10 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
   end
 
   defp choose_node_in_terminal(terminal, nodes, app_name, opts) do
-    case opts[:instance_id] do
-      nil ->
-        pick_node_in_terminal(terminal, nodes)
-
-      instance_id ->
-        find_node_by_instance_id(nodes, instance_id, app_name)
+    cond do
+      opts[:instance_id] -> find_node_by_instance_id(nodes, opts[:instance_id], app_name)
+      opts[:git_branch] -> DeployEx.QaNode.select_by_branch(nodes, opts[:git_branch])
+      true -> pick_node_in_terminal(terminal, nodes)
     end
   end
 
@@ -225,6 +227,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
       switches: [
         sha: :string,
         instance_id: :string,
+        git_branch: :string,
         public_ip_cert: :boolean,
         quiet: :boolean,
         aws_region: :string,
@@ -254,29 +257,21 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
   end
 
   defp choose_node(nodes, app_name, opts) do
-    case opts[:instance_id] do
-      nil ->
-        case DeployEx.QaNode.pick_interactive(nodes,
-               title: "Select QA node to deploy to",
-               allow_all: false,
-               always_prompt: true
-             ) do
-          {:ok, [picked]} -> {:ok, picked}
-          {:ok, []} -> {:error, ErrorMessage.bad_request("no QA node selected")}
-        end
+    cond do
+      opts[:instance_id] -> find_node_by_instance_id(nodes, opts[:instance_id], app_name)
+      opts[:git_branch] -> DeployEx.QaNode.select_by_branch(nodes, opts[:git_branch])
+      true -> pick_node_interactively(nodes)
+    end
+  end
 
-      instance_id ->
-        case Enum.find(nodes, &(&1.instance_id === instance_id)) do
-          nil ->
-            {:error,
-             ErrorMessage.not_found(
-               "no QA node matching --instance-id #{instance_id} for app '#{app_name}'",
-               %{available_ids: Enum.map(nodes, & &1.instance_id)}
-             )}
-
-          node ->
-            {:ok, node}
-        end
+  defp pick_node_interactively(nodes) do
+    case DeployEx.QaNode.pick_interactive(nodes,
+           title: "Select QA node to deploy to",
+           allow_all: false,
+           always_prompt: true
+         ) do
+      {:ok, [picked]} -> {:ok, picked}
+      {:ok, []} -> {:error, ErrorMessage.bad_request("no QA node selected")}
     end
   end
 

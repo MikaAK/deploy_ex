@@ -32,10 +32,20 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   Branch resolution: if the current branch matches `^qa[\/-]` it is reused; otherwise
   derives `qa/<app>-<tag>` (or `qa/<app>-<short_sha>` if `--tag` is omitted).
 
+  ### Auto-installed QA deploy step
+
+  While running with `--wait-for-build`, qa.create idempotently patches the detected
+  workflow so the build job ends with a `Deploy to QA Node` step that runs
+  `mix deploy_ex.qa.deploy --git-branch <branch>` for QA refs. The existing
+  `Run Ansible Deploy` step is guarded so it skips on QA branches. The patch is
+  marked with sentinel comments (`# deploy_ex:qa-deploy:*`) and is a no-op on
+  subsequent runs. Pass `--skip-action-install` to opt out.
+
   Options:
     --build-workflow=<file>   Override workflow auto-detection
     --build-job=<job_id>      Override job auto-detection within the workflow
     --build-timeout=<minutes> Default 30. Max wait for the build to complete
+    --skip-action-install     Skip the workflow yml patch that installs the QA-deploy step
 
   On build failure, prompts with 4 options:
     1. Destroy QA node + revert (full rollback)
@@ -332,6 +342,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
          :ok <- (progress.(:wait_instance, "Waiting for instance to start..."); wait_for_instance(qa_node, opts)),
          {:ok, qa_node} <- (progress.(:save_state, "Saving QA state..."); save_and_refresh_state(qa_node, opts)),
          {:ok, entries} <- (progress.(:apply_rewrite, "Applying host config rewrite..."); maybe_apply_proposals(qa_node, plan, accepted)),
+         {:ok, entries} <- maybe_install_qa_deploy_action(umbrella_root, build_state, entries, opts, tui_pid),
          {:ok, qa_node} <- (maybe_progress_commit_push(progress, opts); commit_and_push_rewrites(qa_node, build_state, entries, opts[:wait_for_build] || false, tui_pid)),
          :ok <- (maybe_progress_wait_build(progress, opts); wait_for_build_step(qa_node, build_state, opts, tui_pid)),
          :ok <- (progress.(:wait_ssh, "Waiting for SSH..."); wait_for_ssh_ready(qa_node, tui_pid)),
@@ -382,6 +393,45 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   defp maybe_apply_proposals(qa_node, %{app_name: app_name}, accepted) do
     backup_dir = DeployEx.QaHostRewrite.backup_dir(app_name, qa_node.instance_id)
     DeployEx.QaHostRewrite.apply_proposals(accepted, qa_node.public_ip, backup_dir)
+  end
+
+  defp maybe_install_qa_deploy_action(umbrella_root, build_state, entries, opts, tui_pid) do
+    cond do
+      not (opts[:wait_for_build] || false) -> {:ok, entries}
+      opts[:skip_action_install] === true -> {:ok, entries}
+      build_state[:enabled?] !== true -> {:ok, entries}
+      true -> install_qa_deploy_action(umbrella_root, build_state, entries, tui_pid)
+    end
+  end
+
+  defp install_qa_deploy_action(umbrella_root, %{workflow: %{file: file}}, entries, tui_pid) do
+    workflow_path = Path.join([umbrella_root, ".github/workflows", file])
+
+    case DeployEx.GitHubActions.QaDeployStepInstaller.install(workflow_path) do
+      {:ok, %{qa_step: :inserted}} = ok ->
+        log_action_install_status(tui_pid, ok, workflow_path)
+        {:ok, append_workflow_entry(entries, workflow_path)}
+
+      {:ok, %{qa_step: :already_installed}} = ok ->
+        log_action_install_status(tui_pid, ok, workflow_path)
+        {:ok, entries}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp log_action_install_status(tui_pid, {:ok, %{qa_step: status}}, workflow_path) when is_pid(tui_pid) do
+    DeployEx.TUI.Progress.update_log(tui_pid, "  QA deploy step #{status}: #{workflow_path}")
+  end
+
+  defp log_action_install_status(_tui_pid, {:ok, %{qa_step: status}}, workflow_path) do
+    Mix.shell().info([:faint, "QA deploy step #{status}: #{workflow_path}"])
+  end
+
+  defp append_workflow_entry(entries, workflow_path) do
+    relative = Path.relative_to(workflow_path, File.cwd!())
+    entries ++ [%{path: relative}]
   end
 
   defp maybe_progress_commit_push(progress, opts) do
@@ -528,7 +578,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
         wait_for_build: :boolean,
         build_workflow: :string,
         build_job: :string,
-        build_timeout: :integer
+        build_timeout: :integer,
+        skip_action_install: :boolean
       ]
     )
   end

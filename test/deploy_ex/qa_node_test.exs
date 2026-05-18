@@ -469,4 +469,38 @@ defmodule DeployEx.QaNodeTest do
       assert label =~ "my_app"
     end
   end
+
+  describe "select_by_branch/2" do
+    test "returns the single matching node" do
+      a = %QaNode{instance_id: "i-aaa", git_branch: "qa/cfx_web-canary"}
+      b = %QaNode{instance_id: "i-bbb", git_branch: "qa/cfx_web-other"}
+
+      assert {:ok, %QaNode{instance_id: "i-aaa"}} =
+               QaNode.select_by_branch([a, b], "qa/cfx_web-canary")
+    end
+
+    test "returns :not_found when no node matches" do
+      a = %QaNode{instance_id: "i-aaa", git_branch: "qa/cfx_web-canary"}
+
+      assert {:error, %ErrorMessage{code: :not_found, message: msg}} =
+               QaNode.select_by_branch([a], "qa/cfx_web-other")
+
+      assert msg =~ "qa/cfx_web-other"
+    end
+
+    test "returns :conflict when multiple nodes share the branch" do
+      a = %QaNode{instance_id: "i-aaa", git_branch: "qa/cfx_web-canary"}
+      b = %QaNode{instance_id: "i-bbb", git_branch: "qa/cfx_web-canary"}
+
+      assert {:error, %ErrorMessage{code: :conflict, details: details}} =
+               QaNode.select_by_branch([a, b], "qa/cfx_web-canary")
+
+      assert details.instance_ids === ["i-aaa", "i-bbb"]
+    end
+
+    test "returns :not_found for empty node list" do
+      assert {:error, %ErrorMessage{code: :not_found}} =
+               QaNode.select_by_branch([], "qa/cfx_web-canary")
+    end
+  end
 end
