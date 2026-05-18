@@ -1,0 +1,28 @@
+[Unit]
+Description=ThetaData Terminal (REST 25510, WS 25520, MDDS 11000, FPSS 10000)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ thetadata_terminal_user }}
+Group={{ thetadata_terminal_group }}
+WorkingDirectory={{ thetadata_terminal_home }}
+EnvironmentFile={{ thetadata_terminal_home }}/config/credentials.env
+Environment=TZ={{ thetadata_terminal_tz }}
+ExecStart=/usr/bin/java {{ thetadata_terminal_java_opts }} -jar {{ thetadata_terminal_home }}/bin/ThetaTerminal.jar ${THETA_USERNAME} ${THETA_PASSWORD}
+StandardOutput=append:{{ thetadata_terminal_home }}/logs/terminal.log
+StandardError=append:{{ thetadata_terminal_home }}/logs/terminal.log
+Restart=always
+RestartSec=10
+LimitNOFILE=65535
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths={{ thetadata_terminal_home }}/logs {{ thetadata_terminal_home }}/data
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

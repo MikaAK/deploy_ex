@@ -1,0 +1,87 @@
+---
+- name: thetadata_terminal
+  tags: thetadata_terminal
+  block:
+    - name: Fail when ThetaData credentials are missing
+      assert:
+        that:
+          - thetadata_terminal_username | length > 0
+          - thetadata_terminal_password | length > 0
+        fail_msg: >
+          thetadata_terminal_username and thetadata_terminal_password must be
+          set (typically injected via 1Password through the CI deploy step).
+
+    - name: Install JRE for ThetaData Terminal
+      apt:
+        name: "{{ thetadata_terminal_jdk_package }}"
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create theta system group
+      group:
+        name: "{{ thetadata_terminal_group }}"
+        system: true
+        state: present
+
+    - name: Create theta system user
+      user:
+        name: "{{ thetadata_terminal_user }}"
+        group: "{{ thetadata_terminal_group }}"
+        home: "{{ thetadata_terminal_home }}"
+        shell: /usr/sbin/nologin
+        system: true
+        create_home: false
+        state: present
+
+    - name: Create ThetaData Terminal directory tree
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ thetadata_terminal_user }}"
+        group: "{{ thetadata_terminal_group }}"
+        mode: "0750"
+      loop:
+        - "{{ thetadata_terminal_home }}"
+        - "{{ thetadata_terminal_home }}/bin"
+        - "{{ thetadata_terminal_home }}/config"
+        - "{{ thetadata_terminal_home }}/logs"
+        - "{{ thetadata_terminal_home }}/data"
+
+    - name: Download ThetaTerminal.jar
+      get_url:
+        url: "{{ thetadata_terminal_jar_url }}"
+        dest: "{{ thetadata_terminal_home }}/bin/ThetaTerminal.jar"
+        owner: "{{ thetadata_terminal_user }}"
+        group: "{{ thetadata_terminal_group }}"
+        mode: "0640"
+        force: true
+      notify: restart thetadata-terminal
+
+    - name: Install thetadata-terminal systemd unit
+      template:
+        src: thetadata-terminal.service.j2
+        dest: /etc/systemd/system/thetadata-terminal.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: restart thetadata-terminal
+
+    - name: Write thetadata credentials env file
+      copy:
+        dest: "{{ thetadata_terminal_home }}/config/credentials.env"
+        owner: "{{ thetadata_terminal_user }}"
+        group: "{{ thetadata_terminal_group }}"
+        mode: "0600"
+        content: |
+          THETA_USERNAME={{ thetadata_terminal_username }}
+          THETA_PASSWORD={{ thetadata_terminal_password }}
+      no_log: true
+      notify: restart thetadata-terminal
+
+    - name: Enable and start thetadata-terminal
+      systemd:
+        name: thetadata-terminal
+        enabled: true
+        state: started
+        daemon_reload: true
