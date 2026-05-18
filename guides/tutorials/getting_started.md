@@ -8,7 +8,7 @@ This tutorial walks you through setting up deploy_ex from scratch and deploying 
 - **Ansible** — server configuration. Auto-installed via pip3 if missing.
 - **Git** — required for change detection.
 - **AWS credentials** — env vars, AWS CLI profile, or instance role.
-- **`gh` CLI** — only needed if you use `--wait-for-build` on `mix deploy_ex.qa.create`. Auto-installed when invoked.
+- **`gh` CLI** — used by the default CI build flow on `mix deploy_ex.qa.create` (pass `--use-local-build` to skip it). Auto-installed when invoked.
 
 ## Step 1: Install
 
@@ -142,7 +142,7 @@ Same pattern for `tailwind` and `dart_sass`. `mix deploy_ex.release` discovers t
 ## Next Steps
 
 - [How to Deploy Releases](../how-to/deploying_releases.md) — rollback, target specific apps, CI/CD
-- [How to Use QA Nodes](../how-to/qa_nodes.md) — ephemeral test instances + `--wait-for-build`
+- [How to Use QA Nodes](../how-to/qa_nodes.md) — ephemeral test instances + CI build flow
 - [How to Manage Infrastructure](../how-to/managing_infrastructure.md) — terraform, priv upgrades, EBS snapshots
 - [How to Set Up Monitoring](../how-to/monitoring.md) — Grafana, Loki, Prometheus, Sentry
 - [How to Cluster Your Nodes](../how-to/clustering.md) — libcluster + EC2Tag strategy

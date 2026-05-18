@@ -1,0 +1,35 @@
+name: Apply Terraform, Build & Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  ApplyAndrelease:
+    name: Apply Terraform Changes and Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install Rebar & Hex
+        run: mix local.hex --force --if-missing && mix local.rebar --force --if-missing
+
+      - name: Build Releases
+        run: mix deploy_ex.release
+
+      - name: Upload S3 Releases
+        run: |
+          branch_name="${GITHUB_REF#refs/heads/}"
+          if [[ "$branch_name" == qa/* || "$branch_name" == qa-* ]]; then
+            mix deploy_ex.upload -l --qa
+          else
+            mix deploy_ex.upload -l
+          fi
+
+      - name: Run Ansible Deploy
+        run: mix ansible.deploy -l --target-sha $(git rev-parse --short ${{ github.sha }})
+
+      - name: Deauthorize AWS SSH
+        run: mix deploy_ex.ssh.authorize -r

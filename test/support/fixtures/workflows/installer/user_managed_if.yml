@@ -1,0 +1,20 @@
+name: User-Managed If
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Upload S3 Releases
+        run: mix deploy_ex.upload -l
+
+      - name: Run Ansible Deploy
+        if: ${{ github.actor != 'dependabot[bot]' }}
+        run: mix ansible.deploy -l --target-sha $(git rev-parse --short ${{ github.sha }})

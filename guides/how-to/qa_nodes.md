@@ -32,24 +32,29 @@ Requirements:
 
 Pass `--skip-host-rewrite` to keep the existing config unchanged.
 
-## CI-Gated Deploys (`--wait-for-build`)
+## CI-Gated Deploys (default)
 
-For end-to-end QA flows where the release tarball is built by GitHub Actions (not locally), pass `--wait-for-build`. deploy_ex commits and pushes the SSL/host rewrites to a QA branch, finds the release workflow, and blocks until the build completes.
+`mix deploy_ex.qa.create` defaults to a CI-gated flow: it commits + pushes the SSL/host rewrites to a QA branch, finds the matching release workflow, and blocks until the build completes before deploying. Pass `--use-local-build` to opt out and use a locally-built release instead.
 
 ```bash
-mix deploy_ex.qa.create my_app --public-ip-cert --wait-for-build --tag canary
+mix deploy_ex.qa.create my_app --public-ip-cert --tag canary       # CI build (default)
+mix deploy_ex.qa.create my_app --use-local-build --tag canary      # local build
 ```
 
-**Workflow detection:** scans `.github/workflows/*.yml` for the workflow whose `on.push.branches` glob matches the QA branch and whose jobs (or sub-workflow jobs) run `mix deploy_ex.release`.
+While running in the default flow, qa.create also idempotently patches the detected workflow yml to add a `Deploy to QA Node` step that runs `mix deploy_ex.qa.deploy --git-branch <branch>` on QA refs, and guards the existing `Run Ansible Deploy` step so it skips on QA branches. Patches are marked with sentinel comments and committed to the QA branch alongside the host rewrites. Pass `--skip-action-install` to opt out of just the workflow patch.
+
+**Workflow detection:** scans `.github/workflows/*.yml` for the workflow whose `on.push.branches` glob matches the QA branch and whose jobs (or sub-workflow jobs) run `mix deploy_ex.release`. Hard-errors with a hint to pass `--use-local-build` if none match.
 
 **Branch resolution:**
 - Current branch matches `^qa[\/-]` → reuse it
 - Otherwise → derive `qa/<app>-<tag>` (or `qa/<app>-<short_sha>` if `--tag` is omitted)
 
 **Override flags:**
+- `--use-local-build` — opt out of CI build, deploy a locally-built release
 - `--build-workflow=<file>` — bypass auto-detection
 - `--build-job=<job_id>` — narrow to one job inside the workflow
 - `--build-timeout=<minutes>` — wait cap (default `30`)
+- `--skip-action-install` — keep the workflow yml untouched (don't install the QA-deploy step)
 
 **On build failure** the task prompts you to choose:
 1. Destroy QA node + revert (full rollback)

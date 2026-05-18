@@ -542,6 +542,36 @@ defmodule DeployEx.QaNode do
     end
   end
 
+  @doc """
+  Selects the single QA node whose `git_branch` matches `branch`. Used for
+  non-interactive callers (CI, GitHub Actions) where prompting is unavailable.
+
+  Returns `{:error, ErrorMessage.not_found/2}` when no node is on `branch`, and
+  `{:error, ErrorMessage.conflict/2}` when more than one node shares the
+  branch — the caller must disambiguate by `--instance-id`.
+  """
+  @spec select_by_branch([t()], String.t()) :: {:ok, t()} | {:error, ErrorMessage.t()}
+  def select_by_branch(nodes, branch) do
+    case Enum.filter(nodes, &(&1.git_branch === branch)) do
+      [node] ->
+        {:ok, node}
+
+      [] ->
+        {:error,
+         ErrorMessage.not_found(
+           "no QA node found on branch #{branch}",
+           %{branch: branch, available_branches: Enum.map(nodes, & &1.git_branch)}
+         )}
+
+      multiple ->
+        {:error,
+         ErrorMessage.conflict(
+           "multiple QA nodes found on branch #{branch}; disambiguate with --instance-id",
+           %{branch: branch, instance_ids: Enum.map(multiple, & &1.instance_id)}
+         )}
+    end
+  end
+
   def find_qa_node_from_ec2(app_name, opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
     environment = opts[:environment] || DeployEx.Config.env()

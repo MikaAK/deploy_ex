@@ -15,7 +15,7 @@ It supports both **umbrella** and **single-app** Elixir projects.
 - **Load testing** — k6 runner instances with Prometheus metrics integration
 - **Monitoring** — Optional Grafana UI, Loki logs, Prometheus metrics, Sentry, Redis, Postgres
 - **TUI** — Interactive terminal wizard, progress streams, and per-hunk diff viewer
-- **CI integration** — `gh` CLI workflow detection, branch matching, and `--wait-for-build` gating for QA flows
+- **CI integration** — `gh` CLI workflow detection, branch matching, and CI-build gating (default) on QA flows
 
 ## Project Structure
 
@@ -71,7 +71,7 @@ guides/                              # Documentation (this folder)
 | `DeployEx.ReleaseUploader` | Coordinates release discovery, validation, S3 upload |
 | `DeployEx.QaNode` | QA instance lifecycle and S3 state |
 | `DeployEx.ChangePlanner` | Priv-upgrade diff planning (rename/split/merge) |
-| `DeployEx.GitHubActions` | Workflow detection + run polling for `--wait-for-build` |
+| `DeployEx.GitHubActions` | Workflow detection + run polling for the default CI build flow on `qa.create` |
 | `DeployEx.Terraform` | Terraform CLI argument parsing and command execution |
 
 ## Getting Started Flow

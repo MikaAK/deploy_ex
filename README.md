@@ -215,7 +215,7 @@ For SSH and ops commands, see [SSH (Eval Pattern)](#ssh-eval-pattern) below.
 - **Git** (required for change detection)
 - **Terraform / OpenTofu** — auto-installed on macOS, Debian/Ubuntu, Alpine, Amazon Linux
 - **Ansible** — auto-installed via pip3 if missing
-- **`gh` CLI** — only needed for `--wait-for-build`; auto-installed when invoked
+- **`gh` CLI** — required by the default CI build flow on `qa.create` (skipped with `--use-local-build`); auto-installed when invoked
 - **AWS credentials** — env vars, AWS CLI profile, or instance role
 - **Windows** is not supported. Use WSL.
 
@@ -324,9 +324,10 @@ The full schema (templates, scheduled scaling, EBS pool, multi-Launch-Template s
 Ephemeral EC2 instances for testing specific SHAs:
 
 ```bash
-mix deploy_ex.qa.create my_app                                       # prompt for SHA
+mix deploy_ex.qa.create my_app                                       # prompt for SHA, CI build (default)
 mix deploy_ex.qa.create my_app --sha abc1234 --tag canary --attach-lb
-mix deploy_ex.qa.create my_app --public-ip-cert --wait-for-build     # CI-gated, public-IP TLS
+mix deploy_ex.qa.create my_app --public-ip-cert --tag canary         # CI-gated, public-IP TLS
+mix deploy_ex.qa.create my_app --use-local-build                     # opt out of CI build
 mix deploy_ex.qa.deploy my_app --sha def5678
 mix deploy_ex.qa.list
 mix deploy_ex.qa.destroy my_app
@@ -335,7 +336,7 @@ mix deploy_ex.qa.cleanup --dry-run
 
 `--public-ip-cert` issues a Let's Encrypt cert via HTTP-01 and triggers an LLM-assisted rewrite of host config so the node serves traffic from its public IP. Originals are restored automatically by `qa.destroy`. Requires `:llm_provider` configured.
 
-`--wait-for-build` commits + pushes the rewrites to a QA branch, finds the matching GitHub Actions workflow (parsing `on.push.branches` globs and looking for jobs that run `mix deploy_ex.release`), waits up to `--build-timeout` minutes, and prompts a 4-option recovery menu on failure (rollback / leave / destroy node only / revert + repush).
+By default `qa.create` commits + pushes the rewrites to a QA branch, finds the matching GitHub Actions workflow (parsing `on.push.branches` globs and looking for jobs that run `mix deploy_ex.release`), patches it with a `Deploy to QA Node` step that runs after the build, waits up to `--build-timeout` minutes for the build, and prompts a 4-option recovery menu on failure (rollback / leave / destroy node only / revert + repush). Pass `--use-local-build` to fall back to a locally-built release.
 
 See [QA Nodes guide](guides/how-to/qa_nodes.md) for the full flow.
 
@@ -389,7 +390,7 @@ The [`guides/`](guides/) folder is the canonical documentation:
 - **Tutorial** — [Getting Started](guides/tutorials/getting_started.md) (covers multi-Phoenix-app config)
 - **How-to**
   - [Deploying Releases](guides/how-to/deploying_releases.md)
-  - [QA Nodes](guides/how-to/qa_nodes.md) — including `--wait-for-build`, public-IP TLS, QA tag schema
+  - [QA Nodes](guides/how-to/qa_nodes.md) — including CI build flow / `--use-local-build`, public-IP TLS, QA tag schema
   - [Connecting to Nodes](guides/how-to/connecting_to_nodes.md) — SSH, eval pattern, alias recipes
   - [Managing Infrastructure](guides/how-to/managing_infrastructure.md) — terraform, priv upgrades, EBS, teardown
   - [Autoscaling](guides/how-to/autoscaling.md) — scale, refresh, deployment strategies
