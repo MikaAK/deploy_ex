@@ -178,14 +178,16 @@ Overview / quick start (no flags).
 - `--use-ami` — boot from app AMI
 - `--attach-lb` — register with load balancer after deploy
 - `--public-ip-cert` — Let's Encrypt cert + LLM-assisted host rewrite
-- `--wait-for-build` — commit + push QA branch, wait for GitHub Actions
+- `--use-local-build` — opt out of CI build wait; build + deploy locally
 - `--build-workflow <file>` / `--build-job <id>` / `--build-timeout <minutes>` (default 30)
+- `--skip-action-install` — skip the workflow yml patch that installs the QA-deploy step
 - `-f force`, `-q quiet`, `--no-tui`
 - `--aws-region`, `--aws-release-bucket`
 
 ### `mix deploy_ex.qa.deploy <app>`
 - `-s, --sha` (required outside TUI mode)
 - `-i, --instance-id` — pick a specific QA node
+- `--git-branch <branch>` — auto-select QA node by branch (non-interactive)
 - `--public-ip-cert` / `--no-public-ip-cert` — toggle cert mode (persisted to state)
 - `-q quiet`, `--aws-region`, `--aws-release-bucket`
 

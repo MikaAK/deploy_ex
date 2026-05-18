@@ -19,23 +19,37 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   mix deploy_ex.qa.create my_app --sha abc1234 --use-ami
   ```
 
-  ## Wait for build (CI-gated deploys)
+  ## CI build flow (default)
 
-  Pass `--wait-for-build` to commit + push the SSL/host rewrites and wait for
-  GitHub Actions to build the release artifact before deploying.
+  By default, qa.create commits + pushes the SSL/host rewrites and waits for
+  GitHub Actions to build the release artifact before deploying. Pass
+  `--use-local-build` to opt out and use a locally-built release instead.
 
-      mix deploy_ex.qa.create cfx_web --public-ip-cert --wait-for-build --tag canary
+      mix deploy_ex.qa.create cfx_web --public-ip-cert --tag canary
+      mix deploy_ex.qa.create cfx_web --use-local-build           # local build path
 
   Detection: scans `.github/workflows/*.yml` for the workflow whose `on.push.branches`
   matches the QA branch and whose jobs (or sub-workflow jobs) run `mix deploy_ex.release`.
+  Hard-errors when no workflow matches; pass `--use-local-build` if you don't have one.
 
   Branch resolution: if the current branch matches `^qa[\/-]` it is reused; otherwise
   derives `qa/<app>-<tag>` (or `qa/<app>-<short_sha>` if `--tag` is omitted).
 
+  ### Auto-installed QA deploy step
+
+  In the default (CI build) flow, qa.create idempotently patches the detected
+  workflow so the build job ends with a `Deploy to QA Node` step that runs
+  `mix deploy_ex.qa.deploy --git-branch <branch>` for QA refs. The existing
+  `Run Ansible Deploy` step is guarded so it skips on QA branches. The patch is
+  marked with sentinel comments (`# deploy_ex:qa-deploy:*`) and is a no-op on
+  subsequent runs. Pass `--skip-action-install` to opt out of just the patch.
+
   Options:
+    --use-local-build         Skip the CI build wait; build + deploy locally
     --build-workflow=<file>   Override workflow auto-detection
     --build-job=<job_id>      Override job auto-detection within the workflow
     --build-timeout=<minutes> Default 30. Max wait for the build to complete
+    --skip-action-install     Skip the workflow yml patch that installs the QA-deploy step
 
   On build failure, prompts with 4 options:
     1. Destroy QA node + revert (full rollback)
@@ -138,9 +152,11 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     end
   end
 
-  defp validate_wait_for_build_preconditions(_opts, _umbrella_root, _app_name, false), do: {:ok, %{enabled?: false}}
+  defp ci_build_enabled?(opts), do: not (opts[:use_local_build] || false)
 
-  defp validate_wait_for_build_preconditions(opts, umbrella_root, app_name, true) do
+  defp validate_ci_build_preconditions(_opts, _umbrella_root, _app_name, false), do: {:ok, %{enabled?: false}}
+
+  defp validate_ci_build_preconditions(opts, umbrella_root, app_name, true) do
     with :ok <- DeployEx.ToolInstaller.ensure_installed(:gh),
          :ok <- DeployEx.GitHubActions.ensure_authenticated(),
          {:ok, branch_resolution} <- resolve_branch(opts, umbrella_root, app_name),
@@ -162,9 +178,21 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
         {:ok, %{file: wf, job_id: job}}
 
       _ ->
-        DeployEx.GitHubActions.find_build_workflow(workflows_root, branch)
+        workflows_root
+        |> DeployEx.GitHubActions.find_build_workflow(branch)
+        |> hint_use_local_build_on_not_found()
     end
   end
+
+  defp hint_use_local_build_on_not_found({:error, %ErrorMessage{code: :not_found} = err}) do
+    hinted =
+      err.message <>
+        "\n\nPass --use-local-build if you don't have a CI workflow that runs mix deploy_ex.release for QA branches."
+
+    {:error, %{err | message: hinted}}
+  end
+
+  defp hint_use_local_build_on_not_found(result), do: result
 
   defp resolve_branch(opts, umbrella_root, app_name) do
     sha = opts[:sha] || head_sha(umbrella_root)
@@ -291,11 +319,11 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     end
   end
 
-  @pipeline_total_steps_base 12
-  @pipeline_total_steps_wait_for_build 15
+  @pipeline_total_steps_local 12
+  @pipeline_total_steps_ci 15
 
   defp pipeline_total_steps(opts) do
-    if opts[:wait_for_build], do: @pipeline_total_steps_wait_for_build, else: @pipeline_total_steps_base
+    if ci_build_enabled?(opts), do: @pipeline_total_steps_ci, else: @pipeline_total_steps_local
   end
 
   defp step_for(:validate_app, _opts), do: 1
@@ -303,16 +331,16 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   defp step_for(:plan_rewrite, _opts), do: 3
   defp step_for(:review_proposals, _opts), do: 4
   defp step_for(:preflight_build, _opts), do: 5
-  defp step_for(:gather_infra, opts), do: if(opts[:wait_for_build], do: 6, else: 5)
-  defp step_for(:create_node, opts), do: if(opts[:wait_for_build], do: 7, else: 6)
-  defp step_for(:wait_instance, opts), do: if(opts[:wait_for_build], do: 8, else: 7)
-  defp step_for(:save_state, opts), do: if(opts[:wait_for_build], do: 9, else: 8)
-  defp step_for(:apply_rewrite, opts), do: if(opts[:wait_for_build], do: 10, else: 9)
+  defp step_for(:gather_infra, opts), do: if(ci_build_enabled?(opts), do: 6, else: 5)
+  defp step_for(:create_node, opts), do: if(ci_build_enabled?(opts), do: 7, else: 6)
+  defp step_for(:wait_instance, opts), do: if(ci_build_enabled?(opts), do: 8, else: 7)
+  defp step_for(:save_state, opts), do: if(ci_build_enabled?(opts), do: 9, else: 8)
+  defp step_for(:apply_rewrite, opts), do: if(ci_build_enabled?(opts), do: 10, else: 9)
   defp step_for(:commit_push, _opts), do: 11
   defp step_for(:wait_build, _opts), do: 12
-  defp step_for(:wait_ssh, opts), do: if(opts[:wait_for_build], do: 13, else: 10)
-  defp step_for(:setup_deploy, opts), do: if(opts[:wait_for_build], do: 14, else: 11)
-  defp step_for(:attach_lb, opts), do: if(opts[:wait_for_build], do: 15, else: 12)
+  defp step_for(:wait_ssh, opts), do: if(ci_build_enabled?(opts), do: 13, else: 10)
+  defp step_for(:setup_deploy, opts), do: if(ci_build_enabled?(opts), do: 14, else: 11)
+  defp step_for(:attach_lb, opts), do: if(ci_build_enabled?(opts), do: 15, else: 12)
 
   defp run_qa_pipeline_work(tui_pid, app_name, sha, opts) do
     total_steps = pipeline_total_steps(opts)
@@ -326,13 +354,14 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
          {:ok, full_sha} <- (progress.(:validate_sha, "Validating SHA..."); validate_and_find_sha(app_name, sha, opts)),
          {:ok, plan} <- (progress.(:plan_rewrite, "Planning host config rewrite (LLM)..."); maybe_plan_host_rewrite(app_name, opts)),
          {:ok, accepted} <- (progress.(:review_proposals, "Confirming target files..."); maybe_review_proposals(plan, tui_pid)),
-         {:ok, build_state} <- (maybe_progress_preflight(progress, opts); validate_wait_for_build_preconditions(opts, umbrella_root, app_name, opts[:wait_for_build] || false)),
+         {:ok, build_state} <- (maybe_progress_preflight(progress, opts); validate_ci_build_preconditions(opts, umbrella_root, app_name, ci_build_enabled?(opts))),
          {:ok, infra} <- (progress.(:gather_infra, "Gathering infrastructure..."); gather_infrastructure(app_name, opts)),
          {:ok, qa_node} <- (progress.(:create_node, "Creating QA node..."); create_qa_node(app_name, full_sha, infra, opts)),
          :ok <- (progress.(:wait_instance, "Waiting for instance to start..."); wait_for_instance(qa_node, opts)),
          {:ok, qa_node} <- (progress.(:save_state, "Saving QA state..."); save_and_refresh_state(qa_node, opts)),
          {:ok, entries} <- (progress.(:apply_rewrite, "Applying host config rewrite..."); maybe_apply_proposals(qa_node, plan, accepted)),
-         {:ok, qa_node} <- (maybe_progress_commit_push(progress, opts); commit_and_push_rewrites(qa_node, build_state, entries, opts[:wait_for_build] || false, tui_pid)),
+         {:ok, entries} <- maybe_install_qa_deploy_action(umbrella_root, build_state, entries, opts, tui_pid),
+         {:ok, qa_node} <- (maybe_progress_commit_push(progress, opts); commit_and_push_rewrites(qa_node, build_state, entries, ci_build_enabled?(opts), tui_pid)),
          :ok <- (maybe_progress_wait_build(progress, opts); wait_for_build_step(qa_node, build_state, opts, tui_pid)),
          :ok <- (progress.(:wait_ssh, "Waiting for SSH..."); wait_for_ssh_ready(qa_node, tui_pid)),
          :ok <- (progress.(:setup_deploy, "Running setup & deploy..."); run_setup_and_deploy(qa_node, infra, tui_pid, opts)),
@@ -342,8 +371,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
 
   defp maybe_progress_preflight(progress, opts) do
-    if opts[:wait_for_build] do
-      progress.(:preflight_build, "Validating wait-for-build preconditions...")
+    if ci_build_enabled?(opts) do
+      progress.(:preflight_build, "Validating CI build preconditions...")
     else
       :ok
     end
@@ -384,8 +413,47 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     DeployEx.QaHostRewrite.apply_proposals(accepted, qa_node.public_ip, backup_dir)
   end
 
+  defp maybe_install_qa_deploy_action(umbrella_root, build_state, entries, opts, tui_pid) do
+    cond do
+      not ci_build_enabled?(opts) -> {:ok, entries}
+      opts[:skip_action_install] === true -> {:ok, entries}
+      build_state[:enabled?] !== true -> {:ok, entries}
+      true -> install_qa_deploy_action(umbrella_root, build_state, entries, tui_pid)
+    end
+  end
+
+  defp install_qa_deploy_action(umbrella_root, %{workflow: %{file: file}}, entries, tui_pid) do
+    workflow_path = Path.join([umbrella_root, ".github/workflows", file])
+
+    case DeployEx.GitHubActions.QaDeployStepInstaller.install(workflow_path) do
+      {:ok, %{qa_step: :inserted}} = ok ->
+        log_action_install_status(tui_pid, ok, workflow_path)
+        {:ok, append_workflow_entry(entries, workflow_path)}
+
+      {:ok, %{qa_step: :already_installed}} = ok ->
+        log_action_install_status(tui_pid, ok, workflow_path)
+        {:ok, entries}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp log_action_install_status(tui_pid, {:ok, %{qa_step: status}}, workflow_path) when is_pid(tui_pid) do
+    DeployEx.TUI.Progress.update_log(tui_pid, "  QA deploy step #{status}: #{workflow_path}")
+  end
+
+  defp log_action_install_status(_tui_pid, {:ok, %{qa_step: status}}, workflow_path) do
+    Mix.shell().info([:faint, "QA deploy step #{status}: #{workflow_path}"])
+  end
+
+  defp append_workflow_entry(entries, workflow_path) do
+    relative = Path.relative_to(workflow_path, File.cwd!())
+    entries ++ [%{path: relative}]
+  end
+
   defp maybe_progress_commit_push(progress, opts) do
-    if opts[:wait_for_build] do
+    if ci_build_enabled?(opts) do
       progress.(:commit_push, "Committing & pushing QA branch...")
     else
       :ok
@@ -413,7 +481,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   defp umbrella_root, do: File.cwd!()
 
   defp maybe_progress_wait_build(progress, opts) do
-    if opts[:wait_for_build] do
+    if ci_build_enabled?(opts) do
       progress.(:wait_build, "Waiting for build workflow...")
     else
       :ok
@@ -421,7 +489,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
 
   defp wait_for_build_step(qa_node, build_state, opts, tui_pid) do
-    case wait_for_build(qa_node, build_state, opts[:wait_for_build] || false, opts, tui_pid) do
+    case wait_for_build(qa_node, build_state, ci_build_enabled?(opts), opts, tui_pid) do
       {:ok, :skipped} ->
         :ok
 
@@ -525,10 +593,11 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
         aws_region: :string,
         aws_release_bucket: :string,
         no_tui: :boolean,
-        wait_for_build: :boolean,
+        use_local_build: :boolean,
         build_workflow: :string,
         build_job: :string,
-        build_timeout: :integer
+        build_timeout: :integer,
+        skip_action_install: :boolean
       ]
     )
   end

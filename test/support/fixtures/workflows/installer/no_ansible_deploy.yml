@@ -1,0 +1,18 @@
+name: Upload Only
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Build Releases
+        run: mix deploy_ex.release
+
+      - name: Upload S3 Releases
+        run: mix deploy_ex.upload -l

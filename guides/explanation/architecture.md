@@ -208,7 +208,7 @@ sequenceDiagram
         Dev->>Rewrite: accept/reject
     end
     Dev->>Node: create_instance(SHA, params)
-    opt --wait-for-build
+    opt default (CI build), skipped by --use-local-build
         Dev->>Git: commit_and_push QA branch
         Dev->>GHA: find_build_workflow + wait_for_run
         GHA->>Dev: success | failure (4-option recovery)
@@ -233,7 +233,7 @@ stateDiagram-v2
     Creating --> Running: EC2 launched
     Running --> SetupComplete: ansible.setup
     SetupComplete --> Deployed: ansible.deploy
-    Deployed --> WaitingBuild: --wait-for-build
+    Deployed --> WaitingBuild: default (skipped by --use-local-build)
     WaitingBuild --> Deployed: build success
     WaitingBuild --> RecoveryPrompt: build failure
     RecoveryPrompt --> Terminated: rollback
@@ -279,7 +279,7 @@ flowchart LR
     Plat --> Win
 ```
 
-`mix ansible.deploy` and `mix deploy_ex.qa.create --wait-for-build` call `ToolInstaller.ensure_installed(:ansible)` and `:gh` respectively before doing real work.
+`mix ansible.deploy` and the default CI flow on `mix deploy_ex.qa.create` (skipped only when `--use-local-build` is passed) call `ToolInstaller.ensure_installed(:ansible)` and `:gh` respectively before doing real work.
 
 ## See also
 

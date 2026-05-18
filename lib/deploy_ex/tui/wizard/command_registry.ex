@@ -483,10 +483,11 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
         input(:quiet, "Quiet", :boolean),
         input(:aws_region, "AWS region", :string),
         input(:aws_release_bucket, "AWS release bucket", :string),
-        input(:wait_for_build, "Wait for build", :boolean, description: "Wait for the GitHub Actions build to finish before creating"),
+        input(:use_local_build, "Use local build", :boolean, description: "Opt out of the default CI build wait; build + deploy locally"),
         input(:build_workflow, "Build workflow", :string, description: "GitHub Actions workflow file (e.g. release.yml)"),
         input(:build_job, "Build job", :string, description: "GitHub Actions job name to wait on"),
-        input(:build_timeout, "Build timeout (s)", :integer, description: "Timeout in seconds when waiting for the build")
+        input(:build_timeout, "Build timeout (s)", :integer, description: "Timeout in seconds when waiting for the build"),
+        input(:skip_action_install, "Skip GitHub Action install", :boolean, description: "Skip the workflow yml patch that installs the QA-deploy step")
       ]
     },
     %{
@@ -526,6 +527,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
         ),
         input(:sha, "Git SHA", :string),
         input(:instance_id, "Instance ID", :string, description: "Target a specific QA instance when multiple exist"),
+        input(:git_branch, "Git branch", :string, description: "Auto-select QA node by git_branch (non-interactive)"),
         input(:public_ip_cert, "Public IP cert", :boolean, description: "Toggle public-IP LE cert mode"),
         input(:quiet, "Quiet", :boolean),
         input(:aws_region, "AWS region", :string),
