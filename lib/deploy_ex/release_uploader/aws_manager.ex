@@ -4,7 +4,13 @@ defmodule DeployEx.ReleaseUploader.AwsManager do
 
     fetch_paginated_keys(region, bucket, s3_opts, [])
   rescue
-    e -> {:error, ErrorMessage.failed_dependency("failed to list S3 releases", %{error: Exception.message(e)})}
+    e ->
+      {:error,
+       ErrorMessage.failed_dependency("failed to list S3 releases", %{
+         exception: inspect(e.__struct__),
+         error: Exception.message(e),
+         stacktrace: Exception.format_stacktrace(__STACKTRACE__)
+       })}
   end
 
   defp fetch_paginated_keys(region, bucket, s3_opts, acc) do
