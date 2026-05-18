@@ -1,6 +1,0 @@
----
-- name: restart thetadata-terminal
-  systemd:
-    name: thetadata-terminal
-    state: restarted
-    daemon_reload: true
