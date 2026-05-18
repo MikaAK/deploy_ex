@@ -57,7 +57,7 @@ defmodule Mix.Tasks.DeployEx.Release do
 
     with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
-         {:ok, remote_releases} <- ReleaseUploader.fetch_all_remote_releases(opts),
+         {:ok, remote_releases} <- fetch_remote_releases_or_skip(opts),
          {:ok, git_sha} <- ReleaseUploader.get_git_sha(),
          :ok <- build_state_and_upload_unchanged_releases(
            releases, remote_releases,
@@ -66,6 +66,15 @@ defmodule Mix.Tasks.DeployEx.Release do
       :ok
     else
       {:error, e} -> Mix.raise(to_string(e))
+    end
+  end
+
+  defp fetch_remote_releases_or_skip(opts) do
+    if opts[:force] do
+      Mix.shell().info([:yellow, "* --force passed, skipping remote release lookup"])
+      {:ok, []}
+    else
+      ReleaseUploader.fetch_all_remote_releases(opts)
     end
   end
 
