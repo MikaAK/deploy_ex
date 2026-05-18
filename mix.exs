@@ -7,14 +7,26 @@ defmodule DeployEx.MixProject do
       version: "0.1.0",
       elixir: "~> 1.13",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      aliases: aliases()
     ]
   end
 
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:ssh, :logger]
+      extra_applications: [:ssh, :logger, :sweet_xml]
+    ]
+  end
+
+  # ex_aws_elastic_load_balancing and ex_aws_s3 wrap their XML parsers in
+  # `if Code.ensure_loaded?(SweetXml) do` at compile time. If sweet_xml has not
+  # been compiled when those deps compile, the parser modules never get built
+  # and ExAws returns raw XML binary bodies at runtime. Force sweet_xml first
+  # so the parsers always exist.
+  defp aliases do
+    [
+      "deps.compile": ["deps.compile sweet_xml", "deps.compile"]
     ]
   end
 
