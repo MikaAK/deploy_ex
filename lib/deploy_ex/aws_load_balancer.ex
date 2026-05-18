@@ -3,6 +3,20 @@ defmodule DeployEx.AwsLoadBalancer do
   AWS Elastic Load Balancer operations for managing target group registrations.
   """
 
+  # ex_aws_elastic_load_balancing wraps its V2 parser in
+  # `if Code.ensure_loaded?(SweetXml) do` at compile time. If sweet_xml hasn't
+  # compiled when the dep compiled, the parser .beam never exists and ExAws
+  # silently returns raw XML bodies. Fail loudly at compile time so the broken
+  # build is caught instead of producing fragile runtime XML fallbacks.
+  unless Code.ensure_loaded?(ExAws.ElasticLoadBalancingV2.Parsers) do
+    raise CompileError,
+      description:
+        "ExAws.ElasticLoadBalancingV2.Parsers missing — sweet_xml must compile before " <>
+          "ex_aws_elastic_load_balancing. Run: " <>
+          "mix deps.clean ex_aws_elastic_load_balancing ex_aws_s3 --build && " <>
+          "mix deps.compile sweet_xml && mix deps.compile"
+  end
+
   def register_target(target_group_arn, instance_id, port, opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
 
@@ -102,26 +116,6 @@ defmodule DeployEx.AwsLoadBalancer do
     ])}
   end
 
-  defp handle_health_response({:ok, %{body: body}}) when is_binary(body) do
-    case XmlToMap.naive_map(body) do
-      %{"DescribeTargetHealthResponse" => %{"DescribeTargetHealthResult" => %{"TargetHealthDescriptions" => %{"member" => members}}}} ->
-        targets = members
-        |> List.wrap()
-        |> Enum.map(&parse_target_health/1)
-
-        {:ok, targets}
-
-      %{"DescribeTargetHealthResponse" => %{"DescribeTargetHealthResult" => %{"TargetHealthDescriptions" => nil}}} ->
-        {:ok, []}
-
-      structure ->
-        {:error, ErrorMessage.bad_request(
-          "couldn't parse target health response",
-          %{structure: structure}
-        )}
-    end
-  end
-
   defp handle_health_response({:ok, %{body: %{target_health_descriptions: descriptions}}}) do
     targets = descriptions
     |> List.wrap()
@@ -147,26 +141,6 @@ defmodule DeployEx.AwsLoadBalancer do
     ])}
   end
 
-  defp handle_target_groups_response({:ok, %{body: body}}) when is_binary(body) do
-    case XmlToMap.naive_map(body) do
-      %{"DescribeTargetGroupsResponse" => %{"DescribeTargetGroupsResult" => %{"TargetGroups" => %{"member" => members}}}} ->
-        target_groups = members
-        |> List.wrap()
-        |> Enum.map(&parse_target_group/1)
-
-        {:ok, target_groups}
-
-      %{"DescribeTargetGroupsResponse" => %{"DescribeTargetGroupsResult" => %{"TargetGroups" => nil}}} ->
-        {:ok, []}
-
-      structure ->
-        {:error, ErrorMessage.bad_request(
-          "couldn't parse target groups response",
-          %{structure: structure}
-        )}
-    end
-  end
-
   defp handle_target_groups_response({:ok, %{body: %{target_groups: target_groups}}}) do
     parsed = Enum.map(target_groups, fn tg ->
       %{
@@ -189,29 +163,6 @@ defmodule DeployEx.AwsLoadBalancer do
       "error describing target groups",
       %{error_body: body}
     ])}
-  end
-
-  defp parse_target_health(member) do
-    %{
-      id: get_in(member, ["Target", "Id"]),
-      port: get_in(member, ["Target", "Port"]) |> parse_integer(),
-      state: get_in(member, ["TargetHealth", "State"]),
-      reason: get_in(member, ["TargetHealth", "Reason"]),
-      description: get_in(member, ["TargetHealth", "Description"])
-    }
-  end
-
-  defp parse_target_group(member) do
-    %{
-      arn: member["TargetGroupArn"],
-      name: member["TargetGroupName"],
-      port: member["Port"] |> parse_integer(),
-      protocol: member["Protocol"],
-      vpc_id: member["VpcId"],
-      health_check_path: member["HealthCheckPath"],
-      health_check_port: member["HealthCheckPort"],
-      health_check_protocol: member["HealthCheckProtocol"]
-    }
   end
 
   defp parse_integer(nil), do: nil
