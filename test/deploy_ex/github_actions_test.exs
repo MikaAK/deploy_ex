@@ -36,7 +36,9 @@ defmodule DeployEx.GitHubActionsTest do
   describe "find_build_workflow/2" do
     test "picks pipeline.yml when its sub-workflow runs deploy_ex.release for the qa branch" do
       result = GitHubActions.find_build_workflow(@happy_root, "qa/cfx_web-canary")
-      assert {:ok, %{file: "cfx_pipeline.yml", job_id: "deploy-qa"}} = result
+
+      assert {:ok,
+              %{file: "cfx_pipeline.yml", job_id: "deploy-qa", steps_file: "deploy.yml"}} = result
     end
 
     test "returns :conflict when 2+ workflows match" do
@@ -51,17 +53,23 @@ defmodule DeployEx.GitHubActionsTest do
 
     test "branch-conditional: qa/ branch picks deploy-qa over deploy-main" do
       result = GitHubActions.find_build_workflow(@branch_conditional_root, "qa/theta_data_api")
-      assert {:ok, %{file: "pipeline.yml", job_id: "deploy-qa"}} === result
+
+      assert {:ok, %{file: "pipeline.yml", job_id: "deploy-qa", steps_file: "deploy.yml"}} ===
+               result
     end
 
     test "branch-conditional: qa- branch picks deploy-qa over deploy-main" do
       result = GitHubActions.find_build_workflow(@branch_conditional_root, "qa-experimental")
-      assert {:ok, %{file: "pipeline.yml", job_id: "deploy-qa"}} === result
+
+      assert {:ok, %{file: "pipeline.yml", job_id: "deploy-qa", steps_file: "deploy.yml"}} ===
+               result
     end
 
     test "branch-conditional: main branch picks deploy-main over deploy-qa" do
       result = GitHubActions.find_build_workflow(@branch_conditional_root, "main")
-      assert {:ok, %{file: "pipeline.yml", job_id: "deploy-main"}} === result
+
+      assert {:ok, %{file: "pipeline.yml", job_id: "deploy-main", steps_file: "deploy.yml"}} ===
+               result
     end
   end
 

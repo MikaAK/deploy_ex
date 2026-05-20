@@ -45,7 +45,8 @@ defmodule DeployEx.GitHubActions do
      If none, return :not_found.
   """
   @spec find_build_workflow(Path.t(), String.t()) ::
-          {:ok, %{file: String.t(), job_id: String.t()}} | {:error, ErrorMessage.t()}
+          {:ok, %{file: String.t(), job_id: String.t(), steps_file: String.t()}}
+          | {:error, ErrorMessage.t()}
   def find_build_workflow(workflows_root, qa_branch) do
     workflows = list_workflows(workflows_root)
     if_context = build_if_context(qa_branch)
@@ -56,7 +57,7 @@ defmodule DeployEx.GitHubActions do
       |> Enum.flat_map(&find_release_jobs(&1, workflows, if_context))
 
     case candidates do
-      [%{file: _, job_id: _} = match] ->
+      [%{file: _, job_id: _, steps_file: _} = match] ->
         {:ok, match}
 
       [] ->
@@ -116,10 +117,14 @@ defmodule DeployEx.GitHubActions do
   defp find_release_jobs(%{basename: basename, parsed: parsed}, all_workflows, if_context) do
     parsed
     |> Map.get("jobs", %{})
-    |> Enum.filter(fn {_id, job} ->
-      job_if_active?(job, if_context) and job_runs_release?(job, all_workflows)
+    |> Enum.flat_map(fn {id, job} ->
+      with true <- job_if_active?(job, if_context),
+           {:ok, steps_basename} <- locate_release_steps_file(job, basename, all_workflows) do
+        [%{file: basename, job_id: id, steps_file: steps_basename}]
+      else
+        _ -> []
+      end
     end)
-    |> Enum.map(fn {id, _job} -> %{file: basename, job_id: id} end)
   end
 
   defp job_if_active?(%{"if" => expr}, if_context) when is_binary(expr) do
@@ -131,25 +136,30 @@ defmodule DeployEx.GitHubActions do
 
   defp job_if_active?(_job, _if_context), do: true
 
-  defp job_runs_release?(%{"steps" => steps}, _all) when is_list(steps) do
-    Enum.any?(steps, &step_runs_release?/1)
+  defp locate_release_steps_file(%{"steps" => steps}, basename, _all) when is_list(steps) do
+    if Enum.any?(steps, &step_runs_release?/1), do: {:ok, basename}, else: :error
   end
 
-  defp job_runs_release?(%{"uses" => "./" <> sub_path}, all_workflows) do
+  defp locate_release_steps_file(%{"uses" => "./" <> sub_path}, _basename, all_workflows) do
     sub_basename = Path.basename(sub_path)
 
     case Enum.find(all_workflows, &(&1.basename === sub_basename)) do
       nil ->
-        false
+        :error
 
       sub ->
         sub.parsed
         |> Map.get("jobs", %{})
-        |> Enum.any?(fn {_id, job} -> job_runs_release?(job, all_workflows) end)
+        |> Enum.find_value(:error, fn {_id, job} ->
+          case locate_release_steps_file(job, sub_basename, all_workflows) do
+            {:ok, _} = ok -> ok
+            :error -> nil
+          end
+        end)
     end
   end
 
-  defp job_runs_release?(_job, _all), do: false
+  defp locate_release_steps_file(_job, _basename, _all), do: :error
 
   defp step_runs_release?(%{"run" => run}) when is_binary(run) do
     String.contains?(run, @release_command_signature)

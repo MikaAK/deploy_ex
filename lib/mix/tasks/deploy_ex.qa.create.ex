@@ -422,7 +422,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     end
   end
 
-  defp install_qa_deploy_action(umbrella_root, %{workflow: %{file: file}}, entries, tui_pid) do
+  defp install_qa_deploy_action(umbrella_root, %{workflow: workflow}, entries, tui_pid) do
+    file = Map.get(workflow, :steps_file, workflow.file)
     workflow_path = Path.join([umbrella_root, ".github/workflows", file])
 
     case DeployEx.GitHubActions.QaDeployStepInstaller.install(workflow_path) do
