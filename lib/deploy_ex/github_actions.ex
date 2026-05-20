@@ -37,18 +37,23 @@ defmodule DeployEx.GitHubActions do
      `mix deploy_ex.release` — either directly OR by following a
      `uses: ./.github/workflows/<sub>.yml` reference into the sub-workflow's
      run steps.
-  4. If exactly one candidate matches, return it. If multiple, return :conflict.
+  4. Drop any job whose `if:` gate evaluates to false against the qa branch
+     (e.g. `deploy-main` gated on `github.ref == 'refs/heads/main'`). Jobs
+     with an unparseable / unknown-context `if:` are kept as candidates so we
+     never silently exclude a valid match. See `IfEvaluator`.
+  5. If exactly one candidate matches, return it. If multiple, return :conflict.
      If none, return :not_found.
   """
   @spec find_build_workflow(Path.t(), String.t()) ::
           {:ok, %{file: String.t(), job_id: String.t()}} | {:error, ErrorMessage.t()}
   def find_build_workflow(workflows_root, qa_branch) do
     workflows = list_workflows(workflows_root)
+    if_context = build_if_context(qa_branch)
 
     candidates =
       workflows
       |> Enum.filter(&workflow_triggers_on_branch?(&1, qa_branch))
-      |> Enum.flat_map(&find_release_jobs(&1, workflows))
+      |> Enum.flat_map(&find_release_jobs(&1, workflows, if_context))
 
     case candidates do
       [%{file: _, job_id: _} = match] ->
@@ -68,6 +73,16 @@ defmodule DeployEx.GitHubActions do
            %{candidates: multiple}
          )}
     end
+  end
+
+  defp build_if_context(branch) do
+    %{
+      "github.ref" => "refs/heads/#{branch}",
+      "github.ref_name" => branch,
+      "github.event_name" => "push",
+      "github.head_ref" => "",
+      "github.base_ref" => ""
+    }
   end
 
   defp escape_segment(segment) do
@@ -98,12 +113,23 @@ defmodule DeployEx.GitHubActions do
     |> Enum.any?(&branch_glob_match?(&1, branch))
   end
 
-  defp find_release_jobs(%{basename: basename, parsed: parsed}, all_workflows) do
+  defp find_release_jobs(%{basename: basename, parsed: parsed}, all_workflows, if_context) do
     parsed
     |> Map.get("jobs", %{})
-    |> Enum.filter(fn {_id, job} -> job_runs_release?(job, all_workflows) end)
+    |> Enum.filter(fn {_id, job} ->
+      job_if_active?(job, if_context) and job_runs_release?(job, all_workflows)
+    end)
     |> Enum.map(fn {id, _job} -> %{file: basename, job_id: id} end)
   end
+
+  defp job_if_active?(%{"if" => expr}, if_context) when is_binary(expr) do
+    case DeployEx.GitHubActions.IfEvaluator.evaluate(expr, if_context) do
+      {:ok, active?} -> active?
+      :unknown -> true
+    end
+  end
+
+  defp job_if_active?(_job, _if_context), do: true
 
   defp job_runs_release?(%{"steps" => steps}, _all) when is_list(steps) do
     Enum.any?(steps, &step_runs_release?/1)

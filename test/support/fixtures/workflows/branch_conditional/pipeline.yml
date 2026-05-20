@@ -1,0 +1,25 @@
+name: Pipeline
+on:
+  push:
+    branches:
+      - main
+      - 'qa-**'
+      - 'qa/**'
+jobs:
+  mix-compile-prod:
+    name: Compile (prod)
+    uses: ./.github/workflows/mix-compile-prod.yml
+
+  deploy-main:
+    name: Deploy (main)
+    if: ${{ !failure() && !cancelled() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch') }}
+    uses: ./.github/workflows/deploy.yml
+    needs:
+      - mix-compile-prod
+
+  deploy-qa:
+    name: Deploy (QA)
+    if: ${{ !failure() && !cancelled() && github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/qa-') || startsWith(github.ref, 'refs/heads/qa/')) }}
+    uses: ./.github/workflows/deploy.yml
+    needs:
+      - mix-compile-prod

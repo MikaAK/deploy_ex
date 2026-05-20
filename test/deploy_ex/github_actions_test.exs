@@ -6,6 +6,10 @@ defmodule DeployEx.GitHubActionsTest do
   @happy_root Path.expand("../support/fixtures/workflows/happy", __DIR__)
   @ambiguous_root Path.expand("../support/fixtures/workflows/ambiguous", __DIR__)
   @no_deploy_root Path.expand("../support/fixtures/workflows/no_deploy", __DIR__)
+  @branch_conditional_root Path.expand(
+                             "../support/fixtures/workflows/branch_conditional",
+                             __DIR__
+                           )
 
   describe "branch_glob_match?/2" do
     test "matches qa/cfx_web-canary against qa/**" do
@@ -43,6 +47,21 @@ defmodule DeployEx.GitHubActionsTest do
     test "returns :not_found when no workflow runs deploy_ex.release" do
       result = GitHubActions.find_build_workflow(@no_deploy_root, "qa-foo")
       assert {:error, %ErrorMessage{code: :not_found}} = result
+    end
+
+    test "branch-conditional: qa/ branch picks deploy-qa over deploy-main" do
+      result = GitHubActions.find_build_workflow(@branch_conditional_root, "qa/theta_data_api")
+      assert {:ok, %{file: "pipeline.yml", job_id: "deploy-qa"}} === result
+    end
+
+    test "branch-conditional: qa- branch picks deploy-qa over deploy-main" do
+      result = GitHubActions.find_build_workflow(@branch_conditional_root, "qa-experimental")
+      assert {:ok, %{file: "pipeline.yml", job_id: "deploy-qa"}} === result
+    end
+
+    test "branch-conditional: main branch picks deploy-main over deploy-qa" do
+      result = GitHubActions.find_build_workflow(@branch_conditional_root, "main")
+      assert {:ok, %{file: "pipeline.yml", job_id: "deploy-main"}} === result
     end
   end
 
