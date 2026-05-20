@@ -362,12 +362,78 @@ defmodule DeployEx.LLMMerge do
         {:ok, content}
 
       {:error, _chain, error} ->
-        {:error, error}
+        {:error, format_llm_error(error, model)}
 
       {:error, error} ->
-        {:error, error}
+        {:error, format_llm_error(error, model)}
     end
   end
+
+  defp format_llm_error(
+         %LangChain.LangChainError{
+           original: {:ok, %{status: status, body: body}}
+         } = error,
+         model
+       ) do
+    provider = provider_label(model)
+    message = extract_provider_message(body)
+
+    %ErrorMessage{
+      code: ErrorMessage.http_code_reason_atom(status),
+      message: llm_error_message(provider, status, message),
+      details: %{
+        provider: provider,
+        status: status,
+        provider_message: message,
+        original: error
+      }
+    }
+  end
+
+  defp format_llm_error(%LangChain.LangChainError{message: message} = error, model) do
+    ErrorMessage.internal_server_error(
+      "#{provider_label(model)} call failed: #{message}",
+      %{provider: provider_label(model), original: error}
+    )
+  end
+
+  defp format_llm_error(other, model) do
+    ErrorMessage.internal_server_error(
+      "#{provider_label(model)} call failed: #{inspect(other)}",
+      %{provider: provider_label(model), original: other}
+    )
+  end
+
+  defp llm_error_message(provider, 402, message),
+    do: "#{provider} returned 402 (out of credits): #{message}"
+
+  defp llm_error_message(provider, 401, message),
+    do: "#{provider} returned 401 (unauthorized — check API key): #{message}"
+
+  defp llm_error_message(provider, 429, message),
+    do: "#{provider} returned 429 (rate limited): #{message}"
+
+  defp llm_error_message(provider, 400, message) do
+    if message =~ ~r/credit balance|billing|insufficient/i do
+      "#{provider} rejected request (out of credits): #{message}"
+    else
+      "#{provider} returned 400 (bad request): #{message}"
+    end
+  end
+
+  defp llm_error_message(provider, status, message),
+    do: "#{provider} returned #{status}: #{message}"
+
+  defp extract_provider_message(%{"error" => %{"message" => message}}) when is_binary(message),
+    do: message
+
+  defp extract_provider_message(%{"error" => %{"type" => type}}) when is_binary(type), do: type
+  defp extract_provider_message(%{"message" => message}) when is_binary(message), do: message
+  defp extract_provider_message(body) when is_binary(body), do: body
+  defp extract_provider_message(body), do: inspect(body)
+
+  defp provider_label(%module{}), do: module |> Module.split() |> List.last()
+  defp provider_label(_), do: "LLM"
 
   defp extract_content(%{content: content}) when is_binary(content), do: content
 
