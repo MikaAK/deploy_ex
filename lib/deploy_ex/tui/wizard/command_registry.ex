@@ -483,10 +483,9 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
         input(:quiet, "Quiet", :boolean),
         input(:aws_region, "AWS region", :string),
         input(:aws_release_bucket, "AWS release bucket", :string),
-        input(:use_local_build, "Use local build", :boolean, description: "Opt out of the default CI build wait; build + deploy locally"),
+        input(:use_local_build, "Use local build", :boolean, description: "Opt out of CI deploy hand-off; build + deploy locally"),
         input(:build_workflow, "Build workflow", :string, description: "GitHub Actions workflow file (e.g. release.yml)"),
-        input(:build_job, "Build job", :string, description: "GitHub Actions job name to wait on"),
-        input(:build_timeout, "Build timeout (s)", :integer, description: "Timeout in seconds when waiting for the build"),
+        input(:build_job, "Build job", :string, description: "GitHub Actions job name within the workflow"),
         input(:skip_action_install, "Skip GitHub Action install", :boolean, description: "Skip the workflow yml patch that installs the QA-deploy step")
       ]
     },

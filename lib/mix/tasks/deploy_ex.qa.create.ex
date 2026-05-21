@@ -44,18 +44,19 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   marked with sentinel comments (`# deploy_ex:qa-deploy:*`) and is a no-op on
   subsequent runs. Pass `--skip-action-install` to opt out of just the patch.
 
+  After commit + push the local task does NOT wait for the CI build to finish.
+  It runs Ansible setup against the new node (so Let's Encrypt provisioning and
+  any one-time setup happen synchronously) and then hands off — the CI runner
+  builds + uploads the release and the patched `Deploy to QA Node` step
+  triggers `mix deploy_ex.qa.deploy` on the runner once the build completes.
+  Pass `--use-local-build` if you want the legacy synchronous local build +
+  ansible deploy instead.
+
   Options:
-    --use-local-build         Skip the CI build wait; build + deploy locally
+    --use-local-build         Build + deploy locally instead of handing off to CI
     --build-workflow=<file>   Override workflow auto-detection
     --build-job=<job_id>      Override job auto-detection within the workflow
-    --build-timeout=<minutes> Default 30. Max wait for the build to complete
     --skip-action-install     Skip the workflow yml patch that installs the QA-deploy step
-
-  On build failure, prompts with 4 options:
-    1. Destroy QA node + revert (full rollback)
-    2. Leave everything (no cleanup)
-    3. Destroy QA node only (keep commit + local files)
-    4. Revert LLM changes + repush (keep QA node, retry build)
 
   ## Options
   - `--sha, -s` - Target git SHA; if omitted, picks from QA releases on current branch
@@ -320,7 +321,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
 
   @pipeline_total_steps_local 12
-  @pipeline_total_steps_ci 15
+  @pipeline_total_steps_ci 14
 
   defp pipeline_total_steps(opts) do
     if ci_build_enabled?(opts), do: @pipeline_total_steps_ci, else: @pipeline_total_steps_local
@@ -337,10 +338,9 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   defp step_for(:save_state, opts), do: if(ci_build_enabled?(opts), do: 9, else: 8)
   defp step_for(:apply_rewrite, opts), do: if(ci_build_enabled?(opts), do: 10, else: 9)
   defp step_for(:commit_push, _opts), do: 11
-  defp step_for(:wait_build, _opts), do: 12
-  defp step_for(:wait_ssh, opts), do: if(ci_build_enabled?(opts), do: 13, else: 10)
-  defp step_for(:setup_deploy, opts), do: if(ci_build_enabled?(opts), do: 14, else: 11)
-  defp step_for(:attach_lb, opts), do: if(ci_build_enabled?(opts), do: 15, else: 12)
+  defp step_for(:wait_ssh, opts), do: if(ci_build_enabled?(opts), do: 12, else: 10)
+  defp step_for(:setup_deploy, opts), do: if(ci_build_enabled?(opts), do: 13, else: 11)
+  defp step_for(:attach_lb, opts), do: if(ci_build_enabled?(opts), do: 14, else: 12)
 
   defp run_qa_pipeline_work(tui_pid, app_name, sha, opts) do
     total_steps = pipeline_total_steps(opts)
@@ -362,7 +362,6 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
          {:ok, entries} <- (progress.(:apply_rewrite, "Applying host config rewrite..."); maybe_apply_proposals(qa_node, plan, accepted)),
          {:ok, entries} <- maybe_install_qa_deploy_action(umbrella_root, build_state, entries, opts, tui_pid),
          {:ok, qa_node} <- (maybe_progress_commit_push(progress, opts); commit_and_push_rewrites(qa_node, build_state, entries, ci_build_enabled?(opts), tui_pid)),
-         :ok <- (maybe_progress_wait_build(progress, opts); wait_for_build_step(qa_node, build_state, opts, tui_pid)),
          :ok <- (progress.(:wait_ssh, "Waiting for SSH..."); wait_for_ssh_ready(qa_node, tui_pid)),
          :ok <- (progress.(:setup_deploy, "Running setup & deploy..."); run_setup_and_deploy(qa_node, infra, tui_pid, opts)),
          {:ok, qa_node} <- (progress.(:attach_lb, "Attaching load balancer..."); maybe_attach_lb(qa_node, opts)) do
@@ -481,100 +480,6 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
   defp umbrella_root, do: File.cwd!()
 
-  defp maybe_progress_wait_build(progress, opts) do
-    if ci_build_enabled?(opts) do
-      progress.(:wait_build, "Waiting for build workflow...")
-    else
-      :ok
-    end
-  end
-
-  defp wait_for_build_step(qa_node, build_state, opts, tui_pid) do
-    case wait_for_build(qa_node, build_state, ci_build_enabled?(opts), opts, tui_pid) do
-      {:ok, :skipped} ->
-        :ok
-
-      {:ok, _run_id} ->
-        DeployEx.TUI.Progress.update_log(tui_pid, "  Build succeeded.")
-        :ok
-
-      {:error, reason} ->
-        handle_build_failure(qa_node, build_state, reason, opts, tui_pid)
-    end
-  end
-
-  defp wait_for_build(_qa_node, _build_state, false, _opts, _tui_pid), do: {:ok, :skipped}
-
-  defp wait_for_build(qa_node, build_state, true, opts, tui_pid) do
-    {_action, branch} = build_state.branch_resolution
-    %{file: workflow_file, job_id: job_id} = build_state.workflow
-
-    log_fn = fn line -> DeployEx.TUI.Progress.update_log(tui_pid, "  " <> line) end
-    timeout_ms = (opts[:build_timeout] || 30) * 60 * 1_000
-
-    with {:ok, run_id} <- DeployEx.GitHubActions.find_run_id(branch, qa_node.target_sha, workflow_file),
-         {:ok, _run} <-
-           DeployEx.GitHubActions.wait_for_run(run_id, job_id,
-             log_fn: log_fn,
-             timeout_ms: timeout_ms
-           ) do
-      {:ok, run_id}
-    else
-      {:error, reason} ->
-        {:error, %{reason: reason, run_id: find_known_run_id(branch, qa_node.target_sha, workflow_file)}}
-    end
-  end
-
-  defp find_known_run_id(branch, sha, workflow_file) do
-    case DeployEx.GitHubActions.find_run_id(branch, sha, workflow_file, retry_max: 1) do
-      {:ok, id} -> id
-      _ -> nil
-    end
-  end
-
-  defp handle_build_failure(qa_node, build_state, %{reason: reason, run_id: run_id}, opts, tui_pid) do
-    workflow_url = build_workflow_url(run_id)
-    preamble = "Build failed (#{inspect(reason)})\nWorkflow run: #{workflow_url}\n\n"
-
-    destroy? = DeployEx.TUI.Progress.confirm(tui_pid, preamble <> "Destroy the QA node?") === :yes
-    revert? = DeployEx.TUI.Progress.confirm(tui_pid, "Revert local + remote SSL/host rewrites?") === :yes
-
-    apply_failure_choices(destroy?, revert?, qa_node, build_state, opts)
-    System.halt(1)
-  end
-
-  defp apply_failure_choices(destroy?, revert?, qa_node, build_state, opts) do
-    if revert?, do: revert_pushed_changes(qa_node, build_state, opts)
-    if destroy?, do: DeployEx.QaNode.terminate_qa_node(qa_node, opts)
-    :ok
-  end
-
-  defp revert_pushed_changes(qa_node, %{branch_resolution: {action, branch}}, opts) do
-    backup_dir = DeployEx.QaHostRewrite.backup_dir(qa_node.app_name, qa_node.instance_id)
-    DeployEx.QaHostRewrite.restore(backup_dir, opts)
-
-    case action do
-      :create_new -> DeployEx.GitOperations.delete_remote_branch(umbrella_root(), branch)
-      :reuse_current -> DeployEx.GitOperations.revert_and_push(umbrella_root())
-    end
-  end
-
-  defp build_workflow_url(run_id) when is_integer(run_id) do
-    case github_repo_slug() do
-      slug when is_binary(slug) -> "https://github.com/#{slug}/actions/runs/#{run_id}"
-      _ -> "(workflow run URL unavailable)"
-    end
-  end
-
-  defp build_workflow_url(_run_id), do: "(workflow run URL unavailable)"
-
-  defp github_repo_slug do
-    case DeployEx.Utils.run_command_with_return("gh repo view --json nameWithOwner --jq .nameWithOwner", umbrella_root()) do
-      {:ok, slug} -> String.trim(slug)
-      _ -> nil
-    end
-  end
-
   defp parse_args(args) do
     OptionParser.parse!(args,
       aliases: [s: :sha, t: :tag, f: :force, q: :quiet],
@@ -597,7 +502,6 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
         use_local_build: :boolean,
         build_workflow: :string,
         build_job: :string,
-        build_timeout: :integer,
         skip_action_install: :boolean
       ]
     )
@@ -880,11 +784,33 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     end
   end
   defp maybe_wait_for_deploy(qa_node, _infra, tui_pid, opts) do
-    if not DeployEx.TUI.enabled?() do
-      Mix.shell().info([:cyan, "Deploying SHA ", :yellow, String.slice(qa_node.target_sha, 0, 7), :reset, :cyan, " to ", :bright, qa_node.instance_name, :reset, "..."])
-    end
+    if ci_build_enabled?(opts) do
+      log_ci_deploy_handoff(qa_node, tui_pid)
+      :ok
+    else
+      if not DeployEx.TUI.enabled?() do
+        Mix.shell().info([:cyan, "Deploying SHA ", :yellow, String.slice(qa_node.target_sha, 0, 7), :reset, :cyan, " to ", :bright, qa_node.instance_name, :reset, "..."])
+      end
 
-    run_ansible_deploy(qa_node, qa_node.target_sha, tui_pid, opts)
+      run_ansible_deploy(qa_node, qa_node.target_sha, tui_pid, opts)
+    end
+  end
+
+  defp log_ci_deploy_handoff(qa_node, tui_pid) when is_pid(tui_pid) do
+    DeployEx.TUI.Progress.update_log(
+      tui_pid,
+      "  Deploy will run on CI runner once the build completes (#{qa_node.instance_name})"
+    )
+  end
+
+  defp log_ci_deploy_handoff(qa_node, _tui_pid) do
+    Mix.shell().info([
+      :faint,
+      "Deploy will run on CI runner once the build completes for ",
+      :bright,
+      qa_node.instance_name,
+      :reset
+    ])
   end
 
   defp maybe_attach_lb(qa_node, %{attach_lb: true} = opts) do
