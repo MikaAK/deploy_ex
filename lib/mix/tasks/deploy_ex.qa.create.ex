@@ -135,16 +135,42 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
   defp prompt_deploy_strategy do
     Mix.shell().info([
-      :cyan,
-      "\nDeploy strategy:\n",
       :reset,
-      "  Y — push current working tree; CI builds + deploys the qa branch (default)\n",
-      "  n — deploy a specific pre-built SHA from S3 (legacy path)\n"
+      :bright,
+      "\nHow do you want to deploy?\n",
+      :reset,
+      "  ",
+      :green,
+      "1",
+      :reset,
+      ") Push current working tree — CI builds the release and deploys it via GitHub Actions ",
+      :faint,
+      "(default)\n",
+      :reset,
+      "  ",
+      :green,
+      "2",
+      :reset,
+      ") Deploy a specific pre-built SHA — pick an existing release from S3\n"
     ])
 
-    if Mix.shell().yes?("Push current working tree?"),
-      do: :push_head,
-      else: :pre_built_sha
+    raw = "Choice [1]: " |> Mix.shell().prompt() |> String.trim() |> String.downcase()
+
+    case raw do
+      "" -> :push_head
+      "1" -> :push_head
+      "y" -> :push_head
+      "yes" -> :push_head
+      "2" -> :pre_built_sha
+      "n" -> :pre_built_sha
+      "no" -> :pre_built_sha
+      other -> retry_prompt_deploy_strategy(other)
+    end
+  end
+
+  defp retry_prompt_deploy_strategy(invalid) do
+    Mix.shell().error("  Unrecognized answer #{inspect(invalid)} — please enter 1 or 2.")
+    prompt_deploy_strategy()
   end
 
   defp preflight_host_rewrite!(opts) do
