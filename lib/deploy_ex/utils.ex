@@ -73,13 +73,30 @@ defmodule DeployEx.Utils do
   def run_command_with_return(command, directory, extra_opts \\ []) do
     opts = [
       cd: directory,
+      stderr_to_stdout: true,
       env: Map.put(System.get_env(), "ANSIBLE_FORCE_COLOR", "true")
     ]
 
     case System.shell(command, Keyword.merge(opts, extra_opts)) do
-      {output, 0} -> {:ok, output}
-      {error, code} -> {:error, ErrorMessage.internal_server_error("couldn't run #{command}", %{error: error, code: code})}
+      {output, 0} ->
+        {:ok, output}
+
+      {output, code} ->
+        {:error,
+         ErrorMessage.internal_server_error(
+           "#{command} exited #{code}: #{shell_error_summary(output)}",
+           %{output: output, code: code, command: command}
+         )}
     end
+  end
+
+  defp shell_error_summary(""), do: "(no output)"
+
+  defp shell_error_summary(output) do
+    output
+    |> String.split("\n", trim: true)
+    |> Enum.take(-3)
+    |> Enum.join(" | ")
   end
 
   def run_command(command, directory, extra_opts \\ []) do
