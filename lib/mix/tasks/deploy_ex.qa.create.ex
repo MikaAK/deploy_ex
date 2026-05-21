@@ -954,10 +954,15 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     if opts[:use_ami], do: opts, else: Keyword.put(opts, :skip_ami, true)
   end
 
-  defp output_success(qa_node, _opts) do
+  defp output_success(qa_node, opts) do
     Mix.shell().info([
-      :green, "\n✓ QA node created successfully!\n",
-      :reset, "\n",
+      :green,
+      "\n✓ QA node created successfully!\n",
+      :reset,
+      "\n",
+      "  Steps completed:\n",
+      format_pipeline_summary(opts),
+      "\n",
       "  Instance ID: ", :cyan, qa_node.instance_id, :reset, "\n",
       "  Instance Name: ", :cyan, qa_node.instance_name, :reset, "\n",
       "  App: ", :cyan, qa_node.app_name, :reset, "\n",
@@ -968,7 +973,54 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
       "  IPv6: ", :cyan, to_string(qa_node.ipv6_address || "pending"), :reset, "\n",
       "  LB Attached: ", :cyan, to_string(qa_node.load_balancer_attached?), :reset, "\n",
       "\n",
+      format_ci_handoff_note(opts),
       "  SSH: ", :yellow, "ssh admin@#{qa_node.public_ip || qa_node.ipv6_address}", :reset, "\n"
     ])
+  end
+
+  defp format_pipeline_summary(opts) do
+    opts
+    |> pipeline_step_labels()
+    |> Enum.map(fn label -> ["    ", :green, "✓ ", :reset, label, "\n"] end)
+  end
+
+  defp format_ci_handoff_note(opts) do
+    if ci_build_enabled?(opts) and opts[:deploy_strategy] === :push_head do
+      [
+        :faint,
+        "  Deploy will run on the CI runner once the build completes — watch GitHub Actions.\n\n",
+        :reset
+      ]
+    else
+      []
+    end
+  end
+
+  defp pipeline_step_labels(opts) do
+    ci_build? = ci_build_enabled?(opts)
+    host_rewrite? = host_rewrite_will_run?(opts)
+    local_deploy? = not ci_build?
+
+    [
+      {true, "Validate app name"},
+      {true, "Resolve target SHA"},
+      {host_rewrite?, "Plan host config rewrite (LLM)"},
+      {host_rewrite?, "Confirm target files"},
+      {ci_build?, "Validate CI build preconditions"},
+      {true, "Gather infrastructure"},
+      {true, "Create QA node"},
+      {true, "Wait for instance to start"},
+      {true, "Save QA state"},
+      {host_rewrite?, "Apply host config rewrite"},
+      {ci_build?, "Install QA-deploy GitHub Actions step"},
+      {ci_build?, "Commit + push QA branch (kicks off CI build)"},
+      {true, "Wait for SSH"},
+      {true, "Run Ansible setup"},
+      {local_deploy?, "Run Ansible deploy"},
+      {ci_build?, "Hand off deploy to CI runner"},
+      {opts[:attach_lb] === true, "Attach load balancer"}
+    ]
+    |> Enum.filter(fn {include?, _label} -> include? end)
+    |> Enum.map(fn {_include?, label} -> label end)
   end
 end
