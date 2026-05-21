@@ -328,9 +328,15 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   defp handle_final_result({:error, error}, _opts), do: Mix.raise(inspect(error))
 
   defp stream_title(app_name, sha, opts) do
-    short_sha = String.slice(sha, 0, 7)
     tag_part = if opts[:tag], do: " — tag #{opts[:tag]}", else: ""
-    "QA Node: #{app_name} (SHA #{short_sha}#{tag_part})"
+
+    descriptor =
+      case opts[:deploy_strategy] do
+        :push_head -> "CI build from HEAD #{String.slice(sha, 0, 7)}"
+        _ -> "SHA #{String.slice(sha, 0, 7)}"
+      end
+
+    "QA Node: #{app_name} (#{descriptor}#{tag_part})"
   end
 
   defp resolve_app_in_terminal([name | _], _terminal), do: {:ok, name}
