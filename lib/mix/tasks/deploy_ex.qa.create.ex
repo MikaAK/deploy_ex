@@ -52,6 +52,20 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   Pass `--use-local-build` if you want the legacy synchronous local build +
   ansible deploy instead.
 
+  ### Deploy strategy
+
+  When CI flow is active and `--sha` is not passed, qa.create prompts up-front
+  for the deploy strategy:
+
+    * **push current working tree** (default — Y) — uses HEAD as the deploy
+      target, skips the S3 release lookup, and lets CI build + deploy the
+      pushed qa branch.
+    * **pre-built SHA** (n) — picks an existing release from S3 the legacy way
+      via `DeployEx.ReleaseLookup`. Also implicit when you pass `--sha` or
+      `--use-local-build`.
+
+  `--quiet` / `--no-tui` skip the prompt and default to `:push_head`.
+
   Options:
     --use-local-build         Build + deploy locally instead of handing off to CI
     --build-workflow=<file>   Override workflow auto-detection
@@ -99,12 +113,38 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
         {:error, _} -> opts
       end
 
+      opts = Keyword.put(opts, :deploy_strategy, decide_deploy_strategy(opts))
+
       if DeployEx.TUI.enabled?() do
         run_pipeline_tui(extra_args, opts)
       else
         run_pipeline_console(extra_args, opts)
       end
     end
+  end
+
+  defp decide_deploy_strategy(opts) do
+    cond do
+      is_binary(opts[:sha]) -> :pre_built_sha
+      not ci_build_enabled?(opts) -> :pre_built_sha
+      opts[:quiet] === true -> :push_head
+      opts[:no_tui] === true -> :push_head
+      true -> prompt_deploy_strategy()
+    end
+  end
+
+  defp prompt_deploy_strategy do
+    Mix.shell().info([
+      :cyan,
+      "\nDeploy strategy:\n",
+      :reset,
+      "  Y — push current working tree; CI builds + deploys the qa branch (default)\n",
+      "  n — deploy a specific pre-built SHA from S3 (legacy path)\n"
+    ])
+
+    if Mix.shell().yes?("Push current working tree?"),
+      do: :push_head,
+      else: :pre_built_sha
   end
 
   defp preflight_host_rewrite!(opts) do
@@ -293,11 +333,14 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
 
   defp resolve_sha_in_terminal(terminal, app_name, opts) do
-    case opts[:sha] do
-      sha when is_binary(sha) ->
-        {:ok, sha}
+    cond do
+      is_binary(opts[:sha]) ->
+        {:ok, opts[:sha]}
 
-      nil ->
+      opts[:deploy_strategy] === :push_head ->
+        {:ok, head_sha(File.cwd!())}
+
+      true ->
         lookup_opts = [
           aws_region: opts[:aws_region] || DeployEx.Config.aws_region(),
           aws_release_bucket: opts[:aws_release_bucket] || DeployEx.Config.aws_release_bucket()
@@ -546,6 +589,14 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
 
   defp validate_and_find_sha(app_name, sha, opts) do
+    if opts[:deploy_strategy] === :push_head do
+      {:ok, sha}
+    else
+      validate_sha_against_s3(app_name, sha, opts)
+    end
+  end
+
+  defp validate_sha_against_s3(app_name, sha, opts) do
     release_fetch_opts = [
       aws_release_bucket: opts[:aws_release_bucket] || DeployEx.Config.aws_release_bucket(),
       aws_region: opts[:aws_region] || DeployEx.Config.aws_region()
@@ -646,17 +697,20 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
 
   defp resolve_sha_for_create(app_name, opts) do
-    case opts[:sha] do
-      nil ->
+    cond do
+      is_binary(opts[:sha]) ->
+        {:ok, opts[:sha]}
+
+      opts[:deploy_strategy] === :push_head ->
+        {:ok, head_sha(File.cwd!())}
+
+      true ->
         lookup_opts = [
           aws_region: opts[:aws_region] || DeployEx.Config.aws_region(),
           aws_release_bucket: opts[:aws_release_bucket] || DeployEx.Config.aws_release_bucket()
         ]
 
         DeployEx.ReleaseLookup.resolve_sha_any(app_name, [:qa, :prod], :prompt, lookup_opts)
-
-      sha ->
-        {:ok, sha}
     end
   end
 
