@@ -943,17 +943,63 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
     DeployEx.QaPlaybook.with_temp_playbook(qa_node, kind, vars, directory, fn rel_path ->
       command = "ansible-playbook #{rel_path} --limit '#{qa_node.instance_name},'"
-      line_callback = build_line_callback(tui_pid)
+      Process.put(:ansible_collected_output, [])
+      line_callback = build_collecting_line_callback(tui_pid)
 
-      case DeployEx.Utils.run_command_streaming(command, directory, line_callback) do
-        :ok -> :ok
-        {:error, error} -> {:error, ErrorMessage.failed_dependency(failure_message, %{error: error})}
-      end
+      streaming_result = DeployEx.Utils.run_command_streaming(command, directory, line_callback)
+      output = collected_ansible_output()
+      Process.delete(:ansible_collected_output)
+
+      evaluate_ansible_result(streaming_result, output, qa_node, failure_message)
     end)
   end
 
-  defp build_line_callback(nil), do: fn _line -> :ok end
-  defp build_line_callback(tui_pid), do: fn line -> DeployEx.TUI.Progress.update_log(tui_pid, line) end
+  defp build_collecting_line_callback(nil),
+    do: fn line -> collect_ansible_line(line) end
+
+  defp build_collecting_line_callback(tui_pid) do
+    fn line ->
+      DeployEx.TUI.Progress.update_log(tui_pid, line)
+      collect_ansible_line(line)
+    end
+  end
+
+  defp collect_ansible_line(line) do
+    Process.put(:ansible_collected_output, [line | Process.get(:ansible_collected_output, [])])
+  end
+
+  defp collected_ansible_output do
+    Process.get(:ansible_collected_output, [])
+    |> Enum.reverse()
+    |> Enum.join("\n")
+  end
+
+  @ansible_no_hosts_patterns ~r/Could not match supplied host pattern|skipping: no hosts matched|No hosts matched, nothing to do/i
+
+  defp evaluate_ansible_result({:error, error}, _output, _qa_node, failure_message) do
+    {:error, ErrorMessage.failed_dependency(failure_message, %{error: error})}
+  end
+
+  defp evaluate_ansible_result(:ok, output, qa_node, failure_message) do
+    cond do
+      Regex.match?(@ansible_no_hosts_patterns, output) ->
+        {:error,
+         ErrorMessage.failed_dependency(
+           "#{failure_message}: ansible could not find host #{qa_node.instance_name} in inventory — refresh dynamic inventory or wait for AWS tags to propagate",
+           %{instance: qa_node.instance_name, output_tail: tail_lines(output, 20)}
+         )}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp tail_lines(output, count) do
+    output
+    |> String.split("\n", trim: true)
+    |> Enum.take(-count)
+    |> Enum.join("\n")
+  end
 
   defp setup_vars(%{use_public_ip_cert?: true}), do: [letsencrypt_use_public_ip: true]
   defp setup_vars(_qa_node), do: []
