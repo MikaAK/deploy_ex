@@ -59,9 +59,26 @@ write_files:
         sleep 2
       done
 
-      # Find latest release in S3
-      echo "Finding latest release in S3..."
-      LATEST_RELEASE=$(aws s3 ls $${BUCKET_NAME}/$${APP_NAME} --recursive | awk '{print $4}' | sort -r | head -n 1)
+      # Prefer the rollback/deploy-pinned release recorded in S3 state
+      # (release-state/<app>/current_release.txt). Fall back to newest-by-timestamp
+      # only when the state file is missing or empty so a rolled-back ASG instance
+      # respects the operator's choice instead of silently un-rolling-back.
+      STATE_KEY="release-state/$${APP_NAME}/current_release.txt"
+      LATEST_RELEASE=""
+
+      echo "Checking pinned release at s3://$${BUCKET_NAME}/$${STATE_KEY}..."
+      if aws s3 cp "s3://$${BUCKET_NAME}/$${STATE_KEY}" /tmp/$${APP_NAME}_pinned_release.txt 2>/dev/null; then
+        PINNED_RELEASE=$(tr -d '[:space:]' < /tmp/$${APP_NAME}_pinned_release.txt)
+        if [ -n "$${PINNED_RELEASE}" ]; then
+          LATEST_RELEASE="$${PINNED_RELEASE}"
+          echo "Using pinned release: $${LATEST_RELEASE}"
+        fi
+      fi
+
+      if [ -z "$${LATEST_RELEASE}" ]; then
+        echo "No pinned release; finding newest in S3 by timestamp..."
+        LATEST_RELEASE=$(aws s3 ls $${BUCKET_NAME}/$${APP_NAME} --recursive | awk '{print $4}' | sort -r | head -n 1)
+      fi
 
       if [ -z "$${LATEST_RELEASE}" ]; then
         echo "ERROR: No releases found in s3://$${BUCKET_NAME}/$${APP_NAME}"
