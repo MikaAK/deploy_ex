@@ -303,7 +303,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
       end)
 
     DeployEx.TUI.Progress.print_log_tail_on_error(result, log_tail)
-    handle_final_result(result, opts)
+    handle_final_result(result, log_tail, opts)
   end
 
   defp run_pipeline_console(extra_args, opts) do
@@ -316,16 +316,22 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
     title = stream_title(app_name, sha, opts)
 
-    result = DeployEx.TUI.Progress.run_stream(title, fn tui_pid ->
-      run_qa_pipeline_work(tui_pid, app_name, sha, opts)
-    end)
+    {result, log_tail} =
+      DeployEx.TUI.Progress.run_stream_with_log(title, fn tui_pid ->
+        run_qa_pipeline_work(tui_pid, app_name, sha, opts)
+      end)
 
-    handle_final_result(result, opts)
+    handle_final_result(result, log_tail, opts)
   end
 
-  defp handle_final_result({:ok, qa_node}, opts), do: output_success(qa_node, opts)
-  defp handle_final_result({:error, %ErrorMessage{} = error}, _opts), do: Mix.raise(ErrorMessage.to_string(error))
-  defp handle_final_result({:error, error}, _opts), do: Mix.raise(inspect(error))
+  defp handle_final_result({:ok, qa_node}, log_tail, opts),
+    do: output_success(qa_node, log_tail, opts)
+
+  defp handle_final_result({:error, %ErrorMessage{} = error}, _log_tail, _opts),
+    do: Mix.raise(ErrorMessage.to_string(error))
+
+  defp handle_final_result({:error, error}, _log_tail, _opts),
+    do: Mix.raise(inspect(error))
 
   defp stream_title(app_name, sha, opts) do
     tag_part = if opts[:tag], do: " — tag #{opts[:tag]}", else: ""
@@ -918,8 +924,14 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
   defp maybe_attach_lb(qa_node, _opts), do: {:ok, qa_node}
 
+  @ansible_setup_start_marker "━ ansible setup START ━"
+  @ansible_setup_end_marker "━ ansible setup END ━"
+
   defp run_ansible_setup(qa_node, tui_pid, _opts) do
-    run_qa_ansible(qa_node, :setup, setup_vars(qa_node), tui_pid, "ansible setup failed")
+    DeployEx.TUI.Progress.update_log(tui_pid, @ansible_setup_start_marker)
+    result = run_qa_ansible(qa_node, :setup, setup_vars(qa_node), tui_pid, "ansible setup failed")
+    DeployEx.TUI.Progress.update_log(tui_pid, @ansible_setup_end_marker)
+    result
   end
 
   defp run_ansible_deploy(qa_node, sha, tui_pid, _opts) do
@@ -954,7 +966,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     if opts[:use_ami], do: opts, else: Keyword.put(opts, :skip_ami, true)
   end
 
-  defp output_success(qa_node, opts) do
+  defp output_success(qa_node, log_tail, opts) do
     Mix.shell().info([
       :green,
       "\n✓ QA node created successfully!\n",
@@ -963,6 +975,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
       "  Steps completed:\n",
       format_pipeline_summary(opts),
       "\n",
+      format_ansible_setup_log(log_tail),
       "  Instance ID: ", :cyan, qa_node.instance_id, :reset, "\n",
       "  Instance Name: ", :cyan, qa_node.instance_name, :reset, "\n",
       "  App: ", :cyan, qa_node.app_name, :reset, "\n",
@@ -976,6 +989,38 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
       format_ci_handoff_note(opts),
       "  SSH: ", :yellow, "ssh admin@#{qa_node.public_ip || qa_node.ipv6_address}", :reset, "\n"
     ])
+  end
+
+  defp format_ansible_setup_log([]), do: []
+
+  defp format_ansible_setup_log(log_tail) do
+    case extract_ansible_setup_lines(log_tail) do
+      [] ->
+        []
+
+      lines ->
+        body = Enum.map(lines, fn line -> ["    ", :faint, line, :reset, "\n"] end)
+
+        [
+          :bright,
+          "  Ansible setup output:\n",
+          :reset,
+          body,
+          "\n"
+        ]
+    end
+  end
+
+  defp extract_ansible_setup_lines(log_tail) do
+    log_tail
+    |> Enum.reverse()
+    |> Enum.map(fn
+      {_color, text} -> text
+      text when is_binary(text) -> text
+    end)
+    |> Enum.drop_while(&(not String.contains?(&1, @ansible_setup_start_marker)))
+    |> Enum.drop(1)
+    |> Enum.take_while(&(not String.contains?(&1, @ansible_setup_end_marker)))
   end
 
   defp format_pipeline_summary(opts) do

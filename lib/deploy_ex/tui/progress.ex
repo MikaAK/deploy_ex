@@ -146,6 +146,66 @@ defmodule DeployEx.TUI.Progress do
     end
   end
 
+  @doc """
+  Like `run_stream/3` but returns `{result, log_tail}` so callers can format
+  captured log output into the final summary. `log_tail` is `newest-first`,
+  matching the TUI buffer convention.
+  """
+  def run_stream_with_log(title, work_fn, opts \\ []) do
+    if DeployEx.TUI.enabled?() do
+      run_stream_tui_with_log(title, work_fn, opts)
+    else
+      run_stream_console_with_log(title, work_fn)
+    end
+  end
+
+  defp run_stream_tui_with_log(title, work_fn, opts) do
+    {result, log_tail} =
+      DeployEx.TUI.run(fn terminal ->
+        stream_in_terminal(terminal, title, work_fn, opts)
+      end)
+
+    print_log_tail_on_error(result, log_tail)
+    {result, log_tail}
+  end
+
+  defp run_stream_console_with_log(title, work_fn) do
+    caller = self()
+    Mix.shell().info([:cyan, title])
+
+    worker =
+      spawn_link(fn ->
+        result = work_fn.(caller)
+        send(caller, {:tui_progress_done, result})
+      end)
+
+    console_stream_loop_with_log(title, worker, [])
+  end
+
+  defp console_stream_loop_with_log(title, worker, log_tail) do
+    receive do
+      {:tui_progress_update, ratio, label} ->
+        percent = round(ratio * 100)
+        Mix.shell().info([:faint, "  [#{percent}%] ", :reset, label])
+        console_stream_loop_with_log(title, worker, log_tail)
+
+      {:tui_progress_log, {_color, _text} = entry} ->
+        {_color, text} = entry
+        Mix.shell().info([:faint, text])
+        console_stream_loop_with_log(title, worker, [entry | log_tail])
+
+      {:tui_progress_confirm_request, payload, reply_to} ->
+        if payload[:preview], do: Mix.shell().info(payload.preview)
+        choice = if Mix.shell().yes?(payload.prompt), do: :yes, else: :no
+        send(reply_to, {:tui_progress_confirm_response, choice})
+        console_stream_loop_with_log(title, worker, log_tail)
+
+      {:tui_progress_done, result} ->
+        Mix.shell().info([:green, "  ✓ #{title} complete"])
+        {result, log_tail}
+    end
+  end
+
   defp run_stream_console(title, work_fn) do
     caller = self()
     Mix.shell().info([:cyan, title])
