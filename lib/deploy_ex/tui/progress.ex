@@ -327,17 +327,40 @@ defmodule DeployEx.TUI.Progress do
     confirm(tui_pid, %{prompt: prompt, preview: nil})
   end
 
-  def confirm(tui_pid, %{prompt: _prompt} = payload) when is_pid(tui_pid) do
+  def confirm(tui_pid, %{prompt: prompt} = payload) when is_pid(tui_pid) do
+    emit_confirm_log_hints(tui_pid, payload)
     send(tui_pid, {:tui_progress_confirm_request, payload, self()})
 
     receive do
-      {:tui_progress_confirm_response, choice} -> choice
+      {:tui_progress_confirm_response, choice} ->
+        emit_confirm_choice_log(tui_pid, prompt, choice)
+        choice
     end
   end
 
   def confirm(_tui_pid, %{prompt: prompt} = payload) do
     if payload[:preview], do: Mix.shell().info(payload.preview)
     if Mix.shell().yes?(prompt), do: :yes, else: :no
+  end
+
+  defp emit_confirm_log_hints(tui_pid, %{prompt: prompt, preview: preview}) do
+    update_log(tui_pid, "  \e[33m▶ #{prompt}\e[0m")
+
+    if is_binary(preview) and preview !== "" do
+      preview
+      |> String.split("\n", trim: false)
+      |> Enum.each(fn line -> update_log(tui_pid, "    \e[90m#{line}\e[0m") end)
+    end
+
+    update_log(tui_pid, "  \e[36m▶ Press [Y]es to apply or [N]o to skip\e[0m")
+  end
+
+  defp emit_confirm_choice_log(tui_pid, _prompt, :yes) do
+    update_log(tui_pid, "  \e[32m✓ Accepted\e[0m")
+  end
+
+  defp emit_confirm_choice_log(tui_pid, _prompt, :no) do
+    update_log(tui_pid, "  \e[33m✗ Skipped\e[0m")
   end
 
   @doc """
@@ -416,16 +439,16 @@ defmodule DeployEx.TUI.Progress do
     receive do
       {:tui_progress_update, ratio, label} ->
         new_state = %{state | ratio: ratio, label: label}
-        stream_loop(terminal, width, height, title, new_state, worker, opts)
+        drain_worker_messages(terminal, width, height, title, new_state, worker, opts)
 
       {:tui_progress_log, line} ->
         new_state = %{state | log_tail: append_log_line(state.log_tail, line)}
-        stream_loop(terminal, width, height, title, new_state, worker, opts)
+        drain_worker_messages(terminal, width, height, title, new_state, worker, opts)
 
       {:tui_progress_confirm_request, payload, reply_to} ->
         confirm_state = payload |> normalize_confirm_payload() |> Map.put(:reply_to, reply_to)
         new_state = %{state | mode: {:confirm, confirm_state}}
-        stream_loop(terminal, width, height, title, new_state, worker, opts)
+        drain_worker_messages(terminal, width, height, title, new_state, worker, opts)
 
       {:tui_progress_done, result} ->
         final_state = %{state | ratio: 1.0, label: "Complete!"}
