@@ -302,7 +302,6 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
         end
       end)
 
-    DeployEx.TUI.Progress.print_log_tail_on_error(result, log_tail)
     handle_final_result(result, log_tail, opts)
   end
 
@@ -327,11 +326,80 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   defp handle_final_result({:ok, qa_node}, log_tail, opts),
     do: output_success(qa_node, log_tail, opts)
 
-  defp handle_final_result({:error, %ErrorMessage{} = error}, _log_tail, _opts),
-    do: Mix.raise(ErrorMessage.to_string(error))
+  defp handle_final_result({:error, %ErrorMessage{} = error}, log_tail, _opts) do
+    output_failure(error, log_tail)
+    Mix.raise(ErrorMessage.to_string(error))
+  end
 
-  defp handle_final_result({:error, error}, _log_tail, _opts),
-    do: Mix.raise(inspect(error))
+  defp handle_final_result({:error, error}, log_tail, _opts) do
+    output_failure(error, log_tail)
+    Mix.raise(inspect(error))
+  end
+
+  defp output_failure(error, log_tail) do
+    Mix.shell().error([
+      :red,
+      "\n✗ QA node creation failed\n",
+      :reset,
+      "\n",
+      format_ansible_setup_log(log_tail),
+      format_log_tail_section(log_tail),
+      format_failure_summary(error),
+      "\n"
+    ])
+  end
+
+  @failure_log_tail_lines 30
+
+  defp format_log_tail_section([]), do: []
+
+  defp format_log_tail_section(log_tail) do
+    lines =
+      log_tail
+      |> Enum.take(@failure_log_tail_lines)
+      |> Enum.reverse()
+      |> Enum.map(fn
+        {_color, text} -> text
+        text when is_binary(text) -> text
+      end)
+
+    body = Enum.map(lines, fn line -> ["    ", :faint, line, :reset, "\n"] end)
+
+    [
+      :bright,
+      "  Last #{length(lines)} log lines:\n",
+      :reset,
+      body,
+      "\n"
+    ]
+  end
+
+  defp format_failure_summary(%ErrorMessage{code: code, message: message, details: details}) do
+    [
+      :bright,
+      "  Error:\n",
+      :reset,
+      "    ", :red, to_string(code), :reset, " — ", message, "\n",
+      format_failure_details(details)
+    ]
+  end
+
+  defp format_failure_summary(error) do
+    [:bright, "  Error:\n", :reset, "    ", :red, inspect(error), :reset, "\n"]
+  end
+
+  defp format_failure_details(details) when is_map(details) and map_size(details) > 0 do
+    body = Enum.map(details, fn {key, value} ->
+      ["    ", :faint, to_string(key), ": ", :reset, inspect_detail(value), "\n"]
+    end)
+
+    [:bright, "  Details:\n", :reset, body]
+  end
+
+  defp format_failure_details(_details), do: []
+
+  defp inspect_detail(value) when is_binary(value), do: value
+  defp inspect_detail(value), do: inspect(value, pretty: true, limit: :infinity)
 
   defp stream_title(app_name, sha, opts) do
     tag_part = if opts[:tag], do: " — tag #{opts[:tag]}", else: ""
