@@ -942,16 +942,39 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     directory = @ansible_default_path
 
     DeployEx.QaPlaybook.with_temp_playbook(qa_node, kind, vars, directory, fn rel_path ->
-      command = "ansible-playbook #{rel_path} --limit '#{qa_node.instance_name},'"
-      Process.put(:ansible_collected_output, [])
-      line_callback = build_collecting_line_callback(tui_pid)
+      with :ok <- refresh_ansible_inventory(directory, tui_pid, failure_message) do
+        command = "ansible-playbook #{rel_path} --limit '#{qa_node.instance_name},'"
+        Process.put(:ansible_collected_output, [])
+        line_callback = build_collecting_line_callback(tui_pid)
 
-      streaming_result = DeployEx.Utils.run_command_streaming(command, directory, line_callback)
-      output = collected_ansible_output()
-      Process.delete(:ansible_collected_output)
+        streaming_result = DeployEx.Utils.run_command_streaming(command, directory, line_callback)
+        output = collected_ansible_output()
+        Process.delete(:ansible_collected_output)
 
-      evaluate_ansible_result(streaming_result, output, qa_node, failure_message)
+        evaluate_ansible_result(streaming_result, output, qa_node, failure_message)
+      end
     end)
+  end
+
+  defp refresh_ansible_inventory(directory, tui_pid, failure_message) do
+    DeployEx.TUI.Progress.update_log(tui_pid, "Refreshing AWS inventory cache...")
+
+    case DeployEx.Utils.run_command_with_return(
+           "ansible-inventory --refresh-cache --list > /dev/null",
+           directory,
+           []
+         ) do
+      {:ok, _} ->
+        DeployEx.TUI.Progress.update_log(tui_pid, "  ✓ inventory refreshed")
+        :ok
+
+      {:error, %ErrorMessage{} = err} ->
+        {:error,
+         ErrorMessage.failed_dependency(
+           "#{failure_message}: ansible-inventory --refresh-cache exited non-zero",
+           %{cause: err}
+         )}
+    end
   end
 
   defp build_collecting_line_callback(nil),
