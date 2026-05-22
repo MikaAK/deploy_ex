@@ -147,9 +147,11 @@ defmodule DeployEx.TUI.Progress do
   end
 
   @doc """
-  Like `run_stream/3` but returns `{result, log_tail}` so callers can format
-  captured log output into the final summary. `log_tail` is `newest-first`,
-  matching the TUI buffer convention.
+  Like `run_stream/3` but returns `{result, log_tail, ansible_setup_log}` so
+  callers can format captured log output into the final summary. Both lists
+  are newest-first. `ansible_setup_log` is uncapped — it only collects lines
+  routed through `update_ansible_log/2` and isn't subject to the rolling
+  `@log_buffer_max` cap that protects the live UI buffer.
   """
   def run_stream_with_log(title, work_fn, opts \\ []) do
     if DeployEx.TUI.enabled?() do
@@ -160,13 +162,12 @@ defmodule DeployEx.TUI.Progress do
   end
 
   defp run_stream_tui_with_log(title, work_fn, opts) do
-    {result, log_tail} =
+    {result, log_tail, ansible_setup_log} =
       DeployEx.TUI.run(fn terminal ->
         stream_in_terminal(terminal, title, work_fn, opts)
       end)
 
-    print_log_tail_on_error(result, log_tail)
-    {result, log_tail}
+    {result, log_tail, ansible_setup_log}
   end
 
   defp run_stream_console_with_log(title, work_fn) do
@@ -179,30 +180,34 @@ defmodule DeployEx.TUI.Progress do
         send(caller, {:tui_progress_done, result})
       end)
 
-    console_stream_loop_with_log(title, worker, [])
+    console_stream_loop_with_log(title, worker, [], [])
   end
 
-  defp console_stream_loop_with_log(title, worker, log_tail) do
+  defp console_stream_loop_with_log(title, worker, log_tail, ansible_setup_log) do
     receive do
       {:tui_progress_update, ratio, label} ->
         percent = round(ratio * 100)
         Mix.shell().info([:faint, "  [#{percent}%] ", :reset, label])
-        console_stream_loop_with_log(title, worker, log_tail)
+        console_stream_loop_with_log(title, worker, log_tail, ansible_setup_log)
 
       {:tui_progress_log, {_color, _text} = entry} ->
         {_color, text} = entry
         Mix.shell().info([:faint, text])
-        console_stream_loop_with_log(title, worker, [entry | log_tail])
+        console_stream_loop_with_log(title, worker, [entry | log_tail], ansible_setup_log)
+
+      {:tui_progress_ansible_log, text} ->
+        Mix.shell().info([:faint, text])
+        console_stream_loop_with_log(title, worker, log_tail, [text | ansible_setup_log])
 
       {:tui_progress_confirm_request, payload, reply_to} ->
         if payload[:preview], do: Mix.shell().info(payload.preview)
         choice = if Mix.shell().yes?(payload.prompt), do: :yes, else: :no
         send(reply_to, {:tui_progress_confirm_response, choice})
-        console_stream_loop_with_log(title, worker, log_tail)
+        console_stream_loop_with_log(title, worker, log_tail, ansible_setup_log)
 
       {:tui_progress_done, result} ->
         Mix.shell().info([:green, "  ✓ #{title} complete"])
-        {result, log_tail}
+        {result, log_tail, ansible_setup_log}
     end
   end
 
@@ -242,26 +247,26 @@ defmodule DeployEx.TUI.Progress do
   end
 
   defp run_stream_tui(title, work_fn, opts) do
-    {result, log_tail} =
+    {result, _log_tail, _ansible_setup_log} =
       DeployEx.TUI.run(fn terminal ->
         stream_in_terminal(terminal, title, work_fn, opts)
       end)
 
-    print_log_tail_on_error(result, log_tail)
     result
   end
 
   @doc """
   Runs the streaming progress loop inside an already-open `ExRatatui` terminal.
 
-  Returns `{result, log_tail}` where `result` is whatever `work_fn/1` returned
-  and `log_tail` is the captured output pane lines (newest-first).
-
-  Callers that own the terminal lifecycle are responsible for invoking
-  `print_log_tail_on_error/2` AFTER the TUI session ends — the log tail can't
-  be flushed to stderr while the TUI still owns the screen.
+  Returns `{result, log_tail, ansible_setup_log}`:
+    * `result` — whatever `work_fn/1` returned
+    * `log_tail` — capped, rolling output pane buffer (newest-first)
+    * `ansible_setup_log` — uncapped capture from `update_ansible_log/2`
+      (newest-first), so callers can show the full setup transcript in the
+      final summary regardless of `@log_buffer_max` rollover.
   """
-  @spec stream_in_terminal(term(), String.t(), (pid() -> term()), keyword()) :: {term(), [term()]}
+  @spec stream_in_terminal(term(), String.t(), (pid() -> term()), keyword()) ::
+          {term(), [term()], [String.t()]}
   def stream_in_terminal(terminal, title, work_fn, opts \\ []) do
     {width, height} = ExRatatui.terminal_size()
     caller = self()
@@ -274,6 +279,7 @@ defmodule DeployEx.TUI.Progress do
       cancelling: false,
       log_tail: [],
       log_offset: 0,
+      ansible_setup_log: [],
       mode: :log
     }
 
@@ -373,6 +379,24 @@ defmodule DeployEx.TUI.Progress do
   def update_log(tui_pid, line) do
     send(tui_pid, {:tui_progress_log, parse_log_line(line)})
   end
+
+  @doc """
+  Streams a log line that should be captured into the dedicated ansible
+  setup transcript in addition to the rolling log pane. The transcript
+  isn't subject to `@log_buffer_max`, so the full setup output survives
+  for the post-run summary even for very long playbooks.
+  """
+  def update_ansible_log(tui_pid, line) when is_pid(tui_pid) do
+    text =
+      line
+      |> to_string()
+      |> String.replace(@ansi_regex, "")
+      |> String.trim_trailing()
+
+    send(tui_pid, {:tui_progress_ansible_log, text})
+  end
+
+  def update_ansible_log(_tui_pid, _line), do: :ok
 
   defp parse_log_line(line) do
     text = to_string(line)
@@ -475,6 +499,14 @@ defmodule DeployEx.TUI.Progress do
         new_state = %{state | log_tail: append_log_line(state.log_tail, line)}
         stream_loop(terminal, width, height, title, new_state, worker, opts)
 
+      {:tui_progress_ansible_log, text} ->
+        new_state =
+          state
+          |> Map.put(:log_tail, append_log_line(state.log_tail, {nil, text}))
+          |> Map.put(:ansible_setup_log, [text | state.ansible_setup_log])
+
+        stream_loop(terminal, width, height, title, new_state, worker, opts)
+
       {:tui_progress_confirm_request, payload, reply_to} ->
         confirm_state = payload |> normalize_confirm_payload() |> Map.put(:reply_to, reply_to)
         new_state = %{state | mode: {:confirm, confirm_state}}
@@ -484,7 +516,7 @@ defmodule DeployEx.TUI.Progress do
         final_state = %{state | ratio: 1.0, label: "Complete!"}
         draw_stream_progress(terminal, width, height, title, final_state)
         Process.sleep(500)
-        {result, final_state.log_tail}
+        {result, final_state.log_tail, final_state.ansible_setup_log}
     after
       0 ->
         stream_loop(terminal, width, height, title, state, worker, opts)
