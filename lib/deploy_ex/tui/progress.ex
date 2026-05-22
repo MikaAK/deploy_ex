@@ -273,6 +273,7 @@ defmodule DeployEx.TUI.Progress do
       result: nil,
       cancelling: false,
       log_tail: [],
+      log_offset: 0,
       mode: :log
     }
 
@@ -422,7 +423,7 @@ defmodule DeployEx.TUI.Progress do
         {{:error, :cancelled}, state.log_tail}
 
       %ExRatatui.Event.Key{code: code, kind: "press"} = ev ->
-        case maybe_handle_confirm_key(state, code, modifier_list(ev)) do
+        case handle_key(state, code, modifier_list(ev), height) do
           {:handled, new_state} ->
             stream_loop(terminal, width, height, title, new_state, worker, opts)
 
@@ -434,6 +435,35 @@ defmodule DeployEx.TUI.Progress do
         drain_worker_messages(terminal, width, height, title, state, worker, opts)
     end
   end
+
+  defp handle_key(state, code, mods, height) do
+    case maybe_handle_confirm_key(state, code, mods) do
+      {:handled, _} = result -> result
+      :ignore -> maybe_handle_scroll_key(state, code, mods, height)
+    end
+  end
+
+  defp maybe_handle_scroll_key(state, code, [], height) do
+    page_step = max(log_page_step(height), 1)
+
+    case code do
+      "up" -> {:handled, adjust_log_offset(state, +1)}
+      "down" -> {:handled, adjust_log_offset(state, -1)}
+      "page_up" -> {:handled, adjust_log_offset(state, +page_step)}
+      "page_down" -> {:handled, adjust_log_offset(state, -page_step)}
+      "home" -> {:handled, %{state | log_offset: @log_buffer_max}}
+      "end" -> {:handled, %{state | log_offset: 0}}
+      _ -> :ignore
+    end
+  end
+
+  defp maybe_handle_scroll_key(_state, _code, _mods, _height), do: :ignore
+
+  defp adjust_log_offset(state, delta) do
+    %{state | log_offset: max(state.log_offset + delta, 0)}
+  end
+
+  defp log_page_step(total_height), do: div(max(total_height - 5, 4), 2)
 
   defp drain_worker_messages(terminal, width, height, title, state, worker, opts) do
     receive do
@@ -520,7 +550,7 @@ defmodule DeployEx.TUI.Progress do
     ExRatatui.draw(terminal, base_widgets ++ lower_widgets)
   end
 
-  defp build_lower_widgets(%{mode: {:confirm, payload}, log_tail: log_tail}, lower_area, width) do
+  defp build_lower_widgets(%{mode: {:confirm, payload}} = state, lower_area, width) do
     confirm_height = confirm_area_height(payload, width, lower_area.height)
     log_height = max(lower_area.height - confirm_height, 3)
 
@@ -530,12 +560,12 @@ defmodule DeployEx.TUI.Progress do
         {:length, confirm_height}
       ])
 
-    build_log_widgets(log_tail, log_area, width) ++
+    build_log_widgets(state.log_tail, log_area, width, state.log_offset) ++
       build_confirm_widgets(payload, confirm_area, width)
   end
 
-  defp build_lower_widgets(%{log_tail: log_tail}, lower_area, width) do
-    build_log_widgets(log_tail, lower_area, width)
+  defp build_lower_widgets(state, lower_area, width) do
+    build_log_widgets(state.log_tail, lower_area, width, state.log_offset)
   end
 
   defp confirm_area_height(%{prompt: prompt, preview: preview}, width, lower_height) do
@@ -662,7 +692,7 @@ defmodule DeployEx.TUI.Progress do
     }
   end
 
-  defp build_log_widgets([], log_area, _width) do
+  defp build_log_widgets([], log_area, _width, _offset) do
     empty = %Widgets.Paragraph{
       text: "  Waiting for output...",
       style: %Style{fg: :white},
@@ -672,11 +702,11 @@ defmodule DeployEx.TUI.Progress do
     [{empty, log_area}]
   end
 
-  defp build_log_widgets(log_tail, log_area, width) do
+  defp build_log_widgets(log_tail, log_area, width, offset) do
     inner_height = max(log_area.height - 2, 1)
     inner_width = max(width - 4, 20)
 
-    visible_rows = build_visible_log_rows(log_tail, inner_height, inner_width)
+    visible_rows = build_visible_log_rows(log_tail, inner_height, inner_width, offset)
 
     line_widgets =
       visible_rows
@@ -686,15 +716,22 @@ defmodule DeployEx.TUI.Progress do
     [{output_block(), log_area} | line_widgets]
   end
 
-  defp build_visible_log_rows(log_tail, inner_height, inner_width) do
-    log_tail
-    |> Enum.reverse()
-    |> Enum.flat_map(fn {color, text} ->
-      text
-      |> wrap_text(inner_width)
-      |> Enum.map(fn line -> {color, line} end)
-    end)
-    |> Enum.take(-inner_height)
+  defp build_visible_log_rows(log_tail, inner_height, inner_width, offset) do
+    wrapped =
+      log_tail
+      |> Enum.reverse()
+      |> Enum.flat_map(fn {color, text} ->
+        text
+        |> wrap_text(inner_width)
+        |> Enum.map(fn line -> {color, line} end)
+      end)
+
+    total = length(wrapped)
+    max_offset = max(total - inner_height, 0)
+    clamped = min(max(offset, 0), max_offset)
+    drop_count = max(total - inner_height - clamped, 0)
+
+    wrapped |> Enum.drop(drop_count) |> Enum.take(inner_height)
   end
 
   defp build_log_line_widget({{color, text}, idx}, log_area) do
@@ -730,7 +767,12 @@ defmodule DeployEx.TUI.Progress do
   end
 
   defp build_footer_widget(%{cancelling: cancelling?}) do
-    text = if cancelling?, do: "  Ctrl-C again to cancel", else: "  Ctrl-C twice to cancel"
+    text =
+      if cancelling? do
+        "  Ctrl-C again to cancel"
+      else
+        "  ↑/↓ scroll · PgUp/PgDn · Home/End · Ctrl-C twice to cancel"
+      end
 
     %Widgets.Paragraph{
       text: text,
