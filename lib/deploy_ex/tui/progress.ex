@@ -439,16 +439,16 @@ defmodule DeployEx.TUI.Progress do
     receive do
       {:tui_progress_update, ratio, label} ->
         new_state = %{state | ratio: ratio, label: label}
-        drain_worker_messages(terminal, width, height, title, new_state, worker, opts)
+        stream_loop(terminal, width, height, title, new_state, worker, opts)
 
       {:tui_progress_log, line} ->
         new_state = %{state | log_tail: append_log_line(state.log_tail, line)}
-        drain_worker_messages(terminal, width, height, title, new_state, worker, opts)
+        stream_loop(terminal, width, height, title, new_state, worker, opts)
 
       {:tui_progress_confirm_request, payload, reply_to} ->
         confirm_state = payload |> normalize_confirm_payload() |> Map.put(:reply_to, reply_to)
         new_state = %{state | mode: {:confirm, confirm_state}}
-        drain_worker_messages(terminal, width, height, title, new_state, worker, opts)
+        stream_loop(terminal, width, height, title, new_state, worker, opts)
 
       {:tui_progress_done, result} ->
         final_state = %{state | ratio: 1.0, label: "Complete!"}
