@@ -31,6 +31,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
   mix ansible.deploy --except app3
   mix ansible.deploy --target-sha 2ac12b
   mix ansible.deploy --target-sha auto                 # newest prod release on current branch
+  mix ansible.deploy --target-sha current --only my_app # sha recorded in S3 current_release.txt
   mix ansible.deploy --qa --target-sha auto            # newest QA release on current branch
   mix ansible.deploy --qa                              # prompt to pick a QA release
   ```
@@ -42,8 +43,10 @@ defmodule Mix.Tasks.Ansible.Deploy do
   - `copy-json-env-file` - Copy environment file and load into host environments
   - `only-local-release` - Only deploy if there's a local release available
   - `parallel` - Maximum number of concurrent ansible deploys (default: #{@playbook_max_concurrency})
-  - `target-sha` - Deploy a specific release SHA, or `auto` to pick the newest release
-    on the current branch (QA if `--qa`, otherwise prod)
+  - `target-sha` - Deploy a specific release SHA, `auto` to pick the newest release
+    on the current branch (QA if `--qa`, otherwise prod), or `current` to deploy
+    the SHA recorded in S3 `release-state/<app>/current_release.txt` (resolved
+    against the first targeted app — use `--only <app>` when apps diverge)
   - `include-qa` - Include QA nodes in deploy (default: excluded)
   - `qa` - Target only QA nodes (excludes non-QA nodes). Without `--target-sha`, prompts to
     pick a QA release on the current branch. One SHA applies to all apps in the invocation.
@@ -196,8 +199,56 @@ defmodule Mix.Tasks.Ansible.Deploy do
   defp resolve_target_sha_from_lookup(opts, playbooks) do
     cond do
       opts[:target_sha] === "auto" -> resolve_auto_sha(opts, playbooks)
+      opts[:target_sha] === "current" -> resolve_current_sha(opts, playbooks)
       opts[:qa] === true and is_nil(opts[:target_sha]) -> prompt_qa_sha(opts, playbooks)
       true -> opts
+    end
+  end
+
+  defp resolve_current_sha(opts, playbooks) do
+    first_app = first_app_name(playbooks)
+    tracker_opts = build_tracker_opts(opts)
+
+    case DeployEx.ReleaseTracker.fetch_current_release(first_app, tracker_opts) do
+      {:ok, release_name} ->
+        case parse_sha_from_release_name(release_name) do
+          {:ok, sha} ->
+            unless opts[:quiet] do
+              Mix.shell().info([
+                :faint, "Resolved ", :yellow, :bright, "current", :reset,
+                :faint, " SHA for ", :yellow, :bright, first_app, :reset,
+                :faint, ": ", :yellow, :bright, sha, :reset
+              ])
+            end
+
+            Keyword.put(opts, :target_sha, sha)
+
+          {:error, error} ->
+            Mix.raise("Failed to parse current release: #{ErrorMessage.to_string(error)}")
+        end
+
+      {:error, error} ->
+        Mix.raise("Failed to fetch current release for #{first_app}: #{ErrorMessage.to_string(error)}")
+    end
+  end
+
+  defp build_tracker_opts(opts) do
+    base = [
+      region: DeployEx.Config.aws_region(),
+      bucket: DeployEx.Config.aws_release_bucket()
+    ]
+
+    if opts[:qa] === true do
+      Keyword.put(base, :release_state_prefix, "release-state/qa")
+    else
+      base
+    end
+  end
+
+  defp parse_sha_from_release_name(release_name) do
+    case release_name |> Path.basename() |> String.split("-") do
+      [_timestamp, sha | _] -> {:ok, sha}
+      _ -> {:error, ErrorMessage.failed_dependency("unexpected release name format: #{release_name}")}
     end
   end
 
