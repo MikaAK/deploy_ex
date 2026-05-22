@@ -54,24 +54,30 @@ defmodule DeployEx.Terraform do
   end
 
   def run_command(command, terraform_directory) do
-    DeployEx.Utils.run_command_with_return(
-      "#{DeployEx.Config.iac_tool()} #{command}",
-      terraform_directory
-    )
+    with :ok <- DeployEx.ToolInstaller.ensure_installed(:terraform) do
+      DeployEx.Utils.run_command_with_return(
+        "#{DeployEx.Config.iac_tool()} #{command}",
+        terraform_directory
+      )
+    end
   end
 
   def run_command_with_input(command, terraform_directory) do
-    DeployEx.Utils.run_command_with_input(
-      "#{DeployEx.Config.iac_tool()} #{command}",
-      terraform_directory
-    )
+    with :ok <- DeployEx.ToolInstaller.ensure_installed(:terraform) do
+      DeployEx.Utils.run_command_with_input(
+        "#{DeployEx.Config.iac_tool()} #{command}",
+        terraform_directory
+      )
+    end
   end
 
   def run_command_with_console_log(command, terraform_directory) do
-    DeployEx.Utils.run_command(
-      "#{DeployEx.Config.iac_tool()} #{command}",
-      terraform_directory
-    )
+    with :ok <- DeployEx.ToolInstaller.ensure_installed(:terraform) do
+      DeployEx.Utils.run_command(
+        "#{DeployEx.Config.iac_tool()} #{command}",
+        terraform_directory
+      )
+    end
   end
 
   def find_pem_file(terraform_directory, pem_file) when is_nil(pem_file) do

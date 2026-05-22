@@ -1,5 +1,7 @@
+# credo:disable-for-this-file BlitzCredoChecks.NoAsyncFalse
 defmodule DeployEx.ToolInstallerTest do
-  use ExUnit.Case, async: true
+  # async: false — tests mutate global Mix.shell + System env vars
+  use ExUnit.Case, async: false
 
   alias DeployEx.ToolInstaller
 
@@ -72,7 +74,7 @@ defmodule DeployEx.ToolInstallerTest do
     end
   end
 
-  describe "ensure_installed/1" do
+  describe "ensure_installed/2" do
     test "returns :ok when terraform is already installed" do
       iac_tool = DeployEx.Config.iac_tool()
 
@@ -90,7 +92,126 @@ defmodule DeployEx.ToolInstallerTest do
         assert :ok === ToolInstaller.ensure_installed(:ansible)
       end
     end
+
+    test "returns declined error when consent_fn returns false and binary is missing" do
+      if is_nil(System.find_executable("ansible-playbook")) do
+        consent_fn = fn _tool, _info -> false end
+
+        assert {:error, %ErrorMessage{code: :bad_request, message: msg}} =
+                 ToolInstaller.ensure_installed(:ansible, consent_fn: consent_fn)
+
+        assert msg =~ "declined by user"
+      else
+        :ok
+      end
+    end
+
+    test "passes platform + command to consent_fn" do
+      received = self()
+      consent_fn = fn tool, info ->
+        send(received, {:consent_called, tool, info})
+        false
+      end
+
+      _result = ToolInstaller.install_tool(:ansible, consent_fn: consent_fn)
+
+      assert_received {:consent_called, :ansible, %{platform: _platform, command: command}}
+      assert is_binary(command)
+      assert command =~ "ansible"
+    end
   end
+
+  describe "install_tool/2 consent contract" do
+    test "returns declined error when consent_fn returns false" do
+      consent_fn = fn _tool, _info -> false end
+
+      assert {:error, %ErrorMessage{code: :bad_request, message: msg}} =
+               ToolInstaller.install_tool(:ansible, consent_fn: consent_fn)
+
+      assert msg =~ "declined by user"
+    end
+
+  end
+
+  describe "default_consent?/2" do
+    test "returns true when DEPLOY_EX_AUTO_INSTALL=true" do
+      previous = System.get_env("DEPLOY_EX_AUTO_INSTALL")
+      System.put_env("DEPLOY_EX_AUTO_INSTALL", "true")
+
+      assert ToolInstaller.default_consent?(:ansible, %{platform: :macos, command: "brew install ansible"})
+
+      restore_env("DEPLOY_EX_AUTO_INSTALL", previous)
+    end
+
+    test "delegates to Mix.shell yes? prompt when env not set" do
+      previous = System.get_env("DEPLOY_EX_AUTO_INSTALL")
+      System.delete_env("DEPLOY_EX_AUTO_INSTALL")
+
+      original_shell = Mix.shell()
+      Mix.shell(Mix.Shell.Process)
+
+      send(self(), {:mix_shell_input, :yes?, true})
+
+      result = ToolInstaller.default_consent?(:ansible, %{platform: :macos, command: "brew install ansible"})
+
+      assert result
+      assert_received {:mix_shell, :info, [_lines]}
+      assert_received {:mix_shell, :info, [_platform_line]}
+      assert_received {:mix_shell, :info, [_command_line]}
+      assert_received {:mix_shell, :yes?, [prompt]}
+      assert prompt =~ "Install ansible"
+
+      Mix.shell(original_shell)
+      restore_env("DEPLOY_EX_AUTO_INSTALL", previous)
+    end
+
+    test "returns false when user declines at the prompt" do
+      previous = System.get_env("DEPLOY_EX_AUTO_INSTALL")
+      System.delete_env("DEPLOY_EX_AUTO_INSTALL")
+
+      original_shell = Mix.shell()
+      Mix.shell(Mix.Shell.Process)
+
+      send(self(), {:mix_shell_input, :yes?, false})
+
+      refute ToolInstaller.default_consent?(:ansible, %{platform: :macos, command: "brew install ansible"})
+
+      Mix.shell(original_shell)
+      restore_env("DEPLOY_EX_AUTO_INSTALL", previous)
+    end
+  end
+
+  describe "auto_install?/0" do
+    test "returns true when env var is exactly \"true\"" do
+      previous = System.get_env("DEPLOY_EX_AUTO_INSTALL")
+      System.put_env("DEPLOY_EX_AUTO_INSTALL", "true")
+
+      assert ToolInstaller.auto_install?()
+
+      restore_env("DEPLOY_EX_AUTO_INSTALL", previous)
+    end
+
+    test "returns false when env var is unset" do
+      previous = System.get_env("DEPLOY_EX_AUTO_INSTALL")
+      System.delete_env("DEPLOY_EX_AUTO_INSTALL")
+
+      refute ToolInstaller.auto_install?()
+
+      restore_env("DEPLOY_EX_AUTO_INSTALL", previous)
+    end
+
+    test "returns false when env var is some other value" do
+      previous = System.get_env("DEPLOY_EX_AUTO_INSTALL")
+      System.put_env("DEPLOY_EX_AUTO_INSTALL", "yes")
+
+      refute ToolInstaller.auto_install?()
+
+      restore_env("DEPLOY_EX_AUTO_INSTALL", previous)
+    end
+  end
+
+  defp restore_env(key, nil), do: System.delete_env(key)
+  defp restore_env(key, value), do: System.put_env(key, value)
 
   describe "install_command/2" do
     test "returns brew command for terraform on macos" do

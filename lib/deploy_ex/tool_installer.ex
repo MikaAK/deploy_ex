@@ -33,15 +33,31 @@ defmodule DeployEx.ToolInstaller do
     end
   end
 
-  @spec ensure_installed(:terraform | :ansible) :: :ok | {:error, ErrorMessage.t()}
-  def ensure_installed(:terraform) do
+  @doc """
+  Ensures the given tool is installed on the host, prompting the user for
+  consent before running the install command.
+
+  ## Options
+
+    * `:consent_fn` - 2-arity function `fn tool, info -> boolean end`. Defaults
+      to an interactive prompt via `Mix.shell().yes?/1`. The `info` map has
+      `:platform` and `:command` keys. Override for testing or for callers
+      that want to inject their own approval flow.
+
+  Consent prompting is skipped (treated as approved) when the
+  `DEPLOY_EX_AUTO_INSTALL` env var is set to `"true"`.
+  """
+  @spec ensure_installed(:terraform | :ansible | :gh, Keyword.t()) :: :ok | {:error, ErrorMessage.t()}
+  def ensure_installed(tool, opts \\ [])
+
+  def ensure_installed(:terraform, opts) do
     iac_tool = DeployEx.Config.iac_tool()
 
     case System.find_executable(iac_tool) do
       nil ->
         case iac_tool do
-          "terraform" -> install_tool(:terraform)
-          "tofu" -> install_tool(:tofu)
+          "terraform" -> install_tool(:terraform, opts)
+          "tofu" -> install_tool(:tofu, opts)
           other -> {:error, ErrorMessage.bad_request("#{__MODULE__}: unsupported iac_tool #{inspect(other)}, expected \"terraform\" or \"tofu\"")}
         end
 
@@ -49,16 +65,16 @@ defmodule DeployEx.ToolInstaller do
     end
   end
 
-  def ensure_installed(:ansible) do
+  def ensure_installed(:ansible, opts) do
     case System.find_executable("ansible-playbook") do
-      nil -> install_tool(:ansible)
+      nil -> install_tool(:ansible, opts)
       _path -> :ok
     end
   end
 
-  def ensure_installed(:gh) do
+  def ensure_installed(:gh, opts) do
     case System.find_executable("gh") do
-      nil -> install_tool(:gh)
+      nil -> install_tool(:gh, opts)
       _path -> :ok
     end
   end
@@ -163,7 +179,9 @@ defmodule DeployEx.ToolInstaller do
 
   def install_command(:gh, :amazon_linux), do: {"sudo dnf install -y gh", "."}
 
-  defp install_tool(tool) do
+  @doc false
+  @spec install_tool(:terraform | :tofu | :ansible | :gh, Keyword.t()) :: :ok | {:error, ErrorMessage.t()}
+  def install_tool(tool, opts \\ []) do
     platform = detect_platform()
 
     case install_command(tool, platform) do
@@ -171,19 +189,49 @@ defmodule DeployEx.ToolInstaller do
         error
 
       {command, directory} ->
-        Mix.shell().info([:yellow, "#{tool} not found, installing for #{platform}..."])
+        consent_fn = Keyword.get(opts, :consent_fn, &default_consent?/2)
 
-        case DeployEx.Utils.run_command_with_return(command, directory) do
-          {:ok, _output} ->
-            Mix.shell().info([:green, "#{tool} installed successfully"])
-            :ok
-
-          {:error, error} ->
-            {:error, ErrorMessage.internal_server_error(
-              "#{__MODULE__}: failed to install #{tool}, error: #{inspect(error)}"
-            )}
+        if consent_fn.(tool, %{platform: platform, command: command}) do
+          run_install_command(tool, command, directory)
+        else
+          {:error, ErrorMessage.bad_request(
+            "#{__MODULE__}: #{tool} install declined by user, install it manually then retry"
+          )}
         end
     end
+  end
+
+  defp run_install_command(tool, command, directory) do
+    Mix.shell().info([:yellow, "Installing #{tool}..."])
+
+    case DeployEx.Utils.run_command_with_return(command, directory) do
+      {:ok, _output} ->
+        Mix.shell().info([:green, "#{tool} installed successfully"])
+        :ok
+
+      {:error, error} ->
+        {:error, ErrorMessage.internal_server_error(
+          "#{__MODULE__}: failed to install #{tool}, error: #{inspect(error)}"
+        )}
+    end
+  end
+
+  @doc false
+  @spec default_consent?(atom(), %{platform: atom(), command: String.t()}) :: boolean()
+  def default_consent?(tool, %{platform: platform, command: command}) do
+    if auto_install?() do
+      true
+    else
+      Mix.shell().info([:yellow, "\n#{tool} is not installed."])
+      Mix.shell().info([:reset, "Detected platform: ", :bright, to_string(platform)])
+      Mix.shell().info([:reset, "Install command: ", :bright, command])
+      Mix.shell().yes?("Install #{tool} now?")
+    end
+  end
+
+  @doc false
+  def auto_install? do
+    System.get_env("DEPLOY_EX_AUTO_INSTALL") === "true"
   end
 
   defp detect_linux_distro do
