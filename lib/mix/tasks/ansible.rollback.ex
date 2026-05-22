@@ -34,8 +34,8 @@ defmodule Mix.Tasks.Ansible.Rollback do
 
       opts = opts
         |> Keyword.put_new(:directory, @terraform_default_path)
-        |> Keyword.put_new(:region, DeployEx.Config.aws_region())
-        |> Keyword.put_new(:bucket, DeployEx.Config.aws_release_bucket())
+        |> Keyword.put_new(:aws_region, DeployEx.Config.aws_region())
+        |> Keyword.put_new(:aws_release_bucket, DeployEx.Config.aws_release_bucket())
 
       with {:ok, app_name} <- DeployExHelpers.find_project_name(node_name_args),
            _ = Mix.shell().info([:yellow, "Fetching ", :bright, app_name, :reset, :yellow, " release history from S3..."]),
