@@ -32,8 +32,10 @@ defmodule Mix.Tasks.Ansible.Deploy do
   mix ansible.deploy --target-sha 2ac12b
   mix ansible.deploy --target-sha auto                 # newest prod release on current branch
   mix ansible.deploy --target-sha current --only my_app # sha recorded in S3 current_release.txt
+  mix ansible.deploy --select-sha                      # prompt to pick from available prod releases
   mix ansible.deploy --qa --target-sha auto            # newest QA release on current branch
   mix ansible.deploy --qa                              # prompt to pick a QA release
+  mix ansible.deploy --qa --select-sha                 # explicit form of the QA picker
   ```
 
   ## Options
@@ -47,6 +49,9 @@ defmodule Mix.Tasks.Ansible.Deploy do
     on the current branch (QA if `--qa`, otherwise prod), or `current` to deploy
     the SHA recorded in S3 `release-state/<app>/current_release.txt` (resolved
     against the first targeted app — use `--only <app>` when apps diverge)
+  - `select-sha` - Prompt to pick a release SHA from S3 (prod by default, QA with
+    `--qa`). Resolved against the first targeted app; one SHA applies to all apps
+    in the invocation
   - `include-qa` - Include QA nodes in deploy (default: excluded)
   - `qa` - Target only QA nodes (excludes non-QA nodes). Without `--target-sha`, prompts to
     pick a QA release on the current branch. One SHA applies to all apps in the invocation.
@@ -73,7 +78,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
 
       DeployExHelpers.check_file_exists!(Path.join(opts[:directory], "aws_ec2.yaml"))
 
-      if opts[:target_sha] || opts[:qa] === true do
+      if opts[:target_sha] || opts[:qa] === true || opts[:select_sha] === true do
         Application.ensure_all_started(:hackney)
         Application.ensure_all_started(:telemetry)
         Application.ensure_all_started(:ex_aws)
@@ -142,6 +147,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
         parallel: :integer,
         only_local_release: :boolean,
         target_sha: :string,
+        select_sha: :boolean,
         include_qa: :boolean,
         qa: :boolean,
         no_tui: :boolean
@@ -200,8 +206,20 @@ defmodule Mix.Tasks.Ansible.Deploy do
     cond do
       opts[:target_sha] === "auto" -> resolve_auto_sha(opts, playbooks)
       opts[:target_sha] === "current" -> resolve_current_sha(opts, playbooks)
+      opts[:select_sha] === true -> prompt_select_sha(opts, playbooks)
       opts[:qa] === true and is_nil(opts[:target_sha]) -> prompt_qa_sha(opts, playbooks)
       true -> opts
+    end
+  end
+
+  defp prompt_select_sha(opts, playbooks) do
+    release_type = if opts[:qa] === true, do: :qa, else: :prod
+    first_app = first_app_name(playbooks)
+    lookup_opts = build_lookup_opts()
+
+    case ReleaseLookup.resolve_sha(first_app, release_type, :prompt, lookup_opts) do
+      {:ok, sha} -> Keyword.put(opts, :target_sha, sha)
+      {:error, error} -> Mix.raise("No SHA selected: #{ErrorMessage.to_string(error)}")
     end
   end
 
