@@ -116,7 +116,9 @@ defmodule Mix.Tasks.Ansible.Rollback do
       |> Enum.join("\n")
       |> String.split("\n")
       |> Enum.map(&(&1 |> Path.basename |> String.split("-")))
-      |> Enum.reject(&(&1 === [""] or is_nil(&1)))
-      |> Enum.map(fn [timestamp, target_sha | _] -> {timestamp, target_sha} end)
+      |> Enum.flat_map(fn
+        [timestamp, target_sha | _] -> [{timestamp, target_sha}]
+        _ -> []
+      end)
   end
 end
