@@ -497,12 +497,45 @@ defmodule DeployEx.TUI.Progress do
     ExRatatui.draw(terminal, base_widgets ++ lower_widgets)
   end
 
-  defp build_lower_widgets(%{mode: {:confirm, payload}}, lower_area, width) do
-    build_confirm_widgets(payload, lower_area, width)
+  defp build_lower_widgets(%{mode: {:confirm, payload}, log_tail: log_tail}, lower_area, width) do
+    confirm_height = confirm_area_height(payload, width, lower_area.height)
+    log_height = max(lower_area.height - confirm_height, 3)
+
+    [log_area, confirm_area] =
+      Layout.split(lower_area, :vertical, [
+        {:length, log_height},
+        {:length, confirm_height}
+      ])
+
+    build_log_widgets(log_tail, log_area, width) ++
+      build_confirm_widgets(payload, confirm_area, width)
   end
 
   defp build_lower_widgets(%{log_tail: log_tail}, lower_area, width) do
     build_log_widgets(log_tail, lower_area, width)
+  end
+
+  defp confirm_area_height(%{prompt: prompt, preview: preview}, width, lower_height) do
+    inner_width = max(width - 8, 20)
+    prompt_rows = prompt |> wrap_text(inner_width) |> length()
+    preview_rows = preview |> preview_row_count(inner_width)
+    separator_row = if preview_rows === 0, do: 0, else: 1
+    blank_row = 1
+    keys_row = 1
+    chrome = 2
+
+    desired = chrome + prompt_rows + separator_row + preview_rows + blank_row + keys_row
+    desired |> max(6) |> min(max(lower_height - 4, 6))
+  end
+
+  defp preview_row_count(nil, _max_width), do: 0
+  defp preview_row_count("", _max_width), do: 0
+
+  defp preview_row_count(preview, max_width) do
+    preview
+    |> String.split("\n", trim: false)
+    |> Enum.flat_map(&wrap_text(&1, max_width))
+    |> length()
   end
 
   defp build_confirm_widgets(%{prompt: prompt, preview: preview}, lower_area, width) do
@@ -620,17 +653,28 @@ defmodule DeployEx.TUI.Progress do
     inner_height = max(log_area.height - 2, 1)
     inner_width = max(width - 4, 20)
 
+    visible_rows = build_visible_log_rows(log_tail, inner_height, inner_width)
+
     line_widgets =
-      log_tail
-      |> Enum.take(inner_height)
-      |> Enum.reverse()
+      visible_rows
       |> Enum.with_index()
-      |> Enum.map(&build_log_line_widget(&1, log_area, inner_width))
+      |> Enum.map(&build_log_line_widget(&1, log_area))
 
     [{output_block(), log_area} | line_widgets]
   end
 
-  defp build_log_line_widget({{color, text}, idx}, log_area, inner_width) do
+  defp build_visible_log_rows(log_tail, inner_height, inner_width) do
+    log_tail
+    |> Enum.reverse()
+    |> Enum.flat_map(fn {color, text} ->
+      text
+      |> wrap_text(inner_width)
+      |> Enum.map(fn line -> {color, line} end)
+    end)
+    |> Enum.take(-inner_height)
+  end
+
+  defp build_log_line_widget({{color, text}, idx}, log_area) do
     rect = %Rect{
       x: log_area.x + 1,
       y: log_area.y + 1 + idx,
@@ -639,7 +683,7 @@ defmodule DeployEx.TUI.Progress do
     }
 
     paragraph = %Widgets.Paragraph{
-      text: truncate_line(text, inner_width),
+      text: text,
       style: %Style{fg: color}
     }
 
@@ -654,12 +698,6 @@ defmodule DeployEx.TUI.Progress do
       border_style: %Style{fg: :cyan}
     }
   end
-
-  defp truncate_line(line, max_width) when byte_size(line) > max_width do
-    String.slice(line, 0, max_width - 1) <> "…"
-  end
-
-  defp truncate_line(line, _max_width), do: line
 
   defp build_footer_widget(%{mode: {:confirm, _}}) do
     %Widgets.Paragraph{
