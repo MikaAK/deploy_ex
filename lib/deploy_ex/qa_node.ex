@@ -43,7 +43,6 @@ defmodule DeployEx.QaNode do
     target_group_arns: []
   ]
 
-  @qa_state_prefix "qa-nodes"
   @default_instance_type "t3.small"
 
   def create_instance(app_name, target_sha, params, opts \\ []) do
@@ -481,7 +480,7 @@ defmodule DeployEx.QaNode do
   end
 
   def qa_state_key(app_name, instance_id) do
-    "#{@qa_state_prefix}/#{app_name}/#{instance_id}.json"
+    "#{DeployEx.Config.qa_state_prefix()}/#{app_name}/#{instance_id}.json"
   end
 
   def fetch_qa_state(app_name, opts) when is_list(opts) do
@@ -510,7 +509,7 @@ defmodule DeployEx.QaNode do
   def fetch_all_qa_states_for_app(app_name, opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
     bucket = opts[:bucket] || DeployEx.Config.aws_release_bucket()
-    prefix = "#{@qa_state_prefix}/#{app_name}/"
+    prefix = "#{DeployEx.Config.qa_state_prefix()}/#{app_name}/"
 
     bucket
     |> ExAws.S3.list_objects(prefix: prefix)
@@ -711,7 +710,7 @@ defmodule DeployEx.QaNode do
     bucket = opts[:bucket] || DeployEx.Config.aws_release_bucket()
 
     bucket
-    |> ExAws.S3.list_objects(prefix: @qa_state_prefix)
+    |> ExAws.S3.list_objects(prefix: DeployEx.Config.qa_state_prefix())
     |> ExAws.request(region: region)
     |> case do
       {:ok, %{body: %{contents: contents}}} when is_list(contents) ->
@@ -731,8 +730,10 @@ defmodule DeployEx.QaNode do
   end
 
   defp extract_app_name_from_key(key) do
+    prefix = DeployEx.Config.qa_state_prefix()
+
     case String.split(key, "/") do
-      [@qa_state_prefix, app_name, filename] when is_binary(filename) ->
+      [^prefix, app_name, filename] when is_binary(filename) ->
         if String.ends_with?(filename, ".json"), do: app_name, else: nil
       _ -> nil
     end

@@ -24,6 +24,10 @@ defmodule DeployEx.Config do
     "#{DeployExHelpers.kebab_project_name()}-elixir-release-state-#{env()}"
   end
 
+  def qa_state_prefix do
+    Application.get_env(@app, :qa_state_prefix, "qa-nodes")
+  end
+
   def aws_release_state_lock_table do
     Application.get_env(@app, :aws_terraform_state_lock_table) ||
       "#{DeployExHelpers.kebab_project_name()}-terraform-state-lock-#{env()}"
