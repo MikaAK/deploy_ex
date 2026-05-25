@@ -923,7 +923,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   defp log_ssh_ready(tui_pid, ip) when is_pid(tui_pid) do
     DeployEx.TUI.Progress.update_log(
       tui_pid,
-      "  #{IO.ANSI.green()}✓ SSH connected to #{ip}#{IO.ANSI.reset()}"
+      IO.ANSI.format(["  ", :green, "✓ SSH connected to #{ip}", :reset], true)
     )
   end
 
@@ -999,7 +999,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   defp run_ansible_setup(qa_node, tui_pid, _opts) do
     DeployEx.TUI.Progress.update_log(
       tui_pid,
-      "#{IO.ANSI.cyan()}Running setup for #{qa_node.instance_name}...#{IO.ANSI.reset()}"
+      IO.ANSI.format([:cyan, "Running setup for #{qa_node.instance_name}...", :reset], true)
     )
 
     run_qa_ansible(qa_node, :setup, setup_vars(qa_node), tui_pid, "ansible setup failed")
@@ -1030,7 +1030,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   defp refresh_ansible_inventory(directory, tui_pid, failure_message) do
     DeployEx.TUI.Progress.update_log(
       tui_pid,
-      "#{IO.ANSI.cyan()}Refreshing AWS inventory cache...#{IO.ANSI.reset()}"
+      IO.ANSI.format([:cyan, "Refreshing AWS inventory cache...", :reset], true)
     )
 
     case DeployEx.Utils.run_command_with_return(
@@ -1041,7 +1041,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
       {:ok, _} ->
         DeployEx.TUI.Progress.update_log(
           tui_pid,
-          "  #{IO.ANSI.green()}✓ inventory refreshed#{IO.ANSI.reset()}"
+          IO.ANSI.format(["  ", :green, "✓ inventory refreshed", :reset], true)
         )
         :ok
 

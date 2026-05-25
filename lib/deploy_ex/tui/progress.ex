@@ -351,28 +351,28 @@ defmodule DeployEx.TUI.Progress do
   end
 
   defp emit_confirm_log_hints(tui_pid, %{prompt: prompt, preview: preview}) do
-    update_log(tui_pid, "  #{IO.ANSI.yellow()}▶ #{prompt}#{IO.ANSI.reset()}")
+    update_log(tui_pid, IO.ANSI.format(["  ", :yellow, "▶ #{prompt}", :reset], true))
 
     if is_binary(preview) and preview !== "" do
       preview
       |> String.split("\n", trim: false)
       |> Enum.each(fn line ->
-        update_log(tui_pid, "    #{IO.ANSI.light_black()}#{line}#{IO.ANSI.reset()}")
+        update_log(tui_pid, IO.ANSI.format(["    ", :light_black, line, :reset], true))
       end)
     end
 
     update_log(
       tui_pid,
-      "  #{IO.ANSI.cyan()}▶ Press [Y]es to apply or [N]o to skip#{IO.ANSI.reset()}"
+      IO.ANSI.format(["  ", :cyan, "▶ Press [Y]es to apply or [N]o to skip", :reset], true)
     )
   end
 
   defp emit_confirm_choice_log(tui_pid, _prompt, :yes) do
-    update_log(tui_pid, "  #{IO.ANSI.green()}✓ Accepted#{IO.ANSI.reset()}")
+    update_log(tui_pid, IO.ANSI.format(["  ", :green, "✓ Accepted", :reset], true))
   end
 
   defp emit_confirm_choice_log(tui_pid, _prompt, :no) do
-    update_log(tui_pid, "  #{IO.ANSI.yellow()}✗ Skipped#{IO.ANSI.reset()}")
+    update_log(tui_pid, IO.ANSI.format(["  ", :yellow, "✗ Skipped", :reset], true))
   end
 
   @doc """
