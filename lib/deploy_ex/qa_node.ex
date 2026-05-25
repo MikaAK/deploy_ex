@@ -203,6 +203,19 @@ defmodule DeployEx.QaNode do
     {:ok, picked}
   end
 
+  @doc """
+  Builds the inventory hostname for the QA node as produced by the
+  aws_ec2 ansible plugin: `"<instance-id>-<Name tag>"`.
+
+  Used for `ansible-playbook --limit` so the exact host matches the
+  inventory hostname (which is prefixed with the EC2 instance id).
+  """
+  @spec inventory_hostname(t()) :: String.t()
+  def inventory_hostname(%__MODULE__{instance_id: instance_id, instance_name: instance_name})
+      when is_binary(instance_id) and is_binary(instance_name) do
+    "#{instance_id}-#{instance_name}"
+  end
+
   @doc false
   @spec format_picker_label(t()) :: String.t()
   def format_picker_label(%__MODULE__{} = node) do

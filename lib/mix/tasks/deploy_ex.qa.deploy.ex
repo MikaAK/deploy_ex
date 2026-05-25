@@ -335,7 +335,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
     vars = deploy_vars(qa_node, sha)
 
     DeployEx.QaPlaybook.with_temp_playbook(qa_node, :deploy, vars, directory, fn rel_path ->
-      command = "ansible-playbook #{rel_path} --limit '#{qa_node.instance_name},'"
+      command = "ansible-playbook #{rel_path} --limit '#{DeployEx.QaNode.inventory_hostname(qa_node)},'"
       line_callback = build_line_callback(tui_pid)
 
       case DeployEx.Utils.run_command_streaming(command, directory, line_callback) do

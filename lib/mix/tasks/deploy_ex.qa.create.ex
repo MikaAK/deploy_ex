@@ -1006,7 +1006,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
 
     DeployEx.QaPlaybook.with_temp_playbook(qa_node, kind, vars, directory, fn rel_path ->
       with :ok <- refresh_ansible_inventory(directory, tui_pid, failure_message) do
-        command = "ansible-playbook #{rel_path} --limit '#{qa_node.instance_name},'"
+        command = "ansible-playbook #{rel_path} --limit '#{DeployEx.QaNode.inventory_hostname(qa_node)},'"
         Process.put(:ansible_collected_output, [])
         line_callback = build_collecting_line_callback(tui_pid, kind)
 
