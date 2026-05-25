@@ -1023,7 +1023,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     DeployEx.TUI.Progress.update_log(tui_pid, "Refreshing AWS inventory cache...")
 
     case DeployEx.Utils.run_command_with_return(
-           "ansible-inventory --refresh-cache --list > /dev/null",
+           "ANSIBLE_INVENTORY_CACHE=False ansible-inventory --list > /dev/null",
            directory,
            []
          ) do
@@ -1034,7 +1034,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
       {:error, %ErrorMessage{} = err} ->
         {:error,
          ErrorMessage.failed_dependency(
-           "#{failure_message}: ansible-inventory --refresh-cache exited non-zero",
+           "#{failure_message}: ansible-inventory refresh exited non-zero",
            %{cause: err}
          )}
     end
