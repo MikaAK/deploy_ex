@@ -342,7 +342,8 @@ defmodule DeployEx.QaNode do
   defp target_group_arn_and_port(arn, _override_port) when is_binary(arn), do: {arn, 443}
 
   defp build_instance_name(app_name, target_sha, environment, opts) do
-    {:ok, display_name} = DeployEx.TerraformState.get_app_display_name(app_name, opts)
+    lookup_opts = Keyword.put(opts, :environment, environment)
+    {:ok, display_name} = DeployEx.TerraformState.get_app_display_name(app_name, lookup_opts)
 
     timestamp = System.system_time(:second)
     slug = instance_name_slug(target_sha, opts[:instance_tag])

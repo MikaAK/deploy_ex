@@ -124,20 +124,21 @@ defmodule DeployEx.TerraformState do
   def get_app_display_name(app_name, opts \\ []) do
     terraform_dir = opts[:terraform_dir] || DeployEx.Config.terraform_folder_path()
     state_opts = Keyword.take(opts, [:backend, :bucket, :region])
+    environment = opts[:environment]
 
     with {:ok, state} <- read_state(terraform_dir, state_opts) do
       snake_app_name = String.replace(app_name, "-", "_")
 
-      case find_instance_display_name(state, snake_app_name) do
+      case find_instance_display_name(state, snake_app_name, environment) do
         {:ok, name} -> {:ok, name}
-        {:error, _} -> get_display_name_from_ec2(app_name, opts)
+        {:error, _} -> get_display_name_from_ec2(app_name, environment, opts)
       end
     else
-      {:error, _} -> get_display_name_from_ec2(app_name, opts)
+      {:error, _} -> get_display_name_from_ec2(app_name, environment, opts)
     end
   end
 
-  defp get_display_name_from_ec2(app_name, opts) do
+  defp get_display_name_from_ec2(app_name, environment, opts) do
     case DeployEx.AwsMachine.find_instance_ids_by_app_name(app_name, opts) do
       {:ok, instances_map} ->
         name = instances_map
@@ -147,14 +148,14 @@ defmodule DeployEx.TerraformState do
 
         case name do
           nil -> {:ok, default_display_name(app_name)}
-          name -> {:ok, extract_base_name(name)}
+          name -> {:ok, extract_base_name(name, environment)}
         end
 
       {:error, _} -> {:ok, default_display_name(app_name)}
     end
   end
 
-  defp find_instance_display_name(state, app_name) do
+  defp find_instance_display_name(state, app_name, environment) do
     case get_in(state, ["resources"]) do
       resources when is_list(resources) ->
         result = Enum.find_value(resources, fn resource ->
@@ -168,20 +169,33 @@ defmodule DeployEx.TerraformState do
 
         case result do
           nil -> {:error, "Instance not found for app: #{app_name}"}
-          name -> {:ok, extract_base_name(name)}
+          name -> {:ok, extract_base_name(name, environment)}
         end
 
       _ -> {:error, "Invalid Terraform state format"}
     end
   end
 
-  defp extract_base_name(instance_name) do
+  defp extract_base_name(instance_name, environment) do
     instance_name
     |> String.split("-")
     |> Enum.take_while(fn part -> not String.match?(part, ~r/^\d+$/) end)
     |> Enum.join("-")
     |> String.trim("-")
+    |> strip_environment_suffix(environment)
   end
+
+  defp strip_environment_suffix(base, env) when is_binary(env) and env !== "" do
+    suffix = "-" <> env
+
+    if String.ends_with?(base, suffix) do
+      String.replace_suffix(base, suffix, "")
+    else
+      base
+    end
+  end
+
+  defp strip_environment_suffix(base, _env), do: base
 
   defp default_display_name(app_name) do
     app_name
