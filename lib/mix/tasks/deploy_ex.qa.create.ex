@@ -921,7 +921,10 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   defp log_ssh_attempt(_tui_pid, _ip, _attempt), do: :ok
 
   defp log_ssh_ready(tui_pid, ip) when is_pid(tui_pid) do
-    DeployEx.TUI.Progress.update_log(tui_pid, "  \e[32m✓ SSH connected to #{ip}\e[0m")
+    DeployEx.TUI.Progress.update_log(
+      tui_pid,
+      "  #{IO.ANSI.green()}✓ SSH connected to #{ip}#{IO.ANSI.reset()}"
+    )
   end
 
   defp log_ssh_ready(_tui_pid, _ip), do: :ok
@@ -996,7 +999,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   defp run_ansible_setup(qa_node, tui_pid, _opts) do
     DeployEx.TUI.Progress.update_log(
       tui_pid,
-      "\e[36mRunning setup for #{qa_node.instance_name}...\e[0m"
+      "#{IO.ANSI.cyan()}Running setup for #{qa_node.instance_name}...#{IO.ANSI.reset()}"
     )
 
     run_qa_ansible(qa_node, :setup, setup_vars(qa_node), tui_pid, "ansible setup failed")
@@ -1025,7 +1028,10 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
   end
 
   defp refresh_ansible_inventory(directory, tui_pid, failure_message) do
-    DeployEx.TUI.Progress.update_log(tui_pid, "\e[36mRefreshing AWS inventory cache...\e[0m")
+    DeployEx.TUI.Progress.update_log(
+      tui_pid,
+      "#{IO.ANSI.cyan()}Refreshing AWS inventory cache...#{IO.ANSI.reset()}"
+    )
 
     case DeployEx.Utils.run_command_with_return(
            "ANSIBLE_INVENTORY_CACHE=False ansible-inventory --list > /dev/null",
@@ -1033,7 +1039,10 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
            []
          ) do
       {:ok, _} ->
-        DeployEx.TUI.Progress.update_log(tui_pid, "  \e[32m✓ inventory refreshed\e[0m")
+        DeployEx.TUI.Progress.update_log(
+          tui_pid,
+          "  #{IO.ANSI.green()}✓ inventory refreshed#{IO.ANSI.reset()}"
+        )
         :ok
 
       {:error, %ErrorMessage{} = err} ->
