@@ -556,6 +556,30 @@ defmodule DeployEx.QaNode do
   end
 
   @doc """
+  Finds QA nodes filtered by `GitBranch` tag only — across every app,
+  not scoped to a single `InstanceGroup`. Used by the CI deploy path so
+  the branch alone is authoritative and the caller doesn't have to
+  pre-compute the app name from the branch string.
+  """
+  @spec find_qa_nodes_by_branch(String.t(), keyword()) ::
+          {:ok, [t()]} | {:error, ErrorMessage.t()}
+  def find_qa_nodes_by_branch(branch, opts \\ []) when is_binary(branch) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+    environment = opts[:environment] || DeployEx.Config.env()
+    resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
+
+    ExAws.EC2.describe_instances(filters: [
+      "tag:QaNode": ["true"],
+      "tag:Group": [resource_group],
+      "tag:Environment": [environment],
+      "tag:GitBranch": [branch],
+      "instance-state-name": ["running", "pending", "stopping", "stopped"]
+    ])
+    |> ExAws.request(region: region)
+    |> handle_describe_instances_for_qa_list()
+  end
+
+  @doc """
   Selects the single QA node whose `git_branch` matches `branch`. Used for
   non-interactive callers (CI, GitHub Actions) where prompting is unavailable.
 
@@ -804,12 +828,8 @@ defmodule DeployEx.QaNode do
   def verify_instance_exists(%__MODULE__{instance_id: instance_id} = state) do
     case DeployEx.AwsMachine.find_instances_by_id([instance_id]) do
       {:ok, [instance]} ->
-        updated_state = %{state |
-          public_ip: instance["ipAddress"],
-          ipv6_address: instance["ipv6Address"],
-          private_ip: instance["privateIpAddress"],
-          state: instance["instanceState"]["name"]
-        }
+        updated_state = merge_ec2_state(state, instance)
+        :ok = maybe_refresh_s3_state(state, updated_state)
         {:ok, updated_state}
 
       {:error, %ErrorMessage{code: :not_found}} ->
@@ -818,6 +838,59 @@ defmodule DeployEx.QaNode do
 
       error ->
         error
+    end
+  end
+
+  @doc """
+  Returns a new QaNode struct with the live EC2 fields (`public_ip`,
+  `ipv6_address`, `private_ip`, `state`) overlaid on top of an S3-loaded
+  state. All other fields (instance_tag, git_branch, load balancer info,
+  use_public_ip_cert?, ...) come from the S3 state and are preserved.
+  """
+  @spec merge_ec2_state(t(), map()) :: t()
+  def merge_ec2_state(%__MODULE__{} = state, instance) when is_map(instance) do
+    %{state |
+      public_ip: instance["ipAddress"],
+      ipv6_address: instance["ipv6Address"],
+      private_ip: instance["privateIpAddress"],
+      state: instance["instanceState"]["name"]
+    }
+  end
+
+  @doc """
+  True when any of the EC2-sourced fields (`public_ip`, `private_ip`,
+  `ipv6_address`, `state`) differ between the stored S3 state and the
+  freshly-merged state. Used to skip an S3 round-trip when nothing changed.
+  """
+  @spec s3_state_stale?(t(), t()) :: boolean()
+  def s3_state_stale?(%__MODULE__{} = old_state, %__MODULE__{} = new_state) do
+    old_state.public_ip !== new_state.public_ip or
+      old_state.private_ip !== new_state.private_ip or
+      old_state.ipv6_address !== new_state.ipv6_address or
+      old_state.state !== new_state.state
+  end
+
+  # Best-effort write-back so the S3 JSON (which downstream tools read)
+  # picks up the IP + state EC2 only allocates after instance creation.
+  # Failures are logged and swallowed — the read path must not fail just
+  # because a refresh write didn't land.
+  defp maybe_refresh_s3_state(old_state, new_state) do
+    if s3_state_stale?(old_state, new_state) do
+      refresh_s3_state(new_state)
+    else
+      :ok
+    end
+  end
+
+  defp refresh_s3_state(new_state) do
+    case save_qa_state(new_state, []) do
+      {:ok, :saved} ->
+        :ok
+
+      {:error, error} ->
+        require Logger
+        Logger.warning("#{__MODULE__}: failed to refresh S3 QA state for #{new_state.instance_id}, error: #{inspect(error)}")
+        :ok
     end
   end
 

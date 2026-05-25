@@ -256,6 +256,131 @@ defmodule DeployEx.QaNodeTest do
     end
   end
 
+  describe "s3_state_stale?/2" do
+    test "returns false when both states are identical" do
+      old = %QaNode{
+        instance_id: "i-abc",
+        app_name: "my_app",
+        target_sha: "abc1234",
+        public_ip: "54.1.2.3",
+        private_ip: "10.0.0.1",
+        ipv6_address: nil,
+        state: "running"
+      }
+
+      new = old
+
+      refute QaNode.s3_state_stale?(old, new)
+    end
+
+    test "returns true when S3 has nil public_ip and EC2 has a value" do
+      old = %QaNode{
+        instance_id: "i-abc",
+        app_name: "my_app",
+        target_sha: "abc1234",
+        public_ip: nil,
+        private_ip: nil,
+        ipv6_address: nil,
+        state: nil
+      }
+
+      new = %{old |
+        public_ip: "54.1.2.3",
+        private_ip: "10.0.0.1",
+        state: "running"
+      }
+
+      assert QaNode.s3_state_stale?(old, new)
+    end
+
+    test "returns true when state transitions (e.g., pending -> running)" do
+      old = %QaNode{
+        instance_id: "i-abc",
+        app_name: "my_app",
+        target_sha: "abc1234",
+        public_ip: "54.1.2.3",
+        state: "pending"
+      }
+
+      new = %{old | state: "running"}
+
+      assert QaNode.s3_state_stale?(old, new)
+    end
+
+    test "returns true when only ipv6_address changes" do
+      old = %QaNode{
+        instance_id: "i-abc",
+        app_name: "my_app",
+        target_sha: "abc1234",
+        public_ip: "54.1.2.3",
+        ipv6_address: nil,
+        state: "running"
+      }
+
+      new = %{old | ipv6_address: "2600:1f18::1"}
+
+      assert QaNode.s3_state_stale?(old, new)
+    end
+
+    test "returns false when only fields outside the refresh set differ" do
+      old = %QaNode{
+        instance_id: "i-abc",
+        app_name: "my_app",
+        target_sha: "abc1234",
+        instance_name: "old-name",
+        public_ip: "54.1.2.3",
+        private_ip: "10.0.0.1",
+        ipv6_address: nil,
+        state: "running"
+      }
+
+      new = %{old | instance_name: "new-name"}
+
+      refute QaNode.s3_state_stale?(old, new)
+    end
+  end
+
+  describe "merge_ec2_state/2" do
+    test "merges EC2 ip/state fields onto the S3 state" do
+      s3_state = %QaNode{
+        instance_id: "i-abc",
+        app_name: "my_app",
+        target_sha: "abc1234",
+        instance_tag: "feat",
+        git_branch: "feat/x",
+        instance_name: "my_app-prod-qa-abc1234-111",
+        load_balancer_attached?: true,
+        target_group_arns: ["arn:aws:tg/1"],
+        use_public_ip_cert?: true,
+        public_ip: nil,
+        private_ip: nil,
+        ipv6_address: nil,
+        state: nil
+      }
+
+      ec2_instance = %{
+        "ipAddress" => "54.1.2.3",
+        "ipv6Address" => "2600:1f18::1",
+        "privateIpAddress" => "10.0.0.1",
+        "instanceState" => %{"name" => "running"}
+      }
+
+      merged = QaNode.merge_ec2_state(s3_state, ec2_instance)
+
+      assert merged.public_ip === "54.1.2.3"
+      assert merged.ipv6_address === "2600:1f18::1"
+      assert merged.private_ip === "10.0.0.1"
+      assert merged.state === "running"
+      # S3-only fields preserved
+      assert merged.instance_tag === "feat"
+      assert merged.git_branch === "feat/x"
+      assert merged.instance_name === "my_app-prod-qa-abc1234-111"
+      assert merged.load_balancer_attached? === true
+      assert merged.target_group_arns === ["arn:aws:tg/1"]
+      assert merged.use_public_ip_cert? === true
+    end
+  end
+
   describe "to_json/1 and from_json/1 with new fields" do
     test "round-trip preserves instance_tag and git_branch" do
       original = %QaNode{
