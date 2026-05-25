@@ -49,7 +49,12 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
   end
 
   defp run_console_flow(extra_args, opts) do
-    app_name = require_app_name(extra_args)
+    app_name =
+      case resolve_console_app_name(extra_args, opts) do
+        {:ok, name} -> name
+        {:error, error} -> Mix.raise(ErrorMessage.to_string(error))
+      end
+
     sha = opts[:sha] || Mix.raise("--sha option is required (or run interactively without --no-tui)")
 
     result = DeployEx.TUI.Progress.run_stream(
@@ -95,9 +100,42 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
 
   defp stream_title(app_name, sha), do: "QA Deploy: #{app_name} (SHA #{String.slice(sha, 0, 7)})"
 
-  defp require_app_name([name | _]), do: name
-  defp require_app_name([]) do
-    Mix.raise("App name is required. Usage: mix deploy_ex.qa.deploy <app_name> --sha <sha>")
+  defp resolve_console_app_name([name | _], _opts), do: {:ok, name}
+
+  defp resolve_console_app_name([], opts) do
+    case opts[:git_branch] do
+      branch when is_binary(branch) and branch !== "" ->
+        resolve_app_name_from_branch(branch, opts)
+
+      _ ->
+        {:error,
+         ErrorMessage.bad_request(
+           "app name or --git-branch is required (so the target release can be resolved from the QA node)"
+         )}
+    end
+  end
+
+  defp resolve_app_name_from_branch(branch, opts) do
+    case DeployEx.QaNode.find_qa_nodes_by_branch(branch, opts) do
+      {:ok, [node]} ->
+        {:ok, node.app_name}
+
+      {:ok, []} ->
+        {:error,
+         ErrorMessage.not_found(
+           "no QA node found on branch #{branch} — create one with mix deploy_ex.qa.create"
+         )}
+
+      {:ok, nodes} ->
+        {:error,
+         ErrorMessage.conflict(
+           "multiple QA nodes on branch #{branch}; pass an app name positionally to disambiguate",
+           %{instance_ids: Enum.map(nodes, & &1.instance_id)}
+         )}
+
+      {:error, _} = error ->
+        error
+    end
   end
 
   defp resolve_app_in_terminal([name | _], _terminal), do: {:ok, name}
