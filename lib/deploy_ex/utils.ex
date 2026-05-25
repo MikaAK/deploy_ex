@@ -114,14 +114,14 @@ defmodule DeployEx.Utils do
   end
 
   def run_command_streaming(command, directory, line_callback, extra_opts \\ []) do
-    force_color = case :io.columns() do
-      {:ok, _} -> ~c"true"
-      _ -> ~c"false"
-    end
-
-    env = [{~c"ANSIBLE_FORCE_COLOR", force_color} | Enum.map(System.get_env(), fn {k, v} ->
-      {String.to_charlist(k), String.to_charlist(v)}
-    end)]
+    env = [
+      {~c"ANSIBLE_FORCE_COLOR", ~c"true"},
+      {~c"PY_COLORS", ~c"1"},
+      {~c"FORCE_COLOR", ~c"1"}
+      | Enum.map(System.get_env(), fn {k, v} ->
+          {String.to_charlist(k), String.to_charlist(v)}
+        end)
+    ]
 
     port = Port.open({:spawn_executable, "/bin/sh"}, [
       :binary, :exit_status, :stderr_to_stdout, :use_stdio,
