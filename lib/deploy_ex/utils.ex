@@ -113,15 +113,22 @@ defmodule DeployEx.Utils do
     end
   end
 
+  @color_force_env_vars [
+    {~c"ANSIBLE_FORCE_COLOR", ~c"true"},
+    {~c"PY_COLORS", ~c"1"},
+    {~c"FORCE_COLOR", ~c"1"},
+    {~c"CLICOLOR_FORCE", ~c"1"},
+    {~c"TERM", ~c"xterm-256color"},
+    {~c"COLUMNS", ~c"300"}
+  ]
+
   def run_command_streaming(command, directory, line_callback, extra_opts \\ []) do
-    env = [
-      {~c"ANSIBLE_FORCE_COLOR", ~c"true"},
-      {~c"PY_COLORS", ~c"1"},
-      {~c"FORCE_COLOR", ~c"1"}
-      | Enum.map(System.get_env(), fn {k, v} ->
-          {String.to_charlist(k), String.to_charlist(v)}
-        end)
-    ]
+    parent_env =
+      System.get_env()
+      |> Enum.reject(fn {k, _v} -> color_override_key?(k) end)
+      |> Enum.map(fn {k, v} -> {String.to_charlist(k), String.to_charlist(v)} end)
+
+    env = parent_env ++ @color_force_env_vars
 
     port = Port.open({:spawn_executable, "/bin/sh"}, [
       :binary, :exit_status, :stderr_to_stdout, :use_stdio,
@@ -131,6 +138,12 @@ defmodule DeployEx.Utils do
     ])
 
     stream_port_output(port, line_callback, "")
+  end
+
+  defp color_override_key?(key) do
+    Enum.any?(@color_force_env_vars, fn {forced_key, _v} ->
+      forced_key === String.to_charlist(key)
+    end)
   end
 
   defp stream_port_output(port, callback, buffer) do
