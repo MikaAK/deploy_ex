@@ -20,7 +20,21 @@ defmodule DeployEx.TUI do
       Application.put_env(:deploy_ex, :tui_enabled, false)
     end
 
+    force_ansi_color_emit()
     opts
+  end
+
+  @doc """
+  Forces `IO.ANSI.enabled?/0` to return `true` for the rest of the process so
+  every `Mix.shell().info([:green, ...])` and `IO.ANSI.format/1` call emits SGR
+  escape codes regardless of TTY detection.
+
+  This is what makes deploy_ex output keep its colors when piped — most
+  importantly in CI environments (GitHub Actions, GitLab) where stdout is a
+  pipe, not a tty, and Mix.Shell.IO would otherwise strip every color atom.
+  """
+  def force_ansi_color_emit do
+    Application.put_env(:elixir, :ansi_enabled, true)
   end
 
   @doc """
