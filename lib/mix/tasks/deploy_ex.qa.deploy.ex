@@ -248,7 +248,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
   end
 
   defp run_unified_flow(extra_args, opts) do
-    {final_result, log_tail} =
+    {final_result, log_tail, _ansible_setup_log} =
       DeployEx.TUI.run(fn terminal ->
         with {:ok, app_name} <- resolve_app_in_terminal(extra_args, terminal),
              {:ok, qa_node} <- resolve_qa_node_in_terminal(terminal, app_name, opts),
@@ -261,7 +261,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
 
           DeployEx.TUI.Progress.stream_in_terminal(terminal, title, work_fn, opts)
         else
-          {:error, _} = err -> {err, []}
+          {:error, _} = err -> {err, [], []}
         end
       end)
 
