@@ -18,8 +18,13 @@ defmodule DeployEx.GitHubActions.QaDeployStepInstallerTest do
     test "inserts QA deploy step and ansible.deploy guard on fresh workflow", %{tmp_dir: tmp_dir} do
       path = copy_fixture("fresh.yml", tmp_dir)
 
-      assert {:ok, %{qa_step: :inserted, ansible_guard: :inserted, qa_apps: []}} ===
-               QaDeployStepInstaller.install(path)
+      assert {:ok,
+              %{
+                qa_step: :inserted,
+                ansible_guard: :inserted,
+                qa_apps: [],
+                anchor: {:upload_step, "mix deploy_ex.upload"}
+              }} === QaDeployStepInstaller.install(path)
 
       contents = File.read!(path)
 
@@ -40,8 +45,13 @@ defmodule DeployEx.GitHubActions.QaDeployStepInstallerTest do
       {:ok, _} = QaDeployStepInstaller.install(path)
       first_run = File.read!(path)
 
-      assert {:ok, %{qa_step: :already_installed, ansible_guard: :already_installed, qa_apps: []}} ===
-               QaDeployStepInstaller.install(path)
+      assert {:ok,
+              %{
+                qa_step: :already_installed,
+                ansible_guard: :already_installed,
+                qa_apps: [],
+                anchor: nil
+              }} === QaDeployStepInstaller.install(path)
 
       assert File.read!(path) === first_run
     end
@@ -51,8 +61,13 @@ defmodule DeployEx.GitHubActions.QaDeployStepInstallerTest do
     } do
       path = copy_fixture("no_ansible_deploy.yml", tmp_dir)
 
-      assert {:ok, %{qa_step: :inserted, ansible_guard: :not_applicable, qa_apps: []}} ===
-               QaDeployStepInstaller.install(path)
+      assert {:ok,
+              %{
+                qa_step: :inserted,
+                ansible_guard: :not_applicable,
+                qa_apps: [],
+                anchor: {:upload_step, "mix deploy_ex.upload"}
+              }} === QaDeployStepInstaller.install(path)
 
       contents = File.read!(path)
       assert contents =~ "# deploy_ex:qa-deploy:begin"
@@ -64,8 +79,13 @@ defmodule DeployEx.GitHubActions.QaDeployStepInstallerTest do
     } do
       path = copy_fixture("user_managed_if.yml", tmp_dir)
 
-      assert {:ok, %{qa_step: :inserted, ansible_guard: :skipped_user_managed, qa_apps: []}} ===
-               QaDeployStepInstaller.install(path)
+      assert {:ok,
+              %{
+                qa_step: :inserted,
+                ansible_guard: :skipped_user_managed,
+                qa_apps: [],
+                anchor: {:upload_step, "mix deploy_ex.upload"}
+              }} === QaDeployStepInstaller.install(path)
 
       contents = File.read!(path)
       assert contents =~ "# deploy_ex:qa-deploy:begin"

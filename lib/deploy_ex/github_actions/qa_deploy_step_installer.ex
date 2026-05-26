@@ -1,8 +1,8 @@
 defmodule DeployEx.GitHubActions.QaDeployStepInstaller do
   @moduledoc """
   Idempotently patches a GitHub Actions workflow file so that QA branch builds
-  trigger `mix deploy_ex.qa.deploy` after the upload step, and so the existing
-  `mix ansible.deploy` step skips on QA branches.
+  trigger `mix deploy_ex.qa.deploy` after the SSH key/PEM file is written, and
+  so the existing `mix ansible.deploy` step skips on QA branches.
 
   Modifies the file as text — preserves user comments, ordering, and whitespace
   outside the managed regions. Sentinel comments mark every managed edit so
@@ -13,41 +13,68 @@ defmodule DeployEx.GitHubActions.QaDeployStepInstaller do
     * `# deploy_ex:qa-skip` — trailing marker on the managed `if:` guard for
       the existing `mix ansible.deploy` step.
 
+  ## Anchor resolution
+
+  Ansible needs the SSH private key on disk before it can connect to a deploy
+  host. The QA step must therefore be inserted AFTER the step that writes the
+  PEM file. The installer asks the configured LLM (`DeployEx.Config.llm_provider/0`)
+  to identify the PEM-writing step by name; this is more reliable than a
+  keyword scan because the step name, secret env var, and chmod target are all
+  user-configurable. If no LLM is configured, or the LLM cannot identify a
+  PEM-writing step, the installer falls back to the historical
+  `mix deploy_ex.upload` anchor.
+
   Result map fields:
 
     * `:qa_step` — `:inserted` | `:already_installed`
     * `:ansible_guard` — `:inserted` | `:already_installed` |
       `:skipped_user_managed` (step has a non-managed `if:`) |
       `:not_applicable` (no `mix ansible.deploy` step present)
+    * `:anchor` — `{:pem_step, name}` | `{:upload_step, signature}` — which
+      anchor was used. Useful for telemetry / debugging the install.
 
   Errors:
 
     * `:not_found` — workflow file does not exist.
-    * `:unprocessable_entity` — anchor step (`mix deploy_ex.upload`) is missing,
-      so we cannot place the QA-deploy step deterministically.
+    * `:unprocessable_entity` — neither a PEM-writing step nor the
+      `mix deploy_ex.upload` step is present, so the QA-deploy step has no
+      deterministic place to go.
   """
+
+  alias DeployEx.LLMMerge
 
   @qa_step_begin_marker "# deploy_ex:qa-deploy:begin"
   @qa_step_end_marker "# deploy_ex:qa-deploy:end"
   @qa_apps_marker "# deploy_ex:qa-apps:"
   @ansible_guard_marker "# deploy_ex:qa-skip"
-  @anchor_signature "mix deploy_ex.upload"
+  @upload_anchor_signature "mix deploy_ex.upload"
   @ansible_step_name_signature "Run Ansible Deploy"
+  @pem_none_response "NONE"
+
+  @type anchor_kind :: {:pem_step, String.t()} | {:upload_step, String.t()}
 
   @type install_result :: %{
           qa_step: :inserted | :updated | :already_installed,
           ansible_guard:
             :inserted | :already_installed | :skipped_user_managed | :not_applicable,
-          qa_apps: [String.t()]
+          qa_apps: [String.t()],
+          anchor: anchor_kind() | nil
         }
 
   @spec install(Path.t(), String.t() | nil) :: {:ok, install_result} | {:error, ErrorMessage.t()}
   def install(workflow_path, app_name \\ nil) do
     with {:ok, contents} <- read_workflow(workflow_path),
-         {:ok, with_qa_step, qa_status, qa_apps} <- ensure_qa_step(contents, app_name),
+         {:ok, with_qa_step, qa_status, qa_apps, anchor} <- ensure_qa_step(contents, app_name),
          {:ok, final_contents, guard_status} <- ensure_ansible_guard(with_qa_step) do
       write_if_changed(workflow_path, contents, final_contents)
-      {:ok, %{qa_step: qa_status, ansible_guard: guard_status, qa_apps: qa_apps}}
+
+      {:ok,
+       %{
+         qa_step: qa_status,
+         ansible_guard: guard_status,
+         qa_apps: qa_apps,
+         anchor: anchor
+       }}
     end
   end
 
@@ -90,16 +117,96 @@ defmodule DeployEx.GitHubActions.QaDeployStepInstaller do
       qa_step_present?(contents) ->
         upgrade_existing_block(contents, app_name)
 
-      anchor_line = find_anchor_step_block_end(contents) ->
-        apps = normalize_apps([app_name])
-        {:ok, insert_qa_step_after(contents, anchor_line, apps), :inserted, apps}
-
       true ->
+        insert_fresh_qa_step(contents, app_name)
+    end
+  end
+
+  defp insert_fresh_qa_step(contents, app_name) do
+    case resolve_insert_anchor(contents) do
+      {:ok, anchor_line, anchor_kind} ->
+        apps = normalize_apps([app_name])
+        {:ok, insert_qa_step_after(contents, anchor_line, apps), :inserted, apps, anchor_kind}
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp resolve_insert_anchor(contents) do
+    with {:ok, step_name} <- detect_pem_step_via_llm(contents),
+         %{} = anchor_line <- find_anchor_block_end_by_step_name(contents, step_name) do
+      {:ok, anchor_line, {:pem_step, step_name}}
+    else
+      _ -> resolve_upload_anchor(contents)
+    end
+  end
+
+  defp resolve_upload_anchor(contents) do
+    case find_anchor_step_block_end_by_signature(contents, @upload_anchor_signature) do
+      %{} = anchor_line ->
+        {:ok, anchor_line, {:upload_step, @upload_anchor_signature}}
+
+      nil ->
         {:error,
          ErrorMessage.unprocessable_entity(
-           "workflow has no `#{@anchor_signature}` step; cannot place QA-deploy step",
-           %{anchor: @anchor_signature}
+           "workflow has no PEM-writing step and no `#{@upload_anchor_signature}` step; cannot place QA-deploy step",
+           %{upload_anchor: @upload_anchor_signature}
          )}
+    end
+  end
+
+  defp detect_pem_step_via_llm(contents) do
+    case LLMMerge.ask(pem_detection_prompt(contents)) do
+      {:ok, text} -> parse_pem_detection_response(text)
+      {:error, _} = err -> err
+    end
+  end
+
+  defp pem_detection_prompt(contents) do
+    """
+    You are reading a GitHub Actions workflow YAML. Identify the single job step
+    that writes the SSH PEM / private-key file used to connect to deploy hosts.
+
+    Indicators (any combination):
+      - writes a file whose name ends in `.pem` (often via `echo "$SECRET" > path/$PEM_FILE`)
+      - references a secret variable like `EC2_PEM_FILE`, `SSH_KEY`, `DEPLOY_KEY`
+      - runs `chmod 400` / `chmod 0400` on a key file immediately after writing it
+
+    Reply with the EXACT step name (the value after `- name:`), nothing else.
+    Strip surrounding quotes. Do not include any explanation, backticks, or punctuation.
+    If no such step exists in the workflow, reply with the single token: #{@pem_none_response}
+
+    Workflow:
+
+    ```yaml
+    #{contents}
+    ```
+    """
+  end
+
+  defp parse_pem_detection_response(text) do
+    cleaned =
+      text
+      |> String.trim()
+      |> String.trim(~s("))
+      |> String.trim(~s('))
+      |> String.trim()
+
+    cond do
+      cleaned === "" -> {:error, :empty_response}
+      String.upcase(cleaned) === @pem_none_response -> {:error, :no_pem_step}
+      true -> {:ok, cleaned}
+    end
+  end
+
+  defp find_anchor_block_end_by_step_name(contents, step_name) do
+    lines = String.split(contents, "\n")
+    pattern = ~r/^\s*-\s+name:\s+#{Regex.escape(step_name)}\s*$/
+
+    case Enum.find_index(lines, &Regex.match?(pattern, &1)) do
+      nil -> nil
+      idx -> last_line_of_step_starting_around(lines, idx)
     end
   end
 
@@ -108,9 +215,9 @@ defmodule DeployEx.GitHubActions.QaDeployStepInstaller do
     new_apps = add_app(current_apps, app_name)
 
     if new_apps === current_apps and block_marker_present?(contents) do
-      {:ok, contents, :already_installed, current_apps}
+      {:ok, contents, :already_installed, current_apps, nil}
     else
-      {:ok, rewrite_block(contents, new_apps), :updated, new_apps}
+      {:ok, rewrite_block(contents, new_apps), :updated, new_apps, nil}
     end
   end
 
@@ -153,10 +260,10 @@ defmodule DeployEx.GitHubActions.QaDeployStepInstaller do
       String.contains?(contents, @qa_step_end_marker)
   end
 
-  defp find_anchor_step_block_end(contents) do
+  defp find_anchor_step_block_end_by_signature(contents, signature) do
     lines = String.split(contents, "\n")
 
-    case Enum.find_index(lines, &String.contains?(&1, @anchor_signature)) do
+    case Enum.find_index(lines, &String.contains?(&1, signature)) do
       nil -> nil
       idx -> last_line_of_step_starting_around(lines, idx)
     end
