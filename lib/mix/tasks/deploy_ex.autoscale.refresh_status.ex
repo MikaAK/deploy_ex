@@ -15,12 +15,25 @@ defmodule Mix.Tasks.DeployEx.Autoscale.RefreshStatus do
 
       mix deploy_ex.autoscale.refresh_status my_app
       mix deploy_ex.autoscale.refresh_status my_app --all
+      mix deploy_ex.autoscale.refresh_status my_app --wait
+      mix deploy_ex.autoscale.refresh_status my_app --wait --timeout 1200 --poll-interval 15
 
   ## Options
 
   - `--environment` or `-e` - Environment name (default: Mix.env())
   - `--all` or `-a` - Show all refreshes (default: only active/recent)
+  - `--wait` or `-w` - Block until all active refreshes reach a terminal state.
+    Exits non-zero if any refresh ends as Failed or Cancelled.
+  - `--timeout` - Max seconds to wait when `--wait` is set (default: 1800)
+  - `--poll-interval` - Seconds between polls when `--wait` is set (default: 10)
   """
+
+  @default_poll_interval 10
+  @default_timeout 1_800
+
+  @active_statuses ~w[Pending InProgress Cancelling]
+  @waiting_statuses ~w[Pending InProgress]
+  @terminal_failure_statuses ~w[Failed Cancelled]
 
   def run(args) do
     Application.ensure_all_started(:hackney)
@@ -28,8 +41,14 @@ defmodule Mix.Tasks.DeployEx.Autoscale.RefreshStatus do
     Application.ensure_all_started(:ex_aws)
 
     {opts, remaining_args} = OptionParser.parse!(args,
-      aliases: [e: :environment, a: :all],
-      switches: [environment: :string, all: :boolean]
+      aliases: [e: :environment, a: :all, w: :wait],
+      switches: [
+        environment: :string,
+        all: :boolean,
+        wait: :boolean,
+        timeout: :integer,
+        poll_interval: :integer
+      ]
     )
 
     app_name = case remaining_args do
@@ -39,30 +58,43 @@ defmodule Mix.Tasks.DeployEx.Autoscale.RefreshStatus do
 
     environment = Keyword.get(opts, :environment, Mix.env() |> to_string())
     show_all = Keyword.get(opts, :all, false)
+    wait? = Keyword.get(opts, :wait, false)
+    timeout_secs = Keyword.get(opts, :timeout, @default_timeout)
+    poll_interval = Keyword.get(opts, :poll_interval, @default_poll_interval)
 
     with :ok <- DeployExHelpers.check_valid_project() do
-      Mix.shell().info([:blue, "Fetching instance refresh status for #{app_name}..."])
+      Mix.shell().info(IO.ANSI.format([:blue, "Fetching instance refresh status for #{app_name}..."], true))
 
-      case AwsAutoscaling.find_asg_by_prefix(app_name, environment) do
-        {:ok, []} ->
-          asg_name = AwsAutoscaling.build_asg_name(app_name, environment)
-          fetch_and_display_refreshes(asg_name, show_all)
+      asg_names = resolve_asg_names(app_name, environment)
 
-        {:ok, asgs} ->
-          Enum.each(asgs, fn asg ->
-            fetch_and_display_refreshes(asg.name, show_all)
-          end)
+      Enum.each(asg_names, fn asg_name ->
+        fetch_and_display_refreshes(asg_name, show_all)
+      end)
 
-        {:error, error} ->
-          Mix.shell().error([:red, "\nError finding autoscaling groups: #{inspect(error)}\n"])
+      if wait? do
+        wait_for_all(asg_names, timeout_secs, poll_interval)
       end
+    end
+  end
+
+  defp resolve_asg_names(app_name, environment) do
+    case AwsAutoscaling.find_asg_by_prefix(app_name, environment) do
+      {:ok, []} ->
+        [AwsAutoscaling.build_asg_name(app_name, environment)]
+
+      {:ok, asgs} ->
+        Enum.map(asgs, & &1.name)
+
+      {:error, error} ->
+        Mix.shell().error(IO.ANSI.format([:red, "\nError finding autoscaling groups: #{inspect(error)}\n"], true))
+        []
     end
   end
 
   defp fetch_and_display_refreshes(asg_name, show_all) do
     case AwsAutoscaling.describe_instance_refreshes(asg_name) do
       {:ok, []} ->
-        Mix.shell().info([:yellow, "\nNo instance refreshes found for #{asg_name}."])
+        Mix.shell().info(IO.ANSI.format([:yellow, "\nNo instance refreshes found for #{asg_name}."], true))
 
       {:ok, refreshes} ->
         display_refreshes(refreshes, asg_name, show_all)
@@ -74,6 +106,136 @@ defmodule Mix.Tasks.DeployEx.Autoscale.RefreshStatus do
         Mix.raise("Error fetching refresh status: #{inspect(error)}")
     end
   end
+
+  defp wait_for_all(asg_names, timeout_secs, poll_interval) do
+    deadline = System.monotonic_time(:second) + timeout_secs
+
+    results = Enum.map(asg_names, &wait_for_asg(&1, deadline, poll_interval))
+
+    failures = collect_failures(results)
+    timed_out? = any_still_waiting?(results)
+
+    cond do
+      timed_out? ->
+        Mix.raise("Timed out after #{timeout_secs}s waiting for instance refreshes to finish")
+
+      not Enum.empty?(failures) ->
+        Enum.each(failures, &log_failed_refresh/1)
+        Mix.raise("One or more instance refreshes did not complete successfully")
+
+      true ->
+        Mix.shell().info(IO.ANSI.format([
+          :green, "\n✓ All instance refreshes completed successfully", :reset
+        ], true))
+    end
+  end
+
+  defp collect_failures(results) do
+    Enum.flat_map(results, fn {asg_name, refreshes} ->
+      refreshes
+      |> Enum.filter(&(&1.status in @terminal_failure_statuses))
+      |> Enum.map(fn refresh -> {asg_name, refresh} end)
+    end)
+  end
+
+  defp any_still_waiting?(results) do
+    Enum.any?(results, fn {_asg, refreshes} ->
+      Enum.any?(refreshes, &(&1.status in @waiting_statuses))
+    end)
+  end
+
+  defp log_failed_refresh({asg_name, refresh}) do
+    reason_text =
+      if refresh.status_reason, do: ": #{refresh.status_reason}", else: ""
+
+    Mix.shell().error(IO.ANSI.format([
+      :red, "✗ ", asg_name, " refresh ", refresh.refresh_id,
+      " ended ", refresh.status, reason_text, :reset
+    ], true))
+  end
+
+  defp wait_for_asg(asg_name, deadline, poll_interval) do
+    case AwsAutoscaling.describe_instance_refreshes(asg_name) do
+      {:ok, refreshes} ->
+        tracked_ids =
+          refreshes
+          |> Enum.filter(&(&1.status in @active_statuses))
+          |> Enum.map(& &1.refresh_id)
+
+        if Enum.empty?(tracked_ids) do
+          Mix.shell().info(IO.ANSI.format([
+            :faint, "  (no active refreshes on ", asg_name, ", skipping wait)", :reset
+          ], true))
+
+          {asg_name, refreshes}
+        else
+          Mix.shell().info(IO.ANSI.format([
+            :cyan, "\n⏳ Waiting for ", to_string(length(tracked_ids)),
+            " refresh(es) on ", asg_name, "...", :reset
+          ], true))
+
+          final = poll_until_done(asg_name, tracked_ids, deadline, poll_interval)
+          {asg_name, final}
+        end
+
+      {:error, error} ->
+        Mix.shell().error(IO.ANSI.format([
+          :red, "Failed to poll ", asg_name, ": ", inspect(error), :reset
+        ], true))
+
+        {asg_name, []}
+    end
+  end
+
+  defp poll_until_done(asg_name, refresh_ids, deadline, poll_interval) do
+    case AwsAutoscaling.describe_instance_refreshes(asg_name, refresh_ids: refresh_ids) do
+      {:ok, refreshes} ->
+        Enum.each(refreshes, &log_progress_line(asg_name, &1))
+
+        active? = Enum.any?(refreshes, &(&1.status in @waiting_statuses))
+        time_left = deadline - System.monotonic_time(:second)
+
+        cond do
+          not active? -> refreshes
+          time_left <= 0 -> refreshes
+          true ->
+            :timer.sleep(poll_interval * 1000)
+            poll_until_done(asg_name, refresh_ids, deadline, poll_interval)
+        end
+
+      {:error, error} ->
+        Mix.shell().error(IO.ANSI.format([
+          :red, "Poll error on ", asg_name, ": ", inspect(error), :reset
+        ], true))
+
+        :timer.sleep(poll_interval * 1000)
+        if System.monotonic_time(:second) >= deadline do
+          []
+        else
+          poll_until_done(asg_name, refresh_ids, deadline, poll_interval)
+        end
+    end
+  end
+
+  defp log_progress_line(asg_name, refresh) do
+    color = status_color(refresh.status)
+    pct = refresh.percentage_complete || 0
+
+    Mix.shell().info(IO.ANSI.format([
+      "  ", color, "● ", refresh.status, :reset,
+      " ", refresh.refresh_id,
+      :faint, " (", asg_name, ")", :reset,
+      " — ", :bright, "#{pct}%", :reset
+    ], true))
+  end
+
+  defp status_color("Successful"), do: :green
+  defp status_color("Failed"), do: :red
+  defp status_color("Cancelled"), do: :yellow
+  defp status_color("Cancelling"), do: :yellow
+  defp status_color("InProgress"), do: :cyan
+  defp status_color("Pending"), do: :blue
+  defp status_color(_), do: :reset
 
   defp display_refreshes(refreshes, asg_name, show_all) do
     refreshes_to_show = if show_all do
