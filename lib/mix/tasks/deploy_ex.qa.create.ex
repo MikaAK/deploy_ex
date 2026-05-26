@@ -509,7 +509,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
          :ok <- (progress.(:wait_instance, "Waiting for instance to start..."); wait_for_instance(qa_node, opts)),
          {:ok, qa_node} <- (progress.(:save_state, "Saving QA state..."); save_and_refresh_state(qa_node, opts)),
          {:ok, entries} <- (progress.(:apply_rewrite, "Applying host config rewrite..."); maybe_apply_proposals(qa_node, plan, accepted)),
-         {:ok, entries} <- maybe_install_qa_deploy_action(umbrella_root, build_state, entries, opts, tui_pid),
+         {:ok, entries} <- maybe_install_qa_deploy_action(umbrella_root, app_name, build_state, entries, opts, tui_pid),
          {:ok, qa_node} <- (maybe_progress_commit_push(progress, opts); commit_and_push_rewrites(qa_node, build_state, entries, ci_build_enabled?(opts), tui_pid)),
          :ok <- (progress.(:wait_ssh, "Waiting for SSH..."); wait_for_ssh_ready(qa_node, tui_pid)),
          :ok <- (progress.(:setup_deploy, "Running setup & deploy..."); run_setup_and_deploy(qa_node, infra, tui_pid, opts)),
@@ -562,21 +562,21 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     DeployEx.QaHostRewrite.apply_proposals(accepted, qa_node.public_ip, backup_dir)
   end
 
-  defp maybe_install_qa_deploy_action(umbrella_root, build_state, entries, opts, tui_pid) do
+  defp maybe_install_qa_deploy_action(umbrella_root, app_name, build_state, entries, opts, tui_pid) do
     cond do
       not ci_build_enabled?(opts) -> {:ok, entries}
       opts[:skip_action_install] === true -> {:ok, entries}
       build_state[:enabled?] !== true -> {:ok, entries}
-      true -> install_qa_deploy_action(umbrella_root, build_state, entries, tui_pid)
+      true -> install_qa_deploy_action(umbrella_root, app_name, build_state, entries, tui_pid)
     end
   end
 
-  defp install_qa_deploy_action(umbrella_root, %{workflow: workflow}, entries, tui_pid) do
+  defp install_qa_deploy_action(umbrella_root, app_name, %{workflow: workflow}, entries, tui_pid) do
     file = Map.get(workflow, :steps_file, workflow.file)
     workflow_path = Path.join([umbrella_root, ".github/workflows", file])
 
-    case DeployEx.GitHubActions.QaDeployStepInstaller.install(workflow_path) do
-      {:ok, %{qa_step: :inserted}} = ok ->
+    case DeployEx.GitHubActions.QaDeployStepInstaller.install(workflow_path, app_name) do
+      {:ok, %{qa_step: status}} = ok when status in [:inserted, :updated] ->
         log_action_install_status(tui_pid, ok, workflow_path)
         {:ok, append_workflow_entry(entries, workflow_path)}
 

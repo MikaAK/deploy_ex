@@ -49,11 +49,16 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
   end
 
   defp run_console_flow([name | _], opts) do
-    sha = require_sha(opts)
+    if skip_for_missing_local_release?(name, opts) do
+      log_skipped_for_missing_local_release(name)
+      :ok
+    else
+      sha = require_sha(opts)
 
-    name
-    |> deploy_single_app(sha, opts)
-    |> handle_final_result(opts)
+      name
+      |> deploy_single_app(sha, opts)
+      |> handle_final_result(opts)
+    end
   end
 
   defp run_console_flow([], opts) do
@@ -66,6 +71,19 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
           "app name or --git-branch is required (so the target release can be resolved from the QA node)"
         )
     end
+  end
+
+  defp skip_for_missing_local_release?(app_name, opts) do
+    opts[:only_local_release] === true and app_name not in DeployEx.ReleaseUploader.local_release_app_names()
+  end
+
+  defp log_skipped_for_missing_local_release(app_name) do
+    Mix.shell().info(
+      IO.ANSI.format(
+        [:yellow, "  ⚠ skipping #{app_name} (no local release; --only-local-release set)", :reset],
+        true
+      )
+    )
   end
 
   defp deploy_single_app(app_name, sha, opts) do

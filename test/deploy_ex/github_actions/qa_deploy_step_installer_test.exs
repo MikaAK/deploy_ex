@@ -18,16 +18,18 @@ defmodule DeployEx.GitHubActions.QaDeployStepInstallerTest do
     test "inserts QA deploy step and ansible.deploy guard on fresh workflow", %{tmp_dir: tmp_dir} do
       path = copy_fixture("fresh.yml", tmp_dir)
 
-      assert {:ok, %{qa_step: :inserted, ansible_guard: :inserted}} ===
+      assert {:ok, %{qa_step: :inserted, ansible_guard: :inserted, qa_apps: []}} ===
                QaDeployStepInstaller.install(path)
 
       contents = File.read!(path)
 
       assert contents =~ "# deploy_ex:qa-deploy:begin"
       assert contents =~ "# deploy_ex:qa-deploy:end"
-      assert contents =~ "- name: Deploy to QA Node"
+      assert contents =~ "- name: Deploy to QA Nodes"
       assert contents =~ "mix deploy_ex.qa.deploy"
       assert contents =~ "--git-branch"
+      assert contents =~ "# deploy_ex:qa-apps:"
+      assert contents =~ "for app in"
       assert contents =~ "# deploy_ex:qa-skip"
       assert contents =~ ~r/Run Ansible Deploy.*\n\s+if: .*startsWith.*qa\//s
     end
@@ -38,7 +40,7 @@ defmodule DeployEx.GitHubActions.QaDeployStepInstallerTest do
       {:ok, _} = QaDeployStepInstaller.install(path)
       first_run = File.read!(path)
 
-      assert {:ok, %{qa_step: :already_installed, ansible_guard: :already_installed}} ===
+      assert {:ok, %{qa_step: :already_installed, ansible_guard: :already_installed, qa_apps: []}} ===
                QaDeployStepInstaller.install(path)
 
       assert File.read!(path) === first_run
@@ -49,7 +51,7 @@ defmodule DeployEx.GitHubActions.QaDeployStepInstallerTest do
     } do
       path = copy_fixture("no_ansible_deploy.yml", tmp_dir)
 
-      assert {:ok, %{qa_step: :inserted, ansible_guard: :not_applicable}} ===
+      assert {:ok, %{qa_step: :inserted, ansible_guard: :not_applicable, qa_apps: []}} ===
                QaDeployStepInstaller.install(path)
 
       contents = File.read!(path)
@@ -62,13 +64,39 @@ defmodule DeployEx.GitHubActions.QaDeployStepInstallerTest do
     } do
       path = copy_fixture("user_managed_if.yml", tmp_dir)
 
-      assert {:ok, %{qa_step: :inserted, ansible_guard: :skipped_user_managed}} ===
+      assert {:ok, %{qa_step: :inserted, ansible_guard: :skipped_user_managed, qa_apps: []}} ===
                QaDeployStepInstaller.install(path)
 
       contents = File.read!(path)
       assert contents =~ "# deploy_ex:qa-deploy:begin"
       assert contents =~ "github.actor != 'dependabot[bot]'"
       refute contents =~ "# deploy_ex:qa-skip"
+    end
+
+    test "tracks app names across re-installs and renders bash for-loop", %{tmp_dir: tmp_dir} do
+      path = copy_fixture("fresh.yml", tmp_dir)
+
+      assert {:ok, %{qa_step: :inserted, qa_apps: ["cfx_web"]}} =
+               QaDeployStepInstaller.install(path, "cfx_web")
+
+      assert File.read!(path) =~ "for app in cfx_web; do"
+
+      assert {:ok, %{qa_step: :updated, qa_apps: ["cfx_web", "theta_data_api"]}} =
+               QaDeployStepInstaller.install(path, "theta_data_api")
+
+      contents = File.read!(path)
+      assert contents =~ "# deploy_ex:qa-apps: cfx_web,theta_data_api"
+      assert contents =~ "for app in cfx_web theta_data_api; do"
+
+      assert {:ok, %{qa_step: :already_installed, qa_apps: ["cfx_web", "theta_data_api"]}} =
+               QaDeployStepInstaller.install(path, "cfx_web")
+    end
+
+    test "tracked_apps/1 returns [] for fresh block without app_name", %{tmp_dir: tmp_dir} do
+      path = copy_fixture("fresh.yml", tmp_dir)
+      {:ok, _} = QaDeployStepInstaller.install(path)
+
+      assert QaDeployStepInstaller.tracked_apps(path) === []
     end
 
     test "returns :unprocessable_entity when no deploy_ex.upload anchor present", %{
