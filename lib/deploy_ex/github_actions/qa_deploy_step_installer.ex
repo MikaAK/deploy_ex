@@ -163,6 +163,7 @@ defmodule DeployEx.GitHubActions.QaDeployStepInstaller do
       run <> "mix deploy_ex.qa.deploy \\",
       run <> "  --sha $(git rev-parse --short ${{ github.sha }}) \\",
       run <> "  --git-branch \"$branch_name\" \\",
+      run <> "  --only-local-release \\",
       run <> "  --no-tui --quiet",
       pad <> @qa_step_end_marker
     ]

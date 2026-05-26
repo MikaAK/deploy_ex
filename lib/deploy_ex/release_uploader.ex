@@ -63,6 +63,28 @@ defmodule DeployEx.ReleaseUploader do
     end
   end
 
+  @doc """
+  Returns the list of app names whose release tarballs exist locally under
+  `_build`. Used by `ansible.deploy --only-local-release` and
+  `qa.deploy --only-local-release` to filter targets to only those apps
+  that were just built.
+  """
+  @spec local_release_app_names() :: [String.t()]
+  def local_release_app_names do
+    case fetch_all_local_releases() do
+      {:ok, releases} -> Enum.flat_map(releases, &extract_local_release_app_name/1)
+      _ -> []
+    end
+  end
+
+  defp extract_local_release_app_name(local_release) do
+    case local_release |> Path.basename() |> String.split("-") do
+      [_timestamp, _sha, app_name, _version] -> [app_name]
+      [app_name, _version] -> [app_name]
+      _ -> []
+    end
+  end
+
   def get_git_sha do
     case System.shell("git rev-parse --short HEAD") do
       {sha, 0} -> {:ok, String.trim_trailing(sha, "\n")}

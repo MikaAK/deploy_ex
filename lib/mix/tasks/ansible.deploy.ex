@@ -407,33 +407,14 @@ defmodule Mix.Tasks.Ansible.Deploy do
   end
 
   defp reject_playbook_without_local_release(host_playbook_paths, true) do
-    case ReleaseUploader.fetch_all_local_releases() do
-      {:error, %ErrorMessage{code: :not_found}} -> []
-      {:ok, local_releases} ->
-        releases = local_release_app_names(local_releases)
-
-        Enum.filter(host_playbook_paths, &has_local_release?(&1, releases))
-
-      _ -> host_playbook_paths
+    case ReleaseUploader.local_release_app_names() do
+      [] -> []
+      releases -> Enum.filter(host_playbook_paths, &has_local_release?(&1, releases))
     end
   end
 
   defp reject_playbook_without_local_release(host_playbook_paths, _) do
     host_playbook_paths
-  end
-
-  defp local_release_app_names(local_releases) do
-    Enum.map(local_releases, fn local_release ->
-      case local_release |> Path.basename |> String.split("-") do
-        [_timestamp, _sha, app_name, _version] -> app_name
-
-        [app_name, _version] -> app_name
-
-        _ ->
-          Mix.shell().error("Couldn't find app name from local release #{local_release}")
-          []
-      end
-    end)
   end
 
   defp has_local_release?(host_playbook, releases) do

@@ -48,21 +48,151 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
     end
   end
 
-  defp run_console_flow(extra_args, opts) do
-    app_name =
-      case resolve_console_app_name(extra_args, opts) do
-        {:ok, name} -> name
-        {:error, error} -> Mix.raise(ErrorMessage.to_string(error))
-      end
+  defp run_console_flow([name | _], opts) do
+    sha = require_sha(opts)
 
-    sha = opts[:sha] || Mix.raise("--sha option is required (or run interactively without --no-tui)")
+    name
+    |> deploy_single_app(sha, opts)
+    |> handle_final_result(opts)
+  end
 
-    result = DeployEx.TUI.Progress.run_stream(
+  defp run_console_flow([], opts) do
+    case opts[:git_branch] do
+      branch when is_binary(branch) and branch !== "" ->
+        run_branch_fanout(branch, opts)
+
+      _ ->
+        Mix.raise(
+          "app name or --git-branch is required (so the target release can be resolved from the QA node)"
+        )
+    end
+  end
+
+  defp deploy_single_app(app_name, sha, opts) do
+    DeployEx.TUI.Progress.run_stream(
       stream_title(app_name, sha),
       fn tui_pid -> run_deploy_pipeline(tui_pid, app_name, sha, opts, 5) end
     )
+  end
 
-    handle_final_result(result, opts)
+  defp run_branch_fanout(branch, opts) do
+    sha = require_sha(opts)
+
+    with {:ok, nodes} <- DeployEx.QaNode.find_qa_nodes_by_branch(branch, opts),
+         {:ok, targets} <- filter_branch_targets(nodes, branch, opts) do
+      targets
+      |> Enum.map(fn node -> deploy_branch_target(node, sha, opts) end)
+      |> handle_branch_fanout_results(opts)
+    else
+      {:error, error} -> Mix.raise(ErrorMessage.to_string(error))
+    end
+  end
+
+  defp filter_branch_targets([], branch, _opts) do
+    {:error,
+     ErrorMessage.not_found(
+       "no QA node found on branch #{branch} — create one with mix deploy_ex.qa.create"
+     )}
+  end
+
+  defp filter_branch_targets(nodes, branch, opts) do
+    if opts[:only_local_release] do
+      apply_local_release_filter(nodes, branch)
+    else
+      {:ok, nodes}
+    end
+  end
+
+  defp apply_local_release_filter(nodes, branch) do
+    local_apps = DeployEx.ReleaseUploader.local_release_app_names()
+    {kept, skipped} = Enum.split_with(nodes, &(&1.app_name in local_apps))
+
+    Enum.each(skipped, fn node ->
+      Mix.shell().info([
+        :yellow,
+        "  ⚠ skipping #{node.app_name} (no local release)",
+        :reset
+      ])
+    end)
+
+    case kept do
+      [] ->
+        {:error,
+         ErrorMessage.not_found(
+           "no QA nodes on branch #{branch} match locally-built releases",
+           %{branch: branch, local_apps: local_apps, node_apps: Enum.map(nodes, & &1.app_name)}
+         )}
+
+      _ ->
+        {:ok, kept}
+    end
+  end
+
+  defp deploy_branch_target(node, sha, opts) do
+    title = stream_title(node.app_name, sha)
+    work_fn = fn tui_pid -> run_branch_target_pipeline(tui_pid, node, sha, opts) end
+    {node, DeployEx.TUI.Progress.run_stream(title, work_fn)}
+  end
+
+  defp run_branch_target_pipeline(tui_pid, node, sha, opts) do
+    progress = fn step, label ->
+      DeployEx.TUI.Progress.update_progress(tui_pid, step / 4, label)
+    end
+
+    with {:ok, verified} <- (progress.(1, "Verifying QA instance..."); DeployEx.QaNode.verify_instance_exists(node)),
+         {:ok, full_sha} <- (progress.(2, "Validating SHA..."); validate_and_find_sha(verified.app_name, sha, opts)),
+         :ok <- (progress.(3, "Running ansible deploy..."); run_ansible_deploy(verified, full_sha, tui_pid, opts)),
+         {:ok, updated} <- (progress.(4, "Updating QA state..."); update_qa_state(verified, full_sha, opts)) do
+      {:ok, {updated, full_sha}}
+    end
+  end
+
+  defp handle_branch_fanout_results(results, opts) do
+    {successes, failures} =
+      Enum.split_with(results, fn {_node, result} -> match?({:ok, _}, result) end)
+
+    print_fanout_summary(successes, failures, opts)
+
+    case failures do
+      [] -> :ok
+      _ -> Mix.raise("#{length(failures)} of #{length(results)} QA deploys failed")
+    end
+  end
+
+  defp print_fanout_summary(successes, [], opts) do
+    unless opts[:quiet] do
+      Mix.shell().info(IO.ANSI.format([:green, "\n✓ Deployed all QA nodes for branch", :reset], true))
+      Enum.each(successes, &print_success_line/1)
+    end
+  end
+
+  defp print_fanout_summary(successes, failures, _opts) do
+    Enum.each(successes, &print_success_line/1)
+    Enum.each(failures, &print_failure_line/1)
+  end
+
+  defp print_success_line({_node, {:ok, {qa_node, full_sha}}}) do
+    Mix.shell().info(
+      IO.ANSI.format(
+        [
+          :green,
+          "  • #{qa_node.app_name} (#{qa_node.instance_name}) → ",
+          :cyan,
+          String.slice(full_sha, 0, 7),
+          :reset
+        ],
+        true
+      )
+    )
+  end
+
+  defp print_failure_line({node, {:error, error}}) do
+    Mix.shell().error("✗ #{node.app_name} (#{node.instance_id}): #{ErrorMessage.to_string(error)}")
+  end
+
+  defp require_sha(opts) do
+    opts[:sha] ||
+      Mix.raise("--sha option is required (or run interactively without --no-tui)")
   end
 
   defp run_unified_flow(extra_args, opts) do
@@ -99,44 +229,6 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
   defp handle_final_result({:error, error}, _opts), do: Mix.raise(ErrorMessage.to_string(error))
 
   defp stream_title(app_name, sha), do: "QA Deploy: #{app_name} (SHA #{String.slice(sha, 0, 7)})"
-
-  defp resolve_console_app_name([name | _], _opts), do: {:ok, name}
-
-  defp resolve_console_app_name([], opts) do
-    case opts[:git_branch] do
-      branch when is_binary(branch) and branch !== "" ->
-        resolve_app_name_from_branch(branch, opts)
-
-      _ ->
-        {:error,
-         ErrorMessage.bad_request(
-           "app name or --git-branch is required (so the target release can be resolved from the QA node)"
-         )}
-    end
-  end
-
-  defp resolve_app_name_from_branch(branch, opts) do
-    case DeployEx.QaNode.find_qa_nodes_by_branch(branch, opts) do
-      {:ok, [node]} ->
-        {:ok, node.app_name}
-
-      {:ok, []} ->
-        {:error,
-         ErrorMessage.not_found(
-           "no QA node found on branch #{branch} — create one with mix deploy_ex.qa.create"
-         )}
-
-      {:ok, nodes} ->
-        {:error,
-         ErrorMessage.conflict(
-           "multiple QA nodes on branch #{branch}; pass an app name positionally to disambiguate",
-           %{instance_ids: Enum.map(nodes, & &1.instance_id)}
-         )}
-
-      {:error, _} = error ->
-        error
-    end
-  end
 
   defp resolve_app_in_terminal([name | _], _terminal), do: {:ok, name}
   defp resolve_app_in_terminal([], terminal) do
@@ -261,7 +353,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
 
   defp parse_args(args) do
     OptionParser.parse!(args,
-      aliases: [s: :sha, i: :instance_id, q: :quiet],
+      aliases: [s: :sha, i: :instance_id, q: :quiet, l: :only_local_release],
       switches: [
         sha: :string,
         instance_id: :string,
@@ -270,6 +362,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
         quiet: :boolean,
         aws_region: :string,
         aws_release_bucket: :string,
+        only_local_release: :boolean,
         no_tui: :boolean
       ]
     )
