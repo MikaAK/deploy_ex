@@ -50,14 +50,16 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
 
   defp run_console_flow([name | _], opts) do
     if skip_for_missing_local_release?(name, opts) do
-      log_skipped_for_missing_local_release(name)
+      log_skipped(name, "no local release tarball")
       :ok
     else
       sha = require_sha(opts)
+      result = deploy_single_app(name, sha, opts)
 
-      name
-      |> deploy_single_app(sha, opts)
-      |> handle_final_result(opts)
+      case skip_when_release_not_uploaded(result, name, opts) do
+        :skipped -> :ok
+        other -> handle_final_result(other, opts)
+      end
     end
   end
 
@@ -77,14 +79,28 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
     opts[:only_local_release] === true and app_name not in DeployEx.ReleaseUploader.local_release_app_names()
   end
 
-  defp log_skipped_for_missing_local_release(app_name) do
+  defp skip_when_release_not_uploaded({:error, %ErrorMessage{code: :not_found}} = result, app_name, opts) do
+    if opts[:only_local_release] === true do
+      log_skipped(app_name, "no release uploaded for SHA #{short_sha(opts[:sha])}")
+      :skipped
+    else
+      result
+    end
+  end
+
+  defp skip_when_release_not_uploaded(result, _app_name, _opts), do: result
+
+  defp log_skipped(app_name, reason) do
     Mix.shell().info(
       IO.ANSI.format(
-        [:yellow, "  ⚠ skipping #{app_name} (no local release; --only-local-release set)", :reset],
+        [:yellow, "  ⚠ skipping #{app_name} (#{reason}; --only-local-release set)", :reset],
         true
       )
     )
   end
+
+  defp short_sha(nil), do: "?"
+  defp short_sha(sha) when is_binary(sha), do: String.slice(sha, 0, 7)
 
   defp deploy_single_app(app_name, sha, opts) do
     DeployEx.TUI.Progress.run_stream(
@@ -149,7 +165,8 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
   defp deploy_branch_target(node, sha, opts) do
     title = stream_title(node.app_name, sha)
     work_fn = fn tui_pid -> run_branch_target_pipeline(tui_pid, node, sha, opts) end
-    {node, DeployEx.TUI.Progress.run_stream(title, work_fn)}
+    raw_result = DeployEx.TUI.Progress.run_stream(title, work_fn)
+    {node, skip_when_release_not_uploaded(raw_result, node.app_name, opts)}
   end
 
   defp run_branch_target_pipeline(tui_pid, node, sha, opts) do
@@ -166,10 +183,10 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
   end
 
   defp handle_branch_fanout_results(results, opts) do
-    {successes, failures} =
-      Enum.split_with(results, fn {_node, result} -> match?({:ok, _}, result) end)
+    {successes, rest} = Enum.split_with(results, &result_ok?/1)
+    {skipped, failures} = Enum.split_with(rest, &result_skipped?/1)
 
-    print_fanout_summary(successes, failures, opts)
+    print_fanout_summary(successes, skipped, failures, opts)
 
     case failures do
       [] -> :ok
@@ -177,16 +194,33 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
     end
   end
 
-  defp print_fanout_summary(successes, [], opts) do
+  defp result_ok?({_node, {:ok, _}}), do: true
+  defp result_ok?(_), do: false
+
+  defp result_skipped?({_node, :skipped}), do: true
+  defp result_skipped?(_), do: false
+
+  defp print_fanout_summary(successes, skipped, [], opts) do
     unless opts[:quiet] do
-      Mix.shell().info(IO.ANSI.format([:green, "\n✓ Deployed all QA nodes for branch", :reset], true))
+      Mix.shell().info(IO.ANSI.format([:green, "\n✓ QA fan-out complete", :reset], true))
       Enum.each(successes, &print_success_line/1)
+      Enum.each(skipped, &print_skipped_line/1)
     end
   end
 
-  defp print_fanout_summary(successes, failures, _opts) do
+  defp print_fanout_summary(successes, skipped, failures, _opts) do
     Enum.each(successes, &print_success_line/1)
+    Enum.each(skipped, &print_skipped_line/1)
     Enum.each(failures, &print_failure_line/1)
+  end
+
+  defp print_skipped_line({node, :skipped}) do
+    Mix.shell().info(
+      IO.ANSI.format(
+        [:yellow, "  ⚠ #{node.app_name} (#{node.instance_name}) skipped — no fresh release", :reset],
+        true
+      )
+    )
   end
 
   defp print_success_line({_node, {:ok, {qa_node, full_sha}}}) do
