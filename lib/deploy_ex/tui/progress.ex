@@ -190,13 +190,17 @@ defmodule DeployEx.TUI.Progress do
         Mix.shell().info([:faint, "  [#{percent}%] ", :reset, label])
         console_stream_loop_with_log(title, worker, log_tail, ansible_setup_log)
 
+      {:tui_progress_log, line} when is_binary(line) ->
+        IO.puts(line)
+        console_stream_loop_with_log(title, worker, [line | log_tail], ansible_setup_log)
+
       {:tui_progress_log, {_color, _text} = entry} ->
         {_color, text} = entry
         Mix.shell().info([:faint, text])
         console_stream_loop_with_log(title, worker, [entry | log_tail], ansible_setup_log)
 
       {:tui_progress_ansible_log, text} ->
-        Mix.shell().info([:faint, text])
+        IO.puts(text)
         console_stream_loop_with_log(title, worker, log_tail, [text | ansible_setup_log])
 
       {:tui_progress_confirm_request, payload, reply_to} ->
@@ -230,8 +234,16 @@ defmodule DeployEx.TUI.Progress do
         Mix.shell().info([:faint, "  [#{percent}%] ", :reset, label])
         console_stream_loop(title, worker)
 
+      {:tui_progress_log, line} when is_binary(line) ->
+        IO.puts(line)
+        console_stream_loop(title, worker)
+
       {:tui_progress_log, {_color, text}} ->
         Mix.shell().info([:faint, text])
+        console_stream_loop(title, worker)
+
+      {:tui_progress_ansible_log, text} ->
+        IO.puts(text)
         console_stream_loop(title, worker)
 
       {:tui_progress_confirm_request, payload, reply_to} ->
@@ -382,7 +394,11 @@ defmodule DeployEx.TUI.Progress do
   the pane width at draw time.
   """
   def update_log(tui_pid, line) do
-    send(tui_pid, {:tui_progress_log, parse_log_line(line)})
+    if DeployEx.TUI.enabled?() do
+      send(tui_pid, {:tui_progress_log, parse_log_line(line)})
+    else
+      send(tui_pid, {:tui_progress_log, to_string(line)})
+    end
   end
 
   @doc """
@@ -392,13 +408,14 @@ defmodule DeployEx.TUI.Progress do
   for the post-run summary even for very long playbooks.
   """
   def update_ansible_log(tui_pid, line) when is_pid(tui_pid) do
-    text =
-      line
-      |> to_string()
-      |> String.replace(@ansi_regex, "")
-      |> String.trim_trailing()
+    raw = to_string(line)
 
-    send(tui_pid, {:tui_progress_ansible_log, text})
+    if DeployEx.TUI.enabled?() do
+      stripped = raw |> String.replace(@ansi_regex, "") |> String.trim_trailing()
+      send(tui_pid, {:tui_progress_ansible_log, stripped})
+    else
+      send(tui_pid, {:tui_progress_ansible_log, String.trim_trailing(raw)})
+    end
   end
 
   def update_ansible_log(_tui_pid, _line), do: :ok

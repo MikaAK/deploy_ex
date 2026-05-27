@@ -219,7 +219,9 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
     end
   end
 
-  defp ci_build_enabled?(opts), do: not (opts[:use_local_build] || false)
+  defp ci_build_enabled?(opts) do
+    not (opts[:use_local_build] || false) and opts[:deploy_strategy] !== :pre_built_sha
+  end
 
   defp validate_ci_build_preconditions(_opts, _umbrella_root, _app_name, false), do: {:ok, %{enabled?: false}}
 
