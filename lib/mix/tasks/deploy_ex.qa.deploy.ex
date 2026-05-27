@@ -54,12 +54,7 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
       :ok
     else
       sha = require_sha(opts)
-      result = deploy_single_app(name, sha, opts)
-
-      case skip_when_release_not_uploaded(result, name, opts) do
-        :skipped -> :ok
-        other -> handle_final_result(other, opts)
-      end
+      run_single_app_with_pre_resolved_sha(name, sha, opts)
     end
   end
 
@@ -75,20 +70,24 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
     end
   end
 
-  defp skip_for_missing_local_release?(app_name, opts) do
-    opts[:only_local_release] === true and app_name not in DeployEx.ReleaseUploader.local_release_app_names()
-  end
+  defp run_single_app_with_pre_resolved_sha(name, sha, opts) do
+    case resolve_or_skip_sha(name, sha, opts) do
+      :skipped ->
+        :ok
 
-  defp skip_when_release_not_uploaded({:error, %ErrorMessage{code: :not_found}} = result, app_name, opts) do
-    if opts[:only_local_release] === true do
-      log_skipped(app_name, "no release uploaded for SHA #{short_sha(opts[:sha])}")
-      :skipped
-    else
-      result
+      {:error, _} = err ->
+        handle_final_result(err, opts)
+
+      {:ok, full_sha} ->
+        full_sha
+        |> deploy_single_app_with_sha(name, opts)
+        |> handle_final_result(opts)
     end
   end
 
-  defp skip_when_release_not_uploaded(result, _app_name, _opts), do: result
+  defp skip_for_missing_local_release?(app_name, opts) do
+    opts[:only_local_release] === true and app_name not in DeployEx.ReleaseUploader.local_release_app_names()
+  end
 
   defp log_skipped(app_name, reason) do
     Mix.shell().info(
@@ -102,11 +101,29 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
   defp short_sha(nil), do: "?"
   defp short_sha(sha) when is_binary(sha), do: String.slice(sha, 0, 7)
 
-  defp deploy_single_app(app_name, sha, opts) do
+  defp deploy_single_app_with_sha(full_sha, app_name, opts) do
     DeployEx.TUI.Progress.run_stream(
-      stream_title(app_name, sha),
-      fn tui_pid -> run_deploy_pipeline(tui_pid, app_name, sha, opts, 5) end
+      stream_title(app_name, full_sha),
+      fn tui_pid -> run_deploy_pipeline_with_sha(tui_pid, app_name, full_sha, opts) end
     )
+  end
+
+  defp resolve_or_skip_sha(app_name, sha, opts) do
+    case validate_and_find_sha(app_name, sha, opts) do
+      {:ok, full_sha} ->
+        {:ok, full_sha}
+
+      {:error, %ErrorMessage{code: :not_found}} = err ->
+        if opts[:only_local_release] === true do
+          log_skipped(app_name, "no release uploaded for SHA #{short_sha(sha)}")
+          :skipped
+        else
+          err
+        end
+
+      {:error, _} = err ->
+        err
+    end
   end
 
   defp run_branch_fanout(branch, opts) do
@@ -163,21 +180,28 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
   end
 
   defp deploy_branch_target(node, sha, opts) do
-    title = stream_title(node.app_name, sha)
-    work_fn = fn tui_pid -> run_branch_target_pipeline(tui_pid, node, sha, opts) end
-    raw_result = DeployEx.TUI.Progress.run_stream(title, work_fn)
-    {node, skip_when_release_not_uploaded(raw_result, node.app_name, opts)}
+    case resolve_or_skip_sha(node.app_name, sha, opts) do
+      :skipped ->
+        {node, :skipped}
+
+      {:error, _} = err ->
+        {node, err}
+
+      {:ok, full_sha} ->
+        title = stream_title(node.app_name, full_sha)
+        work_fn = fn tui_pid -> run_branch_target_pipeline_with_sha(tui_pid, node, full_sha, opts) end
+        {node, DeployEx.TUI.Progress.run_stream(title, work_fn)}
+    end
   end
 
-  defp run_branch_target_pipeline(tui_pid, node, sha, opts) do
+  defp run_branch_target_pipeline_with_sha(tui_pid, node, full_sha, opts) do
     progress = fn step, label ->
-      DeployEx.TUI.Progress.update_progress(tui_pid, step / 4, label)
+      DeployEx.TUI.Progress.update_progress(tui_pid, step / 3, label)
     end
 
     with {:ok, verified} <- (progress.(1, "Verifying QA instance..."); DeployEx.QaNode.verify_instance_exists(node)),
-         {:ok, full_sha} <- (progress.(2, "Validating SHA..."); validate_and_find_sha(verified.app_name, sha, opts)),
-         :ok <- (progress.(3, "Running ansible deploy..."); run_ansible_deploy(verified, full_sha, tui_pid, opts)),
-         {:ok, updated} <- (progress.(4, "Updating QA state..."); update_qa_state(verified, full_sha, opts)) do
+         :ok <- (progress.(2, "Running ansible deploy..."); run_ansible_deploy(verified, full_sha, tui_pid, opts)),
+         {:ok, updated} <- (progress.(3, "Updating QA state..."); update_qa_state(verified, full_sha, opts)) do
       {:ok, {updated, full_sha}}
     end
   end
@@ -374,16 +398,17 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
     end
   end
 
-  defp run_deploy_pipeline(tui_pid, app_name, sha, opts, total) do
+  defp run_deploy_pipeline_with_sha(tui_pid, app_name, full_sha, opts) do
+    total = 4
+
     progress = fn step, label ->
       DeployEx.TUI.Progress.update_progress(tui_pid, step / total, label)
     end
 
     with {:ok, qa_node} <- (progress.(1, "Fetching QA node..."); fetch_and_verify_qa_node(app_name, opts)),
-         {:ok, full_sha} <- (progress.(2, "Validating SHA..."); validate_and_find_sha(app_name, sha, opts)),
-         {:ok, qa_node} <- (progress.(3, "Applying cert mode..."); maybe_apply_cert_mode_change(qa_node, opts)),
-         :ok <- (progress.(4, "Running ansible deploy..."); run_ansible_deploy(qa_node, full_sha, tui_pid, opts)),
-         {:ok, updated} <- (progress.(5, "Updating QA state..."); update_qa_state(qa_node, full_sha, opts)) do
+         {:ok, qa_node} <- (progress.(2, "Applying cert mode..."); maybe_apply_cert_mode_change(qa_node, opts)),
+         :ok <- (progress.(3, "Running ansible deploy..."); run_ansible_deploy(qa_node, full_sha, tui_pid, opts)),
+         {:ok, updated} <- (progress.(4, "Updating QA state..."); update_qa_state(qa_node, full_sha, opts)) do
       {:ok, {updated, full_sha}}
     end
   end
