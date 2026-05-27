@@ -142,10 +142,23 @@
         state: present
         update_cache: yes
 
+    # snapd's first boot seeds the system store, and `snap install` calls
+    # api.snapcraft.io/v2/snaps/refresh. If seeding is still in flight, or
+    # the refresh call hits a transient network blip, snapd returns
+    # "context canceled". Block until seeding completes and retry the
+    # install a few times with backoff so transient API failures recover.
+    - name: Wait for snapd to finish seeding
+      command: snap wait system seed.loaded
+      changed_when: false
+
     - name: Install certbot via snap (needs ≥ 4.0 for --preferred-profile shortlived)
       command: snap install --classic certbot
       args:
         creates: /snap/bin/certbot
+      register: snap_install_certbot
+      retries: 5
+      delay: 30
+      until: snap_install_certbot is succeeded
 
     - name: Symlink certbot into /usr/bin
       file:
