@@ -204,16 +204,19 @@ defmodule DeployEx.QaNode do
   end
 
   @doc """
-  Builds the inventory hostname for the QA node as produced by the
-  aws_ec2 ansible plugin: `"<instance-id>-<Name tag>"`.
+  Builds the `ansible-playbook --limit` pattern that matches this QA node's
+  inventory hostname. The aws_ec2 plugin composes hostnames as
+  `"<instance-id>-<Name tag>"`, so the glob `"<instance-id>*"` matches the
+  host regardless of the Name suffix.
 
-  Used for `ansible-playbook --limit` so the exact host matches the
-  inventory hostname (which is prefixed with the EC2 instance id).
+  Globbing on the instance-id prefix sidesteps the fact that ansible parses
+  `--limit` values by splitting on whitespace — a `Name` tag containing a
+  space could never be targeted by its literal hostname.
   """
-  @spec inventory_hostname(t()) :: String.t()
-  def inventory_hostname(%__MODULE__{instance_id: instance_id, instance_name: instance_name})
-      when is_binary(instance_id) and is_binary(instance_name) do
-    "#{instance_id}-#{instance_name}"
+  @spec ansible_limit_pattern(t()) :: String.t()
+  def ansible_limit_pattern(%__MODULE__{instance_id: instance_id})
+      when is_binary(instance_id) do
+    "#{instance_id}*"
   end
 
   @doc false

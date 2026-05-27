@@ -31,20 +31,24 @@ defmodule Mix.Tasks.Ansible.Setup do
   ### Targeting a single instance
 
   Pass `--instance-id i-0abc123` (alias `-i`, repeatable) to scope the setup
-  to a specific EC2 instance. Each id is resolved to its `Name` tag via the
-  AWS API and combined into an ansible `--limit '<name1>,<name2>,'` so every
-  setup playbook only touches the matching host(s). The default `!qa_true`
-  exclusion is bypassed when targeting by id, so a QA instance can be
-  re-bootstrapped without also passing `--include-qa`.
+  to a specific EC2 instance. The id is validated against the AWS API and
+  passed to ansible as a glob: `--limit '<id1>*,<id2>*,'`. The aws_ec2
+  inventory plugin composes hostnames as `<instance-id>-<Name>`, so the
+  glob matches the host regardless of what the `Name` tag contains
+  (including whitespace, which would otherwise break ansible's `--limit`
+  parser). The default `!qa_true` exclusion is bypassed when targeting by
+  id, so a QA instance can be re-bootstrapped without also passing
+  `--include-qa`.
 
   ### Targeting QA nodes for a git branch
 
   Pass `--git-branch qa/<name>` (alias `-b`) to scope the setup to every QA
   node tagged with that `GitBranch`. The branch is resolved via the AWS API
-  to the matching QA `Name` tags and merged into the same ansible `--limit`
-  used by `--instance-id`. Errors if no QA node matches. Bypasses the default
-  `!qa_true` exclusion (a branch-scoped run is QA by definition). Combine
-  with `--instance-id` to add ad-hoc hosts to the same run.
+  to the matching QA instance ids, and each id is added to the ansible
+  `--limit` as a glob (same form as `--instance-id`). Errors if no QA node
+  matches. Bypasses the default `!qa_true` exclusion (a branch-scoped run
+  is QA by definition). Combine with `--instance-id` to add ad-hoc hosts
+  to the same run.
 
   ## Example
   ```bash
@@ -65,11 +69,12 @@ defmodule Mix.Tasks.Ansible.Setup do
   - `except` - Skip setup for specified apps (can be used multiple times)
   - `include-qa` - Include QA nodes in setup (default: excluded)
   - `instance-id, -i` - Target one or more EC2 instances by instance id
-    (repeatable; resolves each id to its `Name` tag and passes them as a
-    single ansible `--limit`). Bypasses the default QA exclusion.
+    (repeatable; validated against AWS and passed to ansible as a glob
+    `--limit '<id1>*,<id2>*,'` matching the inventory hostname prefix).
+    Bypasses the default QA exclusion.
   - `git-branch, -b` - Target every QA node whose `GitBranch` tag matches.
-    Resolves to matching QA `Name` tags via the AWS API and merges them into
-    the ansible `--limit`. Bypasses the default QA exclusion.
+    Resolves to matching QA instance ids via the AWS API and adds each as
+    a glob to the ansible `--limit`. Bypasses the default QA exclusion.
   - `aws-region` - AWS region for the instance lookup (default: from config)
   - `no-tui` - Disable TUI progress display
   - `quiet` - Suppress output messages
@@ -154,13 +159,13 @@ defmodule Mix.Tasks.Ansible.Setup do
   defp build_target_limit(instance_ids, git_branch, opts) do
     ensure_aws_started()
 
-    names =
-      resolve_instance_id_names(instance_ids, opts) ++
-        resolve_git_branch_names(git_branch, opts)
+    patterns =
+      resolve_instance_id_patterns(instance_ids, opts) ++
+        resolve_git_branch_patterns(git_branch, opts)
 
-    case Enum.uniq(names) do
+    case Enum.uniq(patterns) do
       [] -> []
-      uniq_names -> ["--limit", "'#{Enum.join(uniq_names, ",")},'"]
+      uniq_patterns -> ["--limit", "'#{Enum.join(uniq_patterns, ",")},'"]
     end
   end
 
@@ -169,21 +174,22 @@ defmodule Mix.Tasks.Ansible.Setup do
     Application.ensure_all_started(:ex_aws)
   end
 
-  defp resolve_instance_id_names([], _opts), do: []
-  defp resolve_instance_id_names(instance_ids, opts) do
+  defp resolve_instance_id_patterns([], _opts), do: []
+  defp resolve_instance_id_patterns(instance_ids, opts) do
     region = opts[:aws_region] || DeployEx.Config.aws_region()
 
     case DeployEx.AwsMachine.find_instances_by_id(region, instance_ids) do
       {:ok, instances} ->
-        extract_instance_names(instances, instance_ids)
+        verify_instances_found(instances, instance_ids)
+        Enum.map(instance_ids, &"#{&1}*")
 
       {:error, error} ->
         Mix.raise("Failed to resolve --instance-id #{inspect(instance_ids)}: #{ErrorMessage.to_string(error)}")
     end
   end
 
-  defp resolve_git_branch_names(nil, _opts), do: []
-  defp resolve_git_branch_names(branch, opts) do
+  defp resolve_git_branch_patterns(nil, _opts), do: []
+  defp resolve_git_branch_patterns(branch, opts) do
     lookup_opts = [region: opts[:aws_region] || DeployEx.Config.aws_region()]
 
     case DeployEx.QaNode.find_qa_nodes_by_branch(branch, lookup_opts) do
@@ -191,33 +197,21 @@ defmodule Mix.Tasks.Ansible.Setup do
         Mix.raise("No QA nodes found for --git-branch #{inspect(branch)}")
 
       {:ok, nodes} ->
-        Enum.map(nodes, & &1.instance_name)
+        Enum.map(nodes, &DeployEx.QaNode.ansible_limit_pattern/1)
 
       {:error, error} ->
         Mix.raise("Failed to resolve --git-branch #{inspect(branch)}: #{ErrorMessage.to_string(error)}")
     end
   end
 
-  defp extract_instance_names(instances, requested_ids) do
-    found = Map.new(instances, fn instance -> {instance["instanceId"], instance_name(instance)} end)
-
-    missing = Enum.filter(requested_ids, &is_nil(found[&1]))
+  defp verify_instances_found(instances, requested_ids) do
+    found_ids = MapSet.new(instances, & &1["instanceId"])
+    missing = Enum.reject(requested_ids, &MapSet.member?(found_ids, &1))
 
     unless Enum.empty?(missing) do
       Mix.raise("No EC2 instances found for --instance-id: #{Enum.join(missing, ", ")}")
     end
-
-    Enum.map(requested_ids, &Map.fetch!(found, &1))
   end
-
-  defp instance_name(%{"tagSet" => %{"item" => items}}) when is_list(items) do
-    Enum.find_value(items, fn %{"key" => key, "value" => value} ->
-      if key === "Name", do: value
-    end)
-  end
-
-  defp instance_name(%{"tagSet" => %{"item" => %{"key" => "Name", "value" => value}}}), do: value
-  defp instance_name(_), do: nil
 
   defp parse_args(args) do
     {opts, _extra_args} = OptionParser.parse!(args,

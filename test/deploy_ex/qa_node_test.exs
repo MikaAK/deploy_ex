@@ -501,6 +501,17 @@ defmodule DeployEx.QaNodeTest do
     end
   end
 
+  describe "ansible_limit_pattern/1" do
+    test "returns an instance-id glob safe for ansible --limit even when the Name tag has whitespace" do
+      qa_node = %QaNode{
+        instance_id: "i-0abc123",
+        instance_name: "CFX Web-prod-qa-foo-1700000000"
+      }
+
+      assert QaNode.ansible_limit_pattern(qa_node) === "i-0abc123*"
+    end
+  end
+
   describe "pick_interactive/2" do
     test "returns {:ok, []} for empty list" do
       assert QaNode.pick_interactive([]) === {:ok, []}
