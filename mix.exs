@@ -15,7 +15,7 @@ defmodule DeployEx.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:ssh, :logger, :sweet_xml]
+      extra_applications: [:ssh, :logger, :sweet_xml, :xmerl]
     ]
   end
 

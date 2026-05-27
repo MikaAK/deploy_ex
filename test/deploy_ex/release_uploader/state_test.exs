@@ -57,6 +57,16 @@ defmodule DeployEx.ReleaseUploader.StateTest do
 
       assert {3000000, "ghi9012", "3000000-ghi9012-my_app-0.1.0.tar.gz"} = result
     end
+
+    test "strips wrapped branch slug from sha on new-format keys" do
+      remote_releases = [
+        "qa/my_app/5000000-ccc9999~theta_data_api~-my_app-0.1.0.tar.gz"
+      ]
+
+      result = State.lastest_remote_app_release(remote_releases, "my_app", "qa")
+
+      assert {5000000, "ccc9999", _base} = result
+    end
   end
 
   describe "&last_sha_from_remote_file/3" do

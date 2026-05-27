@@ -48,9 +48,13 @@ defmodule DeployEx.ReleaseLookupTest do
   defp set_git_shas(shas), do: Process.put(:fake_git_shas, shas)
 
   # Builds release keys in the expected filename format:
-  # <prefix><timestamp>-<sha>-<app>-<version>.tar.gz
+  # <prefix><timestamp>-<sha>[-<wrapped-branch-slug>]-<app>-<version>.tar.gz
   defp make_key(prefix, timestamp, sha, app, version \\ "0.1.0") do
     "#{prefix}#{timestamp}-#{sha}-#{app}-#{version}.tar.gz"
+  end
+
+  defp make_key_with_branch(prefix, timestamp, sha, branch_slug, app, version \\ "0.1.0") do
+    "#{prefix}#{timestamp}-#{sha}~#{branch_slug}~-#{app}-#{version}.tar.gz"
   end
 
   describe "list_releases/3" do
@@ -306,6 +310,53 @@ defmodule DeployEx.ReleaseLookupTest do
                ReleaseLookup.resolve_sha("options_chain_poller", :prod, :auto, base_opts())
 
       refute msg =~ "Did you mean: options_chain_poller"
+    end
+  end
+
+  describe "branch parsing from filename slug" do
+    test "extracts branch from new-format key with simple branch name" do
+      set_releases([
+        make_key_with_branch("qa/my_app/", 1_700_000_001, "abc1234", "theta_data_api", "my_app")
+      ])
+
+      assert {:ok, [release]} = ReleaseLookup.list_releases("my_app", :qa, base_opts())
+      assert release.sha === "abc1234"
+      assert release.branch === "theta_data_api"
+    end
+
+    test "round-trips slashes via ~ substitution" do
+      set_releases([
+        make_key_with_branch("qa/my_app/", 1_700_000_002, "def5678", "feature~auth~v2", "my_app")
+      ])
+
+      assert {:ok, [release]} = ReleaseLookup.list_releases("my_app", :qa, base_opts())
+      assert release.branch === "feature/auth/v2"
+    end
+
+    test "preserves qa/ prefix in branch round-trip" do
+      set_releases([
+        make_key_with_branch("qa/my_app/", 1_700_000_003, "aaa1111", "qa~theta_data_api", "my_app")
+      ])
+
+      assert {:ok, [release]} = ReleaseLookup.list_releases("my_app", :qa, base_opts())
+      assert release.branch === "qa/theta_data_api"
+    end
+
+    test "branch is nil for legacy keys without slug section" do
+      set_releases([make_key("qa/my_app/", 1_700_000_001, "abc1234", "my_app")])
+
+      assert {:ok, [release]} = ReleaseLookup.list_releases("my_app", :qa, base_opts())
+      assert is_nil(release.branch)
+    end
+
+    test "sha is clean (slug stripped) on new-format keys" do
+      set_releases([
+        make_key_with_branch("qa/my_app/", 1_700_000_004, "ccc9999", "feature~x", "my_app")
+      ])
+
+      assert {:ok, [release]} = ReleaseLookup.list_releases("my_app", :qa, base_opts())
+      assert release.sha === "ccc9999"
+      assert release.short_sha === "ccc9999"
     end
   end
 

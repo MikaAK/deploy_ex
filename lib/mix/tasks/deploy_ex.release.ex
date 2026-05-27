@@ -54,6 +54,7 @@ defmodule Mix.Tasks.DeployEx.Release do
       |> Keyword.put(:only, Keyword.get_values(opts, :only))
       |> Keyword.put(:except, Keyword.get_values(opts, :except))
       |> Keyword.put(:qa_release, qa_release?())
+      |> Keyword.put(:branch, git_branch_name())
 
     with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),

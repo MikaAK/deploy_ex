@@ -7,6 +7,7 @@ defmodule DeployEx.ReleaseUploader.State do
     {:ok, release_apps_map} = DeployExHelpers.release_apps_by_release_name()
     {:ok, redeploy_config_map} = DeployExHelpers.redeploy_config_by_release_name()
     release_prefix = release_prefix(opts)
+    branch_slug = branch_slug_for_upload(opts)
 
     Enum.map(local_releases, fn release_file_path ->
       app_name = app_name_from_local_release_file(release_file_path)
@@ -16,7 +17,7 @@ defmodule DeployEx.ReleaseUploader.State do
         app_name: app_name,
         local_file: release_file_path,
         sha: git_sha,
-        name: remote_file_name_for_release(release_file_path, git_sha, release_prefix),
+        name: remote_file_name_for_release(release_file_path, git_sha, release_prefix, branch_slug),
         remote_file: remote_file,
         last_sha: last_sha_from_remote_file(remote_releases, app_name, release_prefix),
         release_apps: release_apps_map[String.to_atom(app_name)],
@@ -33,14 +34,33 @@ defmodule DeployEx.ReleaseUploader.State do
     end)
   end
 
-  defp remote_file_name_for_release(release_file_path, git_sha, release_prefix) do
+  defp remote_file_name_for_release(release_file_path, git_sha, release_prefix, branch_slug) do
     current_timestamp = DateTime.utc_now() |> DateTime.to_unix
     file_name = Path.basename(release_file_path)
     app_name = app_name_from_local_release_file(release_file_path)
     path_prefix = release_path_prefix(app_name, release_prefix)
+    branch_segment = branch_filename_segment(branch_slug)
 
-    "#{path_prefix}#{current_timestamp}-#{git_sha}-#{file_name}"
+    "#{path_prefix}#{current_timestamp}-#{git_sha}#{branch_segment}-#{file_name}"
   end
+
+  defp branch_filename_segment(nil), do: ""
+  defp branch_filename_segment(""), do: ""
+  defp branch_filename_segment(slug), do: "~#{slug}~"
+
+  defp branch_slug_for_upload(opts) when is_list(opts) do
+    if release_prefix(opts) === "qa" do
+      slugify_branch(Keyword.get(opts, :branch))
+    end
+  end
+
+  defp branch_slug_for_upload(opts) when is_map(opts) do
+    branch_slug_for_upload(Map.to_list(opts))
+  end
+
+  defp slugify_branch(nil), do: nil
+  defp slugify_branch(""), do: nil
+  defp slugify_branch(branch) when is_binary(branch), do: String.replace(branch, "/", "~")
 
   defp app_name_from_local_release_file(release_file_path) do
     file_name = Path.basename(release_file_path)
@@ -56,12 +76,19 @@ defmodule DeployEx.ReleaseUploader.State do
       |> Enum.filter(&String.starts_with?(&1, path_prefix))
       |> Enum.map(fn release_path ->
         base_name = Path.basename(release_path)
-        [timestamp, git_sha, ^app_name, _] = String.split(base_name, "-")
+        [timestamp, sha_with_branch, ^app_name, _] = String.split(base_name, "-")
 
-        {String.to_integer(timestamp), git_sha, base_name}
+        {String.to_integer(timestamp), strip_branch_suffix(sha_with_branch), base_name}
       end)
       |> Enum.sort_by(fn {timestamp, _, _} -> timestamp end, :desc)
       |> List.first
+  end
+
+  defp strip_branch_suffix(sha_segment) do
+    case String.split(sha_segment, "~", parts: 2) do
+      [sha, _branch_with_close_tilde] -> sha
+      [sha] -> sha
+    end
   end
 
   def last_sha_from_remote_file(remote_releases, app_name, release_prefix) do

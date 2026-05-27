@@ -35,6 +35,7 @@ defmodule Mix.Tasks.DeployEx.Upload do
       |> Keyword.put_new(:aws_region, Config.aws_region())
       |> Keyword.put_new(:parallel, @max_upload_concurrency)
       |> then(&Keyword.put(&1, :qa_release, qa_release?(&1)))
+      |> Keyword.put_new(:branch, git_branch_name())
 
     with :ok <- DeployExHelpers.check_valid_project(),
          {:ok, local_releases} <- ReleaseUploader.fetch_all_local_releases(),

@@ -12,7 +12,8 @@ defmodule DeployEx.ReleaseLookup do
           short_sha: String.t(),
           timestamp: integer() | nil,
           key: String.t(),
-          prefix: :qa | :prod
+          prefix: :qa | :prod,
+          branch: String.t() | nil
         }
 
   @type release_type :: :qa | :prod
@@ -202,15 +203,40 @@ defmodule DeployEx.ReleaseLookup do
     sha = DeployExHelpers.extract_sha_from_release(key)
     timestamp = extract_timestamp(key)
     short_sha = extract_short_sha(sha)
+    branch = extract_branch_from_key(key)
 
     %{
       sha: sha,
       short_sha: short_sha,
       timestamp: timestamp,
       key: key,
-      prefix: release_type
+      prefix: release_type,
+      branch: branch
     }
   end
+
+  defp extract_branch_from_key(key) do
+    case key |> Path.basename() |> String.split("-", parts: 3) do
+      [_timestamp, sha_with_branch, _rest] -> parse_branch_slug(sha_with_branch)
+      _ -> nil
+    end
+  end
+
+  defp parse_branch_slug(sha_segment) do
+    case String.split(sha_segment, "~") do
+      [_sha | rest] when rest !== [] ->
+        rest
+        |> Enum.drop(-1)
+        |> Enum.join("~")
+        |> slug_to_branch()
+
+      _ ->
+        nil
+    end
+  end
+
+  defp slug_to_branch(""), do: nil
+  defp slug_to_branch(slug), do: String.replace(slug, "~", "/")
 
   defp extract_timestamp(key) do
     case String.split(Path.basename(key), "-") do
@@ -351,10 +377,15 @@ defmodule DeployEx.ReleaseLookup do
     end
   end
 
-  defp format_release_label(%{short_sha: short_sha, timestamp: timestamp, key: key, prefix: prefix}) do
+  defp format_release_label(%{short_sha: short_sha, timestamp: timestamp, prefix: prefix, branch: branch}) do
     humanized = humanize_timestamp(timestamp)
-    "[#{prefix}]  #{short_sha}  #{humanized}  (#{key})"
+    suffix = branch_label_suffix(prefix, branch)
+    "[#{prefix}]  #{short_sha}  #{humanized}#{suffix}"
   end
+
+  defp branch_label_suffix(:qa, nil), do: "  (unknown branch)"
+  defp branch_label_suffix(:qa, branch), do: "  #{branch}"
+  defp branch_label_suffix(_prefix, _branch), do: ""
 
   defp find_sha_for_label(releases, labels, chosen_label) do
     index = Enum.find_index(labels, &(&1 === chosen_label))

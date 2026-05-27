@@ -263,8 +263,15 @@ defmodule DeployExHelpers do
 
   def extract_sha_from_release(release_name) do
     case String.split(Path.basename(release_name), "-") do
-      [_timestamp, sha | _rest] -> sha
+      [_timestamp, sha_with_branch | _rest] -> strip_branch_suffix(sha_with_branch)
       _ -> nil
+    end
+  end
+
+  defp strip_branch_suffix(sha_segment) do
+    case String.split(sha_segment, "~", parts: 2) do
+      [sha, _branch_remainder] -> sha
+      [sha] -> sha
     end
   end
 
