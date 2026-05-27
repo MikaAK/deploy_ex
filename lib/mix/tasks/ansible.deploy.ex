@@ -32,7 +32,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
   mix ansible.deploy --target-sha 2ac12b
   mix ansible.deploy --target-sha auto                 # newest prod release on current branch
   mix ansible.deploy --target-sha current --only my_app # sha recorded in S3 current_release.txt
-  mix ansible.deploy --select-sha                      # prompt to pick from available prod releases
+  mix ansible.deploy --select-sha                      # prompt to pick from QA + prod releases (deploy QA build to prod nodes by picking a qa/ release)
   mix ansible.deploy --qa --target-sha auto            # newest QA release on current branch
   mix ansible.deploy --qa                              # prompt to pick a QA release
   mix ansible.deploy --qa --select-sha                 # explicit form of the QA picker
@@ -49,9 +49,11 @@ defmodule Mix.Tasks.Ansible.Deploy do
     on the current branch (QA if `--qa`, otherwise prod), or `current` to deploy
     the SHA recorded in S3 `release-state/<app>/current_release.txt` (resolved
     against the first targeted app — use `--only <app>` when apps diverge)
-  - `select-sha` - Prompt to pick a release SHA from S3 (prod by default, QA with
-    `--qa`). Resolved against the first targeted app; one SHA applies to all apps
-    in the invocation
+  - `select-sha` - Prompt to pick a release SHA from S3. Without `--qa`, lists
+    both QA and prod releases (so you can deploy a QA-built release to prod
+    nodes). With `--qa`, restricts the list to QA releases only. Resolved against
+    the first targeted app; one SHA applies to all apps in the invocation. The
+    release prefix is auto-detected from the picked SHA via S3 key scan
   - `include-qa` - Include QA nodes in deploy (default: excluded)
   - `qa` - Target only QA nodes (excludes non-QA nodes). Without `--target-sha`, prompts to
     pick a QA release on the current branch. One SHA applies to all apps in the invocation.
@@ -213,11 +215,11 @@ defmodule Mix.Tasks.Ansible.Deploy do
   end
 
   defp prompt_select_sha(opts, playbooks) do
-    release_type = if opts[:qa] === true, do: :qa, else: :prod
+    release_types = if opts[:qa] === true, do: [:qa], else: [:qa, :prod]
     first_app = first_app_name(playbooks)
     lookup_opts = build_lookup_opts()
 
-    case ReleaseLookup.resolve_sha(first_app, release_type, :prompt, lookup_opts) do
+    case ReleaseLookup.resolve_sha_any(first_app, release_types, :prompt, lookup_opts) do
       {:ok, sha} -> Keyword.put(opts, :target_sha, sha)
       {:error, error} -> Mix.raise("No SHA selected: #{ErrorMessage.to_string(error)}")
     end
