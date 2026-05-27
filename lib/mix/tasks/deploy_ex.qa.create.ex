@@ -812,13 +812,59 @@ defmodule Mix.Tasks.DeployEx.Qa.Create do
         {:ok, head_sha(File.cwd!())}
 
       true ->
-        lookup_opts = [
-          aws_region: opts[:aws_region] || DeployEx.Config.aws_region(),
-          aws_release_bucket: opts[:aws_release_bucket] || DeployEx.Config.aws_release_bucket()
-        ]
+        lookup_opts = release_lookup_opts(opts)
 
-        DeployEx.ReleaseLookup.resolve_sha_any(app_name, [:qa, :prod], :prompt, lookup_opts)
+        app_name
+        |> DeployEx.ReleaseLookup.resolve_sha_any([:qa, :prod], :prompt, lookup_opts)
+        |> maybe_fallback_to_push_head(app_name, opts)
     end
+  end
+
+  defp release_lookup_opts(opts) do
+    [
+      aws_region: opts[:aws_region] || DeployEx.Config.aws_region(),
+      aws_release_bucket: opts[:aws_release_bucket] || DeployEx.Config.aws_release_bucket()
+    ]
+  end
+
+  defp maybe_fallback_to_push_head({:ok, _} = ok, _app_name, _opts), do: ok
+
+  defp maybe_fallback_to_push_head({:error, %ErrorMessage{code: :not_found}} = err, app_name, opts) do
+    if interactive_pre_built_choice?(opts) and confirm_push_head_fallback?(app_name) do
+      {:ok, head_sha(File.cwd!())}
+    else
+      err
+    end
+  end
+
+  defp maybe_fallback_to_push_head({:error, _} = err, _app_name, _opts), do: err
+
+  defp interactive_pre_built_choice?(opts) do
+    opts[:deploy_strategy] === :pre_built_sha and
+      is_nil(opts[:sha]) and
+      opts[:quiet] !== true and
+      opts[:no_tui] !== true
+  end
+
+  defp confirm_push_head_fallback?(app_name) do
+    Mix.shell().info(IO.ANSI.format([
+      :yellow,
+      "\n⚠ No pre-built releases for ",
+      :bright,
+      app_name,
+      :normal,
+      " in S3 yet.",
+      :reset
+    ], true))
+
+    Mix.shell().info(IO.ANSI.format([
+      :faint,
+      "  CI hasn't published a release for this app — option 2 needs an existing\n",
+      "  S3 release. You can push your working tree instead so CI builds one.\n",
+      :reset
+    ], true))
+
+    Mix.shell().yes?("Push current working tree (option 1) instead?")
   end
 
   defp wait_for_instance(qa_node, _opts) do
