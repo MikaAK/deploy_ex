@@ -1,6 +1,9 @@
 defmodule Mix.Tasks.Ansible.SetupTest do
   use ExUnit.Case, async: true
 
+  alias DeployEx.QaNode
+  alias Mix.Tasks.Ansible.Setup
+
   # parse_args/1 is private — mirror the OptionParser config here.
   # Same pattern as deploy_ex_qa_deploy_test.exs.
 
@@ -59,6 +62,51 @@ defmodule Mix.Tasks.Ansible.SetupTest do
         parse_args(["--git-branch", "qa/one", "--git-branch", "qa/two"])
 
       assert opts[:git_branch] === "qa/two"
+    end
+  end
+
+  describe "derive_branch/2" do
+    test "returns nil when no nodes and no git-branch flag" do
+      assert is_nil(Setup.derive_branch([], nil))
+    end
+
+    test "returns the git-branch flag when no nodes carry a branch tag" do
+      assert "qa/foo" === Setup.derive_branch([%QaNode{git_branch: nil}], "qa/foo")
+    end
+
+    test "returns the single shared branch from node tags" do
+      nodes = [
+        %QaNode{git_branch: "qa/foo"},
+        %QaNode{git_branch: "qa/foo"}
+      ]
+
+      assert "qa/foo" === Setup.derive_branch(nodes, nil)
+    end
+
+    test "accepts matching git-branch flag + node tag" do
+      assert "qa/foo" === Setup.derive_branch([%QaNode{git_branch: "qa/foo"}], "qa/foo")
+    end
+
+    test "raises when nodes carry conflicting GitBranch tags" do
+      nodes = [
+        %QaNode{git_branch: "qa/foo"},
+        %QaNode{git_branch: "qa/bar"}
+      ]
+
+      assert_raise Mix.Error, ~r/Conflicting GitBranch/, fn ->
+        Setup.derive_branch(nodes, nil)
+      end
+    end
+
+    test "raises when git-branch flag conflicts with node tag" do
+      assert_raise Mix.Error, ~r/Conflicting GitBranch/, fn ->
+        Setup.derive_branch([%QaNode{git_branch: "qa/bar"}], "qa/foo")
+      end
+    end
+
+    test "treats empty-string branch tags as absent" do
+      nodes = [%QaNode{git_branch: ""}, %QaNode{git_branch: "qa/foo"}]
+      assert "qa/foo" === Setup.derive_branch(nodes, nil)
     end
   end
 end

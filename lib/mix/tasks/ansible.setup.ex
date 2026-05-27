@@ -50,6 +50,17 @@ defmodule Mix.Tasks.Ansible.Setup do
   is QA by definition). Combine with `--instance-id` to add ad-hoc hosts
   to the same run.
 
+  ### Auto-resolving the QA release
+
+  When `--instance-id` or `--git-branch` is supplied the task derives the
+  target branch (from `--git-branch`, or from the `GitBranch` tag on the
+  targeted instances), looks up the newest QA release for each setup
+  playbook's app on that branch, and passes it to ansible as
+  `--extra-vars "target_release_sha=<sha>"`. Setup playbooks that do not
+  represent an app (e.g. `users.yaml`, `sysctl.yaml`) are skipped silently.
+  Conflicting `GitBranch` tags across targeted instances — or a mismatch
+  between `--git-branch` and the targeted instances' tags — raise.
+
   ## Example
   ```bash
   mix ansible.setup
@@ -103,7 +114,8 @@ defmodule Mix.Tasks.Ansible.Setup do
           arg -> [arg]
         end)
 
-      ansible_args = ansible_args ++ build_target_limit(instance_ids, git_branch, opts)
+      targets = resolve_targets(instance_ids, git_branch, opts)
+      ansible_args = ansible_args ++ build_limit_args(targets.patterns)
 
       DeployExHelpers.check_file_exists!(Path.join(opts[:directory], "aws_ec2.yaml"))
 
@@ -120,8 +132,11 @@ defmodule Mix.Tasks.Ansible.Setup do
       if Enum.empty?(setup_files) do
         Mix.shell().info([:yellow, "Nothing to setup"])
       else
+        release_shas = resolve_release_shas(setup_files, targets.branch, opts)
+        announce_release_shas(release_shas, targets.branch, opts)
+
         run_fn = fn setup_file, line_callback ->
-          command = build_setup_command(setup_file, ansible_args, opts)
+          command = build_setup_command(setup_file, ansible_args, release_shas, opts)
           DeployEx.Utils.run_command_streaming(command, opts[:directory], line_callback)
         end
 
@@ -144,29 +159,43 @@ defmodule Mix.Tasks.Ansible.Setup do
     end
   end
 
-  defp build_setup_command(setup_file, ansible_args, opts) do
+  defp build_setup_command(setup_file, ansible_args, release_shas, opts) do
     has_custom_limit = Enum.any?(ansible_args, &String.contains?(&1, "--limit"))
     targeted_by_id = not Enum.empty?(opts[:instance_id] || [])
     targeted_by_branch = is_binary(opts[:git_branch])
     skip_qa_filter = opts[:include_qa] === true or has_custom_limit or targeted_by_id or targeted_by_branch
     qa_limit = if skip_qa_filter, do: [], else: ["--limit", "'!qa_true'"]
+    release_extra_vars = build_release_extra_vars(setup_file, release_shas)
 
-    (["ansible-playbook", setup_file] ++ ansible_args ++ qa_limit)
+    (["ansible-playbook", setup_file] ++ ansible_args ++ qa_limit ++ release_extra_vars)
     |> Enum.join(" ")
   end
 
-  defp build_target_limit([], nil, _opts), do: []
-  defp build_target_limit(instance_ids, git_branch, opts) do
+  defp build_release_extra_vars(setup_file, release_shas) do
+    case release_shas[app_name_from_setup_file(setup_file)] do
+      nil -> []
+      sha -> ["--extra-vars", "\"target_release_sha=#{sha}\""]
+    end
+  end
+
+  defp build_limit_args([]), do: []
+  defp build_limit_args(patterns), do: ["--limit", "'#{Enum.join(patterns, ",")},'"]
+
+  defp resolve_targets([], nil, _opts), do: %{patterns: [], branch: nil}
+  defp resolve_targets(instance_ids, git_branch, opts) do
     ensure_aws_started()
+    region = opts[:aws_region] || DeployEx.Config.aws_region()
+
+    id_nodes = lookup_instance_id_nodes(instance_ids, region)
+    branch_nodes = lookup_branch_nodes(git_branch, region)
+    all_nodes = id_nodes ++ branch_nodes
 
     patterns =
-      resolve_instance_id_patterns(instance_ids, opts) ++
-        resolve_git_branch_patterns(git_branch, opts)
+      all_nodes
+      |> Enum.map(&DeployEx.QaNode.ansible_limit_pattern/1)
+      |> Enum.uniq()
 
-    case Enum.uniq(patterns) do
-      [] -> []
-      uniq_patterns -> ["--limit", "'#{Enum.join(uniq_patterns, ",")},'"]
-    end
+    %{patterns: patterns, branch: derive_branch(all_nodes, git_branch)}
   end
 
   defp ensure_aws_started do
@@ -174,30 +203,26 @@ defmodule Mix.Tasks.Ansible.Setup do
     Application.ensure_all_started(:ex_aws)
   end
 
-  defp resolve_instance_id_patterns([], _opts), do: []
-  defp resolve_instance_id_patterns(instance_ids, opts) do
-    region = opts[:aws_region] || DeployEx.Config.aws_region()
-
+  defp lookup_instance_id_nodes([], _region), do: []
+  defp lookup_instance_id_nodes(instance_ids, region) do
     case DeployEx.AwsMachine.find_instances_by_id(region, instance_ids) do
       {:ok, instances} ->
         verify_instances_found(instances, instance_ids)
-        Enum.map(instance_ids, &"#{&1}*")
+        Enum.map(instances, &DeployEx.QaNode.build_qa_node_from_instance/1)
 
       {:error, error} ->
         Mix.raise("Failed to resolve --instance-id #{inspect(instance_ids)}: #{ErrorMessage.to_string(error)}")
     end
   end
 
-  defp resolve_git_branch_patterns(nil, _opts), do: []
-  defp resolve_git_branch_patterns(branch, opts) do
-    lookup_opts = [region: opts[:aws_region] || DeployEx.Config.aws_region()]
-
-    case DeployEx.QaNode.find_qa_nodes_by_branch(branch, lookup_opts) do
+  defp lookup_branch_nodes(nil, _region), do: []
+  defp lookup_branch_nodes(branch, region) do
+    case DeployEx.QaNode.find_qa_nodes_by_branch(branch, region: region) do
       {:ok, []} ->
         Mix.raise("No QA nodes found for --git-branch #{inspect(branch)}")
 
       {:ok, nodes} ->
-        Enum.map(nodes, &DeployEx.QaNode.ansible_limit_pattern/1)
+        nodes
 
       {:error, error} ->
         Mix.raise("Failed to resolve --git-branch #{inspect(branch)}: #{ErrorMessage.to_string(error)}")
@@ -211,6 +236,81 @@ defmodule Mix.Tasks.Ansible.Setup do
     unless Enum.empty?(missing) do
       Mix.raise("No EC2 instances found for --instance-id: #{Enum.join(missing, ", ")}")
     end
+  end
+
+  @doc false
+  def derive_branch(nodes, git_branch_flag) do
+    node_branches =
+      nodes
+      |> Enum.map(& &1.git_branch)
+      |> Enum.filter(&(is_binary(&1) and &1 !== ""))
+      |> Enum.uniq()
+
+    candidates =
+      [git_branch_flag | node_branches]
+      |> Enum.filter(&is_binary/1)
+      |> Enum.uniq()
+
+    case candidates do
+      [] -> nil
+      [branch] -> branch
+      multiple ->
+        Mix.raise("Conflicting GitBranch across targeted instances: #{inspect(multiple)}")
+    end
+  end
+
+  defp resolve_release_shas(_setup_files, nil, _opts), do: %{}
+  defp resolve_release_shas(setup_files, branch, opts) do
+    lookup_opts = [
+      aws_region: opts[:aws_region] || DeployEx.Config.aws_region(),
+      aws_release_bucket: DeployEx.Config.aws_release_bucket(),
+      branch: branch
+    ]
+
+    setup_files
+    |> Enum.map(&app_name_from_setup_file/1)
+    |> Enum.uniq()
+    |> Enum.flat_map(&resolve_release_sha_for_app(&1, lookup_opts))
+    |> Map.new()
+  end
+
+  defp resolve_release_sha_for_app(app_name, lookup_opts) do
+    case DeployEx.ReleaseLookup.resolve_sha(app_name, :qa, :auto, lookup_opts) do
+      {:ok, sha} -> [{app_name, sha}]
+      {:error, _} -> []
+    end
+  end
+
+  defp announce_release_shas(release_shas, _branch, _opts) when map_size(release_shas) === 0, do: :ok
+  defp announce_release_shas(release_shas, branch, opts) do
+    unless opts[:quiet] do
+      header =
+        IO.ANSI.format(
+          [
+            :faint, "Auto-resolved QA releases for ",
+            :yellow, :bright, branch, :reset, :faint, ":", :reset
+          ],
+          true
+        )
+
+      Mix.shell().info(to_string(header))
+
+      release_shas
+      |> Enum.sort()
+      |> Enum.each(fn {app, sha} ->
+        line =
+          IO.ANSI.format(
+            ["  ", :yellow, :bright, app, :reset, " → ", :cyan, sha, :reset],
+            true
+          )
+
+        Mix.shell().info(to_string(line))
+      end)
+    end
+  end
+
+  defp app_name_from_setup_file(setup_file) do
+    setup_file |> Path.basename() |> Path.rootname()
   end
 
   defp parse_args(args) do
