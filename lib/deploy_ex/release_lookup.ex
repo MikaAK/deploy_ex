@@ -85,6 +85,7 @@ defmodule DeployEx.ReleaseLookup do
          {:ok, filtered} <- filter_by_branch_history(all_releases, opts[:branch], opts) do
       pick_release(strategy, filtered, all_releases, app_name, release_type)
     end
+    |> maybe_attach_suggestions(app_name, opts)
   end
 
   @doc """
@@ -99,6 +100,7 @@ defmodule DeployEx.ReleaseLookup do
          {:ok, filtered} <- filter_by_branch_history(all_releases, opts[:branch], opts) do
       pick_release(strategy, filtered, all_releases, app_name, format_release_types(release_types))
     end
+    |> maybe_attach_suggestions(app_name, opts)
   end
 
   @doc """
@@ -123,6 +125,7 @@ defmodule DeployEx.ReleaseLookup do
         format_release_types(release_types)
       )
     end
+    |> maybe_attach_suggestions(app_name, opts)
   end
 
   defp pick_release_in_terminal(_terminal, :auto, filtered, all_releases, app_name, release_type) do
@@ -289,6 +292,63 @@ defmodule DeployEx.ReleaseLookup do
        "no #{release_type} releases found for #{app_name}",
        %{app_name: app_name, release_type: release_type}
      )}
+  end
+
+  defp maybe_attach_suggestions({:error, %ErrorMessage{code: :not_found} = err}, app_name, opts) do
+    case suggest_similar_apps(app_name, opts) do
+      [] ->
+        {:error, err}
+
+      suggestions ->
+        {:error,
+         %ErrorMessage{
+           err
+           | message: "#{err.message}. Did you mean: #{Enum.join(suggestions, ", ")}?",
+             details: Map.put(err.details || %{}, :suggestions, suggestions)
+         }}
+    end
+  end
+
+  defp maybe_attach_suggestions(other, _app_name, _opts), do: other
+
+  defp suggest_similar_apps(app_name, opts) do
+    case list_known_app_names(opts) do
+      [] ->
+        []
+
+      apps ->
+        apps
+        |> Enum.reject(&(&1 === app_name))
+        |> Enum.map(fn name -> {name, String.jaro_distance(app_name, name)} end)
+        |> Enum.filter(fn {_, dist} -> dist >= 0.7 end)
+        |> Enum.sort_by(fn {_, dist} -> dist end, :desc)
+        |> Enum.take(3)
+        |> Enum.map(fn {name, _} -> name end)
+    end
+  end
+
+  defp list_known_app_names(opts) do
+    fetch_opts = build_fetch_opts("", opts)
+
+    case releases_impl(opts).fetch_all_remote_releases(fetch_opts) do
+      {:ok, keys} ->
+        keys
+        |> Enum.flat_map(&extract_app_segment/1)
+        |> Enum.uniq()
+
+      _ ->
+        []
+    end
+  end
+
+  defp extract_app_segment("qa/" <> rest), do: split_first_segment(rest)
+  defp extract_app_segment(key), do: split_first_segment(key)
+
+  defp split_first_segment(key) do
+    case String.split(key, "/", parts: 2) do
+      [app, _] -> [app]
+      _ -> []
+    end
   end
 
   defp format_release_label(%{short_sha: short_sha, timestamp: timestamp, key: key, prefix: prefix}) do

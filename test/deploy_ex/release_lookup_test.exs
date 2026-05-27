@@ -269,6 +269,46 @@ defmodule DeployEx.ReleaseLookupTest do
     end
   end
 
+  describe "jaro_distance suggestions on not_found" do
+    test "suggests close-match app names from S3 prefixes" do
+      set_releases([
+        make_key("qa/options_chain_processor/", 1_700_000_001, "shashasx", "options_chain_processor"),
+        make_key("qa/options_feed/", 1_700_000_002, "shashasy", "options_feed"),
+        make_key("qa/cfx_web/", 1_700_000_003, "shashasz", "cfx_web")
+      ])
+
+      assert {:error, %ErrorMessage{code: :not_found, message: msg, details: details}} =
+               ReleaseLookup.resolve_sha("options_chain_poller", :qa, :auto, base_opts())
+
+      assert msg =~ "Did you mean:"
+      assert msg =~ "options_chain_processor"
+      assert "options_chain_processor" in details.suggestions
+    end
+
+    test "omits suggestion clause when nothing crosses the similarity threshold" do
+      set_releases([
+        make_key("qa/cfx_web/", 1_700_000_001, "shashasa", "cfx_web"),
+        make_key("qa/dark_pool_lit_feed/", 1_700_000_002, "shashasb", "dark_pool_lit_feed")
+      ])
+
+      assert {:error, %ErrorMessage{code: :not_found, message: msg}} =
+               ReleaseLookup.resolve_sha("zzzzzzzzz", :qa, :auto, base_opts())
+
+      refute msg =~ "Did you mean:"
+    end
+
+    test "never suggests the queried app name itself" do
+      set_releases([
+        make_key("qa/options_chain_poller/", 1_700_000_001, "shashas1", "options_chain_poller")
+      ])
+
+      assert {:error, %ErrorMessage{code: :not_found, message: msg}} =
+               ReleaseLookup.resolve_sha("options_chain_poller", :prod, :auto, base_opts())
+
+      refute msg =~ "Did you mean: options_chain_poller"
+    end
+  end
+
   describe "DeployEx.ReleaseLookup.GitImpl" do
     test "module exists and exports list_shas_on_branch/2" do
       assert Code.ensure_loaded?(DeployEx.ReleaseLookup.GitImpl)
