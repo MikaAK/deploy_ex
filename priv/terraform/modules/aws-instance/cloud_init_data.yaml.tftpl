@@ -124,7 +124,7 @@ write_files:
       cat > /etc/systemd/system/$${APP_NAME}.service <<EOF
       [Unit]
       Description=$${APP_NAME} service
-      After=network.target
+      After=network.target cloud-init.target
 
       [Service]
       Type=simple
