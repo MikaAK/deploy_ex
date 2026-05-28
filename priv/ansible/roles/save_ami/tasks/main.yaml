@@ -17,6 +17,46 @@
         instance_id: "{{ instance_id_result.content }}"
         aws_region: "{{ region_result.content }}"
 
+    # Strip the running app from the snapshot so AMI is a pure base layer.
+    # Without this, the AMI carries the currently-installed release at
+    # /srv/{{ app_name }} AND the systemd unit stays enabled — every new
+    # ASG instance boots, systemd auto-starts the OLD baked release, and
+    # serves traffic for ~30s until cloud-init downloads + swaps to the
+    # latest. Cross-app RPCs in that window send stale-shape structs and
+    # blow up on receivers running newer code (function_clause on missing
+    # struct keys, etc.). Stripping forces cloud-init to be the only
+    # install path; systemd has nothing to start until the new release
+    # is in place.
+    - name: Stop app service before AMI snapshot
+      systemd:
+        name: "{{ app_name }}"
+        state: stopped
+      ignore_errors: yes
+
+    - name: Disable app service before AMI snapshot
+      systemd:
+        name: "{{ app_name }}"
+        enabled: no
+      ignore_errors: yes
+
+    - name: Remove systemd unit file before AMI snapshot
+      file:
+        path: "/etc/systemd/system/{{ app_name }}.service"
+        state: absent
+
+    - name: Reload systemd after unit removal
+      command: systemctl daemon-reload
+
+    - name: Remove installed release before AMI snapshot
+      file:
+        path: "/srv/{{ app_name }}"
+        state: absent
+
+    - name: Remove current_release.txt marker before AMI snapshot
+      file:
+        path: /srv/current_release.txt
+        state: absent
+
     - name: Clean cloud-init state so it re-runs on new instances
       command: cloud-init clean --logs
 
