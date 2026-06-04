@@ -2,13 +2,15 @@ defmodule DeployEx.Ansible do
   @ansible_flags [
     inventory: :string,
     limit: :string,
-    extra_vars: :keep
+    extra_vars: :keep,
+    tags: :string,
+    skip_tags: :string
   ]
 
   def parse_args(args) do
     {ansible_opts, _extra_args, _invalid_args} =
       OptionParser.parse(args,
-        aliases: [i: :inventory, e: :extra_vars],
+        aliases: [i: :inventory, e: :extra_vars, t: :tags],
         strict: @ansible_flags
       )
 
