@@ -610,6 +610,8 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
         input(:parallel, "Max concurrency", :integer, default: 4),
         input(:only_local_release, "Only local releases", :boolean),
         input(:target_sha, "Target SHA", :string, description: "Deploy specific release SHA"),
+        input(:select_sha, "Select SHA", :boolean, description: "Prompt to pick a release SHA from S3"),
+        input(:release_prefix, "Release prefix", :string, description: "Force release source: prod or qa"),
         input(:include_qa, "Include QA nodes", :boolean),
         input(:qa, "QA nodes only", :boolean)
       ]

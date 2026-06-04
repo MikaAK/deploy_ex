@@ -24,6 +24,15 @@ defmodule Mix.Tasks.Ansible.Deploy do
   S3 prefix and writes history under `release-state/qa/` for QA hosts, no
   extra flags required.
 
+  ### Decoupling node target from release source
+
+  `--qa` only chooses *which nodes* to deploy to (the `qa_true` group). The
+  *release source* (qa vs prod S3 prefix) defaults to match the node target
+  but can be overridden with `--release-prefix prod|qa`. This lets you deploy
+  a prod release onto QA nodes — the inventory composes `release_prefix=qa`
+  for QA hosts, so the task overrides it back to the prod root while keeping
+  release-state history under `release-state/qa/`.
+
   ## Example
   ```bash
   mix ansible.deploy
@@ -36,6 +45,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
   mix ansible.deploy --qa --target-sha auto            # newest QA release on current branch
   mix ansible.deploy --qa                              # prompt to pick a QA release
   mix ansible.deploy --qa --select-sha                 # explicit form of the QA picker
+  mix ansible.deploy --qa --target-sha auto --release-prefix prod # newest PROD release onto QA nodes
   ```
 
   ## Options
@@ -55,8 +65,14 @@ defmodule Mix.Tasks.Ansible.Deploy do
     the first targeted app; one SHA applies to all apps in the invocation. The
     release prefix is auto-detected from the picked SHA via S3 key scan
   - `include-qa` - Include QA nodes in deploy (default: excluded)
-  - `qa` - Target only QA nodes (excludes non-QA nodes). Without `--target-sha`, prompts to
-    pick a QA release on the current branch. One SHA applies to all apps in the invocation.
+  - `qa` - Target only QA nodes (excludes non-QA nodes). Controls node selection only;
+    the release source defaults to QA but can be overridden with `--release-prefix`.
+    Without `--target-sha`, prompts to pick a release (of the effective type) on the
+    current branch. One SHA applies to all apps in the invocation.
+  - `release-prefix` - Force the release source independent of the node target:
+    `prod` deploys a prod release, `qa` deploys a QA release. Defaults to `qa` when
+    `--qa` is set, otherwise `prod`. Use `--qa --release-prefix prod` to deploy a prod
+    release onto QA nodes
   - `quiet` - Suppress output messages
   """
 
@@ -150,13 +166,23 @@ defmodule Mix.Tasks.Ansible.Deploy do
         only_local_release: :boolean,
         target_sha: :string,
         select_sha: :boolean,
+        release_prefix: :string,
         include_qa: :boolean,
         qa: :boolean,
         no_tui: :boolean
       ]
     )
 
+    validate_release_prefix!(opts[:release_prefix])
+
     opts
+  end
+
+  defp validate_release_prefix!(nil), do: :ok
+  defp validate_release_prefix!(prefix) when prefix in ["prod", "qa"], do: :ok
+
+  defp validate_release_prefix!(prefix) do
+    Mix.raise("--release-prefix must be 'prod' or 'qa', got: #{inspect(prefix)}")
   end
 
   def build_ansible_playbook_command(host_playbook, opts) do
@@ -196,12 +222,19 @@ defmodule Mix.Tasks.Ansible.Deploy do
       opts[:resolved_release_prefix] === :qa ->
         command_list ++ ["--extra-vars \"release_prefix=qa release_state_prefix=release-state/qa\""]
 
-      opts[:qa] === true ->
-        command_list ++ ["--extra-vars \"release_prefix=qa release_state_prefix=release-state/qa\""]
+      deploying_prod_release_to_qa_nodes?(opts) ->
+        command_list ++ ["--extra-vars \"release_prefix= release_state_prefix=release-state/qa\""]
 
       true ->
         command_list
     end
+  end
+
+  # The aws_ec2 inventory composes `release_prefix=qa` for every QaNode host, so a
+  # prod release onto QA nodes must override that host var back to the prod root
+  # (empty prefix). Release-state history stays segregated under release-state/qa.
+  defp deploying_prod_release_to_qa_nodes?(opts) do
+    opts[:qa] === true and opts[:resolved_release_prefix] === :non_qa
   end
 
   defp resolve_target_sha_from_lookup(opts, playbooks) do
@@ -209,8 +242,19 @@ defmodule Mix.Tasks.Ansible.Deploy do
       opts[:target_sha] === "auto" -> resolve_auto_sha(opts, playbooks)
       opts[:target_sha] === "current" -> resolve_current_sha(opts, playbooks)
       opts[:select_sha] === true -> prompt_select_sha(opts, playbooks)
-      opts[:qa] === true and is_nil(opts[:target_sha]) -> prompt_qa_sha(opts, playbooks)
+      opts[:qa] === true and is_nil(opts[:target_sha]) -> prompt_release_sha(opts, playbooks)
       true -> opts
+    end
+  end
+
+  # Release source is independent of which nodes are targeted: an explicit
+  # `--release-prefix prod|qa` wins, otherwise QA-node deploys default to QA
+  # releases and everything else to prod.
+  defp effective_release_type(opts) do
+    case opts[:release_prefix] do
+      "prod" -> :prod
+      "qa" -> :qa
+      _ -> if opts[:qa] === true, do: :qa, else: :prod
     end
   end
 
@@ -273,7 +317,7 @@ defmodule Mix.Tasks.Ansible.Deploy do
   end
 
   defp resolve_auto_sha(opts, playbooks) do
-    release_type = if opts[:qa] === true, do: :qa, else: :prod
+    release_type = effective_release_type(opts)
     first_app = first_app_name(playbooks)
     lookup_opts = build_lookup_opts()
 
@@ -295,13 +339,14 @@ defmodule Mix.Tasks.Ansible.Deploy do
     end
   end
 
-  defp prompt_qa_sha(opts, playbooks) do
+  defp prompt_release_sha(opts, playbooks) do
+    release_type = effective_release_type(opts)
     first_app = first_app_name(playbooks)
     lookup_opts = build_lookup_opts()
 
-    case ReleaseLookup.resolve_sha(first_app, :qa, :prompt, lookup_opts) do
+    case ReleaseLookup.resolve_sha(first_app, release_type, :prompt, lookup_opts) do
       {:ok, sha} -> Keyword.put(opts, :target_sha, sha)
-      {:error, error} -> Mix.raise("No QA SHA selected: #{ErrorMessage.to_string(error)}")
+      {:error, error} -> Mix.raise("No #{release_type} SHA selected: #{ErrorMessage.to_string(error)}")
     end
   end
 

@@ -17,6 +17,8 @@ defmodule Mix.Tasks.Ansible.DeployTest do
         parallel: :integer,
         only_local_release: :boolean,
         target_sha: :string,
+        select_sha: :boolean,
+        release_prefix: :string,
         include_qa: :boolean,
         qa: :boolean,
         no_tui: :boolean
@@ -24,6 +26,16 @@ defmodule Mix.Tasks.Ansible.DeployTest do
     )
 
     opts
+  end
+
+  defp build_command(opts) do
+    Mix.Tasks.Ansible.Deploy.build_ansible_playbook_command("playbooks/options_event_processor.yaml", opts)
+  end
+
+  defp extra_vars(command_list) do
+    command_list
+    |> Enum.filter(&String.starts_with?(&1, "--extra-vars"))
+    |> Enum.join(" ")
   end
 
   describe "parse_args/1 option parsing" do
@@ -152,6 +164,69 @@ defmodule Mix.Tasks.Ansible.DeployTest do
       opts = []
       assert is_nil(opts[:target_sha])
       refute opts[:qa] === true
+    end
+  end
+
+  describe "--release-prefix option parsing" do
+    test "--release-prefix prod parses to opts[:release_prefix]" do
+      opts = parse_args(["--release-prefix", "prod"])
+      assert opts[:release_prefix] === "prod"
+    end
+
+    test "--release-prefix qa parses to opts[:release_prefix]" do
+      opts = parse_args(["--release-prefix", "qa"])
+      assert opts[:release_prefix] === "qa"
+    end
+
+    test "--qa --target-sha auto --release-prefix prod can be combined" do
+      opts = parse_args(["--qa", "--target-sha", "auto", "--release-prefix", "prod"])
+      assert opts[:qa] === true
+      assert opts[:target_sha] === "auto"
+      assert opts[:release_prefix] === "prod"
+    end
+  end
+
+  describe "build_ansible_playbook_command/2 release prefix vars" do
+    test "prod release onto QA nodes overrides inventory qa prefix back to prod root" do
+      command = build_command(target_sha: "abc1234", qa: true, resolved_release_prefix: :non_qa)
+
+      assert extra_vars(command) =~ ~s(release_prefix= release_state_prefix=release-state/qa)
+      refute extra_vars(command) =~ "release_prefix=qa"
+    end
+
+    test "qa release pulls from qa prefix and records qa state" do
+      command = build_command(target_sha: "abc1234", qa: true, resolved_release_prefix: :qa)
+
+      assert extra_vars(command) =~ ~s(release_prefix=qa release_state_prefix=release-state/qa)
+    end
+
+    test "qa release onto prod nodes still forces qa prefix" do
+      command = build_command(target_sha: "abc1234", resolved_release_prefix: :qa)
+
+      assert extra_vars(command) =~ ~s(release_prefix=qa release_state_prefix=release-state/qa)
+    end
+
+    test "prod release onto prod nodes emits no release_prefix override" do
+      command = build_command(target_sha: "abc1234", resolved_release_prefix: :non_qa)
+
+      refute extra_vars(command) =~ "release_prefix="
+    end
+  end
+
+  describe "build_ansible_playbook_command/2 node limit" do
+    test "--qa limits to qa_true group" do
+      command = build_command(qa: true)
+      assert Enum.member?(command, "--limit") and Enum.member?(command, "'qa_true'")
+    end
+
+    test "default excludes qa nodes" do
+      command = build_command([])
+      assert Enum.member?(command, "--limit") and Enum.member?(command, "'!qa_true'")
+    end
+
+    test "--include-qa adds no node limit" do
+      command = build_command(include_qa: true)
+      refute Enum.member?(command, "--limit")
     end
   end
 end
