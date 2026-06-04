@@ -142,7 +142,9 @@ defmodule Mix.Tasks.Ansible.Setup do
 
         res = DeployEx.TUI.DeployProgress.run(setup_files, run_fn,
           max_concurrency: opts[:parallel],
-          timeout: @setup_timeout
+          timeout: @setup_timeout,
+          action_gerund: "Setting Up",
+          action_noun: "Setup"
         )
 
         case res do

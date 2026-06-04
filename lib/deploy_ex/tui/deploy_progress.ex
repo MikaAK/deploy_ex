@@ -7,6 +7,17 @@ defmodule DeployEx.TUI.DeployProgress do
   @ansible_task_regex ~r/^TASK \[(.+)\]/
   @ansible_play_recap_regex ~r/^PLAY RECAP/
 
+  @default_action_gerund "Deploying"
+  @default_action_noun "Deploy"
+
+  @doc false
+  def action_labels(opts) do
+    %{
+      gerund: Keyword.get(opts, :action_gerund, @default_action_gerund),
+      noun: Keyword.get(opts, :action_noun, @default_action_noun)
+    }
+  end
+
   def run(app_playbooks, run_fn, opts \\ []) do
     if DeployEx.TUI.enabled?() do
       run_tui(app_playbooks, run_fn, opts)
@@ -34,7 +45,8 @@ defmodule DeployEx.TUI.DeployProgress do
     deploy_meta = %{
       target_sha: Keyword.get(opts, :target_sha),
       qa_release: Keyword.get(opts, :qa_release, false),
-      qa_nodes: Keyword.get(opts, :qa_nodes, false)
+      qa_nodes: Keyword.get(opts, :qa_nodes, false),
+      action: action_labels(opts)
     }
 
     app_names = Enum.map(app_playbooks, &extract_app_name/1)
@@ -202,14 +214,14 @@ defmodule DeployEx.TUI.DeployProgress do
     meta_label = deploy_meta_label(deploy_meta)
 
     header = %Widgets.Paragraph{
-      text: " Deploying Applications (#{completed}/#{total})#{meta_label}",
+      text: " #{deploy_meta.action.gerund} Applications (#{completed}/#{total})#{meta_label}",
       style: %Style{fg: :cyan, modifiers: [:bold]}
     }
 
     footer_text = if cancelling do
-      " Press Ctrl-C again to cancel all deployments"
+      " Press Ctrl-C again to cancel all tasks"
     else
-      " Waiting for all deployments to complete..."
+      " Waiting for all tasks to complete..."
     end
 
     footer = %Widgets.Paragraph{
@@ -228,9 +240,9 @@ defmodule DeployEx.TUI.DeployProgress do
     text = Enum.join(lines, "\n")
 
     block_title = if deploy_meta[:qa_release] do
-      " Deploy Status [QA Release] "
+      " #{deploy_meta.action.noun} Status [QA Release] "
     else
-      " Deploy Status "
+      " #{deploy_meta.action.noun} Status "
     end
 
     node_label = cond do
