@@ -1,2 +1,13 @@
 letsencrypt_email: "admin@cheddarflow.com"
 letsencrypt_use_public_ip: false
+
+# Certificate renewal cadence. QA nodes run shorter-lived certs and are stopped
+# and restarted often, so they need to check far more frequently than prod.
+# The DNS-challenge (prod/domain) path issues 90-day certs and a daily check is
+# plenty; the public-IP path issues ~7-day shortlived certs, so QA checks hourly.
+letsencrypt_renewal_oncalendar: "{{ 'hourly' if letsencrypt_use_public_ip | bool else 'daily' }}"
+letsencrypt_renewal_randomized_delay_sec: "{{ 300 if letsencrypt_use_public_ip | bool else 3600 }}"
+
+# Renew when fewer than this many days remain. The 90-day DNS certs renew at 7
+# days left; the ~7-day public-IP certs must renew much earlier (2 days left).
+letsencrypt_renewal_min_days: "{{ 2 if letsencrypt_use_public_ip | bool else 7 }}"

@@ -1,4 +1,6 @@
-- name: letsencrypt
+# Cert issuance — DNS-challenge path (prod + domain-backed QA nodes). Issues
+# 90-day certs scoped to {{ domain }}.
+- name: letsencrypt (DNS-01 challenge — domain-backed nodes)
   block:
     - name: Ensure Cloudflare API token is configured
       fail:
@@ -22,59 +24,6 @@
         group: root
       when: cloudflare_api_token is defined
 
-    - name: Create certificate renewal script
-      template:
-        src: renew-certificates.sh.j2
-        dest: /usr/local/bin/renew-certificates.sh
-        mode: '0755'
-      notify: restart certificate renewal service
-
-    - name: Create systemd service for certificate renewal
-      template:
-        src: cert-renewal.service.j2
-        dest: /etc/systemd/system/cert-renewal.service
-        mode: '0644'
-      notify:
-        - reload systemd
-        - enable certificate renewal service
-
-    - name: Create systemd timer for certificate renewal
-      template:
-        src: cert-renewal.timer.j2
-        dest: /etc/systemd/system/cert-renewal.timer
-        mode: '0644'
-      notify:
-        - reload systemd
-        - enable certificate renewal timer
-
-    - name: Create startup script for certificate check
-      template:
-        src: check-certificates.sh.j2
-        dest: /usr/local/bin/check-certificates.sh
-        mode: '0755'
-
-    - name: Create systemd service for initial certificate check on boot
-      template:
-        src: cert-initial.service.j2
-        dest: /etc/systemd/system/cert-initial.service
-        mode: '0644'
-      notify:
-        - reload systemd
-        - enable certificate initial service
-
-    - name: Add certificate check to cloud-init (if it exists)
-      lineinfile:
-        path: /etc/rc.local
-        line: '/usr/local/bin/check-certificates.sh'
-        insertbefore: '^exit 0'
-        mode: '0755'
-        create: yes
-
-    - name: Run initial certificate check now
-      systemd:
-        name: cert-initial
-        state: started
-
     - name: Ensure certificates exist or generate them
       shell: |
         #!/bin/bash
@@ -90,50 +39,28 @@
             exit 1
         fi
 
-        # Check if certificate exists and is valid for at least 7 days
-        if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-            EXPIRY=$(openssl x509 -in "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" -noout -enddate | cut -d= -f2)
-            EXPIRY_EPOCH=$(date -d "$EXPIRY" +%s)
-            CURRENT_EPOCH=$(date +%s)
-            DAYS_LEFT=$(( (EXPIRY_EPOCH - CURRENT_EPOCH) / 86400 ))
-
-            if [ $DAYS_LEFT -gt 7 ]; then
-                echo "Certificate is valid for $DAYS_LEFT days. No renewal needed."
-                exit 0
-            fi
-        fi
-
-        # Obtain or renew certificate using DNS challenge
-        echo "Obtaining/renewing certificate for $DOMAIN using DNS challenge..."
+        # Obtain the initial certificate using the DNS challenge. Ongoing renewal
+        # is handled by the cert-renewal timer + cert-initial boot service below.
+        echo "Obtaining certificate for $DOMAIN using DNS challenge..."
         certbot certonly \
             --dns-cloudflare \
             --dns-cloudflare-credentials "$CREDS_FILE" \
             -d "$DOMAIN" \
             --non-interactive \
             --agree-tos \
-            --email "$EMAIL" \
-            --force-renewal
+            --email "$EMAIL"
 
-        echo "Certificate obtained/renewed successfully"
-        /usr/local/bin/check-certificates.sh
+        echo "Certificate obtained successfully"
       args:
         creates: "/etc/letsencrypt/live/{{ domain }}/fullchain.pem"
-
-    - name: Set proper permissions for certificate files
-      file:
-        path: /etc/letsencrypt
-        state: directory
-        recurse: yes
-        mode: '0755'
-        owner: root
-        group: root
   when: not letsencrypt_use_public_ip | bool
   become: true
 
-# IP-cert path — used by standalone QA nodes (set via --public-ip-cert on qa.create).
-# Gets a real Let's Encrypt cert scoped to the node's public IPv4 using the short-lived
-# profile (~7-day cert lifetime). Requires certbot ≥ 4.0, installed via snap since
-# Debian/Ubuntu apt packages are too old.
+# Cert issuance — IP-cert path, used by standalone QA nodes (set via
+# --public-ip-cert on qa.create). Gets a real Let's Encrypt cert scoped to the
+# node's public IPv4 using the short-lived profile (~7-day cert lifetime).
+# Requires certbot ≥ 4.0, installed via snap since Debian/Ubuntu apt packages
+# are too old.
 - name: letsencrypt (Let's Encrypt HTTP-01 for public IP — standalone QA nodes)
   block:
     - name: Install snapd
@@ -202,9 +129,9 @@
     # IPs today.
     #
     # --pre-hook / --post-hook stop + start nginx around issuance so certbot can
-    # bind :80. They get persisted in the cert's renewal config, so snap's
-    # built-in snap.certbot.renew.timer handles nginx cycling on its own during
-    # renewals.
+    # bind :80. They get persisted in the cert's renewal config, so the
+    # cert-renewal timer below (and snap's own snap.certbot.renew.timer) cycle
+    # nginx on their own during renewals.
     - name: Obtain Let's Encrypt short-lived cert for public IP
       shell: |
         set -euo pipefail
@@ -219,6 +146,72 @@
           --post-hook "systemctl start nginx 2>/dev/null || true"
       args:
         creates: "/etc/letsencrypt/live/{{ node_public_ip }}/fullchain.pem"
+  when: letsencrypt_use_public_ip | bool
+  become: true
+
+# Shared renewal scaffolding — installed on BOTH paths. The public-IP QA path
+# previously had no managed renewal at all (no boot service, no frequent timer),
+# so a QA node stopped past its ~7-day cert came back serving an expired cert
+# (ERR_CERT_DATE_INVALID). The renewal cadence is set by letsencrypt_renewal_*
+# defaults: QA (public-IP) checks hourly, prod (DNS) daily.
+- name: letsencrypt (renewal timer + boot check — shared)
+  block:
+    - name: Create certificate renewal script
+      template:
+        src: renew-certificates.sh.j2
+        dest: /usr/local/bin/renew-certificates.sh
+        mode: '0755'
+      notify: restart certificate renewal service
+
+    - name: Create systemd service for certificate renewal
+      template:
+        src: cert-renewal.service.j2
+        dest: /etc/systemd/system/cert-renewal.service
+        mode: '0644'
+      notify:
+        - reload systemd
+        - enable certificate renewal service
+
+    - name: Create systemd timer for certificate renewal
+      template:
+        src: cert-renewal.timer.j2
+        dest: /etc/systemd/system/cert-renewal.timer
+        mode: '0644'
+      notify:
+        - reload systemd
+        - enable certificate renewal timer
+
+    - name: Create startup script for certificate check
+      template:
+        src: check-certificates.sh.j2
+        dest: /usr/local/bin/check-certificates.sh
+        mode: '0755'
+
+    - name: Create systemd service for initial certificate check on boot
+      template:
+        src: cert-initial.service.j2
+        dest: /etc/systemd/system/cert-initial.service
+        mode: '0644'
+      notify:
+        - reload systemd
+        - enable certificate initial service
+
+    - name: Add certificate check to cloud-init (if it exists)
+      lineinfile:
+        path: /etc/rc.local
+        line: '/usr/local/bin/check-certificates.sh'
+        insertbefore: '^exit 0'
+        mode: '0755'
+        create: yes
+
+    # Apply the new units/scripts before kicking off the boot check below.
+    - name: Apply pending systemd unit changes
+      meta: flush_handlers
+
+    - name: Run initial certificate check now
+      systemd:
+        name: cert-initial
+        state: started
 
     - name: Set proper permissions for certificate files
       file:
@@ -228,5 +221,4 @@
         mode: '0755'
         owner: root
         group: root
-  when: letsencrypt_use_public_ip | bool
   become: true

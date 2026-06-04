@@ -1,43 +1,21 @@
 #!/bin/bash
 set -euo pipefail
 
-DOMAIN="{{ domain }}"
-EMAIL="{{ letsencrypt_email }}"
-CREDS_FILE="/etc/letsencrypt/cloudflare-credentials.ini"
-
-# Check if Cloudflare credentials exist
-if [ ! -f "$CREDS_FILE" ]; then
-    echo "Cloudflare credentials not found at $CREDS_FILE"
-    exit 1
-fi
-
-# Check if certificate exists and is valid for at least 7 days
-if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-    EXPIRY=$(openssl x509 -in "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" -noout -enddate | cut -d= -f2)
-    EXPIRY_EPOCH=$(date -d "$EXPIRY" +%s)
-    CURRENT_EPOCH=$(date +%s)
-    DAYS_LEFT=$(( (EXPIRY_EPOCH - CURRENT_EPOCH) / 86400 ))
-
-    if [ $DAYS_LEFT -gt 7 ]; then
-        echo "Certificate is valid for $DAYS_LEFT days. No renewal needed."
-        exit 0
-    fi
-fi
-
-# Obtain or renew certificate using DNS challenge
-echo "Obtaining/renewing certificate for $DOMAIN using DNS challenge..."
-certbot certonly \
-    --dns-cloudflare \
-    --dns-cloudflare-credentials "$CREDS_FILE" \
-    -d "$DOMAIN" \
-    --non-interactive \
-    --agree-tos \
-    --email "$EMAIL" \
-    --force-renewal
-
-# Restart services that use SSL
-systemctl restart cfx-web || true
-systemctl restart cfx-cms || true
-systemctl restart cfx-hooks || true
-
-echo "Certificate obtained/renewed successfully"
+# `certbot renew` is rate-limit safe: it only renews certs that are inside their
+# renewal window (ARI-aware, so it handles the short-lived QA certs correctly)
+# and it renews certs that are already expired/overdue. The DNS-challenge and
+# standalone-IP renewal parameters were persisted into the cert's renewal config
+# at issuance time, so no flags need to be repeated here.
+#
+# QA nodes run this far more often than prod (see letsencrypt_renewal_oncalendar)
+# because their certs are short-lived and the nodes are stopped/started often.
+{% if letsencrypt_use_public_ip | bool %}
+# Public-IP (standalone) path: the stored --pre-hook/--post-hook cycle nginx
+# only when a cert is actually renewed.
+certbot renew --non-interactive
+{% else %}
+# DNS-challenge path: restart the SSL-terminating services only when a cert was
+# actually deployed, via --deploy-hook (runs once per renewed lineage).
+certbot renew --non-interactive \
+    --deploy-hook "systemctl restart cfx-web cfx-cms cfx-hooks"
+{% endif %}
