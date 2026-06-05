@@ -83,6 +83,13 @@ defmodule DeployEx.QaNode do
       {"NetworkInterface.1.SubnetId", params[:subnet_id]},
       {"NetworkInterface.1.SecurityGroupId.1", params[:security_group_id]},
       {"NetworkInterface.1.AssociatePublicIpAddress", "true"},
+      # Match the Terraform-provisioned nodes (resource-name DNS): the BEAM
+      # cluster addresses nodes by their bare instance-id node name, which only
+      # resolves when the instance publishes an <instance-id>.<region>.compute
+      # A record. The QA subnet defaults to ip-name, so without this QA nodes
+      # are unreachable as RPC targets (libcluster cannot connect to them).
+      {"PrivateDnsNameOptions.HostnameType", "resource-name"},
+      {"PrivateDnsNameOptions.EnableResourceNameDnsARecord", "true"},
       {"UserData", Base.encode64(user_data)},
       iam_instance_profile: [name: params[:iam_instance_profile]],
       tag_specifications: [{:instance, tags}]
