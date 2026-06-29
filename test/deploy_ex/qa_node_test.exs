@@ -639,4 +639,48 @@ defmodule DeployEx.QaNodeTest do
                QaNode.select_by_branch([], "qa/cfx_web-canary")
     end
   end
+
+  describe "extract_xml_value/2" do
+    test "pulls a tag value out of an EC2 query XML response" do
+      body = "<AllocateAddressResponse><publicIp>52.1.2.3</publicIp><allocationId>eipalloc-abc</allocationId></AllocateAddressResponse>"
+
+      assert {:ok, "eipalloc-abc"} = QaNode.extract_xml_value(body, "allocationId")
+      assert {:ok, "52.1.2.3"} = QaNode.extract_xml_value(body, "publicIp")
+    end
+
+    test "returns failed_dependency when the tag is absent" do
+      assert {:error, %ErrorMessage{code: :failed_dependency}} =
+               QaNode.extract_xml_value("<Response></Response>", "allocationId")
+    end
+  end
+
+  describe "extract_root_volume_id/1" do
+    test "returns the volume matching rootDeviceName" do
+      instance = %{
+        "rootDeviceName" => "/dev/xvda",
+        "blockDeviceMapping" => %{
+          "item" => [
+            %{"deviceName" => "/dev/xvdb", "ebs" => %{"volumeId" => "vol-data"}},
+            %{"deviceName" => "/dev/xvda", "ebs" => %{"volumeId" => "vol-root"}}
+          ]
+        }
+      }
+
+      assert {:ok, "vol-root"} = QaNode.extract_root_volume_id(instance)
+    end
+
+    test "falls back to the first volume when none matches the root device name" do
+      instance = %{
+        "rootDeviceName" => "/dev/sda1",
+        "blockDeviceMapping" => %{"item" => %{"deviceName" => "/dev/xvda", "ebs" => %{"volumeId" => "vol-only"}}}
+      }
+
+      assert {:ok, "vol-only"} = QaNode.extract_root_volume_id(instance)
+    end
+
+    test "returns :not_found when there are no block devices" do
+      assert {:error, %ErrorMessage{code: :not_found}} =
+               QaNode.extract_root_volume_id(%{"rootDeviceName" => "/dev/xvda"})
+    end
+  end
 end

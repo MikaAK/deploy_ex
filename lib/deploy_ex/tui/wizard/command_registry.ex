@@ -566,6 +566,24 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       ]
     },
     %{
+      task: "deploy_ex.qa.modify",
+      module: Mix.Tasks.DeployEx.Qa.Modify,
+      category: "QA",
+      inputs: [
+        input(:app_name, "App name", :select,
+          positional: true,
+          choices_fn: &__MODULE__.fetch_app_names/0
+        ),
+        input(:instance_id, "Instance ID", :string, description: "Target instance directly (skips QA state lookup)"),
+        input(:instance_type, "Instance type", :string, description: "Resize to this EC2 type (stop/start)"),
+        input(:grow_root, "Grow root EBS (GB)", :integer, description: "New root volume size in GB"),
+        input(:elastic_ip, "Elastic IP", :boolean, description: "Allocate + associate a stable Elastic IP"),
+        input(:public_ip_cert, "Public IP cert", :boolean, description: "Toggle the UsePublicIpCert tag"),
+        input(:region, "AWS region", :string),
+        input(:quiet, "Quiet", :boolean)
+      ]
+    },
+    %{
       task: "deploy_ex.qa.cleanup",
       module: Mix.Tasks.DeployEx.Qa.Cleanup,
       category: "QA",

@@ -27,6 +27,7 @@ defmodule Mix.Tasks.DeployEx.Qa do
     {"ssh", "Get SSH connection info for a QA node"},
     {"attach_lb", "Attaches a QA node to the app's load balancer"},
     {"detach_lb", "Detaches a QA node from the load balancer"},
+    {"modify", "Modifies a QA node (size, EBS, Elastic IP, public-IP cert)"},
     {"cleanup", "Cleans up orphaned QA nodes"}
   ]
 
@@ -346,6 +347,44 @@ defmodule Mix.Tasks.DeployEx.Qa do
       Use --watch to continuously monitor health status with auto-refresh.
 
       Use --all to see health status for all instances, not just QA nodes.
+    """)
+  end
+
+  defp print_command_help("modify") do
+    Mix.shell().info("""
+
+    #{IO.ANSI.cyan()}mix deploy_ex.qa.modify#{IO.ANSI.reset()} - Modifies an existing QA node in place
+
+    #{IO.ANSI.yellow()}Usage:#{IO.ANSI.reset()}
+      mix deploy_ex.qa.modify <app_name> [modification flags]
+      mix deploy_ex.qa.modify --instance-id <id> [modification flags]
+
+    #{IO.ANSI.yellow()}Examples:#{IO.ANSI.reset()}
+      mix deploy_ex.qa.modify my_app --instance-type t3.large
+      mix deploy_ex.qa.modify my_app --grow-root 30
+      mix deploy_ex.qa.modify my_app --instance-type t3.large --elastic-ip
+      mix deploy_ex.qa.modify my_app --public-ip-cert
+      mix deploy_ex.qa.modify --instance-id i-abc123 --no-public-ip-cert
+
+    #{IO.ANSI.yellow()}Options:#{IO.ANSI.reset()}
+      --instance-id      Target an instance directly (skips QA state lookup)
+      --instance-type    Resize to this EC2 type (requires a stop/start)
+      --grow-root        New root EBS volume size in GB
+      --elastic-ip       Allocate + associate a stable Elastic IP
+      --public-ip-cert   Toggle the UsePublicIpCert tag (--no-public-ip-cert disables)
+      --region           AWS region (default: from config)
+      --quiet, -q        Suppress output messages
+
+    #{IO.ANSI.yellow()}Description:#{IO.ANSI.reset()}
+      Applies one or more in-place modifications to an existing QA node; at least
+      one modification flag is required. When combined, they run in a safe order:
+      grow EBS, resize, associate Elastic IP, then set the cert tag.
+
+      A resize (--instance-type) stops and starts the instance, so it is briefly
+      offline and — without an Elastic IP — gets a NEW public IP. Use --elastic-ip
+      to keep a stable public IP across resizes. --grow-root expands the EBS volume
+      online; the filesystem extends on next boot (via cloud-init), so pair it with
+      a resize or reboot the node.
     """)
   end
 

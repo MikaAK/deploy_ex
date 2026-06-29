@@ -254,6 +254,207 @@ defmodule DeployEx.QaNode do
     end
   end
 
+  # ─── Instance modification (resize / EBS / Elastic IP) ──────────────────
+
+  @ec2_api_version "2016-11-15"
+  @stopped_state "stopped"
+  @running_state "running"
+  @poll_interval_ms 5_000
+  @poll_max_attempts 60
+
+  @doc """
+  Resizes a QA node to a new EC2 instance type.
+
+  EC2 requires the instance to be stopped to change its type, so this stops it,
+  modifies the type, starts it again, waits for it to run, and returns the struct
+  refreshed from EC2 (stop/start assigns a NEW public IP unless an Elastic IP is
+  associated — see `allocate_and_associate_eip/2`). The refresh also re-persists
+  the S3 state.
+  """
+  @spec resize_instance(t(), String.t(), keyword()) :: {:ok, t()} | {:error, ErrorMessage.t()}
+  def resize_instance(%__MODULE__{instance_id: instance_id} = qa_node, instance_type, opts \\ [])
+      when is_binary(instance_type) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+
+    with :ok <- stop_instance_and_wait(instance_id, region, opts),
+         :ok <- modify_instance_type(instance_id, instance_type, region),
+         :ok <- start_instance_and_wait(instance_id, region, opts),
+         {:ok, refreshed} <- verify_instance_exists(qa_node) do
+      {:ok, refreshed}
+    end
+  end
+
+  @doc """
+  Grows the root EBS volume of a QA node to `size_gb` gigabytes.
+
+  The volume is modified online (no stop required). The filesystem itself is
+  extended on the next boot by cloud-init's growpart, so pair this with a resize
+  (which restarts the instance) or reboot the node to realise the new size.
+  """
+  @spec grow_root_volume(t(), pos_integer(), keyword()) :: {:ok, t()} | {:error, ErrorMessage.t()}
+  def grow_root_volume(%__MODULE__{instance_id: instance_id} = qa_node, size_gb, opts \\ [])
+      when is_integer(size_gb) and size_gb > 0 do
+    region = opts[:region] || DeployEx.Config.aws_region()
+
+    with {:ok, volume_id} <- root_volume_id(instance_id, region),
+         :ok <- modify_volume_size(volume_id, size_gb, region) do
+      {:ok, qa_node}
+    end
+  end
+
+  @doc """
+  Allocates a new VPC Elastic IP and associates it with the QA node, giving it a
+  stable public IP that survives stop/start (resizes). Returns the struct with
+  the EIP set as `public_ip`.
+  """
+  @spec allocate_and_associate_eip(t(), keyword()) :: {:ok, t()} | {:error, ErrorMessage.t()}
+  def allocate_and_associate_eip(%__MODULE__{instance_id: instance_id} = qa_node, opts \\ []) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+
+    with {:ok, allocation_id, public_ip} <- allocate_address(region),
+         :ok <- associate_address(instance_id, allocation_id, region) do
+      {:ok, %{qa_node | public_ip: public_ip}}
+    end
+  end
+
+  defp stop_instance_and_wait(instance_id, region, opts) do
+    result = [instance_id] |> ExAws.EC2.stop_instances() |> ExAws.request(region: region)
+
+    case result do
+      {:ok, _} -> wait_for_state(instance_id, @stopped_state, region, opts)
+      {:error, error} -> {:error, ErrorMessage.failed_dependency("failed to stop instance", %{error: inspect(error)})}
+    end
+  end
+
+  defp start_instance_and_wait(instance_id, region, opts) do
+    result = [instance_id] |> ExAws.EC2.start_instances() |> ExAws.request(region: region)
+
+    case result do
+      {:ok, _} -> wait_for_state(instance_id, @running_state, region, opts)
+      {:error, error} -> {:error, ErrorMessage.failed_dependency("failed to start instance", %{error: inspect(error)})}
+    end
+  end
+
+  defp modify_instance_type(instance_id, instance_type, region) do
+    instance_id
+    |> ExAws.EC2.modify_instance_attribute([{"InstanceType.Value", instance_type}])
+    |> ExAws.request(region: region)
+    |> handle_modify_response("failed to modify instance type")
+  end
+
+  defp modify_volume_size(volume_id, size_gb, region) do
+    volume_id
+    |> ExAws.EC2.modify_volume([{"Size", Integer.to_string(size_gb)}])
+    |> ExAws.request(region: region)
+    |> handle_modify_response("failed to modify root volume size")
+  end
+
+  defp root_volume_id(instance_id, region) do
+    case DeployEx.AwsMachine.find_instances_by_id(region, [instance_id]) do
+      {:ok, [instance | _]} -> extract_root_volume_id(instance)
+      {:ok, []} -> {:error, ErrorMessage.not_found("instance #{instance_id} not found")}
+      {:error, _} = error -> error
+    end
+  end
+
+  @doc false
+  def extract_root_volume_id(instance) do
+    root_device = instance["rootDeviceName"]
+    items = instance |> get_in(["blockDeviceMapping", "item"]) |> List.wrap()
+
+    volume_id =
+      Enum.find_value(items, fn item ->
+        if item["deviceName"] === root_device, do: get_in(item, ["ebs", "volumeId"])
+      end) || items |> List.first(%{}) |> get_in(["ebs", "volumeId"])
+
+    case volume_id do
+      nil -> {:error, ErrorMessage.not_found("could not find root EBS volume for instance")}
+      id -> {:ok, id}
+    end
+  end
+
+  defp allocate_address(region) do
+    response =
+      %ExAws.Operation.Query{
+        path: "/",
+        params: %{"Action" => "AllocateAddress", "Domain" => "vpc", "Version" => @ec2_api_version},
+        service: :ec2
+      }
+      |> ExAws.request(region: region)
+
+    case response do
+      {:ok, %{body: body}} -> parse_allocate_address(body)
+      {:error, error} -> {:error, ErrorMessage.failed_dependency("failed to allocate Elastic IP", %{error: inspect(error)})}
+    end
+  end
+
+  defp parse_allocate_address(body) do
+    with {:ok, allocation_id} <- extract_xml_value(body, "allocationId"),
+         {:ok, public_ip} <- extract_xml_value(body, "publicIp") do
+      {:ok, allocation_id, public_ip}
+    end
+  end
+
+  defp associate_address(instance_id, allocation_id, region) do
+    %ExAws.Operation.Query{
+      path: "/",
+      params: %{
+        "Action" => "AssociateAddress",
+        "InstanceId" => instance_id,
+        "AllocationId" => allocation_id,
+        "Version" => @ec2_api_version
+      },
+      service: :ec2
+    }
+    |> ExAws.request(region: region)
+    |> handle_modify_response("failed to associate Elastic IP")
+  end
+
+  @doc false
+  def extract_xml_value(body, tag) when is_binary(body) do
+    case Regex.run(~r{<#{tag}>([^<]+)</#{tag}>}, body) do
+      [_, value] -> {:ok, value}
+      _ -> {:error, ErrorMessage.failed_dependency("could not parse <#{tag}> from EC2 response", %{body: body})}
+    end
+  end
+
+  defp wait_for_state(instance_id, target_state, region, opts) do
+    interval = opts[:poll_interval_ms] || @poll_interval_ms
+    do_wait_for_state(instance_id, target_state, region, interval, @poll_max_attempts)
+  end
+
+  defp do_wait_for_state(_instance_id, target_state, _region, _interval, 0) do
+    {:error, ErrorMessage.request_timeout("instance did not reach state '#{target_state}' in time")}
+  end
+
+  defp do_wait_for_state(instance_id, target_state, region, interval, attempts_left) do
+    case fetch_instance_state(instance_id, region) do
+      {:ok, ^target_state} ->
+        :ok
+
+      {:ok, _other} ->
+        Process.sleep(interval)
+        do_wait_for_state(instance_id, target_state, region, interval, attempts_left - 1)
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp fetch_instance_state(instance_id, region) do
+    case DeployEx.AwsMachine.find_instances_by_id(region, [instance_id]) do
+      {:ok, [instance | _]} -> {:ok, get_in(instance, ["instanceState", "name"])}
+      {:ok, []} -> {:error, ErrorMessage.not_found("instance #{instance_id} not found")}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp handle_modify_response({:ok, _}, _message), do: :ok
+
+  defp handle_modify_response({:error, error}, message) do
+    {:error, ErrorMessage.failed_dependency(message, %{error: inspect(error)})}
+  end
+
   @doc """
   Sets or clears the `UsePublicIpCert` EC2 tag on a QA node and returns an
   updated struct with the matching `use_public_ip_cert?` value.
