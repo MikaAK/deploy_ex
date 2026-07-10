@@ -43,6 +43,9 @@ defmodule DeployEx.GitOperations do
   Stages the listed `files`, commits with `message`, and pushes `branch` to
   origin. Returns the resulting commit's SHA.
 
+  When `files` is empty, or when staging them produces no change (the rewrite
+  was already applied), the commit is skipped and the branch is pushed as-is.
+
   Options:
   * `:create_new?` — true if we created the branch (uses `--force-with-lease`).
   * `:base_sha` — when `:create_new?`, branch off this SHA via `git checkout -B`.
@@ -56,11 +59,31 @@ defmodule DeployEx.GitOperations do
     base_sha = Keyword.get(opts, :base_sha)
 
     with :ok <- maybe_checkout_branch(shell, repo_root, branch, create_new?, base_sha),
-         :ok <- run_step(shell, repo_root, "git add #{quote_files(files)}"),
-         :ok <- run_step(shell, repo_root, ~s|git commit -m #{shell_escape(message)}|),
+         :ok <- maybe_stage_files(shell, repo_root, files),
+         :ok <- maybe_commit(shell, repo_root, message),
          :ok <- run_step(shell, repo_root, push_command(branch, create_new?)),
          {:ok, sha_output} <- shell.("git rev-parse HEAD", repo_root, []) do
       {:ok, String.trim(sha_output)}
+    end
+  end
+
+  defp maybe_stage_files(_shell, _repo, []), do: :ok
+  defp maybe_stage_files(shell, repo, files), do: run_step(shell, repo, "git add #{quote_files(files)}")
+
+  defp maybe_commit(shell, repo, message) do
+    with {:ok, staged?} <- staged_changes?(shell, repo) do
+      if staged? do
+        run_step(shell, repo, ~s|git commit -m #{shell_escape(message)}|)
+      else
+        :ok
+      end
+    end
+  end
+
+  defp staged_changes?(shell, repo) do
+    case shell.("git diff --cached --name-only", repo, []) do
+      {:ok, output} -> {:ok, String.trim(output) !== ""}
+      {:error, _} = error -> error
     end
   end
 

@@ -51,6 +51,7 @@ defmodule DeployEx.GitOperationsTest do
         cond do
           cmd =~ "git checkout -B" -> {:ok, ""}
           cmd =~ "git add" -> {:ok, ""}
+          cmd =~ "git diff --cached" -> {:ok, "apps/cfx_web/config/prod.exs\n"}
           cmd =~ "git commit" -> {:ok, ""}
           cmd =~ "git push" -> {:ok, ""}
           cmd =~ "git rev-parse HEAD" -> {:ok, "newsha1234567890\n"}
@@ -81,6 +82,9 @@ defmodule DeployEx.GitOperationsTest do
         cond do
           cmd =~ "git add" ->
             {:ok, ""}
+
+          cmd =~ "git diff --cached" ->
+            {:ok, "foo.exs\n"}
 
           cmd =~ "git commit" ->
             {:ok, ""}
@@ -135,6 +139,56 @@ defmodule DeployEx.GitOperationsTest do
       assert add_cmd =~ "b.exs"
       refute add_cmd =~ "git add -A"
       refute add_cmd =~ "git add ."
+    end
+
+    test "skips git add and git commit when there are no files to stage" do
+      Process.put(:cmds, [])
+
+      shell = fn cmd, _dir, _opts ->
+        Process.put(:cmds, [cmd | Process.get(:cmds)])
+
+        cond do
+          cmd =~ "git rev-parse HEAD" -> {:ok, "abc\n"}
+          cmd =~ "git diff --cached" -> {:ok, ""}
+          true -> {:ok, ""}
+        end
+      end
+
+      assert {:ok, "abc"} =
+               GitOperations.commit_and_push("/repo", "qa-existing", [], "msg",
+                 shell: shell,
+                 create_new?: false
+               )
+
+      cmds = Process.get(:cmds)
+      refute Enum.any?(cmds, &(&1 =~ "git add"))
+      refute Enum.any?(cmds, &(&1 =~ "git commit"))
+      assert Enum.any?(cmds, &(&1 =~ "git push"))
+    end
+
+    test "skips git commit when staging produced no changes" do
+      Process.put(:cmds, [])
+
+      shell = fn cmd, _dir, _opts ->
+        Process.put(:cmds, [cmd | Process.get(:cmds)])
+
+        cond do
+          cmd =~ "git rev-parse HEAD" -> {:ok, "abc\n"}
+          cmd =~ "git diff --cached" -> {:ok, "\n"}
+          true -> {:ok, ""}
+        end
+      end
+
+      assert {:ok, "abc"} =
+               GitOperations.commit_and_push("/repo", "qa-existing", ["foo.exs"], "msg",
+                 shell: shell,
+                 create_new?: false
+               )
+
+      cmds = Process.get(:cmds)
+      assert Enum.any?(cmds, &(&1 =~ "git add"))
+      refute Enum.any?(cmds, &(&1 =~ "git commit"))
+      assert Enum.any?(cmds, &(&1 =~ "git push"))
     end
   end
 
