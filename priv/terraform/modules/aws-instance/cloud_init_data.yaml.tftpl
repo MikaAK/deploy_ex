@@ -144,11 +144,25 @@ write_files:
       WantedBy=multi-user.target
       EOF
 
-      # Enable and start service
-      echo "Starting $${APP_NAME} service..."
+      # Enable the unit, then start it NON-BLOCKING.
+      #
+      # The unit is ordered `After=cloud-init.target` (see the [Unit] block
+      # above) so a fresh boot does not auto-start the AMI-baked release before
+      # this script swaps in the correct one. But this script runs inside
+      # cloud-final.service, and cloud-init.target only activates once
+      # cloud-final finishes. A blocking `systemctl start` here waits on a start
+      # job that is itself ordered after cloud-init.target, so cloud-final can
+      # never finish: deadlock until the systemd job times out. The app then
+      # misses the ASG ELB health grace and the instance is replaced in a loop
+      # (each replacement re-issues a Let's Encrypt cert -> rate-limit lockout).
+      #
+      # --no-block enqueues the start and returns immediately: cloud-final
+      # completes, cloud-init.target activates, and the queued job launches the
+      # freshly-swapped release. Do NOT remove --no-block.
+      echo "Enabling $${APP_NAME} service (start deferred to cloud-init.target)..."
       systemctl daemon-reload
       systemctl enable $${APP_NAME}
-      systemctl start $${APP_NAME}
+      systemctl start --no-block $${APP_NAME}
 
       echo "Deployment complete!"
       systemctl status $${APP_NAME} --no-pager || true
