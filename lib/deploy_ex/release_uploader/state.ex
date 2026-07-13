@@ -60,7 +60,15 @@ defmodule DeployEx.ReleaseUploader.State do
 
   defp slugify_branch(nil), do: nil
   defp slugify_branch(""), do: nil
-  defp slugify_branch(branch) when is_binary(branch), do: String.replace(branch, "/", "~")
+
+  defp slugify_branch(branch) when is_binary(branch) do
+    # "-" is the field separator in the release filename grammar, so it can never
+    # survive raw inside the wrapped branch segment - escape it to "^" (like "/" to
+    # "~", both chars are illegal in git ref names, so this is always reversible).
+    branch
+    |> String.replace("/", "~")
+    |> String.replace("-", "^")
+  end
 
   defp app_name_from_local_release_file(release_file_path) do
     file_name = Path.basename(release_file_path)
@@ -74,14 +82,25 @@ defmodule DeployEx.ReleaseUploader.State do
 
     remote_releases
       |> Enum.filter(&String.starts_with?(&1, path_prefix))
-      |> Enum.map(fn release_path ->
-        base_name = Path.basename(release_path)
-        [timestamp, sha_with_branch, ^app_name, _] = String.split(base_name, "-")
-
-        {String.to_integer(timestamp), strip_branch_suffix(sha_with_branch), base_name}
-      end)
+      |> Enum.map(&parse_release_path(&1, app_name))
+      |> Enum.reject(&is_nil/1)
       |> Enum.sort_by(fn {timestamp, _, _} -> timestamp end, :desc)
       |> List.first
+  end
+
+  # Malformed/legacy keys (eg. an old upload whose branch slug has raw, unescaped
+  # hyphens) are skipped rather than raised on, so one bad object in the bucket
+  # can't block release lookups for every other release of this app.
+  defp parse_release_path(release_path, app_name) do
+    base_name = Path.basename(release_path)
+
+    case String.split(base_name, "-", parts: 4) do
+      [timestamp, sha_with_branch, ^app_name, _rest] ->
+        {String.to_integer(timestamp), strip_branch_suffix(sha_with_branch), base_name}
+
+      _ ->
+        nil
+    end
   end
 
   defp strip_branch_suffix(sha_segment) do

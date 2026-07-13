@@ -67,6 +67,27 @@ defmodule DeployEx.ReleaseUploader.StateTest do
 
       assert {5000000, "ccc9999", _base} = result
     end
+
+    test "strips wrapped branch slug containing escaped hyphens from sha" do
+      remote_releases = [
+        "qa/my_app/5000000-ccc9999~kurt~feat^thetadata^websocket~-my_app-0.1.0.tar.gz"
+      ]
+
+      result = State.lastest_remote_app_release(remote_releases, "my_app", "qa")
+
+      assert {5000000, "ccc9999", _base} = result
+    end
+
+    test "skips a legacy malformed key with raw (unescaped) hyphens in the branch slug instead of raising" do
+      remote_releases = [
+        "qa/my_app/5000000-ccc9999~kurt-feat-thetadata-websocket~-my_app-0.1.0.tar.gz",
+        "qa/my_app/6000000-ddd0000-my_app-0.1.0.tar.gz"
+      ]
+
+      result = State.lastest_remote_app_release(remote_releases, "my_app", "qa")
+
+      assert {6000000, "ddd0000", _base} = result
+    end
   end
 
   describe "&last_sha_from_remote_file/3" do

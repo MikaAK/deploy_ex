@@ -236,7 +236,12 @@ defmodule DeployEx.ReleaseLookup do
   end
 
   defp slug_to_branch(""), do: nil
-  defp slug_to_branch(slug), do: String.replace(slug, "~", "/")
+
+  defp slug_to_branch(slug) do
+    slug
+    |> String.replace("~", "/")
+    |> String.replace("^", "-")
+  end
 
   defp extract_timestamp(key) do
     case String.split(Path.basename(key), "-") do

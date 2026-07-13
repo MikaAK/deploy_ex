@@ -358,6 +358,18 @@ defmodule DeployEx.ReleaseLookupTest do
       assert release.sha === "ccc9999"
       assert release.short_sha === "ccc9999"
     end
+
+    test "round-trips hyphenated branch names via ^ substitution" do
+      set_releases([
+        make_key_with_branch(
+          "qa/my_app/", 1_700_000_005, "eee2222", "kurt~feat^thetadata^websocket", "my_app"
+        )
+      ])
+
+      assert {:ok, [release]} = ReleaseLookup.list_releases("my_app", :qa, base_opts())
+      assert release.sha === "eee2222"
+      assert release.branch === "kurt/feat-thetadata-websocket"
+    end
   end
 
   describe "DeployEx.ReleaseLookup.GitImpl" do
