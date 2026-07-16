@@ -4,9 +4,9 @@ defmodule Mix.Tasks.DeployEx.Qa.List do
   @shortdoc "Lists all active QA nodes"
   @moduledoc """
   Lists all active QA nodes with their status. Each entry shows the instance
-  name, ID, target SHA, custom tag, git branch, public IP, IPv6, load
-  balancer attachment, and creation time. JSON output exposes the same fields
-  (`instance_tag`, `git_branch`) for scripting.
+  name, ID, type, availability zone, target SHA, custom tag, git branch,
+  public IP, IPv6, load balancer attachment, and creation time. JSON output
+  exposes the same fields (`instance_tag`, `git_branch`) for scripting.
 
   ## Example
   ```bash
@@ -112,6 +112,8 @@ defmodule Mix.Tasks.DeployEx.Qa.List do
       Mix.shell().info([
         :cyan, qa_node.app_name, :reset, "\n",
         "  Instance ID: ", qa_node.instance_id || "unknown", "\n",
+        "  Instance Type: ", qa_node.instance_type || "unknown", "\n",
+        "  AZ: ", qa_node.availability_zone || "unknown", "\n",
         "  SHA: ", String.slice(qa_node.target_sha || "", 0, 7), "\n",
         "  Tag: ", qa_node.instance_tag || "—", "\n",
         "  Branch: ", qa_node.git_branch || "unknown", "\n",
@@ -133,6 +135,8 @@ defmodule Mix.Tasks.DeployEx.Qa.List do
     %{
       app_name: qa_node.app_name,
       instance_id: qa_node.instance_id,
+      instance_type: qa_node.instance_type,
+      availability_zone: qa_node.availability_zone,
       target_sha: qa_node.target_sha,
       instance_tag: qa_node.instance_tag,
       git_branch: qa_node.git_branch,

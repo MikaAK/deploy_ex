@@ -362,6 +362,8 @@ defmodule DeployEx.QaNodeTest do
         "ipAddress" => "54.1.2.3",
         "ipv6Address" => "2600:1f18::1",
         "privateIpAddress" => "10.0.0.1",
+        "instanceType" => "t3.large",
+        "placement" => %{"availabilityZone" => "us-east-1a"},
         "instanceState" => %{"name" => "running"}
       }
 
@@ -370,6 +372,8 @@ defmodule DeployEx.QaNodeTest do
       assert merged.public_ip === "54.1.2.3"
       assert merged.ipv6_address === "2600:1f18::1"
       assert merged.private_ip === "10.0.0.1"
+      assert merged.instance_type === "t3.large"
+      assert merged.availability_zone === "us-east-1a"
       assert merged.state === "running"
       # S3-only fields preserved
       assert merged.instance_tag === "feat"
@@ -476,6 +480,81 @@ defmodule DeployEx.QaNodeTest do
 
       assert is_nil(qa_node.instance_tag)
       assert is_nil(qa_node.git_branch)
+    end
+
+    test "extracts instanceType and placement availabilityZone" do
+      instance = %{
+        "instanceId" => "i-0abc123",
+        "instanceType" => "t3.large",
+        "placement" => %{"availabilityZone" => "us-east-1c"},
+        "launchTime" => "2024-01-15T10:00:00Z",
+        "instanceState" => %{"name" => "running"},
+        "tagSet" => %{
+          "item" => [
+            %{"key" => "InstanceGroup", "value" => "my_app_prod"},
+            %{"key" => "TargetSha", "value" => "abc1234567"}
+          ]
+        }
+      }
+
+      qa_node = QaNode.build_qa_node_from_instance(instance)
+
+      assert qa_node.instance_type === "t3.large"
+      assert qa_node.availability_zone === "us-east-1c"
+    end
+
+    test "instance without instanceType or placement produces nil for those fields" do
+      instance = %{
+        "instanceId" => "i-0abc123",
+        "launchTime" => "2024-01-15T10:00:00Z",
+        "instanceState" => %{"name" => "running"},
+        "tagSet" => %{
+          "item" => [
+            %{"key" => "InstanceGroup", "value" => "my_app_prod"},
+            %{"key" => "TargetSha", "value" => "abc1234567"}
+          ]
+        }
+      }
+
+      qa_node = QaNode.build_qa_node_from_instance(instance)
+
+      assert is_nil(qa_node.instance_type)
+      assert is_nil(qa_node.availability_zone)
+    end
+  end
+
+  describe "instance_type and availability_zone serialization" do
+    test "to_json and from_json preserve instance_type and availability_zone" do
+      original = %QaNode{
+        instance_id: "i-0abc123",
+        app_name: "my_app",
+        target_sha: "abc1234",
+        instance_type: "t3.large",
+        availability_zone: "us-east-1a",
+        load_balancer_attached?: false,
+        target_group_arns: []
+      }
+
+      round_tripped = original |> QaNode.to_json() |> QaNode.from_json()
+
+      assert round_tripped.instance_type === "t3.large"
+      assert round_tripped.availability_zone === "us-east-1a"
+    end
+
+    test "from_json on old JSON missing the keys produces nil for those fields" do
+      old_json = ~s({
+        "version": 1,
+        "instance_id": "i-0abc123",
+        "app_name": "my_app",
+        "target_sha": "abc1234",
+        "load_balancer_attached": false,
+        "target_group_arns": []
+      })
+
+      qa_node = QaNode.from_json(old_json)
+
+      assert is_nil(qa_node.instance_type)
+      assert is_nil(qa_node.availability_zone)
     end
   end
 

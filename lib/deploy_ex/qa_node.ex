@@ -19,6 +19,8 @@ defmodule DeployEx.QaNode do
     ipv6_address: String.t() | nil,
     private_ip: String.t() | nil,
     instance_name: String.t() | nil,
+    instance_type: String.t() | nil,
+    availability_zone: String.t() | nil,
     state: String.t() | nil,
     created_at: String.t() | nil,
     use_public_ip_cert?: boolean(),
@@ -36,6 +38,8 @@ defmodule DeployEx.QaNode do
     :ipv6_address,
     :private_ip,
     :instance_name,
+    :instance_type,
+    :availability_zone,
     :state,
     :created_at,
     use_public_ip_cert?: false,
@@ -108,6 +112,7 @@ defmodule DeployEx.QaNode do
           instance_tag: instance_tag,
           git_branch: git_branch,
           instance_name: instance_name,
+          instance_type: instance_type,
           created_at: DateTime.utc_now() |> DateTime.to_iso8601(),
           use_public_ip_cert?: use_public_ip_cert?,
           load_balancer_attached?: false,
@@ -913,6 +918,8 @@ defmodule DeployEx.QaNode do
       public_ip: instance["ipAddress"],
       private_ip: instance["privateIpAddress"],
       instance_name: tags["Name"],
+      instance_type: instance["instanceType"],
+      availability_zone: get_in(instance, ["placement", "availabilityZone"]),
       state: get_in(instance, ["instanceState", "name"]),
       created_at: instance["launchTime"],
       load_balancer_attached?: false,
@@ -1000,6 +1007,8 @@ defmodule DeployEx.QaNode do
       "ipv6_address" => state.ipv6_address,
       "private_ip" => state.private_ip,
       "instance_name" => state.instance_name,
+      "instance_type" => state.instance_type,
+      "availability_zone" => state.availability_zone,
       "state" => state.state,
       "created_at" => state.created_at,
       "use_public_ip_cert" => state.use_public_ip_cert?,
@@ -1026,6 +1035,8 @@ defmodule DeployEx.QaNode do
       ipv6_address: map["ipv6_address"],
       private_ip: map["private_ip"],
       instance_name: map["instance_name"],
+      instance_type: map["instance_type"],
+      availability_zone: map["availability_zone"],
       state: map["state"],
       created_at: map["created_at"],
       use_public_ip_cert?: map["use_public_ip_cert"] === true,
@@ -1054,9 +1065,10 @@ defmodule DeployEx.QaNode do
 
   @doc """
   Returns a new QaNode struct with the live EC2 fields (`public_ip`,
-  `ipv6_address`, `private_ip`, `state`) overlaid on top of an S3-loaded
-  state. All other fields (instance_tag, git_branch, load balancer info,
-  use_public_ip_cert?, ...) come from the S3 state and are preserved.
+  `ipv6_address`, `private_ip`, `instance_type`, `availability_zone`,
+  `state`) overlaid on top of an S3-loaded state. All other fields
+  (instance_tag, git_branch, load balancer info, use_public_ip_cert?, ...)
+  come from the S3 state and are preserved.
   """
   @spec merge_ec2_state(t(), map()) :: t()
   def merge_ec2_state(%__MODULE__{} = state, instance) when is_map(instance) do
@@ -1064,20 +1076,25 @@ defmodule DeployEx.QaNode do
       public_ip: instance["ipAddress"],
       ipv6_address: instance["ipv6Address"],
       private_ip: instance["privateIpAddress"],
+      instance_type: instance["instanceType"],
+      availability_zone: get_in(instance, ["placement", "availabilityZone"]),
       state: instance["instanceState"]["name"]
     }
   end
 
   @doc """
   True when any of the EC2-sourced fields (`public_ip`, `private_ip`,
-  `ipv6_address`, `state`) differ between the stored S3 state and the
-  freshly-merged state. Used to skip an S3 round-trip when nothing changed.
+  `ipv6_address`, `instance_type`, `availability_zone`, `state`) differ
+  between the stored S3 state and the freshly-merged state. Used to skip an
+  S3 round-trip when nothing changed.
   """
   @spec s3_state_stale?(t(), t()) :: boolean()
   def s3_state_stale?(%__MODULE__{} = old_state, %__MODULE__{} = new_state) do
     old_state.public_ip !== new_state.public_ip or
       old_state.private_ip !== new_state.private_ip or
       old_state.ipv6_address !== new_state.ipv6_address or
+      old_state.instance_type !== new_state.instance_type or
+      old_state.availability_zone !== new_state.availability_zone or
       old_state.state !== new_state.state
   end
 
