@@ -16,25 +16,27 @@ defmodule DeployEx.AwsInfrastructureTest do
     end
   end
 
-  describe "parse_subnets_response/1" do
-    test "parses multiple subnets" do
+  describe "parse_subnets_response/2" do
+    test "sorts multiple subnets by availability zone" do
       xml = """
       <?xml version="1.0" encoding="UTF-8"?>
       <DescribeSubnetsResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
         <subnetSet>
           <item>
-            <subnetId>subnet-abc123</subnetId>
-            <vpcId>vpc-123</vpcId>
-          </item>
-          <item>
             <subnetId>subnet-def456</subnetId>
             <vpcId>vpc-123</vpcId>
+            <availabilityZone>us-east-1c</availabilityZone>
+          </item>
+          <item>
+            <subnetId>subnet-abc123</subnetId>
+            <vpcId>vpc-123</vpcId>
+            <availabilityZone>us-east-1a</availabilityZone>
           </item>
         </subnetSet>
       </DescribeSubnetsResponse>
       """
 
-      assert {:ok, ["subnet-abc123", "subnet-def456"]} === AwsInfrastructure.parse_subnets_response(xml)
+      assert {:ok, ["subnet-abc123", "subnet-def456"]} === AwsInfrastructure.parse_subnets_response(xml, "vpc-123")
     end
 
     test "parses single subnet" do
@@ -50,7 +52,7 @@ defmodule DeployEx.AwsInfrastructureTest do
       </DescribeSubnetsResponse>
       """
 
-      assert {:ok, ["subnet-single"]} === AwsInfrastructure.parse_subnets_response(xml)
+      assert {:ok, ["subnet-single"]} === AwsInfrastructure.parse_subnets_response(xml, "vpc-123")
     end
 
     test "returns error for empty subnet set" do
@@ -61,7 +63,7 @@ defmodule DeployEx.AwsInfrastructureTest do
       </DescribeSubnetsResponse>
       """
 
-      assert {:error, %ErrorMessage{code: :not_found}} = AwsInfrastructure.parse_subnets_response(xml)
+      assert {:error, %ErrorMessage{code: :not_found}} = AwsInfrastructure.parse_subnets_response(xml, "vpc-123")
     end
   end
 

@@ -181,7 +181,10 @@ defmodule DeployEx.AwsInfrastructure do
   def parse_subnets_response(body, resource_group) when is_binary(body) do
     case XmlToMap.naive_map(body) do
       %{"DescribeSubnetsResponse" => %{"subnetSet" => %{"item" => items}}} when is_list(items) ->
-        {:ok, Enum.map(items, & &1["subnetId"])}
+        # AWS returns subnets in arbitrary order; sort by AZ so the first subnet
+        # is deterministic and QA nodes land in the same AZ as the
+        # terraform-managed instances (lowest AZ, e.g. us-east-1a)
+        {:ok, items |> Enum.sort_by(& &1["availabilityZone"]) |> Enum.map(& &1["subnetId"])}
 
       %{"DescribeSubnetsResponse" => %{"subnetSet" => %{"item" => item}}} ->
         {:ok, [item["subnetId"]]}
