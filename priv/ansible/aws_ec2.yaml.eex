@@ -25,6 +25,7 @@ keyed_groups:
 
 compose:
   ansible_host: network_interfaces[0].ipv6_addresses[0].ipv6_address | default(public_ip_address, true)
+  qa_node: (tags['QaNode'] | default('false')) == 'true'
   letsencrypt_use_public_ip: (tags['UsePublicIpCert'] | default('false')) == 'true'
   release_prefix: "'qa' if (tags['QaNode'] | default('false')) == 'true' else ''"
   release_state_prefix: "'release-state/qa' if (tags['QaNode'] | default('false')) == 'true' else 'release-state'"

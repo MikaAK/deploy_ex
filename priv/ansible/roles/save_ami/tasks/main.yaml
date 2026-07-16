@@ -87,3 +87,7 @@
       when: cleanup_result.stdout_lines | length > 0
 
   become: true
+  # QA nodes must never bake app AMIs: a QA image would become the "latest app
+  # AMI" for future launches, repoint the SSM latest_ami param, and the
+  # keep-last-3 cleanup in this role would rotate out real prod AMIs.
+  when: (save_ami_enabled | default(true)) and not (qa_node | default(false))
