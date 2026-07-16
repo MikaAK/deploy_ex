@@ -67,6 +67,51 @@ defmodule DeployEx.AwsInfrastructureTest do
     end
   end
 
+  describe "parse_primary_subnet_response/1" do
+    test "picks the most common subnet across running instances" do
+      xml = """
+      <?xml version="1.0" encoding="UTF-8"?>
+      <DescribeInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
+        <reservationSet>
+          <item>
+            <instancesSet>
+              <item>
+                <instanceId>i-aaa</instanceId>
+                <subnetId>subnet-prod1a</subnetId>
+              </item>
+              <item>
+                <instanceId>i-bbb</instanceId>
+                <subnetId>subnet-prod1a</subnetId>
+              </item>
+            </instancesSet>
+          </item>
+          <item>
+            <instancesSet>
+              <item>
+                <instanceId>i-ccc</instanceId>
+                <subnetId>subnet-other1c</subnetId>
+              </item>
+            </instancesSet>
+          </item>
+        </reservationSet>
+      </DescribeInstancesResponse>
+      """
+
+      assert {:ok, "subnet-prod1a"} === AwsInfrastructure.parse_primary_subnet_response(xml)
+    end
+
+    test "returns error when no instances are running" do
+      xml = """
+      <?xml version="1.0" encoding="UTF-8"?>
+      <DescribeInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
+        <reservationSet/>
+      </DescribeInstancesResponse>
+      """
+
+      assert {:error, %ErrorMessage{code: :not_found}} = AwsInfrastructure.parse_primary_subnet_response(xml)
+    end
+  end
+
   describe "parse_key_pairs_response/2" do
     test "parses key pair from list" do
       xml = """

@@ -168,7 +168,7 @@ defmodule DeployEx.AwsInfrastructure do
       {:ok, %{
         security_group_id: security_group.id,
         vpc_id: security_group.vpc_id,
-        subnet_id: List.first(subnet_ids),
+        subnet_id: primary_subnet_id(security_group.id, subnet_ids, opts),
         subnet_ids: subnet_ids,
         key_name: key_pair_name,
         iam_instance_profile: iam_instance_profile,
@@ -177,13 +177,36 @@ defmodule DeployEx.AwsInfrastructure do
     end
   end
 
+  # A VPC can hold same-AZ public and private subnets, and describe_subnets alone
+  # can't tell them apart without route-table lookups. Running instances on the
+  # same security group are ground truth for a reachable subnet, so QA nodes
+  # colocate with them; the AZ-sorted list is only a fallback for empty projects.
+  defp primary_subnet_id(security_group_id, subnet_ids, opts) do
+    case find_primary_subnet_id(security_group_id, opts) do
+      {:ok, subnet_id} -> subnet_id
+      {:error, _} -> List.first(subnet_ids)
+    end
+  end
+
+  def find_primary_subnet_id(security_group_id, opts \\ []) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+
+    ExAws.EC2.describe_instances(filters: [
+      "instance.group-id": [security_group_id],
+      "instance-state-name": ["running"]
+    ])
+    |> ExAws.request(region: region)
+    |> handle_primary_subnet_response()
+  end
+
   @doc false
   def parse_subnets_response(body, resource_group) when is_binary(body) do
     case XmlToMap.naive_map(body) do
       %{"DescribeSubnetsResponse" => %{"subnetSet" => %{"item" => items}}} when is_list(items) ->
-        # AWS returns subnets in arbitrary order; sort by AZ so the first subnet
-        # is deterministic and QA nodes land in the same AZ as the
-        # terraform-managed instances (lowest AZ, e.g. us-east-1a)
+        # AWS returns subnets in arbitrary order; sort by AZ so the fallback
+        # List.first is deterministic. Placement normally comes from
+        # find_primary_subnet_id/2 (colocate with running instances) since
+        # same-AZ private subnets are indistinguishable here.
         {:ok, items |> Enum.sort_by(& &1["availabilityZone"]) |> Enum.map(& &1["subnetId"])}
 
       %{"DescribeSubnetsResponse" => %{"subnetSet" => %{"item" => item}}} ->
@@ -198,6 +221,55 @@ defmodule DeployEx.AwsInfrastructure do
           %{structure: structure}
         )}
     end
+  end
+
+  @doc false
+  def parse_primary_subnet_response(body) when is_binary(body) do
+    case XmlToMap.naive_map(body) do
+      %{"DescribeInstancesResponse" => %{"reservationSet" => nil}} ->
+        {:error, ErrorMessage.not_found("no running instances found to derive a subnet from")}
+
+      %{"DescribeInstancesResponse" => %{"reservationSet" => %{"item" => reservations}}} ->
+        reservations
+        |> List.wrap()
+        |> Enum.flat_map(&extract_instance_subnet_ids/1)
+        |> most_common_subnet_id()
+
+      structure ->
+        {:error, ErrorMessage.bad_request(
+          "couldn't parse instances response from aws",
+          %{structure: structure}
+        )}
+    end
+  end
+
+  defp extract_instance_subnet_ids(%{"instancesSet" => %{"item" => instances}}) do
+    instances
+    |> List.wrap()
+    |> Enum.map(& &1["subnetId"])
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp extract_instance_subnet_ids(_reservation), do: []
+
+  defp most_common_subnet_id([]) do
+    {:error, ErrorMessage.not_found("no subnet ids found on running instances")}
+  end
+
+  defp most_common_subnet_id(subnet_ids) do
+    subnet_ids
+    |> Enum.frequencies()
+    |> Enum.max_by(fn {_subnet_id, count} -> count end)
+    |> then(fn {subnet_id, _count} -> {:ok, subnet_id} end)
+  end
+
+  defp handle_primary_subnet_response({:ok, %{body: body}}), do: parse_primary_subnet_response(body)
+
+  defp handle_primary_subnet_response({:error, {:http_error, status_code, %{body: body}}}) do
+    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+      "error fetching instances from aws",
+      %{error_body: body}
+    ])}
   end
 
   defp handle_subnets_response({:ok, %{body: body}}, resource_group), do: parse_subnets_response(body, resource_group)
