@@ -596,7 +596,8 @@ defmodule DeployEx.QaNode do
     |> String.replace(~r/[^a-z0-9-]/, "")
   end
 
-  defp build_qa_user_data(app_name, target_sha, environment) do
+  @doc false
+  def build_qa_user_data(app_name, target_sha, environment) do
     bucket_name = "#{app_name}-elixir-deploys-#{environment}"
 
     """
@@ -666,6 +667,12 @@ defmodule DeployEx.QaNode do
     rm -rf /srv/$APP_NAME
     mv /srv/unpack-directory /srv/$APP_NAME
     chmod -R 755 /srv/$APP_NAME
+
+    # Mark this node as a QA node to the BEAM release so it joins the cluster
+    # under a distinct sname (options_feed_qa@host instead of options_feed@host).
+    # This keeps it structurally excluded from prod node filters.
+    mkdir -p /etc/systemd/system/$APP_NAME.service.d
+    printf '[Service]\nEnvironment=RELEASE_NODE_SUFFIX=_qa\n' > /etc/systemd/system/$APP_NAME.service.d/qa-node-suffix.conf
 
     # Start service
     echo "Starting $APP_NAME service..."

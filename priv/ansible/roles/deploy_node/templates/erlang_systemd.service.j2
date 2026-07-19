@@ -12,6 +12,7 @@ ExecStop=/srv/{{ app_name }}/bin/{{ app_name }} stop
 Restart=on-failure
 RestartSec=5
 Environment=PORT={{ app_port }}
+Environment="RELEASE_NODE_SUFFIX={{ qa_node_suffix }}"
 {% for env in extra_env %}
 Environment={{ env }}
 {% endfor %}

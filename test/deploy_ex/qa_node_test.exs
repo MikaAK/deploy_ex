@@ -580,6 +580,27 @@ defmodule DeployEx.QaNodeTest do
     end
   end
 
+  describe "build_qa_user_data/3" do
+    test "writes a systemd drop-in that suffixes the BEAM release node with _qa" do
+      user_data = QaNode.build_qa_user_data("options_feed", "abc1234", "prod")
+
+      assert user_data =~ "mkdir -p /etc/systemd/system/$APP_NAME.service.d"
+      assert user_data =~ "Environment=RELEASE_NODE_SUFFIX=_qa"
+      assert user_data =~ "/etc/systemd/system/$APP_NAME.service.d/qa-node-suffix.conf"
+    end
+
+    test "writes the drop-in before the service is (re)started" do
+      user_data = QaNode.build_qa_user_data("options_feed", "abc1234", "prod")
+
+      drop_in_index = :binary.match(user_data, "qa-node-suffix.conf") |> elem(0)
+      daemon_reload_index = :binary.match(user_data, "systemctl daemon-reload") |> elem(0)
+      start_index = :binary.match(user_data, "systemctl start $APP_NAME") |> elem(0)
+
+      assert drop_in_index < daemon_reload_index
+      assert drop_in_index < start_index
+    end
+  end
+
   describe "ansible_limit_pattern/1" do
     test "returns an instance-id glob safe for ansible --limit even when the Name tag has whitespace" do
       qa_node = %QaNode{
