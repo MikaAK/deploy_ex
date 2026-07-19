@@ -3,6 +3,7 @@ bucket_name: "{{ deploy_s3_bucket }}"
 target_release_sha: ""
 release_prefix: ""
 release_state_prefix: "release-state"
+qa_node_suffix: ""
 app_port: 80
 extra_env: []
 system_env: []

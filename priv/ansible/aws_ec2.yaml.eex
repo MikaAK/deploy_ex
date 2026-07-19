@@ -29,6 +29,7 @@ compose:
   letsencrypt_use_public_ip: (tags['UsePublicIpCert'] | default('false')) == 'true'
   release_prefix: "'qa' if (tags['QaNode'] | default('false')) == 'true' else ''"
   release_state_prefix: "'release-state/qa' if (tags['QaNode'] | default('false')) == 'true' else 'release-state'"
+  qa_node_suffix: "'_qa' if (tags['QaNode'] | default('false')) == 'true' else ''"
   git_branch: tags['GitBranch'] | default('')
   instance_tag: tags['InstanceTag'] | default('')
 
