@@ -78,7 +78,8 @@ defmodule DeployEx.QaNode do
       |> maybe_append_tag({:GitBranch, git_branch})
       |> maybe_append_tag({:UsePublicIpCert, if(use_public_ip_cert?, do: "true", else: nil)})
 
-    user_data = build_qa_user_data(app_name, target_sha, environment)
+    bucket_name = opts[:bucket] || DeployEx.Config.aws_release_bucket()
+    user_data = build_qa_user_data(app_name, target_sha, bucket_name)
 
     run_opts = [
       {"InstanceType", instance_type},
@@ -596,91 +597,120 @@ defmodule DeployEx.QaNode do
     |> String.replace(~r/[^a-z0-9-]/, "")
   end
 
+  # A #cloud-config payload (matching the Terraform-provisioned nodes) that does
+  # two things prod gets for free but a bare QA node does not:
+  #
+  #   1. Installs the systemd-networkd `UseDomains=true` drop-in so DHCP's
+  #      domain-name (ec2.internal) becomes the resolver search domain. Without
+  #      it the base AMI leaves `search .`, the bare-instance-id BEAM node name
+  #      (app@i-xxxx) never resolves, and libcluster/:global cannot hold a full
+  #      mesh — OTP prevent_overlapping_partitions churns the QA feed nodes. Prod
+  #      gets this from the ansible `awscli` role, which the QA setup playbook
+  #      comments out, so QA must configure it here.
+  #   2. Sets the release bucket from config, never a hardcoded
+  #      <app>-elixir-deploys-<env> pattern that ignores project bucket overrides.
+  #
+  # Do NOT `hostnamectl set-hostname` here: let cloud-init keep the resource-name
+  # identity, same as prod.
   @doc false
-  def build_qa_user_data(app_name, target_sha, environment) do
-    bucket_name = "#{app_name}-elixir-deploys-#{environment}"
-
+  def build_qa_user_data(app_name, target_sha, bucket_name) do
     """
-    #!/bin/bash
-    set -euo pipefail
+    #cloud-config
+    package_update: true
+    packages:
+      - awscli
 
-    exec > >(tee /var/log/qa-deploy.log | logger -t qa-deploy -s 2>/dev/console) 2>&1
+    write_files:
+      - path: /etc/systemd/network/10-ec2-accept-domains.network
+        permissions: '0644'
+        owner: root:root
+        content: |
+          [Match]
+          Name=en*
 
-    APP_NAME="#{app_name}"
-    TARGET_SHA="#{target_sha}"
-    BUCKET_NAME="#{bucket_name}"
+          [Network]
+          DHCP=ipv4
 
-    echo "QA Node auto-deploy starting for $APP_NAME"
+          [DHCPv4]
+          UseDomains=true
 
-    # Get instance ID and region for tag lookup
-    INSTANCE_ID=$(ec2-metadata --instance-id | cut -d " " -f 2)
-    REGION=$(ec2-metadata --availability-zone | cut -d " " -f 2 | sed 's/[a-z]$//')
+      - path: /usr/local/sbin/qa-deploy.sh
+        permissions: '0755'
+        owner: root:root
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
 
-    # Set hostname to instance ID
-    echo "Setting hostname to $INSTANCE_ID"
-    hostnamectl set-hostname "$INSTANCE_ID"
+          exec > >(tee /var/log/qa-deploy.log | logger -t qa-deploy -s 2>/dev/console) 2>&1
 
-    # Try to use provided SHA first, otherwise check TargetSha tag
-    if [ -z "$TARGET_SHA" ] || [ "$TARGET_SHA" = "" ]; then
-      echo "No SHA provided, checking TargetSha tag..."
-      TARGET_SHA=$(aws ec2 describe-tags --region "$REGION" \
-        --filters "Name=resource-id,Values=$INSTANCE_ID" "Name=key,Values=TargetSha" \
-        --query 'Tags[0].Value' --output text 2>/dev/null || echo "")
-    fi
+          APP_NAME="#{app_name}"
+          TARGET_SHA="#{target_sha}"
+          BUCKET_NAME="#{bucket_name}"
 
-    if [ -z "$TARGET_SHA" ] || [ "$TARGET_SHA" = "None" ]; then
-      echo "ERROR: No target SHA found (not provided and no TargetSha tag)"
-      exit 1
-    fi
+          echo "QA Node auto-deploy starting for $APP_NAME"
 
-    echo "Using SHA: $TARGET_SHA"
+          INSTANCE_ID=$(ec2-metadata --instance-id | cut -d " " -f 2)
+          REGION=$(ec2-metadata --availability-zone | cut -d " " -f 2 | sed 's/[a-z]$//')
 
-    # Find release matching the target SHA
-    RELEASE=$(aws s3 ls "s3://$BUCKET_NAME/$APP_NAME" --recursive | grep "$TARGET_SHA" | awk '{print $4}' | head -n 1)
+          if [ -z "$TARGET_SHA" ] || [ "$TARGET_SHA" = "" ]; then
+            echo "No SHA provided, checking TargetSha tag..."
+            TARGET_SHA=$(aws ec2 describe-tags --region "$REGION" \
+              --filters "Name=resource-id,Values=$INSTANCE_ID" "Name=key,Values=TargetSha" \
+              --query 'Tags[0].Value' --output text 2>/dev/null || echo "")
+          fi
 
-    if [ -z "$RELEASE" ]; then
-      echo "ERROR: No release found matching SHA $TARGET_SHA"
-      exit 1
-    fi
+          if [ -z "$TARGET_SHA" ] || [ "$TARGET_SHA" = "None" ]; then
+            echo "ERROR: No target SHA found (not provided and no TargetSha tag)"
+            exit 1
+          fi
 
-    echo "Found release: $RELEASE"
+          echo "Using SHA: $TARGET_SHA"
 
-    # Create directories
-    mkdir -p /srv/$APP_NAME
-    mkdir -p /srv/unpack-directory
+          RELEASE=$(aws s3 ls "s3://$BUCKET_NAME/$APP_NAME" --recursive | grep "$TARGET_SHA" | awk '{print $4}' | head -n 1)
 
-    # Download release
-    echo "Downloading release from S3..."
-    aws s3 cp "s3://$BUCKET_NAME/$RELEASE" "/srv/${RELEASE##*/}"
+          if [ -z "$RELEASE" ]; then
+            echo "ERROR: No release found matching SHA $TARGET_SHA"
+            exit 1
+          fi
 
-    # Extract release
-    echo "Extracting release..."
-    tar -xzf "/srv/${RELEASE##*/}" -C /srv/unpack-directory
+          echo "Found release: $RELEASE"
 
-    # Stop existing service if running
-    if systemctl is-active --quiet $APP_NAME; then
-      echo "Stopping existing $APP_NAME service..."
-      systemctl stop $APP_NAME || true
-    fi
+          mkdir -p /srv/$APP_NAME /srv/unpack-directory
 
-    # Replace app directory
-    rm -rf /srv/$APP_NAME
-    mv /srv/unpack-directory /srv/$APP_NAME
-    chmod -R 755 /srv/$APP_NAME
+          echo "Downloading release from S3..."
+          aws s3 cp "s3://$BUCKET_NAME/$RELEASE" "/srv/${RELEASE##*/}"
 
-    # Mark this node as a QA node to the BEAM release so it joins the cluster
-    # under a distinct sname (options_feed_qa@host instead of options_feed@host).
-    # This keeps it structurally excluded from prod node filters.
-    mkdir -p /etc/systemd/system/$APP_NAME.service.d
-    printf '[Service]\nEnvironment=RELEASE_NODE_SUFFIX=_qa\n' > /etc/systemd/system/$APP_NAME.service.d/qa-node-suffix.conf
+          echo "Extracting release..."
+          tar -xzf "/srv/${RELEASE##*/}" -C /srv/unpack-directory
 
-    # Start service
-    echo "Starting $APP_NAME service..."
-    systemctl daemon-reload
-    systemctl start $APP_NAME
+          if systemctl is-active --quiet $APP_NAME; then
+            echo "Stopping existing $APP_NAME service..."
+            systemctl stop $APP_NAME || true
+          fi
 
-    echo "QA Node deployment complete!"
-    systemctl status $APP_NAME --no-pager || true
+          rm -rf /srv/$APP_NAME
+          mv /srv/unpack-directory /srv/$APP_NAME
+          chmod -R 755 /srv/$APP_NAME
+
+          # Mark this node as a QA node to the BEAM release so it joins the cluster
+          # under a distinct sname (options_feed_qa@host instead of options_feed@host),
+          # keeping it structurally excluded from prod node filters. Belt-and-braces
+          # with the ansible deploy_node template for AMI/cloud-init-only boots.
+          mkdir -p /etc/systemd/system/$APP_NAME.service.d
+          printf '[Service]\\nEnvironment=RELEASE_NODE_SUFFIX=_qa\\n' > /etc/systemd/system/$APP_NAME.service.d/qa-node-suffix.conf
+
+          echo "Starting $APP_NAME service..."
+          systemctl daemon-reload
+          systemctl start $APP_NAME
+
+          echo "QA Node deployment complete!"
+          systemctl status $APP_NAME --no-pager || true
+
+    runcmd:
+      - ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+      - systemctl restart systemd-networkd
+      - systemctl restart systemd-resolved
+      - /usr/local/sbin/qa-deploy.sh
     """
   end
 
