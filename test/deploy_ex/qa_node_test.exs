@@ -581,6 +581,27 @@ defmodule DeployEx.QaNodeTest do
   end
 
   describe "build_qa_user_data/3" do
+    test "emits a #cloud-config payload so cloud-init sets hostname/DNS natively" do
+      user_data = QaNode.build_qa_user_data("my_app", "abc1234", "cfx-deploys-prod")
+
+      assert String.starts_with?(user_data, "#cloud-config")
+      assert user_data =~ "runcmd:"
+      assert user_data =~ "/usr/local/sbin/qa-deploy.sh"
+    end
+
+    test "never overrides the hostname (that would drop the ec2.internal search domain)" do
+      user_data = QaNode.build_qa_user_data("my_app", "abc1234", "cfx-deploys-prod")
+
+      refute user_data =~ "hostnamectl"
+    end
+
+    test "uses the given release bucket, not a hardcoded <app>-elixir-deploys-<env> pattern" do
+      user_data = QaNode.build_qa_user_data("my_app", "abc1234", "cfx-deploys-prod")
+
+      assert user_data =~ ~s(BUCKET_NAME="cfx-deploys-prod")
+      refute user_data =~ "elixir-deploys"
+    end
+
     test "writes a systemd drop-in that suffixes the BEAM release node with _qa" do
       user_data = QaNode.build_qa_user_data("options_feed", "abc1234", "prod")
 
