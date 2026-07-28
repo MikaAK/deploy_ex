@@ -114,15 +114,62 @@ defmodule Mix.Tasks.DeployEx.Qa.Deploy do
         {:ok, full_sha}
 
       {:error, %ErrorMessage{code: :not_found}} = err ->
+        resolve_branch_fallback_sha(app_name, sha, opts, err)
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  # A push that changes no app code uploads no new release for its sha (the
+  # upload change-detector correctly skips it), so the branch's newest uploaded
+  # release IS the current code — deploy that instead of skipping. Only applies
+  # when a --git-branch is given; without one there is no safe artifact to fall
+  # back to.
+  defp resolve_branch_fallback_sha(app_name, sha, opts, not_found_err) do
+    with true <- is_binary(opts[:git_branch]),
+         {:ok, fallback_sha} <- find_latest_branch_release_sha(app_name, opts[:git_branch], opts) do
+      Mix.shell().info(
+        IO.ANSI.format(
+          [
+            :yellow, "  no release for SHA #{short_sha(sha)}; ",
+            "deploying latest #{opts[:git_branch]} release ",
+            "SHA #{short_sha(fallback_sha)} (no app-code change since)", :reset
+          ],
+          true
+        )
+      )
+
+      {:ok, fallback_sha}
+    else
+      _ ->
         if opts[:only_local_release] === true do
           log_skipped(app_name, "no release uploaded for SHA #{short_sha(sha)}")
           :skipped
         else
-          err
+          not_found_err
         end
+    end
+  end
 
-      {:error, _} = err ->
-        err
+  defp find_latest_branch_release_sha(app_name, branch, opts) do
+    branch_segment = "~#{DeployEx.ReleaseUploader.State.slugify_branch(branch)}~"
+
+    fetch_opts = [
+      aws_release_bucket: opts[:aws_release_bucket] || DeployEx.Config.aws_release_bucket(),
+      aws_region: opts[:aws_region] || DeployEx.Config.aws_region(),
+      prefix: "qa/#{app_name}/"
+    ]
+
+    with {:ok, releases} <- DeployEx.ReleaseUploader.fetch_all_remote_releases(fetch_opts) do
+      releases
+      |> Enum.filter(&String.contains?(&1, branch_segment))
+      |> Enum.sort(:desc)
+      |> List.first()
+      |> case do
+        nil -> {:error, :not_found}
+        release -> {:ok, DeployExHelpers.extract_sha_from_release(release)}
+      end
     end
   end
 

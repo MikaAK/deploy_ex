@@ -58,10 +58,15 @@ defmodule DeployEx.ReleaseUploader.State do
     branch_slug_for_upload(Map.to_list(opts))
   end
 
-  defp slugify_branch(nil), do: nil
-  defp slugify_branch(""), do: nil
+  @doc """
+  Encodes a git branch name into the escaped segment used inside release
+  filenames (`/` -> `~`, `-` -> `^`). Public so release consumers (e.g.
+  `deploy_ex.qa.deploy`) can locate a branch's uploads by segment.
+  """
+  def slugify_branch(nil), do: nil
+  def slugify_branch(""), do: nil
 
-  defp slugify_branch(branch) when is_binary(branch) do
+  def slugify_branch(branch) when is_binary(branch) do
     # "-" is the field separator in the release filename grammar, so it can never
     # survive raw inside the wrapped branch segment - escape it to "^" (like "/" to
     # "~", both chars are illegal in git ref names, so this is always reversible).
