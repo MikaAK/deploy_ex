@@ -597,14 +597,21 @@ defmodule DeployEx.QaNode do
     |> String.replace(~r/[^a-z0-9-]/, "")
   end
 
-  # Mirror the Terraform-provisioned nodes (aws-instance/cloud_init_data.yaml.tftpl):
-  # a #cloud-config payload lets cloud-init set the resource-name hostname and the
-  # ec2.internal DNS search domain natively — exactly like prod. Do NOT
-  # `hostnamectl set-hostname` to the bare instance-id here: that drops the search
-  # domain, so the bare-instance-id BEAM node name (app@i-xxxx) stops resolving and
-  # libcluster/:global cannot hold a full mesh (prevent_overlapping_partitions
-  # churn). Bucket comes from config, never a hardcoded <app>-elixir-deploys-<env>
-  # pattern that ignores project bucket overrides.
+  # A #cloud-config payload (matching the Terraform-provisioned nodes) that does
+  # two things prod gets for free but a bare QA node does not:
+  #
+  #   1. Installs the systemd-networkd `UseDomains=true` drop-in so DHCP's
+  #      domain-name (ec2.internal) becomes the resolver search domain. Without
+  #      it the base AMI leaves `search .`, the bare-instance-id BEAM node name
+  #      (app@i-xxxx) never resolves, and libcluster/:global cannot hold a full
+  #      mesh — OTP prevent_overlapping_partitions churns the QA feed nodes. Prod
+  #      gets this from the ansible `awscli` role, which the QA setup playbook
+  #      comments out, so QA must configure it here.
+  #   2. Sets the release bucket from config, never a hardcoded
+  #      <app>-elixir-deploys-<env> pattern that ignores project bucket overrides.
+  #
+  # Do NOT `hostnamectl set-hostname` here: let cloud-init keep the resource-name
+  # identity, same as prod.
   @doc false
   def build_qa_user_data(app_name, target_sha, bucket_name) do
     """
@@ -614,6 +621,19 @@ defmodule DeployEx.QaNode do
       - awscli
 
     write_files:
+      - path: /etc/systemd/network/10-ec2-accept-domains.network
+        permissions: '0644'
+        owner: root:root
+        content: |
+          [Match]
+          Name=en*
+
+          [Network]
+          DHCP=ipv4
+
+          [DHCPv4]
+          UseDomains=true
+
       - path: /usr/local/sbin/qa-deploy.sh
         permissions: '0755'
         owner: root:root
@@ -687,6 +707,9 @@ defmodule DeployEx.QaNode do
           systemctl status $APP_NAME --no-pager || true
 
     runcmd:
+      - ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+      - systemctl restart systemd-networkd
+      - systemctl restart systemd-resolved
       - /usr/local/sbin/qa-deploy.sh
     """
   end
