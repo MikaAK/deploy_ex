@@ -105,7 +105,24 @@ defmodule Mix.Tasks.DeployEx.Upload do
     end
   end
 
+  # --force uploads every candidate even when the change detector reports no
+  # app-code diff since the last uploaded sha. Without this, a push that only
+  # touches non-app files (e.g. .github/workflows) produces no tarball for its
+  # sha, and `qa.deploy --sha <head> --only-local-release` then finds no
+  # release and skips the deploy entirely.
   defp upload_changed_releases(release_candidates, opts) do
+    if opts[:force] do
+      case upload_releases(release_candidates, opts) do
+        {:error, e} when is_list(e) -> Mix.raise(Enum.map_join(e, "\n", &to_string/1))
+        {:error, e} -> Mix.raise(to_string(e))
+        {:ok, _} = res -> res
+      end
+    else
+      upload_unchanged_filtered_releases(release_candidates, opts)
+    end
+  end
+
+  defp upload_unchanged_filtered_releases(release_candidates, opts) do
     case ReleaseUploader.filter_changed_releases(release_candidates) do
       {:ok, []} ->
         log_unchanged_releases(release_candidates)
