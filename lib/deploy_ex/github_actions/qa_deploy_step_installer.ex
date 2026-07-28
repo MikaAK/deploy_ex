@@ -355,11 +355,15 @@ defmodule DeployEx.GitHubActions.QaDeployStepInstaller do
       run <> "branch_name=\"${GITHUB_REF#refs/heads/}\"",
       run <> "sha=$(git rev-parse --short ${{ github.sha }})",
       run <> "for app in #{apps_shell}; do",
-      run <> "  mix deploy_ex.qa.deploy \"$app\" \\",
+      run <> "  if mix deploy_ex.qa.deploy \"$app\" \\",
       run <> "    --sha \"$sha\" \\",
       run <> "    --git-branch \"$branch_name\" \\",
       run <> "    --only-local-release \\",
-      run <> "    --no-tui --quiet",
+      run <> "    --no-tui --quiet; then",
+      run <> "    echo \"deployed $app\"",
+      run <> "  else",
+      run <> "    echo \"::warning::skipped $app (no QA node on branch or deploy failed)\"",
+      run <> "  fi",
       run <> "done",
       pad <> @qa_step_end_marker
     ]
