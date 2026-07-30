@@ -1135,6 +1135,23 @@ defmodule DeployEx.QaNode do
       old_state.state !== new_state.state
   end
 
+  @doc """
+  True when a QA node needs its public-IP Let's Encrypt cert re-issued because a
+  modification (resize or Elastic-IP association) changed its public IP.
+
+  Only nodes in public-IP cert mode (`use_public_ip_cert?: true`) qualify, and
+  only when the new `public_ip` is present and differs from `previous_public_ip`
+  (the IP the node had before the modification). The short-lived IP cert is
+  scoped to the literal public IPv4, so a changed IP leaves the node serving a
+  cert for an address it no longer has (`ERR_CERT_COMMON_NAME_INVALID`).
+  """
+  @spec public_ip_cert_reissue_needed?(t(), String.t() | nil) :: boolean()
+  def public_ip_cert_reissue_needed?(%__MODULE__{use_public_ip_cert?: false}, _previous_public_ip), do: false
+
+  def public_ip_cert_reissue_needed?(%__MODULE__{use_public_ip_cert?: true, public_ip: public_ip}, previous_public_ip) do
+    is_binary(public_ip) and public_ip !== previous_public_ip
+  end
+
   # Best-effort write-back so the S3 JSON (which downstream tools read)
   # picks up the IP + state EC2 only allocates after instance creation.
   # Failures are logged and swallowed — the read path must not fail just

@@ -146,6 +146,28 @@
           --post-hook "systemctl start nginx 2>/dev/null || true"
       args:
         creates: "/etc/letsencrypt/live/{{ node_public_ip }}/fullchain.pem"
+
+    # A resize (stop→start) or Elastic-IP association hands the node a NEW public
+    # IP, so the cert above lands under a fresh /etc/letsencrypt/live/<new-ip>/
+    # lineage (dirs are named by the IP — see the `creates:` path above). The old
+    # IP's lineage lingers and its renewal timer then fails forever (that IP is
+    # gone), so prune every IP-named lineage that isn't the current public IP.
+    - name: List existing certbot cert lineages
+      find:
+        paths: /etc/letsencrypt/live
+        file_type: directory
+      register: letsencrypt_live_lineages
+
+    # The IPv4 `match` test is the guard: DNS-name lineages (prod's {{ domain }})
+    # never match, so they are left untouched — only stale IP lineages are deleted.
+    - name: Delete stale public-IP cert lineages (old IPs from prior resizes)
+      command: "certbot delete --cert-name {{ item }} --non-interactive"
+      loop: "{{ letsencrypt_live_lineages.files | map(attribute='path') | map('basename') | list }}"
+      loop_control:
+        label: "{{ item }}"
+      when:
+        - item is match('^\d+\.\d+\.\d+\.\d+$')
+        - item != node_public_ip
   when: letsencrypt_use_public_ip | bool
   become: true
 

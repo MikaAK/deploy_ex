@@ -340,6 +340,38 @@ defmodule DeployEx.QaNodeTest do
     end
   end
 
+  describe "public_ip_cert_reissue_needed?/2" do
+    test "true when in cert mode and the public IP changed" do
+      node = %QaNode{app_name: "cfx_web", instance_id: "i-abc", use_public_ip_cert?: true, public_ip: "5.6.7.8"}
+
+      assert QaNode.public_ip_cert_reissue_needed?(node, "1.2.3.4")
+    end
+
+    test "false when in cert mode but the public IP is unchanged" do
+      node = %QaNode{app_name: "cfx_web", instance_id: "i-abc", use_public_ip_cert?: true, public_ip: "1.2.3.4"}
+
+      refute QaNode.public_ip_cert_reissue_needed?(node, "1.2.3.4")
+    end
+
+    test "false when not in cert mode even if the public IP changed" do
+      node = %QaNode{app_name: "cfx_web", instance_id: "i-abc", use_public_ip_cert?: false, public_ip: "5.6.7.8"}
+
+      refute QaNode.public_ip_cert_reissue_needed?(node, "1.2.3.4")
+    end
+
+    test "false when the new public IP is nil (node has no address to cert)" do
+      node = %QaNode{app_name: "cfx_web", instance_id: "i-abc", use_public_ip_cert?: true, public_ip: nil}
+
+      refute QaNode.public_ip_cert_reissue_needed?(node, "1.2.3.4")
+    end
+
+    test "true when a previously-absent public IP is now present (first cert)" do
+      node = %QaNode{app_name: "cfx_web", instance_id: "i-abc", use_public_ip_cert?: true, public_ip: "5.6.7.8"}
+
+      assert QaNode.public_ip_cert_reissue_needed?(node, nil)
+    end
+  end
+
   describe "merge_ec2_state/2" do
     test "merges EC2 ip/state fields onto the S3 state" do
       s3_state = %QaNode{
