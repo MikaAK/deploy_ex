@@ -119,55 +119,64 @@
       set_fact:
         node_public_ip: "{{ imds_public_ipv4.content }}"
 
-    # certbot's -d flag goes through DNSName() which rejects IPs client-side
-    # ("will not issue certificates for a bare IP address") even though LE's
-    # shortlived profile DOES support IPs. --ip-address is the correct flag for
-    # IP SANs and bypasses the DNS sanity check.
-    #
-    # --required-profile (vs --preferred-profile) forces the request to fail if
-    # the CA can't honor shortlived, which is the only profile that issues for
-    # IPs today.
-    #
-    # --pre-hook / --post-hook stop + start nginx around issuance so certbot can
-    # bind :80. They get persisted in the cert's renewal config, so the
-    # cert-renewal timer below (and snap's own snap.certbot.renew.timer) cycle
-    # nginx on their own during renewals.
-    - name: Obtain Let's Encrypt short-lived cert for public IP
-      shell: |
-        set -euo pipefail
-        certbot certonly \
-          --standalone \
-          --required-profile shortlived \
-          --ip-address "{{ node_public_ip }}" \
-          --non-interactive \
-          --agree-tos \
-          --email "{{ letsencrypt_email }}" \
-          --pre-hook "systemctl stop nginx 2>/dev/null || true" \
-          --post-hook "systemctl start nginx 2>/dev/null || true"
-      args:
-        creates: "/etc/letsencrypt/live/{{ node_public_ip }}/fullchain.pem"
-
-    # A resize (stop→start) or Elastic-IP association hands the node a NEW public
-    # IP, so the cert above lands under a fresh /etc/letsencrypt/live/<new-ip>/
-    # lineage (dirs are named by the IP — see the `creates:` path above). The old
-    # IP's lineage lingers and its renewal timer then fails forever (that IP is
-    # gone), so prune every IP-named lineage that isn't the current public IP.
+    # A resize (stop→start) or Elastic-IP association changes the node's public
+    # IP. Release configs on QA branches bake the cert path
+    # (/etc/letsencrypt/live/<lineage>/fullchain.pem) at COMPILE time, so a cert
+    # issued under a NEW lineage name is invisible to the running release without
+    # a rebuild. Keep the lineage NAME stable and let the cert's SAN follow the
+    # current IP: reuse the first existing IPv4-named lineage as --cert-name, and
+    # only fall back to the current IP as the lineage name on first issuance.
     - name: List existing certbot cert lineages
       find:
         paths: /etc/letsencrypt/live
         file_type: directory
       register: letsencrypt_live_lineages
 
-    # The IPv4 `match` test is the guard: DNS-name lineages (prod's {{ domain }})
-    # never match, so they are left untouched — only stale IP lineages are deleted.
-    - name: Delete stale public-IP cert lineages (old IPs from prior resizes)
-      command: "certbot delete --cert-name {{ item }} --non-interactive"
-      loop: "{{ letsencrypt_live_lineages.files | map(attribute='path') | map('basename') | list }}"
-      loop_control:
-        label: "{{ item }}"
-      when:
-        - item is match('^\d+\.\d+\.\d+\.\d+$')
-        - item != node_public_ip
+    - name: Pick a stable IPv4 cert lineage name (reuse existing, else current IP)
+      set_fact:
+        letsencrypt_ip_cert_name: >-
+          {{ (letsencrypt_live_lineages.files | default([])
+              | map(attribute='path') | map('basename')
+              | select('match', '^\d+\.\d+\.\d+\.\d+$') | list
+              | first) | default(node_public_ip, true) }}
+
+    # `creates:` can't guard issuance under lineage reuse (the lineage dir already
+    # holds the OLD IP's cert), so gate on SAN coverage instead: only (re)issue
+    # when the current cert does NOT already cover the live public IP.
+    - name: Check whether the existing cert already covers the current public IP
+      command: >-
+        openssl x509 -in /etc/letsencrypt/live/{{ letsencrypt_ip_cert_name }}/fullchain.pem
+          -noout -ext subjectAltName
+      register: letsencrypt_cert_san
+      changed_when: false
+      failed_when: false
+
+    # certbot's -d flag goes through DNSName() which rejects IPs client-side even
+    # though LE's shortlived profile DOES support IPs; --ip-address is the correct
+    # flag for IP SANs. --required-profile (vs --preferred-profile) forces failure
+    # if the CA can't honor shortlived, the only profile that issues for IPs today.
+    #
+    # This node's beam release binds :80/:443 directly — there is NO nginx — so the
+    # --pre-hook/--post-hook stop + start the APP unit ({{ app_name }}) to free :80
+    # for the standalone challenge. The hooks are persisted into the cert's renewal
+    # config, so the hourly cert-renewal timer (and snap's own renew timer) cycle
+    # the app on their own during renewals too — without them, every renewal fails
+    # to bind :80 the same way.
+    - name: Obtain/renew Let's Encrypt short-lived cert for the current public IP
+      shell: |
+        set -euo pipefail
+        certbot certonly \
+          --standalone \
+          --cert-name "{{ letsencrypt_ip_cert_name }}" \
+          --required-profile shortlived \
+          --ip-address "{{ node_public_ip }}" \
+          --non-interactive \
+          --agree-tos \
+          --email "{{ letsencrypt_email }}" \
+          --pre-hook "systemctl stop {{ app_name }} 2>/dev/null || true" \
+          --post-hook "systemctl start {{ app_name }} 2>/dev/null || true"
+      when: node_public_ip not in (letsencrypt_cert_san.stdout | default(''))
+      notify: restart app for new cert
   when: letsencrypt_use_public_ip | bool
   become: true
 

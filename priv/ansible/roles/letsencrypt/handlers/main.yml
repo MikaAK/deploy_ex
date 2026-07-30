@@ -28,3 +28,13 @@
   systemd:
     name: cert-initial
     enabled: yes
+
+# The beam release reads its TLS cert from disk at boot, so after a fresh IP
+# cert is issued the running app must be restarted to serve it. The pre/post
+# hooks already cycle the app during issuance; this restart is the belt-and-
+# braces guarantee the TLS listener re-reads the new cert.
+- name: restart app for new cert
+  become: true
+  systemd:
+    name: "{{ app_name }}"
+    state: restarted

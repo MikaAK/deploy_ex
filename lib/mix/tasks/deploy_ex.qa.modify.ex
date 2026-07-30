@@ -26,8 +26,10 @@ defmodule Mix.Tasks.DeployEx.Qa.Modify do
   IP AND the node is in public-IP cert mode (`use_public_ip_cert?` /
   `--public-ip-cert`), this task automatically re-issues the cert for the new IP as
   part of the same run: it re-runs the node's Ansible setup play limited to that
-  host, which re-provisions the Let's Encrypt cert and prunes the stale old-IP
-  lineage. Nodes not in cert mode (or `--no-public-ip-cert`) are left untouched.
+  host, which re-issues the Let's Encrypt cert for the new IP under the node's
+  existing (stable) cert lineage — the compile-time-baked cert path stays valid —
+  and restarts the app so its TLS listener serves the new cert. Nodes not in cert
+  mode (or `--no-public-ip-cert`) are left untouched.
 
   ## Example
   ```bash
