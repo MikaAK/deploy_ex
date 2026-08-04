@@ -17,6 +17,9 @@ defmodule Mix.Tasks.Terraform.Build do
   - `aws-bucket` - Region for aws (default: `#{@default_aws_release_bucket}`)
   - `aws-log-bucket` - Region for aws (default: `#{@default_aws_log_bucket}`)
   - `env` - Environment for terraform (default: `Mix.env()`)
+  - `render-dir` - Render the terraform files into this directory instead of
+    `directory`, skipping the tool preflight and `terraform init`. Used by the
+    render diff harness to compare output across revisions.
   - `quiet` - Supress output
   - `force` - Force create files without asking
   - `verbose` - Log extra details about the process
@@ -26,6 +29,7 @@ defmodule Mix.Tasks.Terraform.Build do
   def run(args) do
     opts = args
       |> parse_args
+      |> put_render_dir_paths()
       |> Keyword.put_new(:directory, @terraform_default_path)
       |> Keyword.put_new(:aws_region, @default_aws_region)
       |> Keyword.put_new(:aws_release_bucket, @default_aws_release_bucket)
@@ -38,7 +42,7 @@ defmodule Mix.Tasks.Terraform.Build do
     opts = Keyword.put(opts, :no_logging, no_logging)
 
     with :ok <- DeployExHelpers.check_valid_project(),
-         :ok <- DeployEx.ToolInstaller.ensure_installed(:terraform),
+         :ok <- ensure_terraform_installed(opts),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
          :ok <- ensure_terraform_directory_exists(opts[:directory]) do
       random_bytes = 6 |> :crypto.strong_rand_bytes |> Base.encode32(padding: false)
@@ -55,7 +59,7 @@ defmodule Mix.Tasks.Terraform.Build do
         aws_release_bucket: opts[:aws_release_bucket],
 
         use_db: !opts[:no_database],
-        db_password: !opts[:no_database] && generate_db_password(),
+        db_password: !opts[:no_database] && (opts[:db_password] || generate_db_password()),
 
         release_bucket_name: opts[:aws_release_bucket],
         logging_bucket_name: opts[:aws_log_bucket],
@@ -65,7 +69,7 @@ defmodule Mix.Tasks.Terraform.Build do
 
         terraform_backend: DeployEx.Config.terraform_backend(),
 
-        pem_app_name: "#{DeployExHelpers.kebab_project_name()}-#{random_bytes}",
+        pem_app_name: opts[:pem_app_name] || "#{DeployExHelpers.kebab_project_name()}-#{random_bytes}",
         app_name: DeployExHelpers.underscored_project_name(),
         kebab_app_name: DeployExHelpers.kebab_project_name(),
 
@@ -87,12 +91,31 @@ defmodule Mix.Tasks.Terraform.Build do
 
       write_terraform_template_files(params, opts)
 
-      DeployEx.Terraform.run_command_with_input(
-        "init",
-        params[:directory]
-      )
+      if opts[:render_dir] do
+        :ok
+      else
+        DeployEx.Terraform.run_command_with_input(
+          "init",
+          params[:directory]
+        )
+      end
     else
       {:error, e} -> Mix.raise(to_string(e))
+    end
+  end
+
+  defp put_render_dir_paths(opts) do
+    case opts[:render_dir] do
+      nil -> opts
+      render_dir -> Keyword.put(opts, :directory, render_dir)
+    end
+  end
+
+  defp ensure_terraform_installed(opts) do
+    if opts[:render_dir] do
+      :ok
+    else
+      DeployEx.ToolInstaller.ensure_installed(:terraform)
     end
   end
 
@@ -101,6 +124,9 @@ defmodule Mix.Tasks.Terraform.Build do
       aliases: [f: :force, q: :quit, d: :directory, v: :verbose],
       switches: [
         directory: :string,
+        render_dir: :string,
+        pem_app_name: :string,
+        db_password: :string,
         force: :boolean,
         quiet: :boolean,
         verbose: :boolean,

@@ -6,6 +6,7 @@ defmodule Mix.Tasks.Ansible.Build do
   @ansible_default_path Config.ansible_folder_path()
   @terraform_default_path Config.terraform_folder_path()
   @aws_credentials_regex ~r/aws_access_key_id = (?<access_key>[A-Z0-9]+)\naws_secret_access_key = (?<secret_key>[a-z-A-Z0-9\/\+]+)\n/
+  @render_dir_pem_file_path "../terraform/RENDER_DIR_PLACEHOLDER.pem"
 
   @shortdoc "Builds ansible files into your repository"
   @moduledoc """
@@ -15,6 +16,9 @@ defmodule Mix.Tasks.Ansible.Build do
   ## Options
   - `directory` - Ansible directory path (default: #{@ansible_default_path})
   - `terraform_directory` - Terraform directory path (default: #{@terraform_default_path})
+  - `render_dir` - Render every ansible file into this directory instead of the live
+    tree, using a placeholder pem path rather than globbing for a real one. Used by
+    the render diff harness to compare output across revisions.
   - `force` - Force overwrite existing files
   - `quiet` - Suppress output messages
   - `host_only` - Only generate host configuration files
@@ -34,6 +38,7 @@ defmodule Mix.Tasks.Ansible.Build do
 
     opts = args
       |> parse_args
+      |> put_render_dir_paths()
       |> Keyword.put_new(:directory, @ansible_default_path)
       |> Keyword.put_new(:terraform_directory, @terraform_default_path)
       |> Keyword.put_new(:hosts_file, "./deploys/ansible/aws_ec2.yaml")
@@ -65,6 +70,20 @@ defmodule Mix.Tasks.Ansible.Build do
     end
   end
 
+  defp put_render_dir_paths(opts) do
+    case opts[:render_dir] do
+      nil ->
+        opts
+
+      render_dir ->
+        opts
+          |> Keyword.put(:directory, render_dir)
+          |> Keyword.put(:hosts_file, Path.join(render_dir, "aws_ec2.yaml"))
+          |> Keyword.put(:config_file, Path.join(render_dir, "ansible.cfg"))
+          |> Keyword.put(:group_vars_file, Path.join(render_dir, "group_vars/all.yaml"))
+    end
+  end
+
   defp parse_args(args) do
     {opts, _} = OptionParser.parse!(args,
       aliases: [f: :force, q: :quit, d: :directory, a: :auto_pull_aws, h: :host_only, n: :new_only],
@@ -74,6 +93,7 @@ defmodule Mix.Tasks.Ansible.Build do
         host_only: :boolean,
         quiet: :boolean,
         directory: :string,
+        render_dir: :string,
         terraform_directory: :string,
         auto_pull_aws: :boolean,
         aws_release_bucket: :string,
@@ -195,7 +215,7 @@ defmodule Mix.Tasks.Ansible.Build do
       app_name = String.replace(DeployExHelpers.underscored_project_name(), "_", "-")
 
       variables = %{
-        pem_file_path: pem_file_path(app_name, opts[:directory])
+        pem_file_path: config_pem_file_path(app_name, opts)
       }
 
       DeployExHelpers.write_template(
@@ -230,6 +250,14 @@ defmodule Mix.Tasks.Ansible.Build do
     end
 
     :ok
+  end
+
+  defp config_pem_file_path(app_name, opts) do
+    if opts[:render_dir] do
+      @render_dir_pem_file_path
+    else
+      pem_file_path(app_name, opts[:directory])
+    end
   end
 
   defp pem_file_path(app_name, directory) do
