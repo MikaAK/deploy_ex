@@ -41,6 +41,11 @@ defmodule DeployEx.CloudTest do
     test "a module that is not a descriptor errors instead of raising" do
       assert {:error, %ErrorMessage{}} = Cloud.capability(:machine, provider: Enum)
     end
+
+    test "a non-atom provider errors instead of raising FunctionClauseError" do
+      assert {:error, %ErrorMessage{}} = Cloud.capability(:machine, provider: "aws")
+      assert {:error, %ErrorMessage{}} = Cloud.capability(:machine, provider: 42)
+    end
   end
 
   describe "validate_config/2 — pure arity, the seam that makes the permissive pin testable" do
@@ -80,6 +85,19 @@ defmodule DeployEx.CloudTest do
 
     test "an absent provider namespace is [] and not an error" do
       assert Cloud.validate_config(provider: :oci) === :ok
+    end
+
+    test "accepts a bare provider atom, which reads naturally and must not crash" do
+      assert Cloud.validate_config(:oci) === :ok
+      assert Cloud.validate_config(:aws) === :ok
+    end
+
+    test "a non-keyword config errors instead of raising" do
+      assert {:error, %ErrorMessage{}} = Cloud.validate_config(:oci, %{region: "us-phoenix-1"})
+    end
+
+    test "a non-atom provider errors instead of raising" do
+      assert {:error, %ErrorMessage{}} = Cloud.validate_config("aws", [])
     end
   end
 

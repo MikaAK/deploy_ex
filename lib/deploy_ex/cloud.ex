@@ -39,28 +39,48 @@ defmodule DeployEx.Cloud do
   arities below read the real application environment.
   """
   @spec validate_config(atom() | module(), keyword()) :: :ok | {:error, ErrorMessage.t()}
-  def validate_config(provider, env) do
+  def validate_config(provider, env) when is_list(env) do
     with {:ok, descriptor} <- fetch_descriptor(provider) do
       validate_against_schema(descriptor, env, provider)
     end
   end
 
-  @spec validate_config(keyword()) :: :ok | {:error, ErrorMessage.t()}
-  def validate_config(opts \\ []) do
+  def validate_config(provider, env) do
+    {:error,
+     ErrorMessage.bad_request("#{inspect(provider)} config must be a keyword list", %{
+       provider: provider,
+       config: env
+     })}
+  end
+
+  @spec validate_config(atom() | keyword()) :: :ok | {:error, ErrorMessage.t()}
+  def validate_config(provider_or_opts \\ [])
+
+  def validate_config(opts) when is_list(opts) do
     provider = opts[:provider] || Config.cloud_provider()
 
     validate_config(provider, config_env(provider))
   end
 
+  def validate_config(provider), do: validate_config(provider, config_env(provider))
+
   @doc "Registered provider keys."
   @spec providers() :: [atom()]
   def providers, do: Map.keys(@providers)
 
-  defp fetch_descriptor(provider) when is_atom(provider) do
+  defp fetch_descriptor(provider) when is_atom(provider) and not is_nil(provider) do
     case Map.fetch(@providers, provider) do
       {:ok, descriptor} -> {:ok, descriptor}
       :error -> fetch_descriptor_module(provider)
     end
+  end
+
+  defp fetch_descriptor(provider) do
+    {:error,
+     ErrorMessage.not_implemented(
+       "cloud provider must be an atom, got #{inspect(provider)}",
+       %{provider: provider, known_providers: Map.keys(@providers)}
+     )}
   end
 
   defp fetch_descriptor_module(module) do

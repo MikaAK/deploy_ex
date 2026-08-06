@@ -14,15 +14,15 @@ defmodule DeployEx.Cloud.Providers.Oci do
   @behaviour DeployEx.Cloud.Provider
 
   @config_schema [
-    region: [type: :string],
-    profile: [type: :string],
-    compartment_id: [type: :string],
-    namespace: [type: :string],
+    region: [type: {:or, [:string, nil]}],
+    profile: [type: {:or, [:string, nil]}],
+    compartment_id: [type: {:or, [:string, nil]}],
+    namespace: [type: {:or, [:string, nil]}],
     availability_domain: [type: {:or, [:string, nil]}],
     base_image: [type: {:or, [:keyword_list, :string, nil]}],
-    shape: [type: :string],
-    shape_ocpus: [type: :pos_integer],
-    shape_memory_gbs: [type: :pos_integer],
+    shape: [type: {:or, [:string, nil]}],
+    shape_ocpus: [type: {:or, [:pos_integer, nil]}],
+    shape_memory_gbs: [type: {:or, [:pos_integer, nil]}],
     release_bucket: [type: {:or, [:string, nil]}],
     release_state_bucket: [type: {:or, [:string, nil]}],
     log_bucket: [type: {:or, [:string, nil]}],

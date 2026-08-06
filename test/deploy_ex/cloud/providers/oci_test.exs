@@ -38,6 +38,12 @@ defmodule DeployEx.Cloud.Providers.OciTest do
       assert {:ok, _} = NimbleOptions.validate([], Oci.config_schema())
     end
 
+    test "EVERY key accepts nil, so an unset System.get_env/1 does not fail task start" do
+      nil_config = Enum.map(Oci.config_schema(), fn {key, _spec} -> {key, nil} end)
+
+      assert {:ok, _} = NimbleOptions.validate(nil_config, Oci.config_schema())
+    end
+
     test "REJECTS a typo'd key — this is what makes the strict schema non-vacuous" do
       assert {:error, %NimbleOptions.ValidationError{}} =
                NimbleOptions.validate([regionn: "typo"], Oci.config_schema())

@@ -28,6 +28,14 @@ defmodule DeployEx.PrivRendererDeterminismTest do
              read_rendered(two, "terraform/key-pair-main.tf")
   end
 
+  test "different pinned pem_app_names render different key-pair bytes" do
+    one = render(pem_app_name: "pinned-abc")
+    two = render(pem_app_name: "other-xyz")
+
+    assert read_rendered(one, "terraform/key-pair-main.tf") !==
+             read_rendered(two, "terraform/key-pair-main.tf")
+  end
+
   test "pinning pem_app_name does not change the database template" do
     pinned = render(pem_app_name: "pinned-abc")
     default = render([])
