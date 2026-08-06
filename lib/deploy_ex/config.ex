@@ -3,6 +3,8 @@ defmodule DeployEx.Config do
 
   def iac_tool, do: Application.get_env(@app, :iac_tool) || "terraform"
 
+  def cloud_provider, do: Application.get_env(@app, :cloud_provider, :aws)
+
   @default_env to_string(Mix.env())
   def env, do: Application.get_env(@app, :env) || @default_env
   def aws_region, do: Application.get_env(@app, :aws_region) || "us-west-2"
