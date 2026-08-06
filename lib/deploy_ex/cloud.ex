@@ -40,18 +40,16 @@ defmodule DeployEx.Cloud do
   """
   @spec validate_config(atom() | module(), keyword()) :: :ok | {:error, ErrorMessage.t()}
   def validate_config(provider, env) when is_list(env) do
-    with {:ok, descriptor} <- fetch_descriptor(provider) do
-      validate_against_schema(descriptor, env, provider)
+    if Keyword.keyword?(env) do
+      with {:ok, descriptor} <- fetch_descriptor(provider) do
+        validate_against_schema(descriptor, env, provider)
+      end
+    else
+      invalid_config_error(provider, env)
     end
   end
 
-  def validate_config(provider, env) do
-    {:error,
-     ErrorMessage.bad_request("#{inspect(provider)} config must be a keyword list", %{
-       provider: provider,
-       config: env
-     })}
-  end
+  def validate_config(provider, env), do: invalid_config_error(provider, env)
 
   @spec validate_config(atom() | keyword()) :: :ok | {:error, ErrorMessage.t()}
   def validate_config(provider_or_opts \\ [])
@@ -67,6 +65,14 @@ defmodule DeployEx.Cloud do
   @doc "Registered provider keys."
   @spec providers() :: [atom()]
   def providers, do: Map.keys(@providers)
+
+  defp invalid_config_error(provider, env) do
+    {:error,
+     ErrorMessage.bad_request("#{inspect(provider)} config must be a keyword list", %{
+       provider: provider,
+       config: env
+     })}
+  end
 
   defp fetch_descriptor(provider) when is_atom(provider) and not is_nil(provider) do
     case Map.fetch(@providers, provider) do
