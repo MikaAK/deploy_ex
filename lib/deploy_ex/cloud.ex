@@ -27,10 +27,19 @@ defmodule DeployEx.Cloud do
   """
   @spec capability(atom(), keyword()) :: {:ok, module()} | {:error, ErrorMessage.t()}
   def capability(capability, opts \\ []) do
-    with {:ok, descriptor} <- fetch_descriptor(opts[:provider] || Config.cloud_provider()) do
+    with {:ok, descriptor} <- opts |> active_provider() |> fetch_descriptor() do
       fetch_capability(descriptor, capability)
     end
   end
+
+  @doc """
+  Provider these opts resolve to: an explicit `:provider` override, else the configured one.
+
+  Public so the resolution is testable on its own. Every dispatch path routes through it, so
+  a hardcoded provider anywhere else is a defect this function's tests will not hide.
+  """
+  @spec active_provider(keyword()) :: atom() | module()
+  def active_provider(opts), do: opts[:provider] || Config.cloud_provider()
 
   @doc """
   Validates a provider's configuration namespace against its descriptor schema.
@@ -55,7 +64,7 @@ defmodule DeployEx.Cloud do
   def validate_config(provider_or_opts \\ [])
 
   def validate_config(opts) when is_list(opts) do
-    provider = opts[:provider] || Config.cloud_provider()
+    provider = active_provider(opts)
 
     validate_config(provider, config_env(provider))
   end

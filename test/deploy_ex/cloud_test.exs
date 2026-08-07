@@ -118,8 +118,26 @@ defmodule DeployEx.CloudTest do
              "DeployEx.Cloud must hold no capability literals, found: #{inspect(offenders)}"
     end
 
-    test "the dispatcher reads the configured provider" do
-      assert File.read!("lib/deploy_ex/cloud.ex") =~ "Config.cloud_provider()"
+    test "provider resolution falls back to the configured provider" do
+      assert Cloud.active_provider([]) === DeployEx.Config.cloud_provider()
+    end
+
+    test "an explicit provider opt wins over the configured one" do
+      assert Cloud.active_provider(provider: :oci) === :oci
+    end
+
+    test "every dispatch path resolves the provider through active_provider/1" do
+      source = File.read!("lib/deploy_ex/cloud.ex")
+
+      assert function_body(source, "capability") =~ "active_provider(",
+             "capability/2 must resolve the provider through active_provider/1; resolving it " <>
+               "inline lets a hardcoded provider ship while every other test stays green"
+
+      assert source =~ ~r/def validate_config\(opts\) when is_list\(opts\) do\n\s+provider = active_provider\(opts\)/,
+             "validate_config/1 must resolve the provider through active_provider/1"
+
+      assert function_body(source, "active_provider") =~ "Config.cloud_provider()",
+             "active_provider/1 is the single place the configured provider is read"
     end
   end
 
@@ -153,16 +171,79 @@ defmodule DeployEx.CloudTest do
   end
 
   describe "behaviours" do
-    test "all four capability behaviours declare callbacks" do
-      for module <- [
-            DeployEx.Cloud.Machine,
-            DeployEx.Cloud.ObjectStore,
-            DeployEx.Cloud.Infrastructure,
-            DeployEx.Cloud.Security
-          ] do
-        refute Enum.empty?(module.behaviour_info(:callbacks)),
-               "#{inspect(module)} declares no callbacks"
-      end
+    test "Machine declares its exact callback set" do
+      assert callback_set(DeployEx.Cloud.Machine) === [
+               delete_tags: 3,
+               describe_instance: 2,
+               fetch_tags: 2,
+               find_app_instances: 3,
+               find_instances_by_tags: 2,
+               instance_address: 1,
+               put_tags: 3,
+               run_instance: 2,
+               start_instance: 2,
+               stop_instance: 2,
+               terminate_instance: 2
+             ]
     end
+
+    test "ObjectStore declares its exact callback set" do
+      assert callback_set(DeployEx.Cloud.ObjectStore) === [
+               create_container: 2,
+               delete_container: 2,
+               delete_object: 3,
+               get_object: 3,
+               list_containers: 1,
+               list_objects: 2,
+               put_object: 4,
+               put_object_tags: 4,
+               upload_file: 4
+             ]
+    end
+
+    test "Infrastructure declares its exact callback set" do
+      assert callback_set(DeployEx.Cloud.Infrastructure) === [
+               find_image: 1,
+               find_instance_identity: 1,
+               find_key_pair: 2,
+               find_network: 1,
+               find_subnet: 1
+             ]
+    end
+
+    test "Security declares its exact callback set" do
+      assert callback_set(DeployEx.Cloud.Security) === [
+               authorize_ingress: 3,
+               find_group: 1,
+               list_ingress: 2,
+               revoke_ingress: 3
+             ]
+    end
+
+    test "the Provider descriptor declares its exact callback set" do
+      assert callback_set(DeployEx.Cloud.Provider) === [
+               backend_template: 0,
+               capabilities: 0,
+               cli_adapter: 0,
+               completion_marker: 0,
+               config_schema: 0,
+               default_ssh_user: 0,
+               inventory: 0
+             ]
+    end
+  end
+
+  defp function_body(source, name) do
+    [_before, rest] = String.split(source, ~r/\n  def #{name}\(/, parts: 2)
+
+    rest
+    |> String.split(~r/\n  (?:@doc|@spec|def|defp) /, parts: 2)
+    |> List.first()
+  end
+
+  defp callback_set(module) do
+    module.behaviour_info(:callbacks)
+    |> Enum.sort()
+    |> Enum.map(fn {name, arity} -> {name, arity} end)
   end
 end

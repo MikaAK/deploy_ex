@@ -26,6 +26,26 @@ defmodule DeployEx.Cloud.Machine do
   @callback find_instances_by_tags(tag_filters(), keyword()) ::
               {:ok, [Instance.t()]} | {:error, ErrorMessage.t()}
 
+  @doc """
+  Instances belonging to one app within one project.
+
+  This is the caller-facing lookup behind `deploy_ex.ssh`, `restart_app` and the EBS tasks.
+  Three clauses are part of the CONTRACT, not incidental to the AWS implementation — an
+  implementation that drops any of them is non-conforming:
+
+    1. **Project scope is unconditional.** Results are restricted to the active project's
+       resource group. It is never caller-supplied and never optional; omitting it makes a
+       shared cloud account return another project's instances.
+    2. **Only running instances** are returned.
+    3. **Instances with no instance-group tag are excluded**, so half-provisioned machines
+       never surface as deploy targets.
+
+  `find_instances_by_tags/2` applies none of these — it is the raw filter primitive. Do not
+  implement this callback by delegating to it without adding all three.
+  """
+  @callback find_app_instances(String.t(), String.t(), keyword()) ::
+              {:ok, [Instance.t()]} | {:error, ErrorMessage.t()}
+
   @callback describe_instance(String.t(), keyword()) ::
               {:ok, Instance.t()} | {:error, ErrorMessage.t()}
 
