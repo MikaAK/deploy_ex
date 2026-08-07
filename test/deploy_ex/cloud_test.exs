@@ -181,12 +181,21 @@ defmodule DeployEx.CloudTest do
                describe_instance: 2,
                fetch_tags: 2,
                find_app_instances: 3,
-               find_instances_by_tags: 2,
                instance_address: 1,
+               list_instances: 2,
                put_tags: 3,
                run_instance: 2,
                start_instance: 2,
                stop_instance: 2,
+               terminate_instance: 2
+             ]
+    end
+
+    test "the Phase-5 callbacks are optional so AwsMachine conforms without them" do
+      assert DeployEx.Cloud.Machine.behaviour_info(:optional_callbacks) |> Enum.sort() === [
+               delete_tags: 3,
+               put_tags: 3,
+               run_instance: 2,
                terminate_instance: 2
              ]
     end

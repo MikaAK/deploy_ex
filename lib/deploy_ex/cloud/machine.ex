@@ -23,7 +23,15 @@ defmodule DeployEx.Cloud.Machine do
   @typedoc "Canonical tag filters, AND-ed together"
   @type tag_filters :: [{String.t(), matcher()}]
 
-  @callback find_instances_by_tags(tag_filters(), keyword()) ::
+  @doc """
+  Raw tag-filter lookup returning normalized instances.
+
+  Named `list_instances` rather than `find_instances_by_tags` on purpose: `AwsMachine` already
+  exports a function by the latter name that returns provider-shaped maps to seven Mix-task
+  call sites, and those keep their shape until the caller sweep rewires them. Two different
+  return types must not share one name.
+  """
+  @callback list_instances(tag_filters(), keyword()) ::
               {:ok, [Instance.t()]} | {:error, ErrorMessage.t()}
 
   @doc """
@@ -69,4 +77,11 @@ defmodule DeployEx.Cloud.Machine do
 
   @callback delete_tags(String.t(), [String.t()], keyword()) ::
               :ok | {:error, ErrorMessage.t()}
+
+  # Instance creation, termination and tag writes currently live inside the QA-node and
+  # load-test subsystems, which Phase 5 extracts. Optional keeps the contract honest: a
+  # provider conforms today without them, and the Phase-5 train makes them required when it
+  # moves those call sites behind this behaviour. Implementing them now would be unused code
+  # with no test that could fail.
+  @optional_callbacks run_instance: 2, terminate_instance: 2, put_tags: 3, delete_tags: 3
 end

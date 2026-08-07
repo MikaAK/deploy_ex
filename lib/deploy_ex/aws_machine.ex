@@ -1,4 +1,112 @@
 defmodule DeployEx.AwsMachine do
+  @moduledoc """
+  EC2 instance discovery and lifecycle, and the AWS implementation of `DeployEx.Cloud.Machine`.
+
+  The behaviour callbacks return `%DeployEx.Cloud.Instance{}`. The older functions below return
+  provider-shaped maps and keep doing so — seven Mix-task call sites depend on their shape, and
+  `mix deploy_ex.find_nodes --format json` publishes it as a user-visible contract. The caller
+  sweep moves those onto the callbacks; until then both live here side by side.
+  """
+
+  @behaviour DeployEx.Cloud.Machine
+
+  @impl DeployEx.Cloud.Machine
+  def list_instances(tag_filters, opts \\ []) when is_list(tag_filters) do
+    with {:ok, instances} <- find_instances_by_tags(tag_filters, opts) do
+      {:ok, Enum.map(instances, &to_instance/1)}
+    end
+  end
+
+  @impl DeployEx.Cloud.Machine
+  def find_app_instances(project_name, app_name, opts \\ []) do
+    with {:ok, instances} <- scoped_running_instances(opts) do
+      case Enum.filter(instances, &instance_in_app?(&1, app_name)) do
+        [] ->
+          {:error,
+           ErrorMessage.not_found("no instances found for #{app_name}", %{
+             app_name: app_name,
+             project_name: project_name
+           })}
+
+        matching ->
+          {:ok, Enum.map(matching, &to_instance/1)}
+      end
+    end
+  end
+
+  @impl DeployEx.Cloud.Machine
+  def describe_instance(instance_id, opts \\ []) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+
+    with {:ok, [instance | _rest]} <- find_instances_by_id(region, [instance_id]) do
+      {:ok, to_instance(instance)}
+    end
+  end
+
+  @impl DeployEx.Cloud.Machine
+  def start_instance(instance_id, opts \\ []) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+
+    with {:ok, _response} <- start(region, [instance_id]), do: :ok
+  end
+
+  @impl DeployEx.Cloud.Machine
+  def stop_instance(instance_id, opts \\ []) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+
+    with {:ok, _response} <- stop(region, [instance_id]), do: :ok
+  end
+
+  @impl DeployEx.Cloud.Machine
+  def fetch_tags(instance_id, opts \\ []) do
+    with {:ok, instance} <- describe_instance(instance_id, opts) do
+      {:ok, instance.tags}
+    end
+  end
+
+  @doc """
+  Preferred reachable address, IPv6 first.
+
+  IPv6 wins because `find_instance_ips/3` has made that choice since before this behaviour
+  existed, and the deploy path depends on it.
+  """
+  @impl DeployEx.Cloud.Machine
+  def instance_address(%DeployEx.Cloud.Instance{} = instance) do
+    case instance.ipv6 || instance.public_ip do
+      nil -> {:error, ErrorMessage.not_found("instance has no reachable address", %{id: instance.id})}
+      address -> {:ok, address}
+    end
+  end
+
+  defp scoped_running_instances(opts) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+    resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
+
+    with {:ok, instances} <- fetch_instances_by_tag(region, "Group", resource_group) do
+      {:ok,
+       instances
+       |> Enum.filter(&running_with_instance_group?/1)
+       |> maybe_reject_qa_nodes(opts)}
+    end
+  end
+
+  defp running_with_instance_group?(instance) do
+    instance["instanceState"]["name"] === "running" and
+      not is_nil(get_instance_tags(instance)["InstanceGroup"])
+  end
+
+  defp maybe_reject_qa_nodes(instances, opts) do
+    if opts[:exclude_qa_nodes] === true do
+      Enum.reject(instances, &(get_instance_tags(&1)["QaNode"] === "true"))
+    else
+      instances
+    end
+  end
+
+  defp instance_in_app?(instance, app_name) do
+    instance |> get_instance_tags() |> Map.get("InstanceGroup", "") =~ app_name
+  end
+
   def start(region \\ DeployEx.Config.aws_region(), instance_ids) do
     instance_ids
       |> ExAws.EC2.start_instances()
@@ -349,6 +457,30 @@ defmodule DeployEx.AwsMachine do
 
       {:ok, complete}
     end
+  end
+
+  @doc """
+  Normalizes a raw AWS instance map into the provider-neutral struct.
+
+  Distinct from `parse_instance_info/1` below, which produces the AWS-shaped map behind the
+  frozen `mix deploy_ex.find_nodes --format json` key set. That one is a display projection
+  whose keys are a user-visible contract; this one is the neutral behaviour type.
+  """
+  def to_instance(instance) do
+    tags = get_instance_tags(instance)
+
+    %DeployEx.Cloud.Instance{
+      id: instance["instanceId"],
+      type: instance["instanceType"],
+      state: instance["instanceState"]["name"],
+      private_ip: instance["privateIpAddress"],
+      public_ip: instance["ipAddress"],
+      ipv6: instance["ipv6Address"],
+      launched_at: instance["launchTime"],
+      name: tags["Name"],
+      qa_node?: tags["QaNode"] === "true",
+      tags: tags
+    }
   end
 
   def parse_instance_info(instance) do
