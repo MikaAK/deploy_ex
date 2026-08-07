@@ -15,6 +15,7 @@ defmodule DeployEx.Cloud.Providers.Aws do
   def capabilities do
     %{
       machine: DeployEx.AwsMachine,
+      object_store: DeployEx.Cloud.S3ObjectStore,
       infrastructure: DeployEx.AwsInfrastructure,
       security: DeployEx.AwsSecurityGroup
     }

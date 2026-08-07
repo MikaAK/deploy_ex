@@ -10,8 +10,12 @@ defmodule DeployEx.CloudTest do
       assert Cloud.capability(:security) === {:ok, DeployEx.AwsSecurityGroup}
     end
 
-    test "an unfilled AWS slot returns :not_implemented rather than nil" do
-      assert {:error, %ErrorMessage{code: :not_implemented}} = Cloud.capability(:object_store)
+    test "object_store resolves now that P0.2 filled the slot" do
+      assert Cloud.capability(:object_store) === {:ok, DeployEx.Cloud.S3ObjectStore}
+    end
+
+    test "a capability AWS does not implement returns :not_implemented rather than nil" do
+      assert {:error, %ErrorMessage{code: :not_implemented}} = Cloud.capability(:autoscaling)
     end
   end
 

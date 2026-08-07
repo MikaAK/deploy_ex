@@ -10,13 +10,10 @@ defmodule DeployEx.Cloud.Providers.AwsTest do
   test "capabilities point at the existing leaf modules" do
     assert Aws.capabilities() === %{
              machine: DeployEx.AwsMachine,
+             object_store: DeployEx.Cloud.S3ObjectStore,
              infrastructure: DeployEx.AwsInfrastructure,
              security: DeployEx.AwsSecurityGroup
            }
-  end
-
-  test "object_store is omitted until P0.2 creates S3ObjectStore" do
-    refute Map.has_key?(Aws.capabilities(), :object_store)
   end
 
   test "every capability module actually exists" do
