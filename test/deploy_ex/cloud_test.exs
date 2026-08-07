@@ -215,7 +215,6 @@ defmodule DeployEx.CloudTest do
       assert callback_set(DeployEx.Cloud.Security) === [
                authorize_ingress: 3,
                find_group: 1,
-               list_ingress: 2,
                revoke_ingress: 3
              ]
     end

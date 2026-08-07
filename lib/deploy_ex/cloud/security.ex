@@ -15,7 +15,4 @@ defmodule DeployEx.Cloud.Security do
 
   @callback revoke_ingress(String.t(), String.t(), keyword()) ::
               :ok | {:error, ErrorMessage.t()}
-
-  @callback list_ingress(String.t(), keyword()) ::
-              {:ok, [map()]} | {:error, ErrorMessage.t()}
 end
