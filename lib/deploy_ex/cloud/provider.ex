@@ -35,6 +35,11 @@ defmodule DeployEx.Cloud.Provider do
   @doc "SSH user to use when the neutral `:ssh_user` config is unset."
   @callback default_ssh_user() :: String.t() | nil
 
-  @doc "Module adapting `DeployEx.Cloud.CliRunner` to this provider's CLI, or nil if unused."
+  @doc """
+  Module adapting this provider's CLI to a shared runner, or nil when the provider uses an SDK.
+
+  The shared runner does not exist yet — it arrives with the first CLI-backed provider. AWS
+  returns nil because ExAws covers it.
+  """
   @callback cli_adapter() :: module() | nil
 end

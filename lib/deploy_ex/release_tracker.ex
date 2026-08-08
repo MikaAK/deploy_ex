@@ -82,8 +82,15 @@ defmodule DeployEx.ReleaseTracker do
     ErrorMessage.not_found("release state not found")
   end
 
+  # The cause stays in the message, not only in details: ErrorMessage.to_string/1 renders
+  # "code - message" and drops details, and ansible.deploy raises with exactly that string —
+  # so an operator would otherwise see a bare "aws failure" with no reason.
   defp translate_error(%ErrorMessage{code: code, message: message, details: details}) do
-    %ErrorMessage{code: code, message: "aws failure", details: reason_details(details, message)}
+    %ErrorMessage{
+      code: code,
+      message: "aws failure: #{message}",
+      details: reason_details(details, message)
+    }
   end
 
   defp reason_details(details, message) when is_map(details) do

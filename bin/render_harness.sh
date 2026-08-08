@@ -20,19 +20,23 @@ OUT_DIR="${1:?usage: render_harness.sh <out_dir>}"
 PINNED_PEM_APP_NAME="render-harness-pinned"
 PINNED_DB_PASSWORD="RenderHarnessPinnedPassword"
 
-# This script rm -rf's its output directory, so refuse anything that could be a real
-# working tree. A bare `.` or `/` would otherwise delete the caller's repo.
+# Never rm -rf the caller's argument. An earlier version did, behind a guard that only
+# rejected relative paths and directories containing .git/mix.exs — so `/`, `$HOME`, `/opt`
+# and any other absolute path all sailed through it. Instead, refuse to touch anything that
+# already exists and delete only the two subdirectories this script creates itself.
 case "$OUT_DIR" in
   /*) ;;
   *) echo "render_harness.sh: <out_dir> must be an absolute path, got '$OUT_DIR'" >&2; exit 2 ;;
 esac
 
-if [ -e "$OUT_DIR/.git" ] || [ -e "$OUT_DIR/mix.exs" ]; then
-  echo "render_harness.sh: refusing to delete '$OUT_DIR' — it looks like a project tree" >&2
+if [ -e "$OUT_DIR" ] && [ ! -d "$OUT_DIR/terraform" ] && [ ! -d "$OUT_DIR/ansible" ]; then
+  echo "render_harness.sh: '$OUT_DIR' already exists and is not a previous render dir." >&2
+  echo "  Refusing to touch it. Pass a fresh path." >&2
   exit 2
 fi
 
-rm -rf "$OUT_DIR"
+mkdir -p "$OUT_DIR"
+rm -rf "${OUT_DIR:?}/terraform" "${OUT_DIR:?}/ansible"
 
 mix terraform.build \
   --render-dir "$OUT_DIR/terraform" \
