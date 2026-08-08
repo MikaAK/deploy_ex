@@ -4,6 +4,8 @@ defmodule DeployEx.TerraformState do
   Supports both local state files and S3 backend.
   """
 
+  alias DeployEx.Cloud.S3ObjectStore
+
   @terraform_state_filename "terraform.tfstate"
   @terraform_state_key "terraform.tfstate"
 
@@ -41,14 +43,14 @@ defmodule DeployEx.TerraformState do
     key = opts[:key] || @terraform_state_key
     region = opts[:region] || DeployEx.Config.aws_region()
 
-    case ExAws.S3.get_object(bucket, key) |> ExAws.request(region: region) do
-      {:ok, %{body: body}} ->
+    case S3ObjectStore.get_object(bucket, key, region: region) do
+      {:ok, body} ->
         Jason.decode(body)
 
-      {:error, {:http_error, 404, _}} ->
+      {:error, %ErrorMessage{code: :not_found}} ->
         {:error, "Terraform state not found in S3: s3://#{bucket}/#{key}"}
 
-      {:error, {:http_error, 403, _}} ->
+      {:error, %ErrorMessage{code: :forbidden}} ->
         {:error, "Access denied to S3 bucket: #{bucket}"}
 
       {:error, error} ->

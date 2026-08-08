@@ -1,4 +1,14 @@
 defmodule DeployEx.ReleaseTracker do
+  @moduledoc """
+  Tracks which release is current for an app, and the history of what came before it.
+
+  Both live at fixed keys in the release container, read and written through the
+  provider-neutral `DeployEx.Cloud.S3ObjectStore`. Nothing here lists the container, so there
+  is no pagination surface to truncate.
+  """
+
+  alias DeployEx.Cloud.S3ObjectStore
+
   @release_state_prefix "release-state"
 
   def current_release_key(app_name, opts \\ []) do
@@ -10,41 +20,26 @@ defmodule DeployEx.ReleaseTracker do
   end
 
   def fetch_current_release(app_name, opts \\ []) do
-    region = opts[:region] || DeployEx.Config.aws_region()
-    bucket = opts[:bucket] || DeployEx.Config.aws_release_bucket()
-
-    bucket
-    |> ExAws.S3.get_object(current_release_key(app_name, opts))
-    |> ExAws.request(region: region)
-    |> handle_get_response()
+    app_name
+    |> current_release_key(opts)
+    |> fetch_release_state(opts)
   end
 
   def fetch_release_history(app_name, opts \\ []) do
-    region = opts[:region] || DeployEx.Config.aws_region()
-    bucket = opts[:bucket] || DeployEx.Config.aws_release_bucket()
-
-    bucket
-    |> ExAws.S3.get_object(release_history_key(app_name, opts))
-    |> ExAws.request(region: region)
-    |> handle_get_response()
+    app_name
+    |> release_history_key(opts)
+    |> fetch_release_state(opts)
   end
 
   def set_current_release(app_name, release_name, opts \\ []) do
-    region = opts[:region] || DeployEx.Config.aws_region()
-    bucket = opts[:bucket] || DeployEx.Config.aws_release_bucket()
-
     with {:ok, _} <- append_to_release_history(app_name, release_name, opts) do
-      bucket
-      |> ExAws.S3.put_object(current_release_key(app_name, opts), "#{release_name}\n")
-      |> ExAws.request(region: region)
-      |> handle_put_response()
+      app_name
+      |> current_release_key(opts)
+      |> put_release_state("#{release_name}\n", opts)
     end
   end
 
   def append_to_release_history(app_name, release_name, opts \\ []) do
-    region = opts[:region] || DeployEx.Config.aws_region()
-    bucket = opts[:bucket] || DeployEx.Config.aws_release_bucket()
-
     existing_history = case fetch_release_history(app_name, opts) do
       {:ok, history} -> history
       {:error, _} -> ""
@@ -53,10 +48,9 @@ defmodule DeployEx.ReleaseTracker do
     new_history = "#{String.trim(existing_history)}\n#{release_name}\n"
       |> String.trim_leading("\n")
 
-    bucket
-    |> ExAws.S3.put_object(release_history_key(app_name, opts), new_history)
-    |> ExAws.request(region: region)
-    |> handle_put_response()
+    app_name
+    |> release_history_key(opts)
+    |> put_release_state(new_history, opts)
   end
 
   def list_release_history(app_name, limit \\ 25, opts \\ []) do
@@ -70,29 +64,37 @@ defmodule DeployEx.ReleaseTracker do
     end
   end
 
-  defp handle_get_response({:ok, %{body: body}}), do: {:ok, String.trim(body)}
-
-  defp handle_get_response({:error, {:http_error, 404, _}}) do
-    {:error, ErrorMessage.not_found("release state not found")}
+  defp fetch_release_state(key, opts) do
+    case S3ObjectStore.get_object(bucket(opts), key, region: region(opts)) do
+      {:ok, body} -> {:ok, String.trim(body)}
+      {:error, error} -> {:error, translate_error(error)}
+    end
   end
 
-  defp handle_get_response({:error, {:http_error, status, reason}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["aws failure", %{reason: reason}])}
+  defp put_release_state(key, body, opts) do
+    case S3ObjectStore.put_object(bucket(opts), key, body, region: region(opts)) do
+      :ok -> {:ok, :uploaded}
+      {:error, error} -> {:error, translate_error(error)}
+    end
   end
 
-  defp handle_get_response({:error, error}) when is_binary(error) do
-    {:error, ErrorMessage.failed_dependency("aws failure: #{error}")}
+  defp translate_error(%ErrorMessage{code: :not_found}) do
+    ErrorMessage.not_found("release state not found")
   end
 
-  defp handle_put_response({:ok, _}), do: {:ok, :uploaded}
-
-  defp handle_put_response({:error, {:http_error, status, reason}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["aws failure", %{reason: reason}])}
+  defp translate_error(%ErrorMessage{code: code, message: message, details: details}) do
+    %ErrorMessage{code: code, message: "aws failure", details: reason_details(details, message)}
   end
 
-  defp handle_put_response({:error, error}) when is_binary(error) do
-    {:error, ErrorMessage.failed_dependency("aws failure: #{error}")}
+  defp reason_details(details, message) when is_map(details) do
+    details |> Map.delete(:message) |> Map.put(:reason, message)
   end
+
+  defp reason_details(_details, message), do: %{reason: message}
+
+  defp bucket(opts), do: opts[:bucket] || DeployEx.Config.aws_release_bucket()
+
+  defp region(opts), do: opts[:region] || DeployEx.Config.aws_region()
 
   defp release_state_prefix(opts) when is_map(opts) do
     release_state_prefix(Map.to_list(opts))

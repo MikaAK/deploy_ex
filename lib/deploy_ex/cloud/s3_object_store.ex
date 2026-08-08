@@ -190,8 +190,14 @@ defmodule DeployEx.Cloud.S3ObjectStore do
       {:ok, _} = success -> success
       {:error, {:http_error, status_code, %{body: body}}} -> classify_error(status_code, body, details)
       {:error, {:http_error, status_code, message}} -> classify_error(status_code, message, details)
+      {:error, reason} -> {:error, ErrorMessage.failed_dependency(describe_reason(reason), details)}
     end
   end
+
+  # Credential lookup and socket failures come back as a bare term with no status to classify;
+  # without this clause they raise a CaseClauseError instead of surfacing as an error tuple.
+  defp describe_reason(reason) when is_binary(reason), do: reason
+  defp describe_reason(reason), do: inspect(reason)
 
   defp region(opts), do: opts[:region] || DeployEx.Config.aws_region()
 
