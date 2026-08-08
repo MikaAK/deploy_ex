@@ -29,7 +29,11 @@ defmodule DeployExHelpers do
   def kebab_project_name, do: String.replace(underscored_project_name(), "_", "-")
   def title_case_project_name, do: DeployEx.Utils.upper_title_case(underscored_project_name())
 
-  def check_valid_project, do: DeployEx.ProjectContext.check_valid_project()
+  def check_valid_project do
+    with :ok <- DeployEx.ProjectContext.check_valid_project() do
+      DeployEx.Cloud.validate_config()
+    end
+  end
 
   def priv_folder(priv_subdirectory) do
     priv_path = :deploy_ex |> :code.priv_dir() |> Path.join(priv_subdirectory)

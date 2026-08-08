@@ -1,4 +1,84 @@
 defmodule DeployEx.AwsSecurityGroup do
+  @moduledoc """
+  AWS implementation of `DeployEx.Cloud.Security`.
+
+  Owns the SSH ingress rules `mix deploy_ex.ssh.authorize` manages. The ingress calls used to
+  live in `DeployEx.AwsIpWhitelister`; that module now delegates here so every EC2 call for
+  this capability sits behind one behaviour.
+  """
+
+  @behaviour DeployEx.Cloud.Security
+
+  @ssh_port 22
+
+  @impl DeployEx.Cloud.Security
+  def find_group(opts \\ []), do: find_security_group_id(opts)
+
+  @impl DeployEx.Cloud.Security
+  def authorize_ingress(security_group_id, cidr, opts \\ []) do
+    security_group_id
+    |> build_ingress_request(cidr, opts)
+    |> ExAws.EC2.authorize_security_group_ingress()
+    |> request_ingress_change(security_group_id, cidr, opts)
+  end
+
+  @impl DeployEx.Cloud.Security
+  def revoke_ingress(security_group_id, cidr, opts \\ []) do
+    security_group_id
+    |> build_ingress_request(cidr, opts)
+    |> ExAws.EC2.revoke_security_group_ingress()
+    |> request_ingress_change(security_group_id, cidr, opts)
+  end
+
+  @doc """
+  Turns an AWS ingress error body into an `ErrorMessage`.
+
+  Public because it is the only pure part of the ingress path — the request itself needs a live
+  account, this does not.
+  """
+  def classify_ingress_error(status_code, body, details) do
+    message = body |> SweetXml.xpath(SweetXml.sigil_x("//Message/text()", [])) |> to_string()
+
+    cond do
+      message =~ "already exists" -> {:error, ErrorMessage.conflict(message, details)}
+      message =~ "does not exist" -> {:error, ErrorMessage.not_found(message, details)}
+      true -> {:error, build_http_error(status_code, message, details)}
+    end
+  end
+
+  defp build_ingress_request(security_group_id, cidr, opts) do
+    Keyword.merge(opts,
+      group_id: security_group_id,
+      cidr_ip: cidr,
+      ip_protocol: "tcp",
+      from_port: @ssh_port,
+      to_port: @ssh_port
+    )
+  end
+
+  defp request_ingress_change(request, security_group_id, cidr, opts) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+
+    case ExAws.request(request, region: region) do
+      {:ok, %{status_code: 200}} ->
+        :ok
+
+      {:error, {:http_error, status_code, %{body: body}}} ->
+        classify_ingress_error(status_code, body, %{
+          cidr: cidr,
+          security_group_id: security_group_id
+        })
+    end
+  end
+
+  defp build_http_error(status_code, message, details) do
+    %ErrorMessage{
+      code: ErrorMessage.http_code_reason_atom(status_code),
+      message: message,
+      details: details
+    }
+  end
+
   def find_security_group(opts \\ []) do
     security_group_id = opts[:security_group_id] || DeployEx.Config.aws_security_group_id()
 

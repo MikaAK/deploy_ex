@@ -4,7 +4,37 @@ defmodule DeployEx.AwsInfrastructure do
 
   This module follows the pattern established by `DeployEx.AwsSecurityGroup` which uses
   AWS APIs to find resources by naming conventions, avoiding terraform state dependency.
+
+  Implements `DeployEx.Cloud.Infrastructure`. Those callbacks are neutral names over the
+  AWS-specific functions below — here a network is a VPC, an identity is an IAM instance
+  profile, and an image is an AMI.
   """
+
+  @behaviour DeployEx.Cloud.Infrastructure
+
+  @impl DeployEx.Cloud.Infrastructure
+  def find_network(opts \\ []), do: find_vpc_id(opts)
+
+  @impl DeployEx.Cloud.Infrastructure
+  def find_subnet(opts \\ []) do
+    with {:ok, subnet_ids} <- find_subnet_ids(opts) do
+      case subnet_ids do
+        [subnet_id | _rest] -> {:ok, subnet_id}
+        [] -> {:error, ErrorMessage.not_found("no subnet found", %{opts: opts})}
+      end
+    end
+  end
+
+  @impl DeployEx.Cloud.Infrastructure
+  def find_key_pair(project_name, opts \\ []) do
+    find_key_pair_name(Keyword.put(opts, :project_name, project_name))
+  end
+
+  @impl DeployEx.Cloud.Infrastructure
+  def find_image(opts \\ []), do: find_latest_ami(opts)
+
+  @impl DeployEx.Cloud.Infrastructure
+  def find_instance_identity(opts \\ []), do: find_iam_instance_profile(opts)
 
   def find_subnet_ids(opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
