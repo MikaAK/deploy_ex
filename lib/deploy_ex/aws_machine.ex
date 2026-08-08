@@ -265,8 +265,17 @@ defmodule DeployEx.AwsMachine do
   end
 
   defp fetch_instances_page(region, opts, next_token, acc) do
-    request_opts = if next_token, do: Keyword.put(opts, :next_token, next_token), else: opts
-    response = request_opts |> ExAws.EC2.describe_instances() |> ex_aws_request(region)
+    # :request_fn is the injection seam for page-boundary tests. It is split out of opts before
+    # they become EC2 request params, since anything left in opts is sent to the API.
+    {request_fn, describe_opts} = Keyword.pop(opts, :request_fn, &ExAws.request/2)
+
+    request_opts =
+      if next_token, do: Keyword.put(describe_opts, :next_token, next_token), else: describe_opts
+
+    response =
+      request_opts
+      |> ExAws.EC2.describe_instances()
+      |> request_fn.(region: region || DeployEx.Config.aws_region())
 
     with {:ok, instances} <- handle_describe_response(response) do
       accumulated = acc ++ instances

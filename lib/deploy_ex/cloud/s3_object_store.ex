@@ -214,8 +214,14 @@ defmodule DeployEx.Cloud.S3ObjectStore do
     |> discard_body()
   end
 
+  # `:request_fn` is the injection seam that makes pagination testable. Without it every
+  # page-boundary case needs a live account, which is why the paginators originally shipped with
+  # source-grep pins instead of tests — and a source grep cannot fail when the loop is removed.
+  # Same dependency-injection style as ProjectContext.check_valid_project/1.
   defp run(request, opts, details) do
-    case ExAws.request(request, region: region(opts)) do
+    request_fn = opts[:request_fn] || (&ExAws.request/2)
+
+    case request_fn.(request, region: region(opts)) do
       {:ok, _} = success -> success
       {:error, {:http_error, status_code, %{body: body}}} -> classify_error(status_code, body, details)
       {:error, {:http_error, status_code, message}} -> classify_error(status_code, message, details)

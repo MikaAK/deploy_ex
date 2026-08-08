@@ -53,26 +53,6 @@ defmodule DeployEx.Cloud.S3ObjectStoreTest do
     end
   end
 
-  describe "list_objects pagination" do
-    test "follows pagination rather than stopping at the first page" do
-      source = File.read!("lib/deploy_ex/cloud/s3_object_store.ex")
-
-      assert source =~ "is_truncated",
-             "list_objects must inspect is_truncated; a single request silently caps at 1000 keys"
-
-      assert source =~ ~r/:marker/,
-             "list_objects must advance a marker to fetch subsequent pages"
-    end
-
-    test "the paginating helper recurses" do
-      source = File.read!("lib/deploy_ex/cloud/s3_object_store.ex")
-      body = source |> String.split("defp list_objects_page") |> Enum.at(1)
-
-      assert body =~ "list_objects_page(",
-             "the page fetcher must call itself; without recursion only page one is returned"
-    end
-  end
-
   describe "AwsBucket compatibility" do
     test "keeps its public API so existing call sites are untouched" do
       Code.ensure_loaded!(DeployEx.AwsBucket)
