@@ -145,6 +145,20 @@ defmodule DeployEx.CloudTest do
     end
   end
 
+  describe "EC2 pagination" do
+    test "fetch_instances follows nextToken instead of returning only page one" do
+      source = File.read!("lib/deploy_ex/aws_machine.ex")
+
+      assert source =~ "nextToken",
+             "fetch_instances must read nextToken; one request silently truncates a large account"
+
+      body = source |> String.split("defp fetch_instances_page") |> Enum.at(1)
+
+      assert body =~ "fetch_instances_page(",
+             "the page fetcher must recurse; without it only the first page is returned"
+    end
+  end
+
   describe "%Cloud.Instance{}" do
     test "has the exact provider-neutral field set" do
       keys =

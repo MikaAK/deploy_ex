@@ -252,11 +252,44 @@ defmodule DeployEx.AwsMachine do
     end
   end
 
-  def fetch_instances(region) do
-    ExAws.EC2.describe_instances()
-      |> ex_aws_request(region)
-      |> handle_describe_response
+  @doc """
+  Every instance in the region, following pagination to completion.
+
+  DescribeInstances caps a response and signals more via `nextToken`. A single request therefore
+  truncates silently on a large account — it returns `{:ok, partial}`, not an error — which would
+  make every caller here (tag filters, setup-state queries, `mix deploy_ex.find_nodes`) quietly
+  miss instances. `AwsAutoscaling.fetch_all_asgs/5` already paginates for the same reason.
+  """
+  def fetch_instances(region, opts \\ []) do
+    fetch_instances_page(region, opts, nil, [])
   end
+
+  defp fetch_instances_page(region, opts, next_token, acc) do
+    request_opts = if next_token, do: Keyword.put(opts, :next_token, next_token), else: opts
+    response = request_opts |> ExAws.EC2.describe_instances() |> ex_aws_request(region)
+
+    with {:ok, instances} <- handle_describe_response(response) do
+      accumulated = acc ++ instances
+
+      case describe_next_token(response) do
+        nil -> {:ok, accumulated}
+        token -> fetch_instances_page(region, opts, token, accumulated)
+      end
+    end
+  end
+
+  defp describe_next_token({:ok, %{body: body}}) do
+    case XmlToMap.naive_map(body) do
+      %{"DescribeInstancesResponse" => %{"nextToken" => token}}
+      when is_binary(token) and token !== "" ->
+        token
+
+      _no_more_pages ->
+        nil
+    end
+  end
+
+  defp describe_next_token(_response), do: nil
 
   defp ex_aws_request(request_struct, nil) do
     ExAws.request(request_struct)
