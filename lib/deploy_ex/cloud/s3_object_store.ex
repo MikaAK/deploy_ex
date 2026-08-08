@@ -126,18 +126,43 @@ defmodule DeployEx.Cloud.S3ObjectStore do
   end
 
   @doc """
-  Empties a container, following pagination to completion.
+  Deletes objects in a container, following pagination to completion.
 
-  Not a behaviour callback — it is a convenience built on the S3 bulk-delete API, which has no
-  portable equivalent. A provider without bulk delete would loop `delete_object/3`.
+  Not a behaviour callback — it is built on the S3 bulk-delete API, which has no portable
+  equivalent. A provider without bulk delete would loop `delete_object/3`.
+
+  **Scope is mandatory and explicit.** Pass either `prefix: "some/path"` to delete a subtree, or
+  `all: true` to empty the whole container. Calling it with neither raises rather than deleting
+  everything, because the earlier signature accepted `prefix:` and silently ignored it — a call
+  that read as narrowly scoped emptied an entire production bucket.
   """
   def delete_all_objects(container, opts \\ [], continuation_token \\ nil) do
-    list_opts = if continuation_token, do: [continuation_token: continuation_token], else: []
+    scope = delete_scope!(container, opts)
+    list_opts = scope ++ continuation_opts(continuation_token)
 
     case run(S3.list_objects_v2(container, list_opts), opts, %{container: container}) do
       {:ok, %{body: body}} -> delete_listed_objects(container, body, opts)
-      {:error, _} = error -> error
+      {:error, _reason} = error -> error
     end
+  end
+
+  defp delete_scope!(container, opts) do
+    prefix = opts[:prefix]
+
+    cond do
+      is_binary(prefix) and prefix !== "" -> [prefix: prefix]
+      opts[:all] === true -> []
+      true -> raise ArgumentError, unscoped_delete_message(container)
+    end
+  end
+
+  defp unscoped_delete_message(container) do
+    "refusing to delete every object in #{inspect(container)} without an explicit scope — " <>
+      "pass prefix: \"...\" to delete a subtree, or all: true to empty the container"
+  end
+
+  defp continuation_opts(token) do
+    if present?(token), do: [continuation_token: token], else: []
   end
 
   @doc """
@@ -164,17 +189,21 @@ defmodule DeployEx.Cloud.S3ObjectStore do
 
   defp delete_listed_objects(container, body, opts) do
     keys = body |> Map.get(:contents, []) |> Enum.map(& &1.key)
-    truncated? = Map.get(body, :is_truncated, false)
     next_token = Map.get(body, :next_continuation_token)
 
     with :ok <- delete_batch(container, keys, opts) do
-      if truncated? do
+      if truncated?(body) and present?(next_token) do
         delete_all_objects(container, opts, next_token)
       else
         :ok
       end
     end
   end
+
+  # ExAws returns is_truncated as the STRING "false", which is truthy in Elixir — branching on it
+  # directly recurses forever, and the empty next_continuation_token then makes S3 reject the
+  # request. Compare against known values instead of relying on truthiness.
+  defp present?(value), do: is_binary(value) and value !== ""
 
   defp delete_batch(_container, [], _opts), do: :ok
 

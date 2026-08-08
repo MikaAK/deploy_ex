@@ -27,8 +27,15 @@ defmodule DeployEx.AwsBucket do
     S3ObjectStore.list_objects(bucket_name, region: region)
   end
 
+  @doc """
+  Empties a bucket entirely.
+
+  `all: true` is passed deliberately — the object store refuses an unscoped delete, and emptying
+  the bucket is exactly what this function is for. Its only caller drops the terraform state
+  bucket, whose name comes from config rather than an argument.
+  """
   def delete_all_objects(region \\ DeployEx.Config.aws_region(), bucket_name, continuation_token \\ nil) do
-    S3ObjectStore.delete_all_objects(bucket_name, [region: region], continuation_token)
+    S3ObjectStore.delete_all_objects(bucket_name, [region: region, all: true], continuation_token)
   end
 
   def delete_bucket(region \\ DeployEx.Config.aws_region(), bucket_name) do
