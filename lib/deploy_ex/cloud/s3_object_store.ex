@@ -41,12 +41,45 @@ defmodule DeployEx.Cloud.S3ObjectStore do
 
   @impl DeployEx.Cloud.ObjectStore
   def list_objects(container, opts \\ []) do
-    {request_opts, opts} = Keyword.split(opts, [:prefix, :marker, :max_keys])
+    {request_opts, request_config} = Keyword.split(opts, [:prefix, :marker, :max_keys])
 
-    container
-    |> S3.list_objects(request_opts)
-    |> run(opts, %{container: container})
-    |> extract_keys()
+    list_objects_page(container, request_opts, request_config, [])
+  end
+
+  # S3 caps a list response at 1000 keys and signals more with is_truncated, so a single
+  # request silently truncates. The release bucket holds thousands of objects, and a
+  # truncated listing reads as "these are all the releases" rather than as an error.
+  defp list_objects_page(container, request_opts, request_config, acc) do
+    response =
+      container
+      |> S3.list_objects(request_opts)
+      |> run(request_config, %{container: container})
+
+    case response do
+      {:ok, %{body: body}} ->
+        keys = body |> Map.get(:contents, []) |> Enum.map(& &1.key)
+        accumulated = acc ++ keys
+
+        if truncated?(body) and not Enum.empty?(keys) do
+          next_opts = Keyword.put(request_opts, :marker, next_marker(body, keys))
+
+          list_objects_page(container, next_opts, request_config, accumulated)
+        else
+          {:ok, accumulated}
+        end
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  defp truncated?(body), do: Map.get(body, :is_truncated) in [true, "true"]
+
+  defp next_marker(body, keys) do
+    case Map.get(body, :next_marker) do
+      marker when is_binary(marker) and marker !== "" -> marker
+      _absent -> List.last(keys)
+    end
   end
 
   @impl DeployEx.Cloud.ObjectStore
@@ -168,7 +201,4 @@ defmodule DeployEx.Cloud.S3ObjectStore do
   defp discard_body({:ok, _}), do: :ok
   defp discard_body({:error, _} = error), do: error
 
-  defp extract_keys({:ok, %{body: %{contents: contents}}}), do: {:ok, Enum.map(contents, & &1.key)}
-  defp extract_keys({:ok, _}), do: {:ok, []}
-  defp extract_keys({:error, _} = error), do: error
 end
