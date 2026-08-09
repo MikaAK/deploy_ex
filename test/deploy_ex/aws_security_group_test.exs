@@ -56,6 +56,69 @@ defmodule DeployEx.AwsSecurityGroupTest do
     end
   end
 
+  describe "describe_security_groups/2 pagination (via find_security_group/1)" do
+    defp queue_responses(responses), do: Process.put(:responses, responses)
+
+    defp next_response do
+      [head | rest] = Process.get(:responses)
+      Process.put(:responses, rest)
+      Process.put(:call_count, (Process.get(:call_count) || 0) + 1)
+      head
+    end
+
+    defp call_count, do: Process.get(:call_count) || 0
+
+    defp recording_request_fn do
+      fn _request, _config -> next_response() end
+    end
+
+    defp sg_page(groups, next_token) do
+      items =
+        Enum.map_join(groups, "", fn {group_id, group_name} ->
+          "<item><groupId>#{group_id}</groupId><groupName>#{group_name}</groupName>" <>
+            "<vpcId>vpc-1</vpcId></item>"
+        end)
+
+      token = if next_token, do: "<nextToken>#{next_token}</nextToken>", else: ""
+
+      {:ok,
+       %{
+         body:
+           "<DescribeSecurityGroupsResponse><securityGroupInfo>#{items}</securityGroupInfo>" <>
+             "#{token}</DescribeSecurityGroupsResponse>"
+       }}
+    end
+
+    test "a security group past page one is still found rather than reporting not_found" do
+      queue_responses([
+        sg_page([{"sg-other", "other-sg"}], "TOKEN"),
+        sg_page([{"sg-mine", "myapp-sg"}], nil)
+      ])
+
+      assert AwsSecurityGroup.find_security_group(project_name: "myapp", request_fn: recording_request_fn()) ===
+               {:ok, %{id: "sg-mine", vpc_id: "vpc-1", name: "myapp-sg"}}
+    end
+
+    test "terminates when no nextToken comes back" do
+      queue_responses([sg_page([{"sg-mine", "myapp-sg"}], nil)])
+
+      assert {:ok, %{id: "sg-mine"}} =
+               AwsSecurityGroup.find_security_group(project_name: "myapp", request_fn: recording_request_fn())
+
+      assert call_count() === 1
+    end
+
+    test "an error on a later page fails loudly instead of returning a partial match" do
+      queue_responses([
+        sg_page([{"sg-other", "other-sg"}], "TOKEN"),
+        {:error, {:http_error, 500, %{body: "boom"}}}
+      ])
+
+      assert {:error, %ErrorMessage{}} =
+               AwsSecurityGroup.find_security_group(project_name: "myapp", request_fn: recording_request_fn())
+    end
+  end
+
   describe "AwsIpWhitelister compatibility" do
     test "keeps its public API so its two task call sites are untouched" do
       Code.ensure_loaded!(DeployEx.AwsIpWhitelister)
