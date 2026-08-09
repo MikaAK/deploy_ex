@@ -21,12 +21,13 @@ defmodule DeployEx.ReleaseUploader.AwsManager do
   end
 
   defp handle_list_response(
-         {:ok, %{body: %{contents: contents, is_truncated: "true"} = body}},
+         {:ok, %{body: %{contents: contents, is_truncated: is_truncated} = body}},
          region,
          bucket,
          s3_opts,
          acc
-       ) do
+       )
+       when is_truncated in [true, "true"] do
     keys = Enum.map(contents, & &1.key)
     marker = next_marker(body, contents)
 
