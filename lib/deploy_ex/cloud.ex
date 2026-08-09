@@ -41,7 +41,8 @@ defmodule DeployEx.Cloud do
   `Mix.Tasks.Ansible.{Build,Setup,Deploy,Ping}`, which all resolve the live inventory filename
   through here so a provider switch can never leave one of them checking the other's file.
   """
-  @spec inventory(atom() | module()) :: {:ok, map()} | {:error, ErrorMessage.t()}
+  @spec inventory(atom() | module()) ::
+          {:ok, DeployEx.Cloud.Provider.inventory()} | {:error, ErrorMessage.t()}
   def inventory(provider) do
     with {:ok, descriptor} <- fetch_descriptor(provider) do
       case descriptor.inventory() do

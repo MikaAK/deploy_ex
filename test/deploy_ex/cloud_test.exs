@@ -136,7 +136,12 @@ defmodule DeployEx.CloudTest do
         |> List.flatten()
         |> Enum.uniq()
         |> Enum.reject(fn reference ->
+          # DeployEx.Cloud.Provider is the descriptor BEHAVIOUR, not a capability
+          # implementation — naming it in a typespec is correct and is the point of having it.
+          # Rejecting it forced a caller to weaken a spec to bare map(), which is this test
+          # degrading the code rather than guarding it.
           reference in ["DeployEx.Config", "DeployEx.Cloud"] or
+            String.starts_with?(reference, "DeployEx.Cloud.Provider") or
             String.starts_with?(reference, "DeployEx.Cloud.Providers.")
         end)
 
