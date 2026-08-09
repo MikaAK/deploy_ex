@@ -52,6 +52,28 @@ defmodule DeployEx.CloudTest do
     end
   end
 
+  describe "inventory/1" do
+    test "resolves AWS's dynamic plugin descriptor" do
+      assert Cloud.inventory(:aws) ===
+               {:ok, %{strategy: :aws_ec2_plugin, template: "ansible/aws_ec2.yaml.eex", filename: "aws_ec2.yaml"}}
+    end
+
+    test "resolves OCI's static generator descriptor" do
+      assert Cloud.inventory(:oci) ===
+               {:ok,
+                %{strategy: :static_oci_cli, template: "ansible/providers/oci/oci.yaml.eex", filename: "oci.yaml"}}
+    end
+
+    test "an unknown provider errors instead of raising" do
+      assert {:error, %ErrorMessage{code: :not_implemented}} = Cloud.inventory(:gcp)
+    end
+
+    test "accepts a descriptor module directly, same seam as capability/2" do
+      assert Cloud.inventory(DeployEx.Cloud.Providers.Aws) ===
+               {:ok, %{strategy: :aws_ec2_plugin, template: "ansible/aws_ec2.yaml.eex", filename: "aws_ec2.yaml"}}
+    end
+  end
+
   describe "validate_config/2 — pure arity, the seam that makes the permissive pin testable" do
     test ":aws accepts today's full flat env plus an arbitrary unknown key" do
       env = Application.get_all_env(:deploy_ex) ++ [totally_unknown_key_xyz: %{a: 1}]

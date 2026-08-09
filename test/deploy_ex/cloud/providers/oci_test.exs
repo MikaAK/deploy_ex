@@ -11,12 +11,22 @@ defmodule DeployEx.Cloud.Providers.OciTest do
     assert Oci.capabilities() === %{}
   end
 
-  test "slots filled by later phases are nil, not invented" do
+  test "slots not yet filled are nil, not invented" do
     assert is_nil(Oci.backend_template())
     assert is_nil(Oci.completion_marker())
-    assert is_nil(Oci.inventory())
-    assert is_nil(Oci.default_ssh_user())
     assert is_nil(Oci.cli_adapter())
+  end
+
+  test "inventory/0 declares the static oci CLI generator, not an ansible collection plugin" do
+    assert Oci.inventory() === %{
+      strategy: :static_oci_cli,
+      template: "ansible/providers/oci/oci.yaml.eex",
+      filename: "oci.yaml"
+    }
+  end
+
+  test "default_ssh_user/0 is ubuntu — OCI's Ubuntu images have no admin user" do
+    assert Oci.default_ssh_user() === "ubuntu"
   end
 
   describe "config_schema/0" do

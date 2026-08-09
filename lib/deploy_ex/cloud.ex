@@ -33,6 +33,31 @@ defmodule DeployEx.Cloud do
   end
 
   @doc """
+  Inventory strategy/template/filename for a provider's descriptor.
+
+  Returns `{:error, %ErrorMessage{code: :not_implemented}}` both when the provider itself is
+  unregistered and when it has not filled its `inventory/0` slot yet — an unfilled slot means
+  a provider still short of that phase, not a bug in this lookup. The sole consumer today is
+  `Mix.Tasks.Ansible.{Build,Setup,Deploy,Ping}`, which all resolve the live inventory filename
+  through here so a provider switch can never leave one of them checking the other's file.
+  """
+  @spec inventory(atom() | module()) :: {:ok, map()} | {:error, ErrorMessage.t()}
+  def inventory(provider) do
+    with {:ok, descriptor} <- fetch_descriptor(provider) do
+      case descriptor.inventory() do
+        nil ->
+          {:error,
+           ErrorMessage.not_implemented("#{inspect(descriptor)} has not implemented inventory/0", %{
+             provider: descriptor
+           })}
+
+        inventory ->
+          {:ok, inventory}
+      end
+    end
+  end
+
+  @doc """
   Provider these opts resolve to: an explicit `:provider` override, else the configured one.
 
   Public so the resolution is testable on its own. Every dispatch path routes through it, so

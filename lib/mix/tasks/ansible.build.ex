@@ -52,7 +52,7 @@ defmodule Mix.Tasks.Ansible.Build do
       |> put_render_dir_paths(provider)
       |> Keyword.put_new(:directory, @ansible_default_path)
       |> Keyword.put_new(:terraform_directory, @terraform_default_path)
-      |> Keyword.put_new(:hosts_file, "./deploys/ansible/#{default_hosts_filename(provider)}")
+      |> Keyword.put_new(:hosts_file, "./deploys/ansible/#{inventory_filename(provider)}")
       |> Keyword.put_new(:config_file, "./deploys/ansible/ansible.cfg")
       |> Keyword.put_new(:group_vars_file, "./deploys/ansible/group_vars/all.yaml")
       |> Keyword.put_new(:aws_logging_bucket, Config.aws_log_bucket())
@@ -64,6 +64,7 @@ defmodule Mix.Tasks.Ansible.Build do
     opts = Keyword.put(opts, :no_logging, no_logging)
 
     with :ok <- DeployExHelpers.check_valid_project(),
+         :ok <- validate_provider_opts(provider, opts),
          :ok <- ensure_ansible_directory_exists(opts[:directory], provider, opts),
          :ok <- sync_ansible_roles(opts[:directory], opts),
          :ok <- create_ansible_hosts_file(provider, opts),
@@ -80,6 +81,17 @@ defmodule Mix.Tasks.Ansible.Build do
       {:error, e} -> Mix.raise(to_string(e))
     end
   end
+
+  # Runs BEFORE ensure_ansible_directory_exists/3 on purpose: fetch_oci_instances/1 raised the
+  # same "compartment_id is required" error, but only once create_ansible_hosts_file/2 got
+  # around to calling it — after the tree was already seeded, leaving a half-built directory
+  # full of unrendered .eex behind a raise. Validating first means a bad invocation never
+  # touches the filesystem at all.
+  defp validate_provider_opts(:oci, opts) do
+    with {:ok, _compartment_id} <- require_oci_compartment_id(opts), do: :ok
+  end
+
+  defp validate_provider_opts(_provider, _opts), do: :ok
 
   # Matches the flag against the registered providers rather than calling to_existing_atom/1 —
   # see terraform.build.ex's identical resolve_provider/1 for the rationale.
@@ -98,8 +110,18 @@ defmodule Mix.Tasks.Ansible.Build do
     end
   end
 
-  defp default_hosts_filename(:aws), do: "aws_ec2.yaml"
-  defp default_hosts_filename(_provider), do: "oci.yaml"
+  # Single source of truth for "what is this provider's inventory called" — the descriptor's
+  # inventory/0 slot, also read by Mix.Tasks.Ansible.{Setup,Deploy,Ping}. Keeping ansible.build
+  # on its own hardcoded filename here (instead of the same lookup) would let this task and
+  # the ones that consume its output silently drift apart on a provider swap.
+  defp inventory_filename(provider) do
+    case DeployEx.Cloud.inventory(provider) do
+      {:ok, %{filename: filename}} -> filename
+      {:error, error} -> Mix.raise(to_string(error))
+    end
+  end
+
+  defp inventory_template_filename(provider), do: "#{inventory_filename(provider)}.eex"
 
   defp put_render_dir_paths(opts, provider) do
     case opts[:render_dir] do
@@ -109,7 +131,7 @@ defmodule Mix.Tasks.Ansible.Build do
       render_dir ->
         opts
           |> Keyword.put(:directory, render_dir)
-          |> Keyword.put(:hosts_file, Path.join(render_dir, default_hosts_filename(provider)))
+          |> Keyword.put(:hosts_file, Path.join(render_dir, inventory_filename(provider)))
           |> Keyword.put(:config_file, Path.join(render_dir, "ansible.cfg"))
           |> Keyword.put(:group_vars_file, Path.join(render_dir, "group_vars/all.yaml"))
     end
@@ -173,7 +195,7 @@ defmodule Mix.Tasks.Ansible.Build do
       # regardless of which provider rendered it) — so it's the one leftover a non-aws build
       # would otherwise leak, unused, into the tree.
       if provider !== :aws do
-        aws_hosts_template = Path.join(directory, hosts_template_filename(:aws))
+        aws_hosts_template = Path.join(directory, inventory_template_filename(:aws))
 
         if File.exists?(aws_hosts_template) do
           File.rm!(aws_hosts_template)
@@ -295,7 +317,7 @@ defmodule Mix.Tasks.Ansible.Build do
   end
 
   defp create_ansible_hosts_file(provider, opts) do
-    with {:ok, template_path} <- find_provider_template(provider, hosts_template_filename(provider)),
+    with {:ok, template_path} <- find_provider_template(provider, inventory_template_filename(provider)),
          {:ok, variables} <- hosts_template_variables(provider, opts) do
       DeployExHelpers.write_template(template_path, opts[:hosts_file], variables, opts)
 
@@ -303,7 +325,41 @@ defmodule Mix.Tasks.Ansible.Build do
         File.rm!("#{opts[:hosts_file]}.eex")
       end
 
+      remove_other_provider_inventories(provider, opts)
+
       :ok
+    end
+  end
+
+  @doc false
+  # Re-running ansible.build with a DIFFERENT --provider against an already-built directory
+  # only overwrites ansible.cfg and adds the new provider's inventory file — it never touched
+  # the previous provider's leftover inventory file, which would then sit there stale while
+  # ansible.cfg's `inventory =` line (correctly) points elsewhere. ansible.setup/deploy/ping's
+  # preflight existence check would find that stale file and pass, checking the WRONG
+  # provider's inventory while ansible-playbook itself reads the freshly-rendered one from
+  # cfg — the "cfg says X, something else says Y" trap this exists to close. Deleting every
+  # OTHER known provider's inventory file on each build keeps exactly one inventory file
+  # present at a time, so a provider switch is either fully clean or (missing template/config)
+  # loudly broken, never silently mixed. Public (not private) so this is unit-testable without
+  # a live oci CLI: the impure fetch and this cleanup are separate steps on purpose.
+  def remove_other_provider_inventories(provider, opts) do
+    DeployEx.Cloud.providers()
+    |> Enum.reject(&(&1 === provider))
+    |> Enum.each(&remove_stale_inventory(&1, opts[:directory]))
+  end
+
+  defp remove_stale_inventory(other_provider, directory) do
+    case DeployEx.Cloud.inventory(other_provider) do
+      {:ok, %{filename: filename}} ->
+        stale_path = Path.join(directory, filename)
+
+        if File.exists?(stale_path) do
+          File.rm!(stale_path)
+        end
+
+      {:error, _not_implemented} ->
+        :ok
     end
   end
 
@@ -329,9 +385,6 @@ defmodule Mix.Tasks.Ansible.Build do
       end
     end
   end
-
-  defp hosts_template_filename(:aws), do: "aws_ec2.yaml.eex"
-  defp hosts_template_filename(_provider), do: "oci.yaml.eex"
 
   defp hosts_template_variables(:aws, _opts) do
     {:ok, %{app_name: DeployExHelpers.underscored_project_name()}}
@@ -518,6 +571,15 @@ defmodule Mix.Tasks.Ansible.Build do
   ]
 
   defp fetch_oci_instances(opts) do
+    with {:ok, compartment_id} <- require_oci_compartment_id(opts),
+         {:ok, instances} <- oci_list_instances(compartment_id, opts) do
+      instances
+      |> Enum.filter(&oci_project_scoped?/1)
+      |> oci_hydrate_instances(opts, [])
+    end
+  end
+
+  defp require_oci_compartment_id(opts) do
     case oci_setting(opts, :compartment_id) do
       nil ->
         {:error,
@@ -527,11 +589,7 @@ defmodule Mix.Tasks.Ansible.Build do
          )}
 
       compartment_id ->
-        with {:ok, instances} <- oci_list_instances(compartment_id, opts) do
-          instances
-          |> Enum.filter(&oci_project_scoped?/1)
-          |> oci_hydrate_instances(opts, [])
-        end
+        {:ok, compartment_id}
     end
   end
 

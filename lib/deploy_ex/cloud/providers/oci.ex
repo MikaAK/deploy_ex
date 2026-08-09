@@ -44,13 +44,21 @@ defmodule DeployEx.Cloud.Providers.Oci do
   @impl DeployEx.Cloud.Provider
   def completion_marker, do: nil
 
-  # Filled by Phase 4 (static inventory generator).
+  # Static, not a plugin: no oci ansible collection dependency wanted, so
+  # Mix.Tasks.Ansible.Build queries the oci CLI directly and renders this template into a
+  # point-in-time snapshot. See priv/ansible/providers/oci/README.md for the generator.
   @impl DeployEx.Cloud.Provider
-  def inventory, do: nil
+  def inventory do
+    %{strategy: :static_oci_cli, template: "ansible/providers/oci/oci.yaml.eex", filename: "oci.yaml"}
+  end
 
-  # Decided by spike S3 at Phase 2, threaded at Phase 3.3.
+  # OCI's Ubuntu images have no `admin` user (AWS's default) — see
+  # priv/ansible/providers/oci/ansible.cfg.eex, which bakes this in directly rather than
+  # reading this slot, since ansible.cfg is a static file rendered once, not something a
+  # runtime caller looks up per request. Filled for parity with the AWS descriptor and any
+  # future caller that needs the ssh user without parsing a rendered ansible.cfg.
   @impl DeployEx.Cloud.Provider
-  def default_ssh_user, do: nil
+  def default_ssh_user, do: "ubuntu"
 
   # Filled by Phase 3 (oci CLI adapter).
   @impl DeployEx.Cloud.Provider

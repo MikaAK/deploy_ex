@@ -104,10 +104,12 @@ defmodule Mix.Tasks.Ansible.BuildRenderTest do
       end
     end
 
-    test "oci without a compartment_id raises before touching the oci CLI", %{dirs: [dir | _]} do
+    test "oci without a compartment_id raises before touching the oci CLI or the filesystem", %{dirs: [dir | _]} do
       assert_raise Mix.Error, ~r/compartment_id is required/, fn ->
         render(["--render-dir", dir, "--provider", "oci", "--quiet"])
       end
+
+      refute File.exists?(dir), "validation must run before ensure_ansible_directory_exists/3 seeds anything"
     end
 
     test "oci --auto-pull-aws raises instead of silently doing nothing", %{dirs: [dir | _]} do
@@ -153,6 +155,41 @@ defmodule Mix.Tasks.Ansible.BuildRenderTest do
       assert contents =~ "inventory = ./oci.yaml"
       refute contents =~ "[inventory]"
       refute contents =~ "enable_plugins"
+    end
+  end
+
+  describe "remove_other_provider_inventories/2 — the provider-swap cleanup" do
+    setup %{dirs: [dir | _]} do
+      File.mkdir_p!(dir)
+      {:ok, dir: dir}
+    end
+
+    test "removes a stale AWS inventory left over from a prior build for :oci", %{dir: dir} do
+      File.write!(Path.join(dir, "aws_ec2.yaml"), "stale plugin config")
+
+      Build.remove_other_provider_inventories(:oci, directory: dir)
+
+      refute File.exists?(Path.join(dir, "aws_ec2.yaml"))
+    end
+
+    test "removes a stale OCI inventory left over from a prior build for :aws", %{dir: dir} do
+      File.write!(Path.join(dir, "oci.yaml"), "stale snapshot")
+
+      Build.remove_other_provider_inventories(:aws, directory: dir)
+
+      refute File.exists?(Path.join(dir, "oci.yaml"))
+    end
+
+    test "never removes the current provider's own inventory file", %{dir: dir} do
+      File.write!(Path.join(dir, "oci.yaml"), "current snapshot")
+
+      Build.remove_other_provider_inventories(:oci, directory: dir)
+
+      assert File.exists?(Path.join(dir, "oci.yaml"))
+    end
+
+    test "is a no-op when no other provider's file is present", %{dir: dir} do
+      assert :ok = Build.remove_other_provider_inventories(:oci, directory: dir)
     end
   end
 end
