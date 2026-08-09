@@ -88,5 +88,71 @@ defmodule Mix.Tasks.Ansible.BuildRenderTest do
                "#{relative_path} differed between runs"
       end
     end
+
+    test "the default aws render carries zero provider-scoped files", %{dirs: [dir | _]} do
+      render(["--render-dir", dir, "--quiet"])
+
+      refute File.dir?(Path.join(dir, "providers"))
+      refute File.exists?(Path.join(dir, "oci.yaml"))
+    end
+  end
+
+  describe "--provider" do
+    test "an unknown provider raises a clear error", %{dirs: [dir | _]} do
+      assert_raise Mix.Error, ~r/unknown provider "unknown-cloud"/, fn ->
+        render(["--render-dir", dir, "--provider", "unknown-cloud", "--quiet"])
+      end
+    end
+
+    test "oci without a compartment_id raises before touching the oci CLI", %{dirs: [dir | _]} do
+      assert_raise Mix.Error, ~r/compartment_id is required/, fn ->
+        render(["--render-dir", dir, "--provider", "oci", "--quiet"])
+      end
+    end
+
+    test "oci --auto-pull-aws raises instead of silently doing nothing", %{dirs: [dir | _]} do
+      assert_raise Mix.Error, ~r/--auto-pull-aws only supports the aws provider/, fn ->
+        render([
+          "--render-dir", dir,
+          "--provider", "oci",
+          "--auto-pull-aws",
+          "--oci-compartment-id", "ocid1.compartment.oc1..fake",
+          "--quiet"
+        ])
+      end
+    end
+  end
+
+  describe "DeployEx.Cloud.PrivFileSet file selection" do
+    setup do
+      {:ok, priv_path: DeployExHelpers.priv_folder("ansible")}
+    end
+
+    test "aws never resolves the oci-scoped templates", %{priv_path: priv_path} do
+      {:ok, files} = DeployEx.Cloud.PrivFileSet.files(:aws, priv_path)
+      dests = Enum.map(files, fn {_source, dest} -> dest end)
+
+      refute "oci.yaml.eex" in dests
+      refute Enum.any?(dests, &String.starts_with?(&1, "providers/"))
+    end
+
+    test "oci resolves ansible.cfg.eex and oci.yaml.eex flattened, and nothing aws-only", %{priv_path: priv_path} do
+      {:ok, files} = DeployEx.Cloud.PrivFileSet.files(:oci, priv_path)
+
+      assert {"providers/oci/ansible.cfg.eex", "ansible.cfg.eex"} in files
+      assert {"providers/oci/oci.yaml.eex", "oci.yaml.eex"} in files
+      refute Enum.any?(files, fn {source, _dest} -> source === "aws_ec2.yaml.eex" end)
+    end
+  end
+
+  describe "the oci ansible.cfg template" do
+    test "sets the ubuntu remote user, the oci.yaml inventory, and no [inventory] plugin section" do
+      contents = "ansible/providers/oci/ansible.cfg.eex" |> DeployExHelpers.priv_folder() |> File.read!()
+
+      assert contents =~ "remote_user = ubuntu"
+      assert contents =~ "inventory = ./oci.yaml"
+      refute contents =~ "[inventory]"
+      refute contents =~ "enable_plugins"
+    end
   end
 end

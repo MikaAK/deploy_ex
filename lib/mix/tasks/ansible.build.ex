@@ -16,6 +16,7 @@ defmodule Mix.Tasks.Ansible.Build do
   ## Options
   - `directory` - Ansible directory path (default: #{@ansible_default_path})
   - `terraform_directory` - Terraform directory path (default: #{@terraform_default_path})
+  - `provider` - Cloud provider file set to render (default: `DeployEx.Config.cloud_provider/0`)
   - `render_dir` - Render every ansible file into this directory instead of the live
     tree, using a placeholder pem path rather than globbing for a real one. Used by
     the render diff harness to compare output across revisions.
@@ -23,8 +24,12 @@ defmodule Mix.Tasks.Ansible.Build do
   - `quiet` - Suppress output messages
   - `host_only` - Only generate host configuration files
   - `new_only` - Only generate files for new applications
-  - `auto_pull_aws` - Automatically pull AWS credentials from ~/.aws/credentials
+  - `auto_pull_aws` - Automatically pull AWS credentials from ~/.aws/credentials (aws only)
   - `aws_release_bucket` - AWS S3 bucket for releases
+  - `oci_compartment_id` - OCI compartment to list instances from when building the
+    static inventory (default: `config :deploy_ex, :oci, compartment_id: ...`)
+  - `oci_profile` - OCI CLI profile (default: `config :deploy_ex, :oci, profile: ...`)
+  - `oci_region` - OCI region (default: `config :deploy_ex, :oci, region: ...`)
   - `no_logging` - Disable logging configuration (Alloy + Loki)
   - `no_loki` - Deprecated alias for `no_logging`
   - `no_sentry` - Disable Sentry error tracking configuration
@@ -36,12 +41,18 @@ defmodule Mix.Tasks.Ansible.Build do
     Application.ensure_all_started(:hackney)
     Application.ensure_all_started(:telemetry)
 
-    opts = args
-      |> parse_args
-      |> put_render_dir_paths()
+    parsed_opts = parse_args(args)
+
+    # --provider overrides the configured cloud_provider. Resolved once so the seed, the
+    # inventory render and ansible.cfg can never disagree about which file set they use —
+    # mirrors terraform.build.ex's resolve_provider/1.
+    provider = resolve_provider(parsed_opts)
+
+    opts = parsed_opts
+      |> put_render_dir_paths(provider)
       |> Keyword.put_new(:directory, @ansible_default_path)
       |> Keyword.put_new(:terraform_directory, @terraform_default_path)
-      |> Keyword.put_new(:hosts_file, "./deploys/ansible/aws_ec2.yaml")
+      |> Keyword.put_new(:hosts_file, "./deploys/ansible/#{default_hosts_filename(provider)}")
       |> Keyword.put_new(:config_file, "./deploys/ansible/ansible.cfg")
       |> Keyword.put_new(:group_vars_file, "./deploys/ansible/group_vars/all.yaml")
       |> Keyword.put_new(:aws_logging_bucket, Config.aws_log_bucket())
@@ -53,10 +64,10 @@ defmodule Mix.Tasks.Ansible.Build do
     opts = Keyword.put(opts, :no_logging, no_logging)
 
     with :ok <- DeployExHelpers.check_valid_project(),
-         :ok <- ensure_ansible_directory_exists(opts[:directory], opts),
+         :ok <- ensure_ansible_directory_exists(opts[:directory], provider, opts),
          :ok <- sync_ansible_roles(opts[:directory], opts),
-         :ok <- create_ansible_hosts_file(opts),
-         :ok <- create_ansible_config_file(opts),
+         :ok <- create_ansible_hosts_file(provider, opts),
+         :ok <- create_ansible_config_file(provider, opts),
          :ok <- create_ansible_group_vars_file(opts),
          {:ok, app_names} <- DeployExHelpers.fetch_mix_release_names(),
          :ok <- create_ansible_playbooks(app_names, opts) do
@@ -70,7 +81,27 @@ defmodule Mix.Tasks.Ansible.Build do
     end
   end
 
-  defp put_render_dir_paths(opts) do
+  # Matches the flag against the registered providers rather than calling to_existing_atom/1 —
+  # see terraform.build.ex's identical resolve_provider/1 for the rationale.
+  defp resolve_provider(opts) do
+    case opts[:provider] do
+      nil ->
+        DeployEx.Config.cloud_provider()
+
+      name ->
+        known = DeployEx.Cloud.providers()
+
+        case Enum.find(known, &(to_string(&1) === name)) do
+          nil -> Mix.raise("unknown provider #{inspect(name)}, expected one of #{inspect(known)}")
+          provider -> provider
+        end
+    end
+  end
+
+  defp default_hosts_filename(:aws), do: "aws_ec2.yaml"
+  defp default_hosts_filename(_provider), do: "oci.yaml"
+
+  defp put_render_dir_paths(opts, provider) do
     case opts[:render_dir] do
       nil ->
         opts
@@ -78,7 +109,7 @@ defmodule Mix.Tasks.Ansible.Build do
       render_dir ->
         opts
           |> Keyword.put(:directory, render_dir)
-          |> Keyword.put(:hosts_file, Path.join(render_dir, "aws_ec2.yaml"))
+          |> Keyword.put(:hosts_file, Path.join(render_dir, default_hosts_filename(provider)))
           |> Keyword.put(:config_file, Path.join(render_dir, "ansible.cfg"))
           |> Keyword.put(:group_vars_file, Path.join(render_dir, "group_vars/all.yaml"))
     end
@@ -94,9 +125,13 @@ defmodule Mix.Tasks.Ansible.Build do
         quiet: :boolean,
         directory: :string,
         render_dir: :string,
+        provider: :string,
         terraform_directory: :string,
         auto_pull_aws: :boolean,
         aws_release_bucket: :string,
+        oci_compartment_id: :string,
+        oci_profile: :string,
+        oci_region: :string,
         no_logging: :boolean,
         no_loki: :boolean,
         no_sentry: :boolean,
@@ -108,7 +143,14 @@ defmodule Mix.Tasks.Ansible.Build do
     opts
   end
 
-  defp ensure_ansible_directory_exists(directory, opts) do
+  # Roles, setup playbooks, and the playbook/group_vars templates are shared across
+  # providers (no oci variants exist yet), so they're seeded verbatim for everyone via the
+  # same whole-tree copy as before. The `providers/` subtree is provider-EXCLUSIVE content
+  # (ansible.cfg.eex, the hosts template) that's about to be rendered fresh by
+  # create_ansible_config_file/2 and create_ansible_hosts_file/2 regardless — copying it raw
+  # here would leak an oci user's ansible.cfg.eex into an aws tree (and vice versa) and then
+  # sit there unused, so it's stripped right back out.
+  defp ensure_ansible_directory_exists(directory, provider, opts) do
     if File.exists?(directory) do
       :ok
     else
@@ -120,11 +162,33 @@ defmodule Mix.Tasks.Ansible.Build do
         |> DeployExHelpers.priv_folder()
         |> File.cp_r!(directory)
 
+      providers_dir = Path.join(directory, "providers")
+
+      if File.dir?(providers_dir) do
+        File.rm_rf!(providers_dir)
+      end
+
+      # aws_ec2.yaml.eex is the one root-level template with no same-path counterpart for
+      # other providers (ansible.cfg.eex is shared-by-name and always gets overwritten below
+      # regardless of which provider rendered it) — so it's the one leftover a non-aws build
+      # would otherwise leak, unused, into the tree.
+      if provider !== :aws do
+        aws_hosts_template = Path.join(directory, hosts_template_filename(:aws))
+
+        if File.exists?(aws_hosts_template) do
+          File.rm!(aws_hosts_template)
+        end
+      end
+
       File.rm!(Path.join(directory, "group_vars/all.yaml.eex"))
 
       create_ansible_group_vars_file(opts)
 
       if opts[:auto_pull_aws] do
+        if provider !== :aws do
+          Mix.raise("--auto-pull-aws only supports the aws provider, got #{inspect(provider)}")
+        end
+
         pull_aws_credentials_into_awscli_variables(directory, opts)
       end
 
@@ -208,7 +272,7 @@ defmodule Mix.Tasks.Ansible.Build do
     end
   end
 
-  defp create_ansible_config_file(opts) do
+  defp create_ansible_config_file(provider, opts) do
     if opts[:host_only] do
       :ok
     else
@@ -218,38 +282,70 @@ defmodule Mix.Tasks.Ansible.Build do
         pem_file_path: config_pem_file_path(app_name, opts)
       }
 
-      DeployExHelpers.write_template(
-        DeployExHelpers.priv_folder("ansible/ansible.cfg.eex"),
-        opts[:config_file],
-        variables,
-        opts
-      )
+      with {:ok, template_path} <- find_provider_template(provider, "ansible.cfg.eex") do
+        DeployExHelpers.write_template(template_path, opts[:config_file], variables, opts)
 
-      if File.exists?("#{opts[:config_file]}.eex") do
-        File.rm!("#{opts[:config_file]}.eex")
+        if File.exists?("#{opts[:config_file]}.eex") do
+          File.rm!("#{opts[:config_file]}.eex")
+        end
+
+        :ok
+      end
+    end
+  end
+
+  defp create_ansible_hosts_file(provider, opts) do
+    with {:ok, template_path} <- find_provider_template(provider, hosts_template_filename(provider)),
+         {:ok, variables} <- hosts_template_variables(provider, opts) do
+      DeployExHelpers.write_template(template_path, opts[:hosts_file], variables, opts)
+
+      if File.exists?("#{opts[:hosts_file]}.eex") do
+        File.rm!("#{opts[:hosts_file]}.eex")
       end
 
       :ok
     end
   end
 
-  defp create_ansible_hosts_file(opts) do
-    variables = %{
-      app_name: DeployExHelpers.underscored_project_name()
-    }
+  # Resolves which priv template a provider uses for a given rendered filename via
+  # DeployEx.Cloud.PrivFileSet, the same seam terraform.build.ex uses for its whole file
+  # set. Here it's used per-file rather than tree-wide because most of priv/ansible (roles,
+  # setup, playbook templates) is shared across providers and only ansible.cfg/the hosts
+  # template actually vary.
+  defp find_provider_template(provider, dest_filename) do
+    priv_path = DeployExHelpers.priv_folder("ansible")
 
-    DeployExHelpers.write_template(
-      DeployExHelpers.priv_folder("ansible/aws_ec2.yaml.eex"),
-      opts[:hosts_file],
-      variables,
-      opts
-    )
+    with {:ok, files} <- DeployEx.Cloud.PrivFileSet.files(provider, priv_path) do
+      case Enum.find(files, fn {_source, dest} -> dest === dest_filename end) do
+        {source, _dest} ->
+          {:ok, Path.join(priv_path, source)}
 
-    if File.exists?("#{opts[:hosts_file]}.eex") do
-      File.rm!("#{opts[:hosts_file]}.eex")
+        nil ->
+          {:error,
+           ErrorMessage.not_found("no #{dest_filename} template for #{provider} under #{priv_path}", %{
+             provider: provider,
+             filename: dest_filename
+           })}
+      end
     end
+  end
 
-    :ok
+  defp hosts_template_filename(:aws), do: "aws_ec2.yaml.eex"
+  defp hosts_template_filename(_provider), do: "oci.yaml.eex"
+
+  defp hosts_template_variables(:aws, _opts) do
+    {:ok, %{app_name: DeployExHelpers.underscored_project_name()}}
+  end
+
+  defp hosts_template_variables(_provider, opts) do
+    with {:ok, instances} <- fetch_oci_instances(opts) do
+      hosts = oci_inventory_hosts(instances)
+
+      {:ok, %{
+        hosts_section: render_oci_hosts_section(hosts),
+        children_section: render_oci_children_section(hosts)
+      }}
+    end
   end
 
   defp config_pem_file_path(app_name, opts) do
@@ -398,4 +494,201 @@ defmodule Mix.Tasks.Ansible.Build do
       File.rm!(setup_template_file)
     end
   end
+
+  # SECTION OCI STATIC INVENTORY
+  #
+  # AWS resolves hosts live at ansible-run-time through the aws_ec2 plugin. OCI has no
+  # inventory plugin we're willing to add as a collection dependency, so this queries the
+  # `oci` CLI directly (no DeployEx.Cloud.Machine capability exists for OCI yet) and renders
+  # a point-in-time snapshot — regenerated on every `mix ansible.build` run, same as the rest
+  # of the hosts file.
+  #
+  # The four-part contract this mirrors from aws_ec2.yaml.eex: group names keyed off
+  # MonitoringKey/InstanceGroup/DatabaseKey/QaNode tags, the same seven tag-derived hostvars
+  # plus ansible_host, hostname = "<instance-id>-<Name tag>", and the project-scope filter
+  # on the Group tag. NOTE: deploy_ex has no SharedUtils dependency (it isn't part of the
+  # umbrella apps that vendor it), so the tag-filtering below is plain Enum, not
+  # SharedUtils.Enum.reject_empty_values/1.
+
+  @oci_keyed_group_tags [
+    {"MonitoringKey", "monitoring"},
+    {"InstanceGroup", "group"},
+    {"DatabaseKey", "database"},
+    {"QaNode", "qa"}
+  ]
+
+  defp fetch_oci_instances(opts) do
+    case oci_setting(opts, :compartment_id) do
+      nil ->
+        {:error,
+         ErrorMessage.bad_request(
+           "oci compartment_id is required to build the static inventory " <>
+             "(config :deploy_ex, :oci, compartment_id: \"...\", or --oci-compartment-id)"
+         )}
+
+      compartment_id ->
+        with {:ok, instances} <- oci_list_instances(compartment_id, opts) do
+          instances
+          |> Enum.filter(&oci_project_scoped?/1)
+          |> oci_hydrate_instances(opts, [])
+        end
+    end
+  end
+
+  defp oci_setting(opts, key), do: opts[:"oci_#{key}"] || oci_config_setting(key)
+
+  defp oci_config_setting(key), do: :deploy_ex |> Application.get_env(:oci, []) |> Keyword.get(key)
+
+  defp oci_project_scoped?(instance) do
+    expected_group = "#{DeployEx.Utils.upper_title_case(DeployExHelpers.underscored_project_name())} Backend"
+
+    get_in(instance, ["freeform-tags", "Group"]) === expected_group
+  end
+
+  defp oci_list_instances(compartment_id, opts) do
+    command =
+      oci_command(opts, "compute instance list --compartment-id #{compartment_id} --lifecycle-state RUNNING --output json")
+
+    with {:ok, output} <- DeployEx.Utils.run_command_with_return(command, File.cwd!()),
+         {:ok, decoded} <- oci_decode_json(output) do
+      {:ok, decoded["data"] || []}
+    end
+  end
+
+  defp oci_hydrate_instances([], _opts, acc), do: {:ok, Enum.reverse(acc)}
+
+  defp oci_hydrate_instances([instance | rest], opts, acc) do
+    case oci_hydrate_instance(instance, opts) do
+      {:ok, hydrated} -> oci_hydrate_instances(rest, opts, [hydrated | acc])
+      {:error, _} = error -> error
+    end
+  end
+
+  defp oci_hydrate_instance(instance, opts) do
+    command = oci_command(opts, "compute instance list-vnics --instance-id #{instance["id"]} --output json")
+
+    with {:ok, output} <- DeployEx.Utils.run_command_with_return(command, File.cwd!()),
+         {:ok, decoded} <- oci_decode_json(output) do
+      case oci_primary_vnic(decoded["data"] || []) do
+        nil -> {:error, ErrorMessage.not_found("no vnic found for oci instance #{instance["id"]}")}
+        vnic -> {:ok, oci_instance_from_vnic(instance, vnic)}
+      end
+    end
+  end
+
+  defp oci_primary_vnic(vnics), do: Enum.find(vnics, & &1["is-primary"]) || List.first(vnics)
+
+  defp oci_instance_from_vnic(instance, vnic) do
+    tags = instance["freeform-tags"] || %{}
+
+    %{
+      id: instance["id"],
+      name: tags["Name"] || instance["display-name"],
+      tags: tags,
+      public_ip: vnic["public-ip"],
+      private_ip: vnic["private-ip"],
+      ipv6: vnic |> Map.get("ipv6-addresses") |> List.wrap() |> List.first()
+    }
+  end
+
+  # OCI_CLI_AUTH=api_key is the non-interactive auth mode deploy_ex automation needs
+  # (session-token auth requires a browser). SUPPRESS_LABEL_WARNING avoids a stderr nag
+  # about unlabeled API keys, which would otherwise land in the merged stdout/stderr stream
+  # DeployEx.Utils.run_command_with_return/3 returns and break JSON decoding.
+  defp oci_command(opts, subcommand) do
+    flags =
+      [oci_flag("--profile", oci_setting(opts, :profile)), oci_flag("--region", oci_setting(opts, :region))]
+      |> Enum.filter(& &1)
+      |> Enum.join(" ")
+
+    String.trim("OCI_CLI_AUTH=api_key SUPPRESS_LABEL_WARNING=True oci #{subcommand} #{flags}")
+  end
+
+  defp oci_flag(_flag, nil), do: nil
+  defp oci_flag(flag, value), do: "#{flag} #{value}"
+
+  defp oci_decode_json(output) do
+    case Jason.decode(output) do
+      {:ok, decoded} ->
+        {:ok, decoded}
+
+      {:error, decode_error} ->
+        {:error,
+         ErrorMessage.internal_server_error("failed to decode oci CLI JSON output: #{Exception.message(decode_error)}", %{
+           output: output
+         })}
+    end
+  end
+
+  @doc false
+  # Pure transform from hydrated OCI instances to inventory host entries — kept separate
+  # from fetch_oci_instances/1 so the group/hostvar composition contract is unit-testable
+  # without a live oci CLI or network access.
+  def oci_inventory_hosts(instances) do
+    Enum.map(instances, &oci_inventory_host/1)
+  end
+
+  defp oci_inventory_host(%{id: id, name: name, tags: tags} = instance) do
+    qa_node? = Map.get(tags, "QaNode") === "true"
+
+    %{
+      hostname: "#{id}-#{name}",
+      groups: oci_keyed_groups(tags),
+      vars: %{
+        ansible_host: instance[:ipv6] || instance[:public_ip] || instance[:private_ip],
+        release_prefix: if(qa_node?, do: "qa", else: ""),
+        release_state_prefix: if(qa_node?, do: "release-state/qa", else: "release-state"),
+        git_branch: Map.get(tags, "GitBranch", ""),
+        qa_node: qa_node?,
+        qa_node_suffix: if(qa_node?, do: "_qa", else: ""),
+        instance_tag: Map.get(tags, "InstanceTag", ""),
+        letsencrypt_use_public_ip: Map.get(tags, "UsePublicIpCert") === "true"
+      }
+    }
+  end
+
+  defp oci_keyed_groups(tags) do
+    @oci_keyed_group_tags
+    |> Enum.map(fn {tag_key, prefix} -> {prefix, Map.get(tags, tag_key)} end)
+    |> Enum.reject(fn {_prefix, value} -> value in [nil, ""] end)
+    |> Enum.map(fn {prefix, value} -> "#{prefix}_#{value}" end)
+  end
+
+  @doc false
+  def render_oci_hosts_section(hosts) do
+    if Enum.empty?(hosts) do
+      "  hosts: {}"
+    else
+      "  hosts:\n" <> Enum.map_join(hosts, "\n", &render_oci_host_entry/1)
+    end
+  end
+
+  defp render_oci_host_entry(%{hostname: hostname, vars: vars}) do
+    var_lines = Enum.map_join(vars, "\n", fn {key, value} -> "      #{key}: #{oci_yaml_scalar(value)}" end)
+
+    "    #{hostname}:\n#{var_lines}"
+  end
+
+  @doc false
+  def render_oci_children_section(hosts) do
+    groups =
+      hosts
+      |> Enum.flat_map(fn %{hostname: hostname, groups: groups} -> Enum.map(groups, &{&1, hostname}) end)
+      |> Enum.group_by(fn {group, _hostname} -> group end, fn {_group, hostname} -> hostname end)
+
+    if Enum.empty?(groups) do
+      "  children: {}"
+    else
+      "  children:\n" <> Enum.map_join(groups, "\n", &render_oci_group_entry/1)
+    end
+  end
+
+  defp render_oci_group_entry({group, hostnames}) do
+    host_lines = Enum.map_join(hostnames, "\n", &"        #{&1}: {}")
+
+    "    #{group}:\n      hosts:\n#{host_lines}"
+  end
+
+  defp oci_yaml_scalar(value) when is_boolean(value), do: to_string(value)
+  defp oci_yaml_scalar(value), do: inspect(to_string(value))
 end
