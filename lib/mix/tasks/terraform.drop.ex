@@ -5,10 +5,10 @@ defmodule Mix.Tasks.Terraform.Drop do
 
   @shortdoc "Destroys all resources built by terraform"
   @moduledoc """
-  Destroys all AWS infrastructure resources managed by Terraform.
+  Destroys all infrastructure resources managed by Terraform.
 
   This is a destructive operation that will tear down all provisioned resources
-  including EC2 instances, load balancers, security groups, and other infrastructure.
+  including compute instances, load balancers, security groups, and other infrastructure.
 
   ## Example
   ```bash
