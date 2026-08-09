@@ -184,7 +184,17 @@ defmodule Mix.Tasks.Terraform.DeleteEbsSnapshot do
       {"volume-id", volume_ids}
     ]
 
-    with {:ok, snapshots} <- fetch_all_snapshots(region, [filters: filters], opts, %{volume_ids: volume_ids}) do
+    # `owner: ["self"]` is what makes this query terminate. Snapshots are the one EC2 resource
+    # with a public/shared universe, and AWS applies MaxResults to the UNSCOPED scan before
+    # applying the volume-id filter — so unscoped, page one comes back empty WITH a nextToken and
+    # the pagination loop walks every public snapshot in the region.
+    #
+    # It has to be the Owner REQUEST PARAMETER, not an `owner-id` filter: MEASURED, the filter
+    # form silently matches zero snapshots (self is not a valid filter value), which looks like a
+    # fast fix and is actually a query that can never find anything.
+    request_opts = [owner: ["self"], filters: filters]
+
+    with {:ok, snapshots} <- fetch_all_snapshots(region, request_opts, opts, %{volume_ids: volume_ids}) do
       filtered_snapshots = snapshots
         |> filter_snapshots_by_age(opts[:max_age_days])
         |> Enum.map(&snapshot_summary/1)
