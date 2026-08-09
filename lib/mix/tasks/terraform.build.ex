@@ -41,10 +41,14 @@ defmodule Mix.Tasks.Terraform.Build do
     no_logging = opts[:no_logging] || opts[:no_loki] || false
     opts = Keyword.put(opts, :no_logging, no_logging)
 
+    # --provider overrides the configured cloud_provider. Resolved once so the seed and the
+    # render can never disagree about which file set they are working from.
+    provider = resolve_provider(opts)
+
     with :ok <- DeployExHelpers.check_valid_project(),
          :ok <- ensure_terraform_installed(opts),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
-         :ok <- ensure_terraform_directory_exists(opts[:directory]) do
+         :ok <- ensure_terraform_directory_exists(opts[:directory], provider) do
       random_bytes = 6 |> :crypto.strong_rand_bytes |> Base.encode32(padding: false)
 
       terraform_app_releases_variables = releases
@@ -89,7 +93,7 @@ defmodule Mix.Tasks.Terraform.Build do
         terraform_prometheus_variables: terraform_prometheus_variables(opts),
       }
 
-      write_terraform_template_files(params, opts)
+      write_terraform_template_files(params, opts, provider)
 
       if opts[:render_dir] do
         :ok
@@ -101,6 +105,25 @@ defmodule Mix.Tasks.Terraform.Build do
       end
     else
       {:error, e} -> Mix.raise(to_string(e))
+    end
+  end
+
+  # Matches the flag against the registered providers rather than calling to_existing_atom/1.
+  # That function depends on whether something has already interned the atom, which is not
+  # guaranteed here — DeployEx.Cloud's registry is a compile-time attribute and the module may
+  # not be loaded yet when this task runs. Matching known keys also gives a usable error.
+  defp resolve_provider(opts) do
+    case opts[:provider] do
+      nil ->
+        DeployEx.Config.cloud_provider()
+
+      name ->
+        known = DeployEx.Cloud.providers()
+
+        case Enum.find(known, &(to_string(&1) === name)) do
+          nil -> Mix.raise("unknown provider #{inspect(name)}, expected one of #{inspect(known)}")
+          provider -> provider
+        end
     end
   end
 
@@ -125,6 +148,7 @@ defmodule Mix.Tasks.Terraform.Build do
       switches: [
         directory: :string,
         render_dir: :string,
+        provider: :string,
         pem_app_name: :string,
         db_password: :string,
         force: :boolean,
@@ -145,25 +169,34 @@ defmodule Mix.Tasks.Terraform.Build do
     opts
   end
 
-  defp ensure_terraform_directory_exists(directory) do
+  # Seeds only the active provider's file set. A whole-tree copy would put every provider's
+  # templates into every user's ./deploys — an :aws user would find providers/oci/*.tf sitting
+  # in their terraform root, where tofu would try to load them.
+  defp ensure_terraform_directory_exists(directory, provider) do
     if File.exists?(directory) do
       :ok
     else
-      Mix.shell().info([:green, "* copying terraform into ", :reset, directory])
+      Mix.shell().info([:green, "* copying ", to_string(provider), " terraform into ", :reset, directory])
 
-      File.mkdir_p!(directory)
+      priv_path = DeployExHelpers.priv_folder("terraform")
 
-      "terraform"
-        |> DeployExHelpers.priv_folder()
-        |> File.cp_r!(directory)
+      with {:ok, files} <- DeployEx.Cloud.PrivFileSet.files(provider, priv_path) do
+        File.mkdir_p!(directory)
 
-      directory
-        |> Path.join("**/*.eex")
-        |> Path.wildcard
-        |> Enum.map(&File.rm!/1)
+        files
+        |> Enum.reject(fn {source, _dest} -> String.ends_with?(source, ".eex") end)
+        |> Enum.each(fn {source, dest} -> copy_priv_file(priv_path, directory, source, dest) end)
 
-      :ok
+        :ok
+      end
     end
+  end
+
+  defp copy_priv_file(priv_path, directory, source, dest) do
+    target = Path.join(directory, dest)
+
+    target |> Path.dirname() |> File.mkdir_p!()
+    File.cp!(Path.join(priv_path, source), target)
   end
 
   defp generate_terraform_release_variables(release_name) do
@@ -300,20 +333,24 @@ defmodule Mix.Tasks.Terraform.Build do
     "SuperSecretPassword#{Enum.random(111_111..999_999)}"
   end
 
-  defp write_terraform_template_files(params, opts) do
+  # Renders the active provider's .eex files. Non-AWS templates flatten on the way out —
+  # providers/oci/variables.tf.eex becomes variables.tf at the terraform root — because tofu
+  # only loads root-level .tf and runs in the configured terraform folder.
+  defp write_terraform_template_files(params, opts, provider) do
     terraform_path = DeployExHelpers.priv_folder("terraform")
 
-    terraform_path
-      |> Path.join("*.eex")
-      |> Path.wildcard
-      |> Enum.map(fn template_file ->
-        template = EEx.eval_file(template_file, assigns: params)
+    with {:ok, files} <- DeployEx.Cloud.PrivFileSet.files(provider, terraform_path) do
+      files
+      |> Enum.filter(fn {source, _dest} -> String.ends_with?(source, ".eex") end)
+      |> Enum.each(fn {source, dest} ->
+        template = EEx.eval_file(Path.join(terraform_path, source), assigns: params)
+        target = Path.join(params[:directory], String.replace(dest, ".eex", ""))
 
-        template_file
-          |> String.replace(terraform_path, "")
-          |> String.replace(".eex", "")
-          |> then(&Path.join(params[:directory], &1))
-          |> DeployExHelpers.write_file(template, opts)
+        target |> Path.dirname() |> File.mkdir_p!()
+        DeployExHelpers.write_file(target, template, opts)
       end)
+
+      :ok
+    end
   end
 end
