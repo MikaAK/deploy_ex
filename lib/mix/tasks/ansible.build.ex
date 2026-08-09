@@ -607,16 +607,28 @@ defmodule Mix.Tasks.Ansible.Build do
   defp oci_flag(_flag, nil), do: nil
   defp oci_flag(flag, value), do: "#{flag} #{value}"
 
+  # The oci CLI prints NOTHING — not `{"data": []}` — when a list matches no resources, so an
+  # empty compartment has to decode to an empty result rather than a JSON error. Without this a
+  # project with no instances yet cannot build an inventory at all: it fails with "unexpected
+  # end of input" instead of producing an empty one, which is the normal first-run state.
   defp oci_decode_json(output) do
-    case Jason.decode(output) do
+    case String.trim(output) do
+      "" -> {:ok, %{"data" => []}}
+      trimmed -> decode_oci_payload(trimmed, output)
+    end
+  end
+
+  defp decode_oci_payload(trimmed, original) do
+    case Jason.decode(trimmed) do
       {:ok, decoded} ->
         {:ok, decoded}
 
       {:error, decode_error} ->
         {:error,
-         ErrorMessage.internal_server_error("failed to decode oci CLI JSON output: #{Exception.message(decode_error)}", %{
-           output: output
-         })}
+         ErrorMessage.internal_server_error(
+           "failed to decode oci CLI JSON output: #{Exception.message(decode_error)}",
+           %{output: original}
+         )}
     end
   end
 
