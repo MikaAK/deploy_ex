@@ -5,6 +5,16 @@ defmodule DeployEx.Config do
 
   def cloud_provider, do: Application.get_env(@app, :cloud_provider, :aws)
 
+  @doc """
+  Reads one key from the `:oci` config namespace.
+
+  Namespaced rather than flat because `DeployEx.Cloud.Providers.Oci`'s `config_schema/0`
+  validates that namespace strictly — a typo'd key fails at task start instead of mid-apply.
+  The AWS keys stay flat and permissively validated so existing configs keep working.
+  """
+  @spec oci_setting(atom()) :: term()
+  def oci_setting(key), do: @app |> Application.get_env(:oci, []) |> Keyword.get(key)
+
   @default_env to_string(Mix.env())
   def env, do: Application.get_env(@app, :env) || @default_env
   def aws_region, do: Application.get_env(@app, :aws_region) || "us-west-2"

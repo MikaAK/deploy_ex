@@ -2,9 +2,10 @@ defmodule DeployEx.Cloud.Providers.Oci do
   @moduledoc """
   Descriptor skeleton for Oracle Cloud Infrastructure.
 
-  Every slot below is deliberately unfilled. OCI implementations arrive per phase, and a
-  slot invented ahead of its phase would be untested guesswork that reads as working code.
-  Unfilled slots surface as `{:error, %ErrorMessage{code: :not_implemented}}`.
+  Slots fill per phase. One invented ahead of its phase would be untested guesswork that reads
+  as working code, so an unfilled slot stays `nil` and surfaces as
+  `{:error, %ErrorMessage{code: :not_implemented}}` rather than a plausible default.
+  `object_store` and `inventory` are filled; compute, networking and security are not.
 
   The config schema is the exception: it is strict from the start so a typo'd key fails at
   task start rather than mid-apply. Every key is optional — the schema catches mistakes, it
@@ -15,7 +16,9 @@ defmodule DeployEx.Cloud.Providers.Oci do
 
   @config_schema [
     region: [type: {:or, [:string, nil]}],
+    home_region: [type: {:or, [:string, nil]}],
     profile: [type: {:or, [:string, nil]}],
+    auth: [type: {:or, [:string, nil]}],
     compartment_id: [type: {:or, [:string, nil]}],
     namespace: [type: {:or, [:string, nil]}],
     availability_domain: [type: {:or, [:string, nil]}],
@@ -31,7 +34,7 @@ defmodule DeployEx.Cloud.Providers.Oci do
   ]
 
   @impl DeployEx.Cloud.Provider
-  def capabilities, do: %{}
+  def capabilities, do: %{object_store: DeployEx.Cloud.OciObjectStore}
 
   @impl DeployEx.Cloud.Provider
   def config_schema, do: @config_schema
