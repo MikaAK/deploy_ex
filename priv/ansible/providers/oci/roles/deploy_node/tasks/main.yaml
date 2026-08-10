@@ -1,0 +1,89 @@
+- name: setup_node
+  block:
+    - name: Populate service facts
+      service_facts:
+
+    - name: Find OCI file for {{ app_name }} in Object Storage {% if target_release_sha | length > 0 %} with sha {{ target_release_sha }} {% else %} latest {% endif %} and set it into variable
+      ansible.builtin.script:
+        cmd: >
+          {% if target_release_sha | length > 0 %}
+            find_oci_release_by_sha.sh {{ bucket_name }} {{ oci_namespace }} {{ app_name }} "{{ release_prefix }}" {{ target_release_sha }}
+          {% else %}
+            latest_oci_release.sh {{ bucket_name }} {{ oci_namespace }} {{ app_name }} "{{ release_prefix }}"
+          {% endif %}
+      environment:
+        OCI_CLI_AUTH: instance_principal
+      register: oci_file_name
+
+    - name: Set local release path
+      set_fact:
+        oci_object_key: "{{ oci_file_name.stdout_lines[0] }}"
+        local_release_file: "{{ app_name }}/{{ oci_file_name.stdout_lines[0] | basename }}"
+
+    - name: Create release directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - /srv/{{ app_name }}
+        - /srv/unpack-directory
+
+    - name: Download {{ app_name }} from OCI Object Storage
+      ansible.builtin.command:
+        cmd: >-
+          oci os object get --namespace {{ oci_namespace }} --bucket-name {{ bucket_name }}
+          --name "{{ oci_object_key }}" --file "/srv/{{ local_release_file }}"
+        creates: "/srv/{{ local_release_file }}"
+      environment:
+        OCI_CLI_AUTH: instance_principal
+
+    - name: Untar {{ local_release_file }}
+      unarchive:
+        src: /srv/{{ local_release_file }}
+        dest: /srv/unpack-directory
+        remote_src: true
+
+    - name: Update release state for {{ app_name }}
+      ansible.builtin.script:
+        cmd: update_oci_release_state.sh {{ bucket_name }} {{ oci_namespace }} {{ release_state_prefix }} {{ app_name }} {{ oci_object_key }}
+      environment:
+        OCI_CLI_AUTH: instance_principal
+      register: release_state_result
+      changed_when: "'changed' in release_state_result.stdout"
+
+    - name: Add erlang_systemd.service file to /etc/systemd/system/{{ app_name }}.service
+      template:
+        src: erlang_systemd.service.j2
+        dest: /etc/systemd/system/{{ app_name }}.service
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Enable {{ app_name }} service and reload systemd (out of critical path)
+      systemd:
+        name: "{{ app_name }}"
+        enabled: true
+        daemon_reload: true
+
+    - name: Atomic swap into /srv/{{ app_name }} and restart {{ app_name }}
+      shell: |
+        set -euo pipefail
+        rm -rf /srv/{{ app_name }}.old
+        systemctl stop {{ app_name }}.service || true
+        if [ -d /srv/{{ app_name }} ]; then
+          mv /srv/{{ app_name }} /srv/{{ app_name }}.old
+        fi
+        mv /srv/unpack-directory /srv/{{ app_name }}
+        systemctl start {{ app_name }}.service
+      args:
+        executable: /bin/bash
+
+    - name: Cleanup previous release (post-swap, no downtime impact)
+      file:
+        path: /srv/{{ app_name }}.old
+        state: absent
+
+  become: true

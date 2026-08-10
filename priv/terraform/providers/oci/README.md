@@ -1,12 +1,26 @@
-# OCI basic environment
+# OCI environment
 
-A minimal Oracle Cloud environment — VCN, internet gateway, route table, security list, public
-subnet, and one compute instance. It exists to prove `tofu apply` and `tofu destroy` work against
-OCI end to end. **It is not wired into deploy_ex yet**: nothing renders it, no Mix task drives it,
-and it deploys no application.
+An Oracle Cloud environment — VCN, internet gateway, route table, security list, public subnet,
+one OCI compute instance per app entry in `var.<project>_project` (mirroring AWS's per-app
+`module "ec2_instance" { for_each = ... }`), a release bucket, and the dynamic group/policy
+instance principals need to reach it. Rendered by `mix terraform.build --provider oci` via
+`DeployEx.Cloud.PrivFileSet` — non-`.eex` files here are copied as-is, `.eex` files render and
+flatten onto the terraform root (`instance.tf.eex` -> `instance.tf`, etc).
 
-Verified against a live tenancy: 6 resources created, instance reached RUNNING, all 6 destroyed,
-compartment confirmed empty.
+The original single-instance skeleton this replaced was verified against a live tenancy: 6
+resources created, instance reached RUNNING, all 6 destroyed, compartment confirmed empty. The
+current multi-app shape has been verified with `tofu init`/`validate`/`plan` only — see the plan
+doc's v21+ amendments for exact commands and output. **`tofu apply` has not been run against this
+shape.**
+
+## What's here vs. AWS
+
+Deliberately minimal compared to the AWS `aws-instance` module — no load balancer, no EBS
+snapshot restore, no autoscaling. Per-app instances support: instance count, shape, ocpus,
+memory, image OCID (auto-detected if unset), boot volume size, public IP, ssh key, and freeform
+tags. Cloud-init / release bootstrapping (AWS's `cloud_init_data.yaml.tftpl`) is also not ported
+yet — it needs the `oci` CLI instance-principal flow (Phase 3, `cli_adapter` in
+`DeployEx.Cloud.Providers.Oci` is still `nil`), not the AMI-style `awscli` bootstrap AWS uses.
 
 ## Use
 
@@ -48,6 +62,16 @@ Two more things worth knowing:
   `NotAllowed — "Please go to your home region"`.
 - **Some regions have exactly one availability domain** (ap-seoul-1, ap-chuncheon-1), so there is
   no multi-AD spread to configure.
+
+## Release bucket + instance principals
+
+`bucket.tf` creates one `oci_objectstorage_bucket` for releases — there is no separate
+release-state bucket, since `release-state` is just an object prefix inside this same bucket
+(matches `priv/ansible/roles/deploy_node/defaults/main.yaml`). `iam.tf` creates the dynamic
+group (matches every instance in `compartment_ocid`) and policy (read on the bucket, manage on
+its `release-state/*` prefix) instances need to read/write it via instance principals — no
+Customer Secret Keys involved. Both IAM resources use the `oci.home` provider alias (see next
+section) since they are IAM writes.
 
 ## State
 

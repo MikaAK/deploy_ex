@@ -20,6 +20,17 @@ provider "oci" {
   region           = var.region
 }
 
+# IAM writes (dynamic groups, policies) always land in the tenancy's home region — see iam.tf.
+provider "oci" {
+  alias = "home"
+
+  tenancy_ocid     = var.tenancy_ocid
+  user_ocid        = var.user_ocid
+  fingerprint      = var.fingerprint
+  private_key_path = pathexpand(var.private_key_path)
+  region           = var.home_region
+}
+
 locals {
   name_prefix = "${var.project_name}-${var.environment}"
 

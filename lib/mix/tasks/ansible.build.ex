@@ -30,6 +30,10 @@ defmodule Mix.Tasks.Ansible.Build do
     static inventory (default: `config :deploy_ex, :oci, compartment_id: ...`)
   - `oci_profile` - OCI CLI profile (default: `config :deploy_ex, :oci, profile: ...`)
   - `oci_region` - OCI region (default: `config :deploy_ex, :oci, region: ...`)
+  - `oci_namespace` - OCI Object Storage namespace, required for the oci provider
+    (default: `config :deploy_ex, :oci, namespace: ...`)
+  - `oci_release_bucket` - OCI Object Storage bucket for releases
+    (default: `config :deploy_ex, :oci, release_bucket: ...`)
   - `no_logging` - Disable logging configuration (Alloy + Loki)
   - `no_loki` - Deprecated alias for `no_logging`
   - `no_sentry` - Disable Sentry error tracking configuration
@@ -66,12 +70,12 @@ defmodule Mix.Tasks.Ansible.Build do
     with :ok <- DeployExHelpers.check_valid_project(),
          :ok <- validate_provider_opts(provider, opts),
          :ok <- ensure_ansible_directory_exists(opts[:directory], provider, opts),
-         :ok <- sync_ansible_roles(opts[:directory], opts),
+         :ok <- sync_ansible_roles(opts[:directory], provider, opts),
          :ok <- create_ansible_hosts_file(provider, opts),
          :ok <- create_ansible_config_file(provider, opts),
-         :ok <- create_ansible_group_vars_file(opts),
+         :ok <- create_ansible_group_vars_file(provider, opts),
          {:ok, app_names} <- DeployExHelpers.fetch_mix_release_names(),
-         :ok <- create_ansible_playbooks(app_names, opts) do
+         :ok <- create_ansible_playbooks(app_names, provider, opts) do
       :ok
     else
       {:error, [h | tail]} ->
@@ -87,11 +91,36 @@ defmodule Mix.Tasks.Ansible.Build do
   # around to calling it — after the tree was already seeded, leaving a half-built directory
   # full of unrendered .eex behind a raise. Validating first means a bad invocation never
   # touches the filesystem at all.
-  defp validate_provider_opts(:oci, opts) do
-    with {:ok, _compartment_id} <- require_oci_compartment_id(opts), do: :ok
+  defp validate_provider_opts(provider, opts) do
+    with :ok <- validate_auto_pull_aws(provider, opts) do
+      validate_provider_config(provider, opts)
+    end
   end
 
-  defp validate_provider_opts(_provider, _opts), do: :ok
+  # A flag the provider does not support is a usage error, so it is reported before any
+  # environment requirement — otherwise `--provider oci --auto-pull-aws` complains about
+  # missing OCI config and never mentions that the flag itself is the problem. This check also
+  # lived inside the directory-seeding branch, so it only fired when the tree did not already
+  # exist: re-running against an existing ./deploys ignored the flag silently.
+  defp validate_auto_pull_aws(:aws, _opts), do: :ok
+
+  defp validate_auto_pull_aws(provider, opts) do
+    if opts[:auto_pull_aws] do
+      {:error,
+       ErrorMessage.bad_request("--auto-pull-aws only supports the aws provider, got #{inspect(provider)}")}
+    else
+      :ok
+    end
+  end
+
+  defp validate_provider_config(:oci, opts) do
+    with {:ok, _compartment_id} <- require_oci_compartment_id(opts),
+         {:ok, _namespace} <- require_oci_namespace(opts) do
+      :ok
+    end
+  end
+
+  defp validate_provider_config(_provider, _opts), do: :ok
 
   # Matches the flag against the registered providers rather than calling to_existing_atom/1 —
   # see terraform.build.ex's identical resolve_provider/1 for the rationale.
@@ -154,6 +183,8 @@ defmodule Mix.Tasks.Ansible.Build do
         oci_compartment_id: :string,
         oci_profile: :string,
         oci_region: :string,
+        oci_namespace: :string,
+        oci_release_bucket: :string,
         no_logging: :boolean,
         no_loki: :boolean,
         no_sentry: :boolean,
@@ -165,13 +196,14 @@ defmodule Mix.Tasks.Ansible.Build do
     opts
   end
 
-  # Roles, setup playbooks, and the playbook/group_vars templates are shared across
-  # providers (no oci variants exist yet), so they're seeded verbatim for everyone via the
-  # same whole-tree copy as before. The `providers/` subtree is provider-EXCLUSIVE content
-  # (ansible.cfg.eex, the hosts template) that's about to be rendered fresh by
-  # create_ansible_config_file/2 and create_ansible_hosts_file/2 regardless — copying it raw
-  # here would leak an oci user's ansible.cfg.eex into an aws tree (and vice versa) and then
-  # sit there unused, so it's stripped right back out.
+  # Setup playbooks and the playbook/group_vars templates are shared across providers, so
+  # they're seeded verbatim for everyone via the same whole-tree copy as before. The
+  # `providers/` subtree is provider-EXCLUSIVE content (ansible.cfg.eex, the hosts template,
+  # and now the oci-only role variants under providers/oci/roles) that's about to be rendered
+  # fresh by create_ansible_config_file/2, create_ansible_hosts_file/2, and
+  # sync_ansible_roles/3 regardless — copying it raw here would leak an oci user's
+  # ansible.cfg.eex (or role files) into an aws tree (and vice versa) and then sit there
+  # unused, so it's stripped right back out.
   defp ensure_ansible_directory_exists(directory, provider, opts) do
     if File.exists?(directory) do
       :ok
@@ -204,13 +236,9 @@ defmodule Mix.Tasks.Ansible.Build do
 
       File.rm!(Path.join(directory, "group_vars/all.yaml.eex"))
 
-      create_ansible_group_vars_file(opts)
+      create_ansible_group_vars_file(provider, opts)
 
       if opts[:auto_pull_aws] do
-        if provider !== :aws do
-          Mix.raise("--auto-pull-aws only supports the aws provider, got #{inspect(provider)}")
-        end
-
         pull_aws_credentials_into_awscli_variables(directory, opts)
       end
 
@@ -268,30 +296,43 @@ defmodule Mix.Tasks.Ansible.Build do
     end
   end
 
-  defp create_ansible_group_vars_file(opts) do
+  defp create_ansible_group_vars_file(provider, opts) do
     if opts[:host_only] do
       :ok
     else
-      variables = %{
-        is_logging_enabled: !opts[:no_logging],
-        is_prometheus_enabled: !opts[:no_prometheus],
-        loki_logger_s3_region: opts[:aws_logging_bucket],
-        loki_logger_s3_bucket_name: opts[:aws_logging_region]
-      }
+      with {:ok, template_path} <- find_provider_template(provider, "group_vars/all.yaml.eex") do
+        DeployExHelpers.write_template(
+          template_path,
+          opts[:group_vars_file],
+          group_vars_template_variables(provider, opts),
+          opts
+        )
 
-      DeployExHelpers.write_template(
-        DeployExHelpers.priv_folder("ansible/group_vars/all.yaml.eex"),
-        opts[:group_vars_file],
-        variables,
-        opts
-      )
+        if File.exists?("#{opts[:group_vars_file]}.eex") do
+          File.rm!("#{opts[:group_vars_file]}.eex")
+        end
 
-      if File.exists?("#{opts[:group_vars_file]}.eex") do
-        File.rm!("#{opts[:group_vars_file]}.eex")
+        :ok
       end
-
-      :ok
     end
+  end
+
+  defp group_vars_template_variables(:oci, opts) do
+    %{
+      is_logging_enabled: !opts[:no_logging],
+      is_prometheus_enabled: !opts[:no_prometheus],
+      oci_namespace: oci_setting(opts, :namespace),
+      oci_release_bucket: oci_release_bucket(opts)
+    }
+  end
+
+  defp group_vars_template_variables(_provider, opts) do
+    %{
+      is_logging_enabled: !opts[:no_logging],
+      is_prometheus_enabled: !opts[:no_prometheus],
+      loki_logger_s3_region: opts[:aws_logging_bucket],
+      loki_logger_s3_bucket_name: opts[:aws_logging_region]
+    }
   end
 
   defp create_ansible_config_file(provider, opts) do
@@ -433,7 +474,7 @@ defmodule Mix.Tasks.Ansible.Build do
     "#{host_name}_#{:io_lib.format("~3..0B", [index])}"
   end
 
-  defp create_ansible_playbooks(app_names, opts) do
+  defp create_ansible_playbooks(app_names, provider, opts) do
     if opts[:host_only] do
       :ok
     else
@@ -449,9 +490,15 @@ defmodule Mix.Tasks.Ansible.Build do
       end
 
       if opts[:new_only] do
-        deploy_new_playbooks(app_names, project_playbooks_path, project_setup_playbooks_path, opts)
+        deploy_new_playbooks(
+          app_names,
+          provider,
+          project_playbooks_path,
+          project_setup_playbooks_path,
+          opts
+        )
       else
-        deploy_all_playbooks(app_names, opts)
+        deploy_all_playbooks(app_names, provider, opts)
       end
 
       remove_usless_copied_template_folder(opts)
@@ -460,20 +507,20 @@ defmodule Mix.Tasks.Ansible.Build do
     end
   end
 
-  defp deploy_all_playbooks(app_names, opts) do
+  defp deploy_all_playbooks(app_names, provider, opts) do
     Enum.each(app_names, fn app_name ->
-      build_host_setup_playbook(app_name, opts)
+      build_host_setup_playbook(app_name, provider, opts)
       build_host_playbook(app_name, opts)
     end)
   end
 
-  defp deploy_new_playbooks(app_names, project_playbooks_path, project_setup_playbooks_path, opts) do
+  defp deploy_new_playbooks(app_names, provider, project_playbooks_path, project_setup_playbooks_path, opts) do
     project_deploy_files = File.ls!(project_playbooks_path)
     project_setup_files = File.ls!(project_setup_playbooks_path)
 
     Enum.each(app_names, fn app_name ->
       if not Enum.any?(project_setup_files, &(&1 =~ app_name)) do
-        build_host_setup_playbook(app_name, opts)
+        build_host_setup_playbook(app_name, provider, opts)
       end
 
       if not Enum.any?(project_deploy_files, &(&1 =~ app_name)) do
@@ -501,7 +548,7 @@ defmodule Mix.Tasks.Ansible.Build do
     )
   end
 
-  defp build_host_setup_playbook(app_name, opts) do
+  defp build_host_setup_playbook(app_name, provider, opts) do
     setup_playbook_path = DeployExHelpers.priv_folder("ansible/app_setup_playbook.yaml.eex")
     setup_host_playbook = Path.join(opts[:directory], "setup/#{app_name}.yaml")
 
@@ -509,7 +556,8 @@ defmodule Mix.Tasks.Ansible.Build do
       no_logging: opts[:no_logging],
       no_prometheus: opts[:no_prometheus],
       app_name: app_name,
-      port: 80
+      port: 80,
+      cloud_provider: provider
     }
 
     DeployExHelpers.write_template(
@@ -520,7 +568,7 @@ defmodule Mix.Tasks.Ansible.Build do
     )
   end
 
-  defp sync_ansible_roles(directory, opts) do
+  defp sync_ansible_roles(directory, provider, opts) do
     priv_roles = DeployExHelpers.priv_folder("ansible/roles")
     target_roles = Path.join(directory, "roles")
 
@@ -530,6 +578,23 @@ defmodule Mix.Tasks.Ansible.Build do
       end
 
       File.cp_r!(priv_roles, target_roles)
+      sync_provider_role_overlay(provider, target_roles)
+    end
+
+    :ok
+  end
+
+  # AWS is the shared role tree as-is — there is no providers/aws/roles directory, so this
+  # is a no-op for it. A provider with its own role variants (e.g. OCI's deploy_node
+  # tasks/main.yaml and files/*.sh, which use the oci CLI instead of aws s3) ships them
+  # under providers/<name>/roles/ mirroring the shared roles/ layout; copying that tree on
+  # top after the shared copy above overlays/replaces just those files, leaving every other
+  # role byte-identical to the shared set.
+  defp sync_provider_role_overlay(provider, target_roles) do
+    provider_roles = DeployExHelpers.priv_folder("ansible/providers/#{provider}/roles")
+
+    if File.dir?(provider_roles) do
+      File.cp_r!(provider_roles, target_roles)
     end
 
     :ok
@@ -593,9 +658,32 @@ defmodule Mix.Tasks.Ansible.Build do
     end
   end
 
+  # Required like compartment_id: unlike the release bucket (a name deploy_ex can default),
+  # the Object Storage namespace is a tenancy-assigned identifier with no sensible guess, so
+  # a missing value fails validate_provider_opts/2 up front rather than surfacing later as a
+  # broken group_vars render or a confusing oci CLI error on the node.
+  defp require_oci_namespace(opts) do
+    case oci_setting(opts, :namespace) do
+      nil ->
+        {:error,
+         ErrorMessage.bad_request(
+           "oci namespace is required for the oci provider " <>
+             "(config :deploy_ex, :oci, namespace: \"...\", or --oci-namespace)"
+         )}
+
+      namespace ->
+        {:ok, namespace}
+    end
+  end
+
   defp oci_setting(opts, key), do: opts[:"oci_#{key}"] || oci_config_setting(key)
 
   defp oci_config_setting(key), do: :deploy_ex |> Application.get_env(:oci, []) |> Keyword.get(key)
+
+  defp oci_release_bucket(opts) do
+    oci_setting(opts, :release_bucket) ||
+      "#{DeployExHelpers.kebab_project_name()}-elixir-deploys-#{Config.env()}"
+  end
 
   defp oci_project_scoped?(instance) do
     expected_group = "#{DeployEx.Utils.upper_title_case(DeployExHelpers.underscored_project_name())} Backend"

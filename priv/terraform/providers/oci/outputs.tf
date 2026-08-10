@@ -8,22 +8,22 @@ output "subnet_id" {
   value       = oci_core_subnet.public.id
 }
 
-output "instance_id" {
-  description = "Compute instance OCID"
-  value       = oci_core_instance.main.id
+output "instance_ids" {
+  description = "Compute instance OCIDs, keyed by app name"
+  value       = { for app, mod in module.oci_instance : app => mod.instance_ids }
 }
 
-output "instance_public_ip" {
-  description = "Public IP, or null when assign_public_ip is false"
-  value       = oci_core_instance.main.public_ip
+output "instance_public_ips" {
+  description = "Public IPs, keyed by app name (empty when assign_public_ip is false)"
+  value       = { for app, mod in module.oci_instance : app => mod.public_ips }
 }
 
-output "instance_private_ip" {
-  description = "Private IP within the subnet"
-  value       = oci_core_instance.main.private_ip
+output "instance_private_ips" {
+  description = "Private IPs within the subnet, keyed by app name"
+  value       = { for app, mod in module.oci_instance : app => mod.private_ips }
 }
 
-output "instance_state" {
-  description = "Lifecycle state as reported by OCI"
-  value       = oci_core_instance.main.state
+output "release_bucket_name" {
+  description = "Name of the release bucket"
+  value       = oci_objectstorage_bucket.releases.name
 }

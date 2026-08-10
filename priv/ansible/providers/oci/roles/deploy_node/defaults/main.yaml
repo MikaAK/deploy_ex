@@ -1,0 +1,10 @@
+app_name: ""
+bucket_name: "{{ oci_release_bucket }}"
+target_release_sha: ""
+release_prefix: ""
+release_state_prefix: "release-state"
+qa_node_suffix: ""
+app_port: 80
+extra_env: []
+system_env: []
+open_files_limit: 65536

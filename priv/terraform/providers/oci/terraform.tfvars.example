@@ -5,6 +5,8 @@
 #   tenancy / user / fingerprint : cat ~/.oci/config
 #   compartment                  : oci iam compartment list --all
 #   availability_domain          : oci iam availability-domain list --compartment-id <tenancy>
+#   namespace                    : oci os ns get
+#   home_region                  : oci iam region-subscription list (the one marked is-home-region)
 #   image                        : oci compute image list --compartment-id <compartment> \
 #                                    --operating-system "Canonical Ubuntu" \
 #                                    --operating-system-version "24.04" --shape VM.Standard.E5.Flex
@@ -16,9 +18,12 @@ private_key_path = "~/.oci/oci_api_key.pem"
 compartment_ocid = "ocid1.compartment.oc1..aaaa..."
 
 region              = "ap-seoul-1"
+home_region         = "ap-chuncheon-1"
 availability_domain = "Abcd:AP-SEOUL-1-AD-1"
+namespace           = "axxxxxxxxxxx"
 
-instance_image_ocid = "ocid1.image.oc1.ap-seoul-1.aaaa..."
+# Optional — auto-detected as the latest Ubuntu 24.04 image for instance_shape when unset.
+# instance_image_ocid = "ocid1.image.oc1.ap-seoul-1.aaaa..."
 
 # Port 22 stays closed until you set this. Use your own address, not 0.0.0.0/0.
 # ssh_ingress_cidr = "203.0.113.4/32"
