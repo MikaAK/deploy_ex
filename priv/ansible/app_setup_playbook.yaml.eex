@@ -15,4 +15,4 @@
     <% end %>
     <%= unless @no_logging do %>- grafana_alloy
     <% end %>
-    - save_ami
+    <%= if @cloud_provider !== :oci do %>- save_ami<% end %>
