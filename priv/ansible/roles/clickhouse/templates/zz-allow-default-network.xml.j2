@@ -19,6 +19,24 @@
   `remove="remove"` deletes a prior <password_sha256_hex>/<password> node
   before this file's own empty <password> is added, so exactly one password
   directive survives the merge.
+
+  MEASURED (2026-08-12, live OCI Ubuntu 24.04 host): ClickHouse's <networks>
+  check is literal; it does NOT implicitly allow the loopback address just
+  because a connection originates on the same box. Before ::1/127.0.0.1 were
+  added below, the standard "clickhouse client against host 127.0.0.1" health
+  check (the exact pattern opgg_umbrella's own docker-compose.yml uses) failed
+  AUTHENTICATION_FAILED even with a confirmed-empty password, purely because
+  127.0.0.1 was not in clickhouse_allowed_network_cidr. Loopback is therefore
+  always allowed here, in addition to the configured CIDR, so on-box health
+  checks and admin access work regardless of what CIDR ops set.
+
+  NOTE: per the XML spec, a comment body may never contain two adjacent
+  hyphen characters anywhere, including inside inline code spans quoting CLI
+  flags. An earlier revision of this comment quoted long-option flag names
+  (which start with a doubled hyphen) verbatim and clickhouse-server refused
+  to parse this file at all, crash-looping on every restart with a
+  SAXParseException. Measured, not theoretical — watch for this in any future
+  edit here; write out flag names in prose instead of pasting them.
 -->
 <clickhouse>
   <users>
@@ -27,6 +45,8 @@
       <password remove="remove"/>
       <password></password>
       <networks replace="replace">
+        <ip>::1</ip>
+        <ip>127.0.0.1</ip>
         <ip>{{ clickhouse_allowed_network_cidr }}</ip>
       </networks>
     </default>

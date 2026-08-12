@@ -1,5 +1,40 @@
 # clickhouse
 
+> **STATUS: NOT WORKING END TO END. Do not expect this role to leave you with a
+> serving ClickHouse.**
+>
+> MEASURED 2026-08-12 against a live OCI Ubuntu 24.04 host: the packages install
+> correctly, but `clickhouse-server` never reaches `active` under systemd. It
+> crash-loops — `systemctl is-active` reports `activating`, the restart counter
+> climbs, port 9000 refuses connections, and the journal shows:
+>
+> ```
+> Supervising process N which is not our child.
+> Killing process N with signal SIGKILL.
+> Failed with result 'protocol'.
+> ```
+>
+> Ruled out, each by experiment rather than by reasoning:
+>
+> | hypothesis | result |
+> |---|---|
+> | this role's `config.d/listen.xml` | NOT the cause — reproduces with the file removed |
+> | `Type=notify` handshake mismatch | NOT fixed by a `Type=simple` drop-in |
+> | wrong user / directory permissions | NOT the cause — runs fine in the foreground AS `clickhouse`; data, log and config dirs are all owned `clickhouse:clickhouse` |
+> | broken or partial install | NOT the cause — 24.8.14.39 installed and runs standalone |
+>
+> The fault therefore sits in the ClickHouse 24.8 deb's packaged unit interacting
+> with Ubuntu 24.04 systemd, not in what this role writes — but the role's job is
+> a serving database, so it is unfinished until that is resolved. Likely next
+> steps: ClickHouse's official install script instead of the apt repo, or a unit
+> override matching how the binary actually forks.
+>
+> CONFIRMED working: the version pin (24.8.14.39 installed), the `clickhouse`
+> system user and group, `users.d/zz-allow-default-network.xml` rendering, and
+> the cold tier staying OFF by default (`config.d` holds only `listen.xml`).
+> Everything else below — including the loopback `<networks>` entries — is
+> UNVERIFIED, because the server never stayed up long enough to test it.
+
 Installs a pinned `clickhouse-server` (apt), configures it via `config.d`/`users.d`
 drop-in fragments (never touching the package's stock `config.xml`), and manages
 it as a systemd service. Written to match the app-side contract in
