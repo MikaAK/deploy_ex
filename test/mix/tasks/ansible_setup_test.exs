@@ -12,6 +12,7 @@ defmodule Mix.Tasks.Ansible.SetupTest do
       aliases: [f: :force, q: :quit, d: :directory, i: :instance_id, b: :git_branch],
       switches: [
         directory: :string,
+        provider: :string,
         only: :keep,
         except: :keep,
         force: :boolean,
@@ -27,6 +28,16 @@ defmodule Mix.Tasks.Ansible.SetupTest do
   end
 
   describe "parse_args/1 option parsing" do
+    test "--provider parses to opts[:provider]" do
+      {opts, _extra} = parse_args(["--provider", "oci"])
+      assert opts[:provider] === "oci"
+    end
+
+    test "opts[:provider] is nil when --provider not passed" do
+      {opts, _extra} = parse_args(["--include-qa"])
+      assert is_nil(opts[:provider])
+    end
+
     test "--git-branch parses to opts[:git_branch]" do
       {opts, _extra} = parse_args(["--git-branch", "qa/gamma_charts"])
       assert opts[:git_branch] === "qa/gamma_charts"

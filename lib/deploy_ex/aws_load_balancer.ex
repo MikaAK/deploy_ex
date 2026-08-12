@@ -44,12 +44,50 @@ defmodule DeployEx.AwsLoadBalancer do
     |> handle_health_response()
   end
 
+  @doc """
+  Every target group in the region, following pagination to completion.
+
+  DescribeTargetGroups caps a response and signals more via NextMarker. A single request
+  silently truncates on an account with many target groups — the same failure mode
+  `S3ObjectStore.list_objects/2` guards against for S3's Marker.
+  """
   def describe_target_groups(opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
+    request_fn = opts[:request_fn] || (&ExAws.request/2)
 
-    ExAws.ElasticLoadBalancingV2.describe_target_groups()
-    |> ExAws.request(region: region)
-    |> handle_target_groups_response()
+    fetch_target_groups_page(region, request_fn, nil, [])
+  end
+
+  defp fetch_target_groups_page(region, request_fn, marker, acc) do
+    request_opts = if marker, do: [marker: marker], else: []
+
+    response =
+      request_opts
+      |> ExAws.ElasticLoadBalancingV2.describe_target_groups()
+      |> request_fn.(region: region)
+
+    case response do
+      {:ok, %{body: %{target_groups: target_groups} = body}} ->
+        accumulated = acc ++ parse_target_groups(target_groups)
+
+        case next_marker(body) do
+          nil -> {:ok, accumulated}
+          next -> fetch_target_groups_page(region, request_fn, next, accumulated)
+        end
+
+      {:error, {:http_error, status_code, %{body: body}}} ->
+        {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+          "error describing target groups",
+          %{error_body: body}
+        ])}
+    end
+  end
+
+  defp next_marker(body) do
+    case Map.get(body, :next_marker) do
+      marker when is_binary(marker) and marker !== "" -> marker
+      _absent -> nil
+    end
   end
 
   def find_target_groups_by_app(app_name, opts \\ []) do
@@ -141,8 +179,8 @@ defmodule DeployEx.AwsLoadBalancer do
     ])}
   end
 
-  defp handle_target_groups_response({:ok, %{body: %{target_groups: target_groups}}}) do
-    parsed = Enum.map(target_groups, fn tg ->
+  defp parse_target_groups(target_groups) do
+    Enum.map(target_groups, fn tg ->
       %{
         arn: tg[:target_group_arn],
         name: tg[:target_group_name],
@@ -154,15 +192,6 @@ defmodule DeployEx.AwsLoadBalancer do
         health_check_protocol: tg[:health_check_protocol]
       }
     end)
-
-    {:ok, parsed}
-  end
-
-  defp handle_target_groups_response({:error, {:http_error, status_code, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error describing target groups",
-      %{error_body: body}
-    ])}
   end
 
   defp parse_integer(nil), do: nil

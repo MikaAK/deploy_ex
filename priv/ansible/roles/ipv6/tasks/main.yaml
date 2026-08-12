@@ -8,6 +8,18 @@
         group: root
         mode: '0644'
 
+    # The awscli role creates ~/.aws while writing credentials, so on AWS this directory
+    # happened to already exist by the time the copy below ran. That was incidental, not
+    # guaranteed — MEASURED on an OCI node, this task fails with "Destination directory
+    # /root/.aws does not exist" and takes the whole setup play down with it.
+    - name: Ensure the aws config directory exists
+      ansible.builtin.file:
+        path: ~/.aws
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
     - name: Add dualstack to boto config
       ansible.builtin.copy:
         content: |

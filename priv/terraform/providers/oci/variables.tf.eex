@@ -1,0 +1,178 @@
+########################################
+# Identity / auth
+#
+# No defaults — these identify a specific tenancy and user. Supply them via terraform.tfvars
+# (gitignored) or TF_VAR_* environment variables. See terraform.tfvars.example.
+########################################
+
+variable "tenancy_ocid" {
+  description = "OCID of the tenancy resources are billed to"
+  type        = string
+}
+
+variable "user_ocid" {
+  description = "OCID of the user whose API key signs requests"
+  type        = string
+}
+
+variable "fingerprint" {
+  description = "Fingerprint of the API public key uploaded to that user"
+  type        = string
+}
+
+variable "private_key_path" {
+  description = "Path to the API private key. Never commit this file."
+  type        = string
+  default     = "~/.oci/oci_api_key.pem"
+}
+
+variable "compartment_ocid" {
+  description = "Compartment everything is created in. Use a dedicated one so teardown is contained."
+  type        = string
+}
+
+########################################
+# Placement
+########################################
+
+variable "region" {
+  description = "Region resources are created in. IAM writes always go to the tenancy's HOME region, which may differ."
+  type        = string
+}
+
+variable "home_region" {
+  description = "Tenancy's home region. IAM writes (dynamic groups, policies) always go here, regardless of `region`. Find it with: oci iam region-subscription list"
+  type        = string
+}
+
+variable "availability_domain" {
+  description = "Availability domain name. Some regions (ap-seoul-1, ap-chuncheon-1) have exactly one."
+  type        = string
+}
+
+variable "namespace" {
+  description = "Object storage namespace for the tenancy. Find it with: oci os ns get"
+  type        = string
+}
+
+########################################
+# Naming / tagging
+########################################
+
+variable "project_name" {
+  description = "Prefix for every resource name"
+  type        = string
+  default     = "<%= @kebab_app_name %>"
+}
+
+variable "environment" {
+  description = "Environment tag value"
+  type        = string
+  default     = "<%= @environment %>"
+}
+
+variable "resource_group" {
+  description = "Group tag value. OCI freeform tags permit spaces, so this is an identity encoding of the canonical tag."
+  type        = string
+  default     = "<%= DeployEx.Utils.upper_title_case(@app_name) %> Backend"
+}
+
+########################################
+# Network
+########################################
+
+variable "vcn_cidr" {
+  description = "CIDR for the VCN"
+  type        = string
+  default     = "10.20.0.0/16"
+}
+
+variable "subnet_cidr" {
+  description = "CIDR for the public subnet"
+  type        = string
+  default     = "10.20.1.0/24"
+}
+
+variable "ssh_ingress_cidr" {
+  description = "Who may reach port 22. Empty creates NO ssh rule; OCI rejects any CIDR inside 0.0.0.0/8, so a sentinel CIDR is not an option."
+  type        = string
+  default     = ""
+}
+
+########################################
+# Compute
+########################################
+
+variable "instance_shape" {
+  description = "Flex shape. VM.Standard.A1.Flex is the always-free ARM shape and needs an aarch64 image."
+  type        = string
+  default     = "VM.Standard.E5.Flex"
+}
+
+variable "instance_ocpus" {
+  description = "OCPU count for the flex shape"
+  type        = number
+  default     = 1
+}
+
+variable "instance_memory_gbs" {
+  description = "Memory for the flex shape"
+  type        = number
+  default     = 8
+}
+
+variable "instance_image_ocid" {
+  description = "Image OCID override. Region-specific — list with: oci compute image list --compartment-id <c> --operating-system 'Canonical Ubuntu'. Leave unset to auto-detect the latest Ubuntu 24.04 image for instance_shape."
+  type        = string
+  default     = null
+}
+
+variable "ssh_public_key" {
+  description = "Bring-your-own public key to inject into instances. Leave empty (the default) and key-pair.tf generates a keypair and writes the private half next to this file, named so `mix ansible.build` finds it. Set this only if you manage the key yourself — no private key is written in that case."
+  type        = string
+  default     = ""
+}
+
+variable "assign_public_ip" {
+  description = "Whether the instance gets a public IP"
+  type        = bool
+  default     = true
+}
+
+########################################
+# Release bucket
+########################################
+
+variable "release_bucket_name" {
+  description = "Name of the object storage bucket holding release artifacts"
+  type        = string
+  default     = "<%= @release_bucket_name %>"
+}
+
+########################################
+# Per-app instances
+########################################
+
+# Deliberately `any` rather than a fully-typed object(...) like the AWS `<app>_project`
+# variable. Entries legitimately differ in shape — only the redis entry carries a DatabaseKey
+# tag, only grafana sets assign_public_ip, and a per-app entry may omit sizing entirely to
+# inherit the top-level defaults. `map(any)` does not help: OpenTofu still unifies every value
+# to ONE element type and fails with "all map elements must have the same type" the moment two
+# entries diverge. `any` skips that unification.
+#
+# The cost is real and worth stating: unlike AWS's map(object({...})), NOTHING here rejects a
+# misspelled or unsupported key. The oci-instance module reads what it understands via try()
+# and ignores the rest, so `shappe = "..."` is accepted and quietly does nothing.
+variable "<%= @app_name %>_project" {
+  description = "Map of project names to configuration. Recognized keys: name, instance_count, shape, ocpus, memory_gbs, image_ocid, boot_volume_size_gbs, assign_public_ip, tags. Unrecognized keys are ignored without error."
+  type        = any
+
+  default = {
+<%= @terraform_sentry_variables %>
+<%= @terraform_redis_variables %>
+<%= @terraform_grafana_variables %>
+<%= @terraform_prometheus_variables %>
+<%= @terraform_loki_variables %>
+<%= @terraform_release_variables %>
+  }
+}
