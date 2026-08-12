@@ -35,7 +35,7 @@ module "oci_instance" {
 
   boot_volume_size_gbs = try(each.value.boot_volume_size_gbs, null)
   assign_public_ip     = try(each.value.assign_public_ip, var.assign_public_ip)
-  ssh_public_key        = var.ssh_public_key
+  ssh_public_key        = local.ssh_public_key
 
   tags = try(each.value.tags, {})
 }

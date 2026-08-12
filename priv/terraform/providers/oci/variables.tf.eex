@@ -128,7 +128,7 @@ variable "instance_image_ocid" {
 }
 
 variable "ssh_public_key" {
-  description = "Public key injected into the instance. Empty installs no key, making the box unreachable by SSH."
+  description = "Bring-your-own public key to inject into instances. Leave empty (the default) and key-pair.tf generates a keypair and writes the private half next to this file, named so `mix ansible.build` finds it. Set this only if you manage the key yourself — no private key is written in that case."
   type        = string
   default     = ""
 }
