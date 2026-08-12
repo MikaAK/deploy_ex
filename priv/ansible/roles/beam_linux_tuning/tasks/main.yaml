@@ -1,5 +1,19 @@
 - name: beam_linux_tuning
   block:
+    # Cloud images run unattended-upgrades on first boot, so a setup started right after
+    # terraform.apply races it for the dpkg lock and dies with "Could not get lock
+    # /var/lib/dpkg/lock-frontend. It is held by process N (apt)" — MEASURED on a freshly
+    # created node. `apt-get check` exits non-zero while the lock is held, so retrying it is
+    # a portable wait needing no extra packages. This role runs first in every setup
+    # playbook, so guarding here covers every apt task that follows it.
+    - name: Wait for apt to become available
+      ansible.builtin.command: apt-get check
+      register: apt_available
+      until: apt_available.rc == 0
+      retries: 30
+      delay: 10
+      changed_when: false
+
     - name: Gather active swap devices
       command: swapon --show=NAME --noheadings
       register: active_swap
