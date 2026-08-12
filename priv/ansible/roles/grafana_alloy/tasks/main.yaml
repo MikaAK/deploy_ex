@@ -46,6 +46,16 @@
         path: ~/alloy-{{ alloy_architecture }}
       register: alloy
 
+    # Alloy ships as a .zip, and ansible's unarchive shells out to unzip for those. Ubuntu's
+    # base image has no unzip, so the task fails with "Unable to find required 'unzip' or
+    # 'zipinfo' binary in the path" after a confusing wall of tar errors — MEASURED on Ubuntu
+    # 24.04. The Debian AMI this role grew up on happened to include it.
+    - name: Install unzip, required to extract the Alloy release
+      apt:
+        name: unzip
+        update_cache: true
+      when: not alloy.stat.exists
+
     - name: Download Alloy {{ alloy_architecture }}/{{ alloy_version }}
       unarchive:
         src: https://github.com/grafana/alloy/releases/download/{{ alloy_version }}/alloy-{{ alloy_architecture }}.zip
