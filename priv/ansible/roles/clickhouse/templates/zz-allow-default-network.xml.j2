@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<!--
+  Re-open the built-in `default` user (empty password) to the VPC/VCN, and
+  strip out any password the clickhouse-server package's postinst may have
+  generated for it.
+
+  The app connects as the `Ch` client default (user `default`, empty
+  password — see opgg_umbrella/docker/clickhouse/zz-allow-default-network.xml,
+  which does the same thing for the dev Docker image via a different
+  mechanism). The apt-installed server has no docker-entrypoint equivalent,
+  but its postinst can still write a `password_sha256_hex` and restrict
+  `default` to loopback under non-interactive installs — this file removes
+  both explicitly rather than assuming which one it did, and widens the
+  allowed networks to clickhouse_allowed_network_cidr.
+
+  This file is named `zz-*` and lives in users.d so it loads AFTER whatever
+  the postinst wrote (config files merge alphabetically; last wins).
+  `replace="replace"` swaps the whole <networks> list instead of merging;
+  `remove="remove"` deletes a prior <password_sha256_hex>/<password> node
+  before this file's own empty <password> is added, so exactly one password
+  directive survives the merge.
+-->
+<clickhouse>
+  <users>
+    <default>
+      <password_sha256_hex remove="remove"/>
+      <password remove="remove"/>
+      <password></password>
+      <networks replace="replace">
+        <ip>{{ clickhouse_allowed_network_cidr }}</ip>
+      </networks>
+    </default>
+  </users>
+</clickhouse>
