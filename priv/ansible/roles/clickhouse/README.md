@@ -1,39 +1,43 @@
 # clickhouse
 
-> **STATUS: NOT WORKING END TO END. Do not expect this role to leave you with a
-> serving ClickHouse.**
+> **STATUS: mostly verified against a live host; two items still UNVERIFIED.**
 >
-> MEASURED 2026-08-12 against a live OCI Ubuntu 24.04 host: the packages install
-> correctly, but `clickhouse-server` never reaches `active` under systemd. It
-> crash-loops — `systemctl is-active` reports `activating`, the restart counter
-> climbs, port 9000 refuses connections, and the journal shows:
+> Verified 2026-08-12 on a throwaway OCI Ubuntu 24.04 host:
 >
-> ```
-> Supervising process N which is not our child.
-> Killing process N with signal SIGKILL.
-> Failed with result 'protocol'.
-> ```
->
-> Ruled out, each by experiment rather than by reasoning:
->
-> | hypothesis | result |
+> | item | result |
 > |---|---|
-> | this role's `config.d/listen.xml` | NOT the cause — reproduces with the file removed |
-> | `Type=notify` handshake mismatch | NOT fixed by a `Type=simple` drop-in |
-> | wrong user / directory permissions | NOT the cause — runs fine in the foreground AS `clickhouse`; data, log and config dirs are all owned `clickhouse:clickhouse` |
-> | broken or partial install | NOT the cause — 24.8.14.39 installed and runs standalone |
+> | role runs green | PASSED — `ok=39 changed=3 failed=0`, service reached `active (running)` |
+> | version pin | PASSED — `apt` history shows `clickhouse-server=24.8.14.39` installed fresh |
+> | apt repo + GPG key URL | PASSED — the install above proves both resolve |
+> | `clickhouse` system user/group | PASSED — `uid=999(clickhouse) gid=988(clickhouse)` |
+> | cold tier OFF by default | PASSED — `config.d` held only `listen.xml` |
+> | second run is `changed=0` | NOT MET, and benign: the 3 changes are two `awscli` handlers plus this role's `Update apt cache`, which `cache_valid_time: 0` makes report changed every run by design (copied from `redis_server`). No clickhouse-role task drifts. |
+> | `SELECT 1` / HTTP port answer | **UNVERIFIED** — see the loopback fix below |
+> | default user from the configured CIDR | **UNVERIFIED** |
+> | cold tier ENABLED boots cleanly | **UNVERIFIED** — never reached; the credentialed path is untestable without Customer Secret Keys |
 >
-> The fault therefore sits in the ClickHouse 24.8 deb's packaged unit interacting
-> with Ubuntu 24.04 systemd, not in what this role writes — but the role's job is
-> a serving database, so it is unfinished until that is resolved. Likely next
-> steps: ClickHouse's official install script instead of the apt repo, or a unit
-> override matching how the binary actually forks.
+> **The loopback fix is the reason `SELECT 1` is unverified.** ClickHouse's
+> `<networks>` check is literal and never implicitly permits 127.0.0.1, so an
+> on-box healthcheck fails `AUTHENTICATION_FAILED` even with a confirmed-empty
+> password — diagnosed from `preprocessed_configs/users.xml`, which showed
+> `<password/>` empty but the CIDR excluding loopback. Loopback is now listed
+> unconditionally. The fix is offline-validated (every XML template is parsed by
+> `test/deploy_ex/ansible_xml_templates_test.exs`) but was never re-confirmed on
+> a live server.
 >
-> CONFIRMED working: the version pin (24.8.14.39 installed), the `clickhouse`
-> system user and group, `users.d/zz-allow-default-network.xml` rendering, and
-> the cold tier staying OFF by default (`config.d` holds only `listen.xml`).
-> Everything else below — including the loopback `<networks>` entries — is
-> UNVERIFIED, because the server never stayed up long enough to test it.
+> **Correction to an earlier version of this file.** It claimed the ClickHouse
+> 24.8 deb's unit was broken on Ubuntu 24.04 systemd. That was WRONG. The service
+> started cleanly on this exact host and package before any edit. The crash-loop
+> appeared only after a `--` sequence landed inside an XML comment in
+> `zz-allow-default-network.xml.j2`; XML 1.0 forbids that anywhere in a comment
+> body, so Poco refused the file and the daemon exited before signalling
+> readiness. systemd reports that as `Failed with result 'protocol'` — identical
+> to a genuine `Type=notify` mismatch, which is why reading only `journalctl` led
+> to the wrong conclusion. The ClickHouse error log named the file and line
+> outright. Two lessons worth keeping: diagnose a daemon from ITS OWN log, not
+> just systemd's view of it; and an elimination experiment that removes the wrong
+> file proves nothing (`config.d/listen.xml` was removed while the actually
+> broken `users.d/` fragment stayed in place).
 
 Installs a pinned `clickhouse-server` (apt), configures it via `config.d`/`users.d`
 drop-in fragments (never touching the package's stock `config.xml`), and manages
