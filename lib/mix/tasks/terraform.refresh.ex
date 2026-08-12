@@ -23,10 +23,15 @@ defmodule Mix.Tasks.Terraform.Refresh do
       |> Keyword.put_new(:directory, @terraform_default_path)
 
     with :ok <- DeployExHelpers.check_valid_project() do
-      DeployEx.Terraform.run_command_with_input(
-        "refresh #{DeployEx.Terraform.parse_args(args, :refresh)}",
-        opts[:directory]
-      )
+      # Mix ignores run/1's return value — only a raise sets a non-zero exit. See
+      # terraform.drop for the measured consequence of returning the tuple instead.
+      case DeployEx.Terraform.run_command_with_input(
+             "refresh #{DeployEx.Terraform.parse_args(args, :refresh)}",
+             opts[:directory]
+           ) do
+        :ok -> :ok
+        {:error, error} -> Mix.raise(to_string(error))
+      end
     end
   end
 

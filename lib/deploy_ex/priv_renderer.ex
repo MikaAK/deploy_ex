@@ -105,7 +105,7 @@ defmodule DeployEx.PrivRenderer do
 
       terraform_backend: DeployEx.Config.terraform_backend(),
 
-      pem_app_name: "#{kebab_app_name}-#{random_bytes}",
+      pem_app_name: opts[:pem_app_name] || "#{kebab_app_name}-#{random_bytes}",
       app_name: app_name,
       kebab_app_name: kebab_app_name,
 

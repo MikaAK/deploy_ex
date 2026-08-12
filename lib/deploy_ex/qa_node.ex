@@ -773,18 +773,22 @@ defmodule DeployEx.QaNode do
     end
   end
 
+  # ExAws.S3.list_objects caps a page at 1000 keys and signals more via is_truncated, so a single
+  # request would silently drop app-scoped QA state past the first page. Delegates pagination to
+  # DeployEx.Cloud.S3ObjectStore.list_objects/2, which already follows the marker to completion.
   def fetch_all_qa_states_for_app(app_name, opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
     bucket = opts[:bucket] || DeployEx.Config.aws_release_bucket()
     prefix = "#{DeployEx.Config.qa_state_prefix()}/#{app_name}/"
+    request_fn = opts[:request_fn] || (&ExAws.request/2)
 
-    bucket
-    |> ExAws.S3.list_objects(prefix: prefix)
-    |> ExAws.request(region: region)
-    |> case do
-      {:ok, %{body: %{contents: contents}}} when is_list(contents) ->
-        states = Enum.map(contents, fn content ->
-          case ExAws.S3.get_object(bucket, content.key) |> ExAws.request(region: region) do
+    list_opts = opts |> Keyword.take([:request_fn]) |> Keyword.merge(prefix: prefix, region: region)
+
+    case DeployEx.Cloud.S3ObjectStore.list_objects(bucket, list_opts) do
+      {:ok, keys} ->
+        states = keys
+        |> Enum.map(fn key ->
+          case ExAws.S3.get_object(bucket, key) |> request_fn.(region: region) do
             {:ok, %{body: body}} -> from_json(body)
             _ -> nil
           end
@@ -793,11 +797,8 @@ defmodule DeployEx.QaNode do
 
         {:ok, states}
 
-      {:ok, _} ->
-        {:ok, []}
-
-      {:error, error} ->
-        {:error, ErrorMessage.failed_dependency("failed to list qa states", %{error: error})}
+      {:error, _} = error ->
+        error
     end
   end
 
@@ -821,15 +822,15 @@ defmodule DeployEx.QaNode do
     environment = opts[:environment] || DeployEx.Config.env()
     resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
 
-    ExAws.EC2.describe_instances(filters: [
+    filters = [
       "tag:QaNode": ["true"],
       "tag:Group": [resource_group],
       "tag:Environment": [environment],
       "tag:GitBranch": [branch],
       "instance-state-name": ["running", "pending", "stopping", "stopped"]
-    ])
-    |> ExAws.request(region: region)
-    |> handle_describe_instances_for_qa_list()
+    ]
+
+    fetch_qa_instances_from_ec2(filters, region, opts)
   end
 
   @doc """
@@ -867,14 +868,18 @@ defmodule DeployEx.QaNode do
     environment = opts[:environment] || DeployEx.Config.env()
     resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
 
-    ExAws.EC2.describe_instances(filters: [
+    filters = [
       "tag:QaNode": ["true"],
       "tag:Group": [resource_group],
       "tag:InstanceGroup": ["#{app_name}_#{environment}"],
       "instance-state-name": ["running", "pending", "stopping", "stopped"]
-    ])
-    |> ExAws.request(region: region)
-    |> handle_describe_instances_for_qa()
+    ]
+
+    case fetch_qa_instances_from_ec2(filters, region, opts) do
+      {:ok, [instance | _]} -> {:ok, instance}
+      {:ok, []} -> {:ok, nil}
+      {:error, _} = error -> error
+    end
   end
 
   def find_qa_nodes_from_ec2(app_name, opts \\ []) do
@@ -882,65 +887,29 @@ defmodule DeployEx.QaNode do
     environment = opts[:environment] || DeployEx.Config.env()
     resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
 
-    ExAws.EC2.describe_instances(filters: [
+    filters = [
       "tag:QaNode": ["true"],
       "tag:Group": [resource_group],
       "tag:InstanceGroup": ["#{app_name}_#{environment}"],
       "instance-state-name": ["running", "pending", "stopping", "stopped"]
-    ])
-    |> ExAws.request(region: region)
-    |> handle_describe_instances_for_qa_list()
+    ]
+
+    fetch_qa_instances_from_ec2(filters, region, opts)
   end
 
-  defp handle_describe_instances_for_qa({:ok, %{body: body}}) do
-    case XmlToMap.naive_map(body) do
-      %{"DescribeInstancesResponse" => %{"reservationSet" => %{"item" => reservations}}} ->
-        instances = extract_qa_instances(reservations)
-        case instances do
-          [instance | _] -> {:ok, instance}
-          [] -> {:ok, nil}
-        end
+  # DescribeInstances caps a page and signals more via nextToken, so a single request would
+  # silently miss QA nodes past the first page — e.g. a second node sharing a branch could stay
+  # invisible to select_by_branch/2's "multiple ->" conflict guard. Delegates pagination to
+  # DeployEx.AwsMachine.fetch_instances/2, which already follows nextToken to completion; the
+  # filters keep the request scoped server-side exactly as before.
+  defp fetch_qa_instances_from_ec2(filters, region, opts) do
+    ec2_opts = opts |> Keyword.take([:request_fn]) |> Keyword.merge(filters: filters)
 
-      %{"DescribeInstancesResponse" => %{"reservationSet" => nil}} ->
-        {:ok, nil}
-
-      _ ->
-        {:ok, nil}
+    case DeployEx.AwsMachine.fetch_instances(region, ec2_opts) do
+      {:ok, instances} -> {:ok, Enum.map(instances, &build_qa_node_from_instance/1)}
+      {:error, _} = error -> error
     end
   end
-
-  defp handle_describe_instances_for_qa_list({:ok, %{body: body}}) do
-    case XmlToMap.naive_map(body) do
-      %{"DescribeInstancesResponse" => %{"reservationSet" => %{"item" => reservations}}} ->
-        {:ok, extract_qa_instances(reservations)}
-
-      %{"DescribeInstancesResponse" => %{"reservationSet" => nil}} ->
-        {:ok, []}
-
-      _ ->
-        {:ok, []}
-    end
-  end
-
-  defp handle_describe_instances_for_qa_list({:error, {:http_error, status, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["error fetching QA instances", %{body: body}])}
-  end
-
-  defp extract_qa_instances(reservations) when is_list(reservations) do
-    Enum.flat_map(reservations, fn reservation ->
-      case reservation["instancesSet"]["item"] do
-        items when is_list(items) -> Enum.map(items, &build_qa_node_from_instance/1)
-        item when is_map(item) -> [build_qa_node_from_instance(item)]
-        _ -> []
-      end
-    end)
-  end
-
-  defp extract_qa_instances(reservation) when is_map(reservation) do
-    extract_qa_instances([reservation])
-  end
-
-  defp extract_qa_instances(_), do: []
 
   def build_qa_node_from_instance(instance) do
     tags = parse_instance_tags(instance["tagSet"])
@@ -998,27 +967,27 @@ defmodule DeployEx.QaNode do
     |> handle_delete_response()
   end
 
+  # Same truncation risk as fetch_all_qa_states_for_app/2 (S3 caps a page at 1000 keys): qa.cleanup
+  # and qa.destroy --all iterate every app_name returned here, so a truncated page here means they
+  # silently skip instances past key 1000 and report success.
   def list_all_qa_states(opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
     bucket = opts[:bucket] || DeployEx.Config.aws_release_bucket()
+    prefix = DeployEx.Config.qa_state_prefix()
 
-    bucket
-    |> ExAws.S3.list_objects(prefix: DeployEx.Config.qa_state_prefix())
-    |> ExAws.request(region: region)
-    |> case do
-      {:ok, %{body: %{contents: contents}}} when is_list(contents) ->
-        app_names = contents
-        |> Enum.map(&extract_app_name_from_key(&1.key))
+    list_opts = opts |> Keyword.take([:request_fn]) |> Keyword.merge(prefix: prefix, region: region)
+
+    case DeployEx.Cloud.S3ObjectStore.list_objects(bucket, list_opts) do
+      {:ok, keys} ->
+        app_names = keys
+        |> Enum.map(&extract_app_name_from_key/1)
         |> Enum.reject(&is_nil/1)
         |> Enum.uniq()
 
         {:ok, app_names}
 
-      {:ok, %{body: %{contents: _}}} ->
-        {:ok, []}
-
-      {:error, error} ->
-        {:error, ErrorMessage.failed_dependency("failed to list qa states", %{error: error})}
+      {:error, _} = error ->
+        error
     end
   end
 

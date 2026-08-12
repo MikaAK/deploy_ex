@@ -3,9 +3,9 @@ defmodule Mix.Tasks.Terraform.Apply do
 
   @terraform_default_path DeployEx.Config.terraform_folder_path()
 
-  @shortdoc "Applies terraform changes to provision AWS infrastructure"
+  @shortdoc "Applies terraform changes to provision infrastructure"
   @moduledoc """
-  Applies terraform changes to provision or update AWS infrastructure.
+  Applies terraform changes to provision or update infrastructure.
 
   ## Example
   ```bash
