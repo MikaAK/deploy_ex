@@ -12,7 +12,7 @@
             latest_oci_release.sh {{ bucket_name }} {{ oci_namespace }} {{ app_name }} "{{ release_prefix }}"
           {% endif %}
       environment:
-        OCI_CLI_AUTH: instance_principal
+        OCI_CLI_AUTH: "{{ oci_cli_auth }}"
       register: oci_file_name
 
     - name: Set local release path
@@ -38,7 +38,7 @@
           --name "{{ oci_object_key }}" --file "/srv/{{ local_release_file }}"
         creates: "/srv/{{ local_release_file }}"
       environment:
-        OCI_CLI_AUTH: instance_principal
+        OCI_CLI_AUTH: "{{ oci_cli_auth }}"
 
     - name: Untar {{ local_release_file }}
       unarchive:
@@ -50,7 +50,7 @@
       ansible.builtin.script:
         cmd: update_oci_release_state.sh {{ bucket_name }} {{ oci_namespace }} {{ release_state_prefix }} {{ app_name }} {{ oci_object_key }}
       environment:
-        OCI_CLI_AUTH: instance_principal
+        OCI_CLI_AUTH: "{{ oci_cli_auth }}"
       register: release_state_result
       changed_when: "'changed' in release_state_result.stdout"
 
