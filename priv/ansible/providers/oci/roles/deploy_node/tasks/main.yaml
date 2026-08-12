@@ -15,6 +15,17 @@
         OCI_CLI_AUTH: "{{ oci_cli_auth }}"
       register: oci_file_name
 
+    # "No release found" is a distinct, actionable state and must not be reported as a
+    # download failure. Without this the empty stdout flows into stdout_lines[0] and surfaces
+    # as an index error, or worse, as a 404 on whatever text the lookup happened to print.
+    - name: Fail clearly when no release exists for {{ app_name }}
+      ansible.builtin.fail:
+        msg: >-
+          No release found for {{ app_name }} in bucket {{ bucket_name }}
+          {% if target_release_sha | length > 0 %}matching sha {{ target_release_sha }}{% endif %}.
+          Upload one with `mix deploy_ex.upload` before deploying.
+      when: oci_file_name.stdout | trim | length == 0
+
     - name: Set local release path
       set_fact:
         oci_object_key: "{{ oci_file_name.stdout_lines[0] }}"
