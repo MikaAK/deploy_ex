@@ -12,4 +12,10 @@ defmodule DeployEx.ConfigTest do
       assert Config.aws_availability_zone() === "#{Config.aws_region()}a"
     end
   end
+
+  describe "cloud_provider/0" do
+    test "defaults to :aws when nothing is configured" do
+      assert Config.cloud_provider() === :aws
+    end
+  end
 end

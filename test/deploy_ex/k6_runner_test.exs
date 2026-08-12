@@ -289,6 +289,100 @@ defmodule DeployEx.K6RunnerTest do
     test "--instance-id path: returns the verified runner for a live instance id" do
       assert {:ok, %K6Runner{instance_id: "i-live", state: "running"}} =
                K6Runner.resolve_runner([instance_id: "i-live"], ResolveFakeActive)
+  # Behavioural pagination tests. Responses are queued in the process dictionary — per-PID
+  # isolated, no setup/teardown. Mirrors test/deploy_ex/cloud/pagination_test.exs: replacing the
+  # recursion with a single request makes these red.
+  describe "find_runners_from_ec2/1 pagination" do
+    defp queue_responses(responses), do: Process.put(:responses, responses)
+
+    defp next_response do
+      [head | rest] = Process.get(:responses)
+      Process.put(:responses, rest)
+      Process.put(:call_count, (Process.get(:call_count) || 0) + 1)
+
+      head
+    end
+
+    defp call_count, do: Process.get(:call_count) || 0
+
+    defp recording_request_fn do
+      fn _request, _config -> next_response() end
+    end
+
+    defp ec2_runner_page(instance_ids, next_token) do
+      items =
+        Enum.map_join(instance_ids, "", fn id ->
+          "<item><instancesSet><item>" <>
+            "<instanceId>#{id}</instanceId>" <>
+            "<instanceState><name>running</name></instanceState>" <>
+            "</item></instancesSet></item>"
+        end)
+
+      token = if next_token, do: "<nextToken>#{next_token}</nextToken>", else: ""
+
+      {:ok,
+       %{
+         body:
+           "<DescribeInstancesResponse><reservationSet>#{items}</reservationSet>#{token}</DescribeInstancesResponse>"
+       }}
+    end
+
+    test "concatenates every page rather than returning the first" do
+      queue_responses([ec2_runner_page(["i-1", "i-2"], "TOKEN"), ec2_runner_page(["i-3"], nil)])
+
+      assert {:ok, runners} = K6Runner.find_runners_from_ec2(request_fn: recording_request_fn())
+      assert Enum.map(runners, & &1.instance_id) === ["i-1", "i-2", "i-3"]
+    end
+
+    test "terminates when no nextToken comes back" do
+      queue_responses([ec2_runner_page(["i-1"], nil)])
+
+      assert {:ok, [_only]} = K6Runner.find_runners_from_ec2(request_fn: recording_request_fn())
+      assert call_count() === 1
+    end
+  end
+
+  describe "fetch_all_runners/1 pagination" do
+    defp s3_state_page(keys, truncated, next_marker) do
+      {:ok,
+       %{
+         body: %{
+           contents: Enum.map(keys, &%{key: &1}),
+           is_truncated: truncated,
+           next_marker: next_marker
+         }
+       }}
+    end
+
+    defp s3_get_object(runner) do
+      {:ok, %{body: K6Runner.to_json(runner)}}
+    end
+
+    test "concatenates runner states across S3 pages rather than returning the first" do
+      runner_one = %K6Runner{instance_id: "i-1"}
+      runner_two = %K6Runner{instance_id: "i-2"}
+
+      queue_responses([
+        s3_state_page(["k6-runners/i-1.json"], "true", "k6-runners/i-1.json"),
+        s3_state_page(["k6-runners/i-2.json"], "false", ""),
+        s3_get_object(runner_one),
+        s3_get_object(runner_two)
+      ])
+
+      assert {:ok, runners} = K6Runner.fetch_all_runners(request_fn: recording_request_fn())
+      assert Enum.map(runners, & &1.instance_id) === ["i-1", "i-2"]
+    end
+
+    test "terminates when is_truncated is the STRING \"false\", which is truthy in Elixir" do
+      runner = %K6Runner{instance_id: "i-only"}
+
+      queue_responses([
+        s3_state_page(["k6-runners/i-only.json"], "false", ""),
+        s3_get_object(runner)
+      ])
+
+      assert {:ok, [_only]} = K6Runner.fetch_all_runners(request_fn: recording_request_fn())
+      assert call_count() === 2, "a truthy string must not drive a second list request"
     end
   end
 end
