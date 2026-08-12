@@ -34,6 +34,16 @@ defmodule DeployEx.TUI.DeployProgressTest do
     test "all succeeding still reports ok" do
       assert {:ok, _} = DeployProgress.run(["setup/a.yaml"], fn _playbook, _callback -> :ok end)
     end
+
+    test "a task that exceeds the timeout is an error, not a silent omission" do
+      # Real plays run for 20+ minutes (asdf compiles Erlang from source), so hitting the
+      # async_stream timeout is not hypothetical. Task.async_stream yields {:exit, :timeout}
+      # for it, which must surface rather than vanish from the aggregate.
+      run_fn = fn _playbook, _callback -> Process.sleep(200) end
+
+      assert {:error, [%ErrorMessage{}]} =
+               DeployProgress.run(["setup/slow.yaml"], run_fn, timeout: 10)
+    end
   end
 
   describe "action_labels/1" do

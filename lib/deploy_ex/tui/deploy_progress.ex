@@ -33,7 +33,7 @@ defmodule DeployEx.TUI.DeployProgress do
     app_playbooks
       |> Task.async_stream(fn playbook ->
         run_fn.(playbook, fn line -> IO.puts(line) end)
-      end, max_concurrency: max_concurrency, timeout: timeout)
+      end, max_concurrency: max_concurrency, timeout: timeout, on_timeout: :kill_task)
       |> unwrap_task_results()
       |> DeployEx.Utils.reduce_status_tuples()
   end
@@ -99,7 +99,7 @@ defmodule DeployEx.TUI.DeployProgress do
 
             send(coordinator, {:deploy_finished, app_name, result})
             result
-          end, max_concurrency: max_concurrency, timeout: timeout)
+          end, max_concurrency: max_concurrency, timeout: timeout, on_timeout: :kill_task)
           |> unwrap_task_results()
           |> DeployEx.Utils.reduce_status_tuples()
       end)
