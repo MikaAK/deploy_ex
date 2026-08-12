@@ -1,29 +1,29 @@
 # clickhouse
 
-> **STATUS: mostly verified against a live host; two items still UNVERIFIED.**
+> **STATUS: verified against a live host. One item is untestable without
+> credentials this project does not hold.**
 >
-> Verified 2026-08-12 on a throwaway OCI Ubuntu 24.04 host:
+> Verified 2026-08-12 on throwaway OCI Ubuntu 24.04 hosts:
 >
 > | item | result |
 > |---|---|
-> | role runs green | PASSED — `ok=39 changed=3 failed=0`, service reached `active (running)` |
+> | role runs green | PASSED — `failed=0`, service reached `active (running)` |
 > | version pin | PASSED — `apt` history shows `clickhouse-server=24.8.14.39` installed fresh |
 > | apt repo + GPG key URL | PASSED — the install above proves both resolve |
 > | `clickhouse` system user/group | PASSED — `uid=999(clickhouse) gid=988(clickhouse)` |
 > | cold tier OFF by default | PASSED — `config.d` held only `listen.xml` |
-> | second run is `changed=0` | NOT MET, and benign: the 3 changes are two `awscli` handlers plus this role's `Update apt cache`, which `cache_valid_time: 0` makes report changed every run by design (copied from `redis_server`). No clickhouse-role task drifts. |
-> | `SELECT 1` / HTTP port answer | **UNVERIFIED** — see the loopback fix below |
-> | default user from the configured CIDR | **UNVERIFIED** |
-> | cold tier ENABLED boots cleanly | **UNVERIFIED** — never reached; the credentialed path is untestable without Customer Secret Keys |
+> | `SELECT 1` over TCP and HTTP | PASSED — `clickhouse-client` and `curl :8123` both return `1` |
+> | default user from the configured CIDR | PASSED — connected over the host's own private IP (not loopback) with the CIDR set to the test VCN, so the CIDR entry is what was exercised |
+> | cold tier ENABLED boots cleanly | PASSED — `NRestarts=0`, `active (running)`, `system.disks` shows `s3_cold ObjectStorage` and `system.storage_policies` the expected `tiered`/`hot`/`s3_cold` shape, booted with deliberately fake credentials — confirming `skip_access_check` behaves as its header claims |
+> | second run is `changed=0` | NOT MET, and benign: the changes are `awscli` handlers plus this role's `Update apt cache`, which `cache_valid_time: 0` makes report changed every run by design (copied from `redis_server`). No clickhouse-role task drifts. |
+> | cold tier against a REAL bucket | **UNTESTABLE HERE** — needs OCI Customer Secret Keys, an IAM write in the tenancy root |
 >
-> **The loopback fix is the reason `SELECT 1` is unverified.** ClickHouse's
-> `<networks>` check is literal and never implicitly permits 127.0.0.1, so an
-> on-box healthcheck fails `AUTHENTICATION_FAILED` even with a confirmed-empty
-> password — diagnosed from `preprocessed_configs/users.xml`, which showed
-> `<password/>` empty but the CIDR excluding loopback. Loopback is now listed
-> unconditionally. The fix is offline-validated (every XML template is parsed by
-> `test/deploy_ex/ansible_xml_templates_test.exs`) but was never re-confirmed on
-> a live server.
+> **On the loopback entries.** ClickHouse's `<networks>` check is literal and
+> never implicitly permits 127.0.0.1, so an on-box healthcheck fails
+> `AUTHENTICATION_FAILED` even with a confirmed-empty password — diagnosed from
+> `preprocessed_configs/users.xml`, which showed `<password/>` correctly empty
+> while the CIDR excluded loopback. Loopback is therefore listed unconditionally
+> alongside the configured CIDR. Both paths are now confirmed working live.
 >
 > **Correction to an earlier version of this file.** It claimed the ClickHouse
 > 24.8 deb's unit was broken on Ubuntu 24.04 systemd. That was WRONG. The service
