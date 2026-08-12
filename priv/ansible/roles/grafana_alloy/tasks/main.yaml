@@ -29,10 +29,12 @@
         path: /root/promtail_positions.yaml
         state: absent
 
+    # `args: warn: false` was removed in ansible-core 2.14 and is now a hard error:
+    # "Unsupported parameters for (ansible.legacy.command) module: warn". MEASURED against
+    # ansible-core 2.18.4, where it fails the play. The warning it suppressed was the
+    # use-a-module-instead nag, which no longer exists.
     - name: Remove old promtail binary
       shell: rm -f /root/promtail-*
-      args:
-        warn: false
 
     - name: Reload systemd after promtail cleanup
       systemd:

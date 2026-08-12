@@ -53,7 +53,7 @@ defmodule Mix.Tasks.Terraform.Build do
 
       terraform_app_releases_variables = releases
         |> Keyword.keys
-        |> Enum.map_join(",\n\n", &(&1 |> to_string |> generate_terraform_release_variables()))
+        |> Enum.map_join(",\n\n", &generate_terraform_release_variables(to_string(&1), provider))
 
       params = %{
         directory: opts[:directory],
@@ -86,11 +86,11 @@ defmodule Mix.Tasks.Terraform.Build do
 
         terraform_app_releases_variables: terraform_app_releases_variables,
         terraform_release_variables: terraform_app_releases_variables,
-        terraform_redis_variables: terraform_redis_variables(opts),
-        terraform_sentry_variables: terraform_sentry_variables(opts),
-        terraform_grafana_variables: terraform_grafana_variables(opts),
-        terraform_loki_variables: terraform_loki_variables(opts),
-        terraform_prometheus_variables: terraform_prometheus_variables(opts),
+        terraform_redis_variables: terraform_redis_variables(opts, provider),
+        terraform_sentry_variables: terraform_sentry_variables(opts, provider),
+        terraform_grafana_variables: terraform_grafana_variables(opts, provider),
+        terraform_loki_variables: terraform_loki_variables(opts, provider),
+        terraform_prometheus_variables: terraform_prometheus_variables(opts, provider),
       }
 
       write_terraform_template_files(params, opts, provider)
@@ -199,7 +199,29 @@ defmodule Mix.Tasks.Terraform.Build do
     File.cp!(Path.join(priv_path, source), target)
   end
 
-  defp generate_terraform_release_variables(release_name) do
+  # The AWS block advertises autoscaling, which has no OCI implementation yet — leaving that
+  # comment in an OCI tree would document a knob that silently does nothing.
+  defp generate_terraform_release_variables(release_name, :oci) do
+    String.trim_trailing("""
+        #{release_name} = {
+          name = "#{DeployEx.Utils.upper_title_case(release_name)}"
+          tags = {
+            Vendor = "Self"
+            Type   = "Self Made"
+          }
+
+          # Sizing is optional — unset keys fall back to the instance_shape / instance_ocpus /
+          # instance_memory_gbs variables at the top of this file.
+          # shape                = "VM.Standard.E5.Flex"
+          # ocpus                = 2
+          # memory_gbs           = 16
+          # boot_volume_size_gbs = 100
+          # instance_count       = 2
+        }
+    """, "\n")
+  end
+
+  defp generate_terraform_release_variables(release_name, _provider) do
     String.trim_trailing("""
         #{release_name} = {
           name = "#{DeployEx.Utils.upper_title_case(release_name)}"
@@ -221,7 +243,42 @@ defmodule Mix.Tasks.Terraform.Build do
     """, "\n")
   end
 
-  defp terraform_redis_variables(opts) do
+  # Support-node defaults are written per provider rather than shared, because the two
+  # instance modules read disjoint key sets: AWS takes instance_type/ebs/eip, OCI takes
+  # shape/ocpus/memory_gbs/boot_volume_size_gbs. Emitting the AWS keys into an OCI tree
+  # produced a variables.tf whose values were silently ignored — `instance_type = "t3.micro"`
+  # sat there looking authoritative while the module read `shape` and never saw it. The AWS
+  # clauses below are byte-for-byte what they always were; the render is pinned to that.
+  #
+  # NOTE: the OCI variants drop `private_ip`. The oci-instance module does not take one, and
+  # the fixed 10.0.1.x addresses the monitoring roles point at (grafana_loki_url,
+  # grafana_prometheus_url in group_vars) therefore do not resolve on OCI. Monitoring on OCI
+  # needs its own address plan — see the OCI monitoring gap, still open.
+  defp terraform_redis_variables(opts, :oci) do
+    if opts[:no_redis] do
+      ""
+    else
+      """
+          #{DeployExHelpers.underscored_project_name()}_redis = {
+            name = "#{DeployExHelpers.title_case_project_name()} Redis"
+
+            shape       = "VM.Standard.E5.Flex"
+            ocpus       = 2
+            memory_gbs  = 8
+
+            boot_volume_size_gbs = 64
+
+            tags = {
+              Vendor      = "Redis"
+              Type        = "Database"
+              DatabaseKey = "#{DeployExHelpers.underscored_project_name()}_redis"
+            }
+          },
+      """
+    end
+  end
+
+  defp terraform_redis_variables(opts, _provider) do
     if opts[:no_redis] do
       ""
     else
@@ -247,7 +304,8 @@ defmodule Mix.Tasks.Terraform.Build do
     end
   end
 
-  defp terraform_sentry_variables(opts) do
+  # Sentry carries no sizing keys on either provider, so one clause serves both.
+  defp terraform_sentry_variables(opts, _provider) do
     if opts[:no_sentry] do
       ""
     else
@@ -263,7 +321,31 @@ defmodule Mix.Tasks.Terraform.Build do
     end
   end
 
-  defp terraform_loki_variables(opts) do
+  defp terraform_loki_variables(opts, :oci) do
+    if opts[:no_logging] do
+      ""
+    else
+      """
+          loki_aggregator = {
+            name = "Grafana Loki Logs"
+
+            shape       = "VM.Standard.E5.Flex"
+            ocpus       = 1
+            memory_gbs  = 4
+
+            boot_volume_size_gbs = 64
+
+            tags = {
+              Vendor = "Grafana"
+              Type   = "Monitoring"
+              MonitoringKey = "loki_logger"
+            }
+          },
+      """
+    end
+  end
+
+  defp terraform_loki_variables(opts, _provider) do
     if opts[:no_logging] do
       ""
     else
@@ -286,7 +368,32 @@ defmodule Mix.Tasks.Terraform.Build do
     end
   end
 
-  defp terraform_grafana_variables(opts) do
+  defp terraform_grafana_variables(opts, :oci) do
+    if opts[:no_grafana] do
+      ""
+    else
+      """
+          grafana_ui = {
+            name = "Grafana UI"
+
+            shape       = "VM.Standard.E5.Flex"
+            ocpus       = 1
+            memory_gbs  = 4
+
+            boot_volume_size_gbs = 64
+            assign_public_ip     = true
+
+            tags = {
+              Vendor = "Grafana"
+              Type   = "Monitoring"
+              MonitoringKey = "grafana_ui"
+            }
+          },
+      """
+    end
+  end
+
+  defp terraform_grafana_variables(opts, _provider) do
     if opts[:no_grafana] do
       ""
     else
@@ -307,7 +414,31 @@ defmodule Mix.Tasks.Terraform.Build do
     end
   end
 
-  defp terraform_prometheus_variables(opts) do
+  defp terraform_prometheus_variables(opts, :oci) do
+    if opts[:no_prometheus] do
+      ""
+    else
+      """
+          prometheus_db = {
+            name = "Prometheus Metrics Database"
+
+            shape       = "VM.Standard.E5.Flex"
+            ocpus       = 1
+            memory_gbs  = 4
+
+            boot_volume_size_gbs = 64
+
+            tags = {
+              Vendor = "Grafana"
+              Type   = "Monitoring"
+              MonitoringKey = "prometheus_db"
+            }
+          },
+      """
+    end
+  end
+
+  defp terraform_prometheus_variables(opts, _provider) do
     if opts[:no_prometheus] do
       ""
     else
