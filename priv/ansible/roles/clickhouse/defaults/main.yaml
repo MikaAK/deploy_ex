@@ -1,0 +1,37 @@
+clickhouse_version: "24.8"
+
+clickhouse_listen_host: "0.0.0.0"
+clickhouse_http_port: 8123
+clickhouse_tcp_port: 9000
+clickhouse_interserver_http_port: 9009
+clickhouse_data_dir: /var/lib/clickhouse
+
+# Fraction of system RAM clickhouse-server is allowed to use (the server's own
+# built-in default is 0.9; repeated here so it is one obvious place to tune
+# per instance size rather than hunting through config.d).
+clickhouse_max_server_memory_usage_to_ram_ratio: 0.9
+
+# CIDR allowed to connect as the passwordless `default` user, mirroring the
+# `Ch` client the app connects with (see README.md). Scope this to the
+# VPC/VCN range, never 0.0.0.0/0 or ::/0.
+clickhouse_allowed_network_cidr: "10.0.0.0/16"
+
+# S3 cold-storage tier (opgg_umbrella S3 §4.3 / R16). OFF by default: a
+# config.d file naming an unreachable endpoint is a boot risk, and flipping
+# the app's CLICKHOUSE_STORAGE_POLICY_OVERRIDE to 'tiered' before the server
+# defines the policy fails table creation with NO_SUCH_POLICY. See README.md
+# for the operator runbook before setting this true.
+clickhouse_s3_cold_storage_enabled: false
+clickhouse_s3_cold_bucket_endpoint: ""
+clickhouse_s3_cold_move_factor: 0.1
+
+# "static_keys" (long-lived Customer Secret Keys) is the ONLY mode that works
+# against OCI Object Storage's S3-compatibility API — OCI instance principals
+# are not supported there. "instance_role" is AWS-only, and requires the
+# node's IAM role to grant s3:GetObject/PutObject/DeleteObject/ListBucket on
+# the bucket. Default is static_keys because it is the one mode that works on
+# every provider this role may run on; set instance_role explicitly on AWS if
+# you want the node-role credential path instead. See README.md.
+clickhouse_s3_cold_auth_mode: static_keys
+clickhouse_s3_cold_access_key_id: ""
+clickhouse_s3_cold_secret_access_key: ""

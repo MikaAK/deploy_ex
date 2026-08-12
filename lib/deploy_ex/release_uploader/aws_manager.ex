@@ -1,72 +1,57 @@
 defmodule DeployEx.ReleaseUploader.AwsManager do
-  def get_releases(region, bucket, prefix \\ nil) do
-    s3_opts = if prefix, do: [prefix: prefix], else: []
+  @moduledoc """
+  Release-bucket operations, resolved through the active provider's object store.
 
-    fetch_paginated_keys(region, bucket, s3_opts, [])
+  Every function here was 100% S3 plumbing with no release-specific logic — `get_releases/3`,
+  `upload/4` and `tag_object/4` map exactly onto `list_objects/2`, `upload_file/4` and
+  `put_object_tags/4` on `DeployEx.Cloud.ObjectStore`. A per-provider release manager would
+  have been a second abstraction over the same three operations, so the provider seam lives in
+  the object store and this module only adapts the argument order.
+
+  The name is historical: its callers pass region first, which the provider-neutral behaviour
+  does not, and renaming it would touch call sites unrelated to making a second provider work.
+  """
+
+  alias DeployEx.Cloud
+
+  @spec get_releases(String.t() | nil, String.t(), String.t() | nil) ::
+          {:ok, [String.t()]} | {:error, ErrorMessage.t()}
+  def get_releases(region, bucket, prefix \\ nil) do
+    with {:ok, store} <- Cloud.capability(:object_store) do
+      store.list_objects(bucket, store_opts(region, prefix: prefix))
+    end
   rescue
     e ->
       {:error,
-       ErrorMessage.failed_dependency("failed to list S3 releases", %{
+       ErrorMessage.failed_dependency("failed to list releases", %{
          exception: inspect(e.__struct__),
          error: Exception.message(e),
          stacktrace: Exception.format_stacktrace(__STACKTRACE__)
        })}
   end
 
-  defp fetch_paginated_keys(region, bucket, s3_opts, acc) do
-    bucket
-      |> ExAws.S3.list_objects(s3_opts)
-      |> ExAws.request(region: region)
-      |> handle_list_response(region, bucket, s3_opts, acc)
-  end
-
-  defp handle_list_response(
-         {:ok, %{body: %{contents: contents, is_truncated: "true"} = body}},
-         region,
-         bucket,
-         s3_opts,
-         acc
-       ) do
-    keys = Enum.map(contents, & &1.key)
-    marker = next_marker(body, contents)
-
-    fetch_paginated_keys(region, bucket, Keyword.put(s3_opts, :marker, marker), acc ++ keys)
-  end
-
-  defp handle_list_response({:ok, %{body: %{contents: contents}}}, _region, _bucket, _s3_opts, acc) do
-    {:ok, acc ++ Enum.map(contents, & &1.key)}
-  end
-
-  defp handle_list_response({:error, reason}, _region, _bucket, _s3_opts, _acc) do
-    {:error, ErrorMessage.failed_dependency("failed to list S3 releases", %{error: inspect(reason)})}
-  end
-
-  defp next_marker(%{next_marker: marker}, _contents) when is_binary(marker) and marker !== "", do: marker
-  defp next_marker(_body, contents), do: contents |> List.last() |> Map.fetch!(:key)
-
+  @spec upload(Path.t(), String.t() | nil, String.t(), String.t()) ::
+          :ok | {:error, ErrorMessage.t()}
   def upload(file_path, region, bucket, upload_path) do
-    file_path
-      |> ExAws.S3.Upload.stream_file
-      |> ExAws.S3.upload(bucket, upload_path)
-      |> ExAws.request(region: region)
-      |> handle_response
-  end
-
-  def tag_object(region, bucket, object_key, tags) do
-    bucket
-      |> ExAws.S3.put_object_tagging(object_key, tags)
-      |> ExAws.request(region: region)
-      |> handle_response
-  end
-
-  defp handle_response({:ok, %{body: body}}), do: {:ok, body}
-  defp handle_response({:ok, :done}), do: :ok
-
-  defp handle_response({:error, {:http_error, status, reason}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["aws failure", %{reason: reason}])}
+    with {:ok, store} <- Cloud.capability(:object_store) do
+      store.upload_file(bucket, upload_path, file_path, store_opts(region))
     end
-
-  defp handle_response({:error, error}) when is_binary(error) do
-    {:error, ErrorMessage.failed_dependency("aws failure: #{error}")}
   end
+
+  @spec tag_object(String.t() | nil, String.t(), String.t(), map()) ::
+          :ok | {:error, ErrorMessage.t()}
+  def tag_object(region, bucket, object_key, tags) do
+    with {:ok, store} <- Cloud.capability(:object_store) do
+      store.put_object_tags(bucket, object_key, tags, store_opts(region))
+    end
+  end
+
+  defp store_opts(region, extra \\ []) do
+    extra
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Keyword.merge(region_opts(region))
+  end
+
+  defp region_opts(nil), do: []
+  defp region_opts(region), do: [region: region]
 end
