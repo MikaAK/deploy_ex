@@ -22,7 +22,7 @@ defmodule DeployEx.Cloud.OciObjectStore do
     path = temp_path("get")
 
     with {:ok, _output} <-
-           OciCli.run("os object get --bucket-name #{quote_arg(container)} --name #{quote_arg(key)} --file #{quote_arg(path)}", opts) do
+           OciCli.run("os object get#{namespace_flag(opts)} --bucket-name #{quote_arg(container)} --name #{quote_arg(key)} --file #{quote_arg(path)}", opts) do
       read_and_discard(path)
     end
   end
@@ -43,7 +43,7 @@ defmodule DeployEx.Cloud.OciObjectStore do
   @impl DeployEx.Cloud.ObjectStore
   def upload_file(container, key, path, opts \\ []) do
     with {:ok, _output} <-
-           OciCli.run("os object put --bucket-name #{quote_arg(container)} --name #{quote_arg(key)} --file #{quote_arg(path)} --force", opts) do
+           OciCli.run("os object put#{namespace_flag(opts)} --bucket-name #{quote_arg(container)} --name #{quote_arg(key)} --file #{quote_arg(path)} --force", opts) do
       :ok
     end
   end
@@ -51,14 +51,14 @@ defmodule DeployEx.Cloud.OciObjectStore do
   @impl DeployEx.Cloud.ObjectStore
   def delete_object(container, key, opts \\ []) do
     with {:ok, _output} <-
-           OciCli.run("os object delete --bucket-name #{quote_arg(container)} --name #{quote_arg(key)} --force", opts) do
+           OciCli.run("os object delete#{namespace_flag(opts)} --bucket-name #{quote_arg(container)} --name #{quote_arg(key)} --force", opts) do
       :ok
     end
   end
 
   @impl DeployEx.Cloud.ObjectStore
   def list_objects(container, opts \\ []) do
-    command = "os object list --bucket-name #{quote_arg(container)} --all#{prefix_flag(opts)}"
+    command = "os object list#{namespace_flag(opts)} --bucket-name #{quote_arg(container)} --all#{prefix_flag(opts)}"
 
     with {:ok, payload} <- OciCli.run_json(command, opts) do
       {:ok, payload |> Map.get("data", []) |> Enum.map(&(&1["name"]))}
@@ -69,14 +69,14 @@ defmodule DeployEx.Cloud.OciObjectStore do
   def create_container(container, opts \\ []) do
     with {:ok, compartment_id} <- require_compartment_id(opts),
          {:ok, _output} <-
-           OciCli.run("os bucket create --compartment-id #{compartment_id} --name #{quote_arg(container)}", opts) do
+           OciCli.run("os bucket create#{namespace_flag(opts)} --compartment-id #{compartment_id} --name #{quote_arg(container)}", opts) do
       :ok
     end
   end
 
   @impl DeployEx.Cloud.ObjectStore
   def delete_container(container, opts \\ []) do
-    with {:ok, _output} <- OciCli.run("os bucket delete --bucket-name #{quote_arg(container)} --force", opts) do
+    with {:ok, _output} <- OciCli.run("os bucket delete#{namespace_flag(opts)} --bucket-name #{quote_arg(container)} --force", opts) do
       :ok
     end
   end
@@ -92,7 +92,7 @@ defmodule DeployEx.Cloud.OciObjectStore do
   @impl DeployEx.Cloud.ObjectStore
   def list_containers(opts \\ []) do
     with {:ok, compartment_id} <- require_compartment_id(opts),
-         {:ok, payload} <- OciCli.run_json("os bucket list --compartment-id #{compartment_id} --all", opts) do
+         {:ok, payload} <- OciCli.run_json("os bucket list#{namespace_flag(opts)} --compartment-id #{compartment_id} --all", opts) do
       {:ok, payload |> Map.get("data", []) |> Enum.map(&bucket_summary/1)}
     end
   end
@@ -130,6 +130,19 @@ defmodule DeployEx.Cloud.OciObjectStore do
 
       compartment_id ->
         {:ok, compartment_id}
+    end
+  end
+
+  # Passed explicitly rather than left to the CLI's auto-resolution. Resolving the namespace
+  # internally requires a tenancy read, which a correctly-scoped CI credential does NOT have —
+  # MEASURED: a user holding only object permissions fails every `oci os` call with "Unable to
+  # retrieve namespace internally. Please provide the namespace using the option
+  # --['namespace-name']". Auto-resolution only appears to work when the credential is
+  # over-privileged, so relying on it quietly punishes least privilege.
+  defp namespace_flag(opts) do
+    case OciCli.setting(opts, :namespace) do
+      namespace when is_binary(namespace) and namespace !== "" -> " --namespace #{quote_arg(namespace)}"
+      _absent -> ""
     end
   end
 
