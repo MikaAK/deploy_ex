@@ -76,6 +76,32 @@ defmodule DeployEx.Cloud.OciObjectStoreTest do
     end
   end
 
+  describe "namespace" do
+    # Resolving the namespace internally costs a tenancy read that a least-privilege CI
+    # credential does not have: it fails every call with "Unable to retrieve namespace
+    # internally". Auto-resolution only works when the credential is over-privileged, so this
+    # is invisible until someone does the right thing and scopes the CI user down.
+    test "is passed explicitly on object calls rather than left to auto-resolution" do
+      OciObjectStore.list_objects("bucket", stub(~s({"data": []})) ++ [oci_namespace: "axm8ic8kr5of"])
+
+      assert last_command() =~ "--namespace 'axm8ic8kr5of'"
+    end
+
+    test "is passed on bucket calls too" do
+      opts = stub(~s({"data": []})) ++ [oci_namespace: "axm8ic8kr5of", oci_compartment_id: @compartment]
+
+      OciObjectStore.list_containers(opts)
+
+      assert last_command() =~ "--namespace 'axm8ic8kr5of'"
+    end
+
+    test "is omitted when unset, so an unconfigured project still relies on auto-resolution" do
+      OciObjectStore.list_objects("bucket", stub(~s({"data": []})))
+
+      refute last_command() =~ "--namespace"
+    end
+  end
+
   describe "provider-shaped opts" do
     test "an AWS-shaped :region does NOT become the OCI region" do
       # AwsManager threads opts[:aws_region] (default us-west-2) through to whichever store is
