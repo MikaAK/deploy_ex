@@ -176,3 +176,13 @@ variable "<%= @app_name %>_project" {
 <%= @terraform_release_variables %>
   }
 }
+
+# Managed OCI Database with PostgreSQL instances — see database.tf. Same `any` reasoning as
+# the project variable above. Recognized keys: name, database_username, and optionally shape,
+# db_version, instance_ocpu_count, instance_memory_size_in_gbs. Empty map creates nothing.
+variable "resource_databases" {
+  description = "Map of managed PostgreSQL databases. Recognized keys: name, database_username, shape, db_version, instance_ocpu_count, instance_memory_size_in_gbs."
+  type        = any
+
+  default = {}
+}
