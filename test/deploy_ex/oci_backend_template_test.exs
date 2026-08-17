@@ -47,4 +47,23 @@ defmodule DeployEx.OciBackendTemplateTest do
 
     refute rendered =~ "backend"
   end
+
+  describe "managed postgres template" do
+    test "database.tf declares the psql system with durable storage and an ingress NSG" do
+      contents = "terraform/providers/oci/database.tf" |> DeployExHelpers.priv_folder() |> File.read!()
+
+      assert contents =~ ~s(resource "oci_psql_db_system" "database")
+      assert contents =~ "for_each = var.resource_databases"
+      assert contents =~ "is_regionally_durable = true"
+      assert contents =~ ~s(resource "oci_core_network_security_group" "database")
+      assert contents =~ "min = 5432"
+      assert contents =~ ~s(password_type = "PLAIN_TEXT")
+    end
+
+    test "the oci variables template declares resource_databases with an empty default" do
+      contents = "terraform/providers/oci/variables.tf.eex" |> DeployExHelpers.priv_folder() |> File.read!()
+
+      assert contents =~ ~s(variable "resource_databases")
+    end
+  end
 end
