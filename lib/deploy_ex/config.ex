@@ -15,6 +15,13 @@ defmodule DeployEx.Config do
   @spec oci_setting(atom()) :: term()
   def oci_setting(key), do: @app |> Application.get_env(:oci, []) |> Keyword.get(key)
 
+  # Follows the key layout already in use in the state bucket (oracle/<region>/<stack>/…),
+  # so deploy_ex state sits alongside states written by other tooling without colliding.
+  def oci_release_state_key do
+    oci_setting(:release_state_key) ||
+      "oracle/#{oci_setting(:region)}/#{DeployExHelpers.kebab_project_name()}-#{env()}/terraform.tfstate"
+  end
+
   @default_env to_string(Mix.env())
   def env, do: Application.get_env(@app, :env) || @default_env
   def aws_region, do: Application.get_env(@app, :aws_region) || "us-west-2"
