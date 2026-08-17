@@ -19,6 +19,7 @@ module "oci_instance" {
   compartment_ocid     = var.compartment_ocid
   availability_domain  = var.availability_domain
   subnet_id            = oci_core_subnet.public.id
+  nsg_ids              = [oci_core_network_security_group.ssh.id]
 
   instance_name  = each.value.name
   instance_count = try(each.value.instance_count, null)

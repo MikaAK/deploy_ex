@@ -5,7 +5,7 @@ defmodule DeployEx.Cloud.Providers.Oci do
   Slots fill per phase. One invented ahead of its phase would be untested guesswork that reads
   as working code, so an unfilled slot stays `nil` and surfaces as
   `{:error, %ErrorMessage{code: :not_implemented}}` rather than a plausible default.
-  `object_store` and `inventory` are filled; compute, networking and security are not.
+  `object_store`, `inventory` and `security` are filled; compute and networking are not.
 
   The config schema is the exception: it is strict from the start so a typo'd key fails at
   task start rather than mid-apply. Every key is optional — the schema catches mistakes, it
@@ -34,7 +34,12 @@ defmodule DeployEx.Cloud.Providers.Oci do
   ]
 
   @impl DeployEx.Cloud.Provider
-  def capabilities, do: %{object_store: DeployEx.Cloud.OciObjectStore}
+  def capabilities do
+    %{
+      object_store: DeployEx.Cloud.OciObjectStore,
+      security: DeployEx.Cloud.OciSecurityGroup
+    }
+  end
 
   @impl DeployEx.Cloud.Provider
   def config_schema, do: @config_schema

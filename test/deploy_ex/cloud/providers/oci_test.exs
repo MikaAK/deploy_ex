@@ -7,8 +7,11 @@ defmodule DeployEx.Cloud.Providers.OciTest do
     assert DeployEx.Cloud.Provider in (Oci.module_info(:attributes)[:behaviour] || [])
   end
 
-  test "capabilities/0 exposes the object store and nothing it has not implemented" do
-    assert Oci.capabilities() === %{object_store: DeployEx.Cloud.OciObjectStore}
+  test "capabilities/0 exposes the object store and security group and nothing else" do
+    assert Oci.capabilities() === %{
+             object_store: DeployEx.Cloud.OciObjectStore,
+             security: DeployEx.Cloud.OciSecurityGroup
+           }
   end
 
   test "slots not yet filled are nil, not invented" do

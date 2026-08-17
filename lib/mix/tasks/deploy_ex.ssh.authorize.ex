@@ -3,7 +3,8 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
 
   @shortdoc "Add or remove ssh authorization to the internal network for specific IPs"
   @moduledoc """
-  Manages SSH authorization by adding or removing IP addresses from the AWS security group whitelist.
+  Manages SSH authorization by adding or removing IP addresses from the active cloud provider's
+  security group / network security group whitelist.
 
   This task allows you to:
   1. Add your current IP address to the security group whitelist
@@ -33,8 +34,8 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
   - `quiet` (`-q`) - Suppress output messages
   - `remove` (`-r`) - Remove authorization instead of adding it
   - `ip` - Specific IP address to whitelist (defaults to current device's IP)
-  - `region` - AWS region (defaults to configured region)
-  - `security_group_id` - AWS security group ID to use (bypasses auto-detection)
+  - `region` - AWS region (defaults to configured region; ignored on OCI, which reads its own `:oci` config)
+  - `security_group_id` - Security group ID (AWS) or network security group OCID (OCI) to use (bypasses auto-detection)
   """
 
   def run(args) do
@@ -43,8 +44,9 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
     opts = parse_args(args)
 
     with :ok <- DeployExHelpers.check_valid_project(),
-         {:ok, security_group_id} <- DeployEx.AwsSecurityGroup.find_security_group_id(region: opts[:region], security_group_id: opts[:security_group_id]),
-         :ok <- add_or_remove_whitelist(opts, security_group_id) do
+         {:ok, security} <- DeployEx.Cloud.capability(:security),
+         {:ok, security_group_id} <- security.find_group(region: opts[:region], security_group_id: opts[:security_group_id]),
+         :ok <- add_or_remove_whitelist(security, opts, security_group_id) do
       :ok
     else
       {:error, e} -> Mix.raise(to_string(e))
@@ -67,29 +69,31 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
     opts
   end
 
-  defp add_or_remove_whitelist(opts, security_group_id) do
+  defp add_or_remove_whitelist(security, opts, security_group_id) do
     if opts[:remove] do
-      revoke_whitelist(opts, security_group_id)
+      revoke_whitelist(security, opts, security_group_id)
     else
-      whitelist(opts, security_group_id)
+      whitelist(security, opts, security_group_id)
     end
   end
 
-  defp revoke_whitelist(opts, security_group_id) do
+  defp revoke_whitelist(security, opts, security_group_id) do
     with {:ok, current_ip} <- get_arg_id_or_current_ip(opts) do
       Mix.shell().info(IO.ANSI.format([:yellow, "Deauthorizing current device #{current_ip} from security group #{security_group_id}", :reset]))
 
-      DeployEx.AwsIpWhitelister.deauthorize(security_group_id, current_ip)
+      security.revoke_ingress(security_group_id, to_cidr(current_ip), opts)
     end
   end
 
-  defp whitelist(opts, security_group_id) do
+  defp whitelist(security, opts, security_group_id) do
     with {:ok, current_ip} <- get_arg_id_or_current_ip(opts) do
       Mix.shell().info(IO.ANSI.format([:yellow, "Authorizing current device #{current_ip} in security group #{security_group_id}", :reset]))
 
-      DeployEx.AwsIpWhitelister.authorize(security_group_id, current_ip)
+      security.authorize_ingress(security_group_id, to_cidr(current_ip), opts)
     end
   end
+
+  defp to_cidr(ip_address), do: "#{ip_address}/32"
 
   defp get_arg_id_or_current_ip(opts) do
     if opts[:ip] do

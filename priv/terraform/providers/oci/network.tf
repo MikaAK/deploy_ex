@@ -65,6 +65,21 @@ resource "oci_core_security_list" "public" {
   freeform_tags = local.common_tags
 }
 
+# Holds the SSH ingress rule `mix deploy_ex.ssh.authorize` toggles. A network security group
+# rather than a second security list: `oci network nsg rules add`/`remove` operate on individual
+# rules by content or ID, so the whitelist toggle never has to read the full rule set and write
+# it back the way `oci_core_security_list` above would require. No default rules here — the
+# security list already grants open egress and any static SSH CIDR to every instance in the
+# subnet; this NSG exists solely for the dynamic per-run rule. See
+# `DeployEx.Cloud.OciSecurityGroup` for the client that manages it.
+resource "oci_core_network_security_group" "ssh" {
+  compartment_id = var.compartment_ocid
+  vcn_id         = oci_core_vcn.main.id
+  display_name   = "${local.name_prefix}-nsg"
+
+  freeform_tags = local.common_tags
+}
+
 resource "oci_core_subnet" "public" {
   compartment_id             = var.compartment_ocid
   vcn_id                     = oci_core_vcn.main.id
