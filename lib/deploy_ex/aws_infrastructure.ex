@@ -114,7 +114,9 @@ defmodule DeployEx.AwsInfrastructure do
     base_name = project_name |> String.replace("-#{environment}", "") |> String.replace("_#{environment}", "")
     key_pattern = ~r/^#{Regex.escape(base_name)}-.*key-pair/
 
-    with {:ok, key_pairs} <- describe_key_pairs(region) do
+    request_fn = opts[:request_fn] || (&ExAws.request/2)
+
+    with {:ok, key_pairs} <- describe_key_pairs(region, request_fn) do
       matching = key_pairs
         |> Enum.filter(fn kp ->
           name = kp["keyName"] || ""
@@ -133,9 +135,13 @@ defmodule DeployEx.AwsInfrastructure do
     end
   end
 
-  defp describe_key_pairs(region) do
+  # `:request_fn` is the same injection seam find_subnet_ids/1 and find_iam_instance_profile/1
+  # already use. Without it this path can only be exercised against a live AWS account, which is
+  # how its tests ended up calling the real API and failing based on what happened to exist
+  # there.
+  defp describe_key_pairs(region, request_fn) do
     ExAws.EC2.describe_key_pairs()
-    |> ExAws.request(region: region)
+    |> request_fn.(region: region)
     |> handle_key_pairs_list_response()
   end
 
