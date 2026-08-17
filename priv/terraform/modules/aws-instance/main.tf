@@ -185,6 +185,13 @@ resource "aws_instance" "ec2_instance" {
     ManagedBy     = "DeployEx"
     SetupComplete = local.use_latest_ami ? "true" : "false"
   }, var.tags)
+
+  # The base AMI data source uses most_recent = true, so every newly published
+  # distro AMI would otherwise force-replace every running instance on the next
+  # apply. New AMIs are picked up when an instance is intentionally rebuilt.
+  lifecycle {
+    ignore_changes = [ami]
+  }
 }
 
 ### EBS Start ###

@@ -118,5 +118,13 @@ resource "aws_db_instance" "rds_database" {
     Vendor      = "Postgres"
     Type        = "Database"
   }, var.tags)
+
+  # engine_version comes from the aws_rds_engine_version data source, which
+  # reports the AWS *default* version. Once RDS auto-applies a minor upgrade the
+  # running version moves ahead of that default and every apply plans a
+  # downgrade. Version changes are made by bumping the instance deliberately.
+  lifecycle {
+    ignore_changes = [engine_version]
+  }
 }
 
