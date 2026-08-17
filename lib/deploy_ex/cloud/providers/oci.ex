@@ -28,6 +28,8 @@ defmodule DeployEx.Cloud.Providers.Oci do
     shape_memory_gbs: [type: {:or, [:pos_integer, nil]}],
     release_bucket: [type: {:or, [:string, nil]}],
     release_state_bucket: [type: {:or, [:string, nil]}],
+    release_state_key: [type: {:or, [:string, nil]}],
+    state_profile: [type: {:or, [:string, nil]}],
     log_bucket: [type: {:or, [:string, nil]}],
     log_region: [type: {:or, [:string, nil]}],
     resource_group: [type: {:or, [:string, nil]}]
@@ -44,9 +46,10 @@ defmodule DeployEx.Cloud.Providers.Oci do
   @impl DeployEx.Cloud.Provider
   def config_schema, do: @config_schema
 
-  # Filled by Phase 2 (terraform environment).
+  # State rides OCI's S3-compatibility endpoint — there is no native OCI backend in
+  # terraform, so the :s3 backend with a Customer Secret Key is the only remote option.
   @impl DeployEx.Cloud.Provider
-  def backend_template, do: nil
+  def backend_template, do: :s3
 
   # Filled by Phase 2 (cloud-init completion marker, spike S5).
   @impl DeployEx.Cloud.Provider
