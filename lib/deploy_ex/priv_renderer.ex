@@ -157,6 +157,12 @@ defmodule DeployEx.PrivRenderer do
 
       terraform_backend: DeployEx.Config.terraform_backend(),
 
+      oci_region: DeployEx.Config.oci_setting(:region),
+      oci_namespace: DeployEx.Config.oci_setting(:namespace),
+      oci_state_bucket: DeployEx.Config.oci_setting(:release_state_bucket),
+      oci_state_key: DeployEx.Config.oci_release_state_key(),
+      oci_state_profile: DeployEx.Config.oci_setting(:state_profile),
+
       pem_app_name: opts[:pem_app_name] || "#{kebab_app_name}-#{random_bytes}",
       app_name: app_name,
       kebab_app_name: kebab_app_name,

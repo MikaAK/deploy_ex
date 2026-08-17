@@ -14,8 +14,11 @@ defmodule DeployEx.Cloud.Providers.OciTest do
            }
   end
 
+  test "backend_template/0 is :s3 — state rides the S3-compatibility endpoint" do
+    assert Oci.backend_template() === :s3
+  end
+
   test "slots not yet filled are nil, not invented" do
-    assert is_nil(Oci.backend_template())
     assert is_nil(Oci.completion_marker())
     assert is_nil(Oci.cli_adapter())
   end
