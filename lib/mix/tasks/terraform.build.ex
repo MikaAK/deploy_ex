@@ -83,7 +83,7 @@ defmodule Mix.Tasks.Terraform.Build do
         oci_state_key: DeployEx.Config.oci_release_state_key(),
         oci_state_profile: DeployEx.Config.oci_setting(:state_profile),
 
-        pem_app_name: opts[:pem_app_name] || "#{DeployExHelpers.kebab_project_name()}-#{random_bytes}",
+        pem_app_name: opts[:pem_app_name] || existing_pem_app_name(opts[:directory]) || "#{DeployExHelpers.kebab_project_name()}-#{random_bytes}",
         app_name: DeployExHelpers.underscored_project_name(),
         kebab_app_name: DeployExHelpers.kebab_project_name(),
 
@@ -217,6 +217,22 @@ defmodule Mix.Tasks.Terraform.Build do
       target |> Path.dirname() |> File.mkdir_p!()
       DeployExHelpers.write_file(target, contents, Keyword.put(opts, :message, "* syncing #{target}"))
     end
+  end
+
+  # A fresh random pem name every build makes each rebuild+apply REPLACE the key file under a
+  # new name while ansible.cfg still points at the previous one — every node goes UNREACHABLE
+  # with "no such identity" (measured). Reuse whatever name the existing render already
+  # carries; the random suffix is only for the first build.
+  defp existing_pem_app_name(directory) do
+    directory
+    |> Path.join("*.tf")
+    |> Path.wildcard()
+    |> Enum.find_value(fn file ->
+      case Regex.run(~r/"([A-Za-z0-9-]+)-key-pair\.pem"/, File.read!(file)) do
+        [_full, pem_app_name] -> pem_app_name
+        _no_match -> nil
+      end
+    end)
   end
 
   # The AWS block advertises autoscaling, which has no OCI implementation yet — leaving that
