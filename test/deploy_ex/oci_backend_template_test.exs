@@ -56,6 +56,8 @@ defmodule DeployEx.OciBackendTemplateTest do
       assert contents =~ "for_each = var.resource_databases"
       assert contents =~ "is_regionally_durable = try(each.value.regionally_durable, false)"
       assert contents =~ ~s(resource "oci_core_network_security_group" "database")
+      assert contents =~ ~s(resource "oci_core_subnet" "database_private")
+      assert contents =~ "prohibit_public_ip_on_vnic = true"
       assert contents =~ "min = 5432"
       assert contents =~ ~s(password_type = "PLAIN_TEXT")
     end

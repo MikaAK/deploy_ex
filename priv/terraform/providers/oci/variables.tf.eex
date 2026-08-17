@@ -93,6 +93,12 @@ variable "subnet_cidr" {
   default     = "10.20.1.0/24"
 }
 
+variable "database_subnet_cidr" {
+  description = "CIDR for the private database subnet — the managed psql service rejects public subnets. Only created when resource_databases is non-empty."
+  type        = string
+  default     = "10.20.2.0/24"
+}
+
 variable "ssh_ingress_cidr" {
   description = "Who may reach port 22. Empty creates NO ssh rule; OCI rejects any CIDR inside 0.0.0.0/8, so a sentinel CIDR is not an option."
   type        = string
