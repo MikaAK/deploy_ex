@@ -1,4 +1,6 @@
 defmodule DeployEx.ReleaseUploader do
+  require Logger
+
   alias DeployEx.ReleaseUploader.{State, AwsManager, UpdateValidator}
 
   @type opts :: [
@@ -150,12 +152,32 @@ defmodule DeployEx.ReleaseUploader do
           |> case do
             :ok -> :ok
             {:ok, _} -> :ok
+            {:error, %ErrorMessage{code: :not_implemented}} -> skip_unsupported_tagging(remote_file_path)
             {:error, _} = error -> error
           end
 
       _ ->
         :ok
     end
+  end
+
+  # Object tagging is OPTIONAL. OCI Object Storage has none — its nearest equivalent is
+  # user metadata, settable only at put time — so a provider without it must not fail the
+  # upload. MEASURED: every release on a qa/ branch failed with "oci object storage has no
+  # object tagging" AFTER the object had already uploaded successfully.
+  #
+  # Nothing is lost. This tag is write-only inside deploy_ex — @qa_tag_key appears at its
+  # definition and at the write above, and nowhere else — while the thing that actually marks
+  # a QA release is the `qa/` key prefix, which drives remote-release lookup and is provider
+  # independent. The tag exists for external tooling (lifecycle rules and the like), so its
+  # absence is worth saying out loud rather than swallowing silently.
+  defp skip_unsupported_tagging(remote_file_path) do
+    Logger.info(
+      "#{__MODULE__}: provider has no object tagging, relying on the key prefix to mark the " <>
+        "QA release, path: #{inspect(remote_file_path)}"
+    )
+
+    :ok
   end
 
   defp release_prefix(opts) when is_map(opts) do
