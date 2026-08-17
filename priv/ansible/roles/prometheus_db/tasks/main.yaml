@@ -7,9 +7,19 @@
         update_cache: true
 
     - name: Add PrometheusDB config to /root/prometheus.yaml
+      register: prometheus_config
       template:
         src: prometheus.yaml.j2
         dest: /root/prometheus-config.yaml
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Add PrometheusDB alert rules to /root/prometheus-rules.yaml
+      register: prometheus_rules
+      template:
+        src: prometheus-rules.yaml.j2
+        dest: /root/prometheus-rules.yaml
         owner: root
         group: root
         mode: 0644
@@ -38,6 +48,12 @@
         daemon_reload: true
         name: prometheus
         state: started
+
+    - name: Restart prometheus service when config or rules changed
+      systemd:
+        name: prometheus
+        state: restarted
+      when: prometheus_config.changed or prometheus_rules.changed
 
   become: true
 
