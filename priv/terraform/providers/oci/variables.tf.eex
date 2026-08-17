@@ -106,7 +106,7 @@ variable "ssh_ingress_cidr" {
 variable "instance_shape" {
   description = "Flex shape. VM.Standard.A1.Flex is the always-free ARM shape and needs an aarch64 image."
   type        = string
-  default     = "VM.Standard.E5.Flex"
+  default     = "VM.Standard.E6.Flex"
 }
 
 variable "instance_ocpus" {
