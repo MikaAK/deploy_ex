@@ -38,10 +38,11 @@ resource "oci_core_network_security_group_security_rule" "database_ingress" {
   }
 }
 
-# Regionally durable storage needs no availability domain and survives AD loss. The flex
-# shape sizes via instance_ocpu_count/memory rather than a fixed-shape name. The admin
-# password is generated into state — state is remote and private, matching the AWS
-# random_password approach.
+# Regional durability is only offered in 3-AD regions — single-AD regions (ap-seoul-1,
+# ap-chuncheon-1) reject it with 400-InvalidParameter and require an explicit availability
+# domain instead, so AD-pinned is the default here. The flex shape sizes via
+# instance_ocpu_count/memory rather than a fixed-shape name. The admin password is generated
+# into state — state is remote and private, matching the AWS random_password approach.
 resource "oci_psql_db_system" "database" {
   for_each = var.resource_databases
 
@@ -69,7 +70,8 @@ resource "oci_psql_db_system" "database" {
 
   storage_details {
     system_type           = "OCI_OPTIMIZED_STORAGE"
-    is_regionally_durable = true
+    is_regionally_durable = try(each.value.regionally_durable, false)
+    availability_domain   = try(each.value.regionally_durable, false) ? null : var.availability_domain
   }
 
   freeform_tags = local.common_tags
