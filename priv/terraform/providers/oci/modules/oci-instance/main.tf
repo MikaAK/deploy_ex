@@ -24,6 +24,7 @@ resource "oci_core_instance" "main" {
 
   create_vnic_details {
     subnet_id        = var.subnet_id
+    nsg_ids          = var.nsg_ids
     assign_public_ip = var.assign_public_ip
     display_name     = "${local.kebab_instance_name}-vnic-${count.index}"
     hostname_label   = "${local.kebab_instance_name}-${count.index}"
