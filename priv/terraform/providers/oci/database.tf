@@ -9,6 +9,34 @@ resource "random_password" "psql_admin" {
   special = false
 }
 
+# The psql service rejects public subnets outright (400: "is not a private subnet"), so the
+# DB gets its own private subnet: no public IPs, and a route table with no routes — nothing
+# outside the VCN can be reached from it, and nodes reach the DB endpoint intra-VCN.
+resource "oci_core_route_table" "database_private" {
+  count = length(var.resource_databases) > 0 ? 1 : 0
+
+  compartment_id = var.compartment_ocid
+  vcn_id         = oci_core_vcn.main.id
+  display_name   = "${local.name_prefix}-database-rt"
+
+  freeform_tags = local.common_tags
+}
+
+resource "oci_core_subnet" "database_private" {
+  count = length(var.resource_databases) > 0 ? 1 : 0
+
+  compartment_id             = var.compartment_ocid
+  vcn_id                     = oci_core_vcn.main.id
+  cidr_block                 = var.database_subnet_cidr
+  display_name               = "${local.name_prefix}-database-subnet"
+  dns_label                  = "db"
+  prohibit_public_ip_on_vnic = true
+  route_table_id             = oci_core_route_table.database_private[0].id
+  security_list_ids          = [oci_core_security_list.public.id]
+
+  freeform_tags = local.common_tags
+}
+
 # The subnet security list only admits SSH, and OCI filters intra-subnet traffic too — the
 # nodes reach postgres through this NSG, not through subnet membership.
 resource "oci_core_network_security_group" "database" {
@@ -64,7 +92,7 @@ resource "oci_psql_db_system" "database" {
   }
 
   network_details {
-    subnet_id = oci_core_subnet.public.id
+    subnet_id = oci_core_subnet.database_private[0].id
     nsg_ids   = [oci_core_network_security_group.database[0].id]
   }
 
