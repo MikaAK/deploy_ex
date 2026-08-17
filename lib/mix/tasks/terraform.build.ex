@@ -30,13 +30,17 @@ defmodule Mix.Tasks.Terraform.Build do
     opts = args
       |> parse_args
       |> put_render_dir_paths()
-      |> Keyword.put_new(:directory, @terraform_default_path)
-      |> Keyword.put_new(:aws_region, @default_aws_region)
-      |> Keyword.put_new(:aws_release_bucket, @default_aws_release_bucket)
+      # Runtime Config calls, not the module attributes: an attribute captures the value when
+      # the DEP compiles, so a consuming project's config change silently renders stale
+      # defaults until a forced deps.compile. Mix.env() has the same problem for :env — it is
+      # always :dev in a local shell regardless of `config :deploy_ex, :env`.
+      |> Keyword.put_new(:directory, DeployEx.Config.terraform_folder_path())
+      |> Keyword.put_new(:aws_region, DeployEx.Config.aws_region())
+      |> Keyword.put_new(:aws_release_bucket, DeployEx.Config.aws_release_bucket())
       |> Keyword.put_new(:aws_log_bucket, DeployEx.Config.aws_log_bucket())
       |> Keyword.put_new(:aws_release_state_bucket, DeployEx.Config.aws_release_state_bucket())
       |> Keyword.put_new(:aws_release_state_lock_table, DeployEx.Config.aws_release_state_lock_table())
-      |> Keyword.put_new(:env, Mix.env())
+      |> Keyword.put_new(:env, DeployEx.Config.env())
 
     no_logging = opts[:no_logging] || opts[:no_loki] || false
     opts = Keyword.put(opts, :no_logging, no_logging)
