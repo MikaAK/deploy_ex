@@ -218,8 +218,27 @@ defmodule Mix.Tasks.DeployEx.Release do
       |> DeployEx.Utils.reduce_status_tuples
   end
 
+  # A release name is not required to match an umbrella app directory — a release bundles
+  # applications and is commonly named for its ROLE (server, ingestion, migrate) rather than
+  # for any one app. app_path/1 looks the name up in apps_paths() and returns nil for those,
+  # which reached Path.join/2 and killed the whole build with "no function clause matching in
+  # IO.chardata_to_string/1" — MEASURED against an umbrella whose six releases are all
+  # role-named.
+  #
+  # With no single app directory there is nothing to search for assets in, so the asset steps
+  # are skipped. A release whose name DOES match an app still resolves and builds as before.
   defp run_app_type_pre_release(:phoenix, candidate) do
-    app_path = DeployEx.ProjectContext.app_path(candidate.app_name)
+    case DeployEx.ProjectContext.app_path(candidate.app_name) do
+      nil -> :ok
+      app_path -> run_phoenix_pre_release(app_path, candidate)
+    end
+  end
+
+  defp run_app_type_pre_release(:normal, _candidate) do
+    nil
+  end
+
+  defp run_phoenix_pre_release(app_path, candidate) do
     package_json_path = Path.join(app_path, "assets/package.json")
 
     has_package_lock? = File.exists?(package_json_path)
@@ -244,13 +263,17 @@ defmodule Mix.Tasks.DeployEx.Release do
     :ok
   end
 
-  defp run_app_type_pre_release(:normal, _candidate) do
-    nil
+  defp run_phoenix_asset_pipeline(app_name) do
+    case DeployEx.ProjectContext.app_path(app_name) do
+      nil -> :ok
+      app_path -> run_phoenix_asset_pipeline(app_name, app_path)
+    end
   end
 
-  defp run_phoenix_asset_pipeline(app_name) do
+  # Same nil case as run_app_type_pre_release/2: a role-named release has no app directory, so
+  # Path.join/2 below would crash on nil.
+  defp run_phoenix_asset_pipeline(app_name, app_path) do
     app_name_atom = String.to_atom(app_name)
-    app_path = DeployEx.ProjectContext.app_path(app_name)
 
     with {:ok, js_files} <- app_path |> Path.join("./assets/js") |> File.ls do
       if Enum.any?(js_files) do
