@@ -8,6 +8,11 @@ output "subnet_id" {
   value       = oci_core_subnet.public.id
 }
 
+output "ssh_nsg_id" {
+  description = "OCID of the network security group mix deploy_ex.ssh.authorize manages"
+  value       = oci_core_network_security_group.ssh.id
+}
+
 output "instance_ids" {
   description = "Compute instance OCIDs, keyed by app name"
   value       = { for app, mod in module.oci_instance : app => mod.instance_ids }
