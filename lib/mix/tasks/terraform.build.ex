@@ -37,7 +37,7 @@ defmodule Mix.Tasks.Terraform.Build do
     with :ok <- DeployExHelpers.check_valid_project(),
          :ok <- ensure_terraform_installed(opts),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
-         :ok <- ensure_terraform_directory_exists(opts[:directory], provider) do
+         :ok <- ensure_terraform_directory_exists(opts[:directory], provider, opts) do
       random_bytes = 6 |> :crypto.strong_rand_bytes |> Base.encode32(padding: false)
 
       terraform_app_releases_variables = releases
@@ -193,31 +193,41 @@ defmodule Mix.Tasks.Terraform.Build do
   # Seeds only the active provider's file set. A whole-tree copy would put every provider's
   # templates into every user's ./deploys — an :aws user would find providers/oci/*.tf sitting
   # in their terraform root, where tofu would try to load them.
-  defp ensure_terraform_directory_exists(directory, provider) do
-    if File.exists?(directory) do
-      :ok
-    else
+  #
+  # Syncs on EVERY build, not only when the directory is first created: a first-seed-only copy
+  # left existing trees permanently stale for static (non-.eex) files — new provider files
+  # never arrived and module updates never landed, while the .eex renders around them DID
+  # update, producing a tree that references module variables its stale modules lack.
+  defp ensure_terraform_directory_exists(directory, provider, opts) do
+    if !File.exists?(directory) do
       Mix.shell().info([:green, "* copying ", to_string(provider), " terraform into ", :reset, directory])
+    end
 
-      priv_path = DeployExHelpers.priv_folder("terraform")
+    priv_path = DeployExHelpers.priv_folder("terraform")
 
-      with {:ok, files} <- DeployEx.Cloud.PrivFileSet.files(provider, priv_path) do
-        File.mkdir_p!(directory)
+    with {:ok, files} <- DeployEx.Cloud.PrivFileSet.files(provider, priv_path) do
+      File.mkdir_p!(directory)
 
-        files
-        |> Enum.reject(fn {source, _dest} -> String.ends_with?(source, ".eex") end)
-        |> Enum.each(fn {source, dest} -> copy_priv_file(priv_path, directory, source, dest) end)
+      files
+      |> Enum.reject(fn {source, _dest} -> String.ends_with?(source, ".eex") end)
+      |> Enum.each(fn {source, dest} -> sync_priv_file(priv_path, directory, source, dest, opts) end)
 
-        :ok
-      end
+      :ok
     end
   end
 
-  defp copy_priv_file(priv_path, directory, source, dest) do
+  # Identical contents short-circuit silently — write_file would route them into the
+  # "overwrite declined" warning, which is false for an unchanged file.
+  defp sync_priv_file(priv_path, directory, source, dest, opts) do
+    contents = File.read!(Path.join(priv_path, source))
     target = Path.join(directory, dest)
 
-    target |> Path.dirname() |> File.mkdir_p!()
-    File.cp!(Path.join(priv_path, source), target)
+    if File.exists?(target) and File.read!(target) === contents do
+      :ok
+    else
+      target |> Path.dirname() |> File.mkdir_p!()
+      DeployExHelpers.write_file(target, contents, Keyword.put(opts, :message, "* syncing #{target}"))
+    end
   end
 
   # The AWS block advertises autoscaling, which has no OCI implementation yet — leaving that
