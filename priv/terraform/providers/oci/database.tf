@@ -47,7 +47,7 @@ resource "oci_psql_db_system" "database" {
 
   compartment_id = var.compartment_ocid
   display_name   = "${each.value.name}-${var.environment}"
-  shape          = try(each.value.shape, "PostgreSQL.VM.Standard.E5.Flex")
+  shape          = try(each.value.shape, "PostgreSQL.VM.Standard.E6.Flex")
   db_version     = try(each.value.db_version, "16")
 
   instance_ocpu_count         = try(each.value.instance_ocpu_count, 2)

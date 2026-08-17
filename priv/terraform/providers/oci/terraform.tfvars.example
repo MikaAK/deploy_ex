@@ -9,7 +9,7 @@
 #   home_region                  : oci iam region-subscription list (the one marked is-home-region)
 #   image                        : oci compute image list --compartment-id <compartment> \
 #                                    --operating-system "Canonical Ubuntu" \
-#                                    --operating-system-version "24.04" --shape VM.Standard.E5.Flex
+#                                    --operating-system-version "24.04" --shape VM.Standard.E6.Flex
 
 tenancy_ocid     = "ocid1.tenancy.oc1..aaaa..."
 user_ocid        = "ocid1.user.oc1..aaaa..."
