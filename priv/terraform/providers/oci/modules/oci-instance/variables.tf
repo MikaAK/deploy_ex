@@ -31,6 +31,13 @@ variable "subnet_id" {
   nullable    = false
 }
 
+variable "nsg_ids" {
+  description = "Network security group OCIDs attached to each instance's VNIC"
+  type        = list(string)
+  default     = []
+  nullable    = false
+}
+
 variable "instance_name" {
   description = "Instance name itself"
   type        = string
