@@ -67,6 +67,7 @@ defmodule Mix.Tasks.Terraform.Build do
         oci_state_bucket: DeployEx.Config.oci_setting(:release_state_bucket),
         oci_state_key: DeployEx.Config.oci_release_state_key(),
         oci_state_profile: DeployEx.Config.oci_setting(:state_profile),
+        oci_vcn_cidr: DeployEx.Config.oci_setting(:vcn_cidr) || "10.20.0.0/16",
 
         pem_app_name: opts[:pem_app_name] || existing_pem_app_name(opts[:directory]) || "#{DeployExHelpers.kebab_project_name()}-#{random_bytes}",
         app_name: DeployExHelpers.underscored_project_name(),
