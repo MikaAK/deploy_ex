@@ -45,6 +45,16 @@ resource "oci_core_security_list" "public" {
     protocol    = "all"
   }
 
+  # Unlike AWS, OCI filters traffic BETWEEN instances on the same subnet — with only the SSH
+  # rule below, an app node cannot reach redis (6379), clickhouse (8123) or any BEAM peer
+  # (measured: 6379 refused server → redis). This is the analogue of the AWS app security
+  # group's self-referencing rule: everything inside the VCN trusts everything else, and only
+  # the public edge is gated. Includes ICMP so path-MTU discovery works between nodes.
+  ingress_security_rules {
+    source   = var.vcn_cidr
+    protocol = "all"
+  }
+
   # No SSH rule at all when no CIDR is supplied. OCI rejects any CIDR inside 0.0.0.0/8, so the
   # AWS trick of using 0.0.0.0/32 as a "matches nothing" sentinel is invalid here — absence has
   # to be expressed by omitting the rule. protocol 6 is TCP.
