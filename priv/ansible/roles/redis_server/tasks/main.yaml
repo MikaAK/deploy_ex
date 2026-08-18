@@ -233,6 +233,35 @@
       state: started
     when: not redis_use_stack_binary and ansible_facts['distribution'] == 'Debian'
 
+  # The Debian units run redis as root, and /data arrives from the EBS mount role there. The
+  # Ubuntu package unit runs as User=redis under ProtectSystem, so redis.conf's `dir /data`
+  # needs the directory to exist, be owned by redis, and be whitelisted for the unit —
+  # otherwise the restart fails with a bare "No such file or directory" (measured).
+  - name: Create /data for redis (Ubuntu)
+    file:
+      path: /data
+      state: directory
+      owner: redis
+      group: redis
+      mode: '0750'
+    when: ansible_facts['distribution'] == 'Ubuntu'
+
+  - name: Create the redis-server unit drop-in directory (Ubuntu)
+    file:
+      path: /etc/systemd/system/redis-server.service.d
+      state: directory
+      mode: '0755'
+    when: ansible_facts['distribution'] == 'Ubuntu'
+
+  - name: Allow the redis-server unit to write /data (Ubuntu)
+    copy:
+      dest: /etc/systemd/system/redis-server.service.d/data-dir.conf
+      mode: '0644'
+      content: |
+        [Service]
+        ReadWritePaths=-/data
+    when: ansible_facts['distribution'] == 'Ubuntu'
+
   # restarted, not started: the packages.redis.io install already brought redis up on the
   # stock conf, so a plain `started` would leave our /etc/redis/redis.conf unread until the
   # next reboot.
