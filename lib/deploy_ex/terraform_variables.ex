@@ -102,7 +102,35 @@ defmodule DeployEx.TerraformVariables do
     end
   end
 
+  # Opt-in (--clickhouse), unlike redis: ClickHouse is not part of the default stack on either
+  # provider — an AWS user hand-writes this entry — so an OCI render must not grow a node
+  # nobody asked for. The DatabaseKey tag is what routes it into the database_*_clickhouse
+  # inventory group the setup playbook targets.
+  def terraform_clickhouse_variables(opts, :oci) do
+    if opts[:clickhouse] do
+      """
+          #{DeployExHelpers.underscored_project_name()}_clickhouse = {
+            name = "#{DeployExHelpers.title_case_project_name()} Clickhouse"
 
+            shape       = "VM.Standard.E6.Flex"
+            ocpus       = 2
+            memory_gbs  = 16
+
+            boot_volume_size_gbs = 200
+
+            tags = {
+              Vendor      = "ClickHouse"
+              Type        = "Database"
+              DatabaseKey = "#{DeployExHelpers.underscored_project_name()}_clickhouse"
+            }
+          },
+      """
+    else
+      ""
+    end
+  end
+
+  def terraform_clickhouse_variables(_opts, _provider), do: ""
 
   # OCI mirror of the AWS sizing below. 1 OCPU is 2 vCPU on the E-flex shapes, so
   # ocpus = 1 / memory_gbs = 8 is the same 2 vCPU / 8GB as t3.large and clears the same
