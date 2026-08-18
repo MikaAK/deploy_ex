@@ -72,6 +72,7 @@ defmodule Mix.Tasks.Ansible.Build do
          :ok <- validate_provider_opts(provider, opts),
          :ok <- ensure_ansible_directory_exists(opts[:directory], provider, opts),
          :ok <- sync_ansible_roles(opts[:directory], provider, opts),
+         :ok <- seed_new_setup_playbooks(opts[:directory], opts),
          :ok <- create_ansible_hosts_file(provider, opts),
          :ok <- create_ansible_config_file(provider, opts),
          :ok <- create_ansible_group_vars_file(provider, opts),
@@ -619,6 +620,33 @@ defmodule Mix.Tasks.Ansible.Build do
 
       File.cp_r!(priv_roles, target_roles)
       sync_provider_role_overlay(provider, target_roles)
+    end
+
+    :ok
+  end
+
+  # Setup playbooks were seeded only when the ansible directory was first created, so a role
+  # added to deploy_ex later (rabbitmq_server) synced its ROLE into an existing tree but never
+  # its setup/<name>.yaml — `mix ansible.setup --only rabbitmq` then matched no file and
+  # exited 0 having done nothing (measured). Only NEW playbooks are seeded: existing ones are
+  # user-owned (operators hand-add roles to them) and are never overwritten here.
+  defp seed_new_setup_playbooks(directory, opts) do
+    priv_setup = DeployExHelpers.priv_folder("ansible/setup")
+    target_setup = Path.join(directory, "setup")
+
+    if File.dir?(priv_setup) and File.dir?(target_setup) do
+      priv_setup
+      |> Path.join("*.yaml")
+      |> Path.wildcard()
+      |> Enum.reject(&File.exists?(Path.join(target_setup, Path.basename(&1))))
+      |> Enum.each(fn source ->
+        target = Path.join(target_setup, Path.basename(source))
+        File.cp!(source, target)
+
+        unless opts[:quiet] do
+          Mix.shell().info([:green, "* seeding new setup playbook ", :reset, target])
+        end
+      end)
     end
 
     :ok
