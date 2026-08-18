@@ -132,6 +132,36 @@ defmodule DeployEx.TerraformVariables do
 
   def terraform_clickhouse_variables(_opts, _provider), do: ""
 
+  # Opt-in (--rabbitmq), same reasoning as clickhouse. Single node: the app declares quorum
+  # queues, which are correct on one node (Raft majority of 1); more nodes buy HA and a
+  # 2-node layout is the one to avoid. The DatabaseKey tag routes it into the
+  # database_*_rabbitmq inventory group the setup playbook targets.
+  def terraform_rabbitmq_variables(opts, :oci) do
+    if opts[:rabbitmq] do
+      """
+          #{DeployExHelpers.underscored_project_name()}_rabbitmq = {
+            name = "#{DeployExHelpers.title_case_project_name()} Rabbitmq"
+
+            shape       = "VM.Standard.E6.Flex"
+            ocpus       = 2
+            memory_gbs  = 16
+
+            boot_volume_size_gbs = 100
+
+            tags = {
+              Vendor      = "RabbitMQ"
+              Type        = "Database"
+              DatabaseKey = "#{DeployExHelpers.underscored_project_name()}_rabbitmq"
+            }
+          },
+      """
+    else
+      ""
+    end
+  end
+
+  def terraform_rabbitmq_variables(_opts, _provider), do: ""
+
   # Sentry carries no sizing keys on either provider, so one clause serves both.
   def terraform_sentry_variables(opts, _provider) do
     if opts[:no_sentry] do
