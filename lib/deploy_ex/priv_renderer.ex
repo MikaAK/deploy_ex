@@ -176,6 +176,7 @@ defmodule DeployEx.PrivRenderer do
       terraform_release_variables: terraform_app_releases_variables,
       terraform_redis_variables: DeployEx.TerraformVariables.terraform_redis_variables(opts, provider),
       terraform_clickhouse_variables: DeployEx.TerraformVariables.terraform_clickhouse_variables(opts, provider),
+      terraform_rabbitmq_variables: DeployEx.TerraformVariables.terraform_rabbitmq_variables(opts, provider),
       terraform_sentry_variables: DeployEx.TerraformVariables.terraform_sentry_variables(opts, provider),
       terraform_grafana_variables: DeployEx.TerraformVariables.terraform_grafana_variables(opts, provider),
       terraform_loki_variables: DeployEx.TerraformVariables.terraform_loki_variables(opts, provider),

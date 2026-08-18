@@ -720,6 +720,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
         input(:no_grafana, "Disable Grafana", :boolean),
         input(:no_redis, "Disable Redis", :boolean),
         input(:clickhouse, "Add a ClickHouse node (OCI)", :boolean),
+        input(:rabbitmq, "Add a RabbitMQ node (OCI)", :boolean),
         input(:no_prometheus, "Disable Prometheus", :boolean)
       ]
     },
