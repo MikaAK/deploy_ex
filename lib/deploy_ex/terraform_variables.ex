@@ -132,6 +132,36 @@ defmodule DeployEx.TerraformVariables do
 
   def terraform_clickhouse_variables(_opts, _provider), do: ""
 
+  # Opt-in (--rabbitmq), same reasoning as clickhouse. Single node: the app declares quorum
+  # queues, which are correct on one node (Raft majority of 1); more nodes buy HA and a
+  # 2-node layout is the one to avoid. The DatabaseKey tag routes it into the
+  # database_*_rabbitmq inventory group the setup playbook targets.
+  def terraform_rabbitmq_variables(opts, :oci) do
+    if opts[:rabbitmq] do
+      """
+          #{DeployExHelpers.underscored_project_name()}_rabbitmq = {
+            name = "#{DeployExHelpers.title_case_project_name()} Rabbitmq"
+
+            shape       = "VM.Standard.E6.Flex"
+            ocpus       = 2
+            memory_gbs  = 16
+
+            boot_volume_size_gbs = 100
+
+            tags = {
+              Vendor      = "RabbitMQ"
+              Type        = "Database"
+              DatabaseKey = "#{DeployExHelpers.underscored_project_name()}_rabbitmq"
+            }
+          },
+      """
+    else
+      ""
+    end
+  end
+
+  def terraform_rabbitmq_variables(_opts, _provider), do: ""
+
   # OCI mirror of the AWS sizing below. 1 OCPU is 2 vCPU on the E-flex shapes, so
   # ocpus = 1 / memory_gbs = 8 is the same 2 vCPU / 8GB as t3.large and clears the same
   # errors-only floor. The oci-instance module has no secondary-volume key, so the capacity
