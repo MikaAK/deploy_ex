@@ -122,6 +122,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
         input(:aws_region, "AWS region", :string, description: "Override AWS region"),
         input(:aws_release_bucket, "AWS release bucket", :string),
         input(:parallel, "Max concurrency", :integer),
+        input(:upload_timeout, "Per-release upload timeout (ms)", :integer),
         input(:qa, "QA upload", :boolean, description: "Upload to the QA prefix")
       ]
     },
