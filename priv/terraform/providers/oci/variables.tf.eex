@@ -177,6 +177,7 @@ variable "<%= @app_name %>_project" {
 <%= @terraform_sentry_variables %>
 <%= @terraform_redis_variables %>
 <%= @terraform_clickhouse_variables %>
+<%= @terraform_rabbitmq_variables %>
 <%= @terraform_grafana_variables %>
 <%= @terraform_prometheus_variables %>
 <%= @terraform_loki_variables %>

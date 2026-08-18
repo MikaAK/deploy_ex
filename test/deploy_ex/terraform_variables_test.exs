@@ -21,4 +21,22 @@ defmodule DeployEx.TerraformVariablesTest do
       assert TerraformVariables.terraform_clickhouse_variables([clickhouse: true], :aws) === ""
     end
   end
+
+  describe "terraform_rabbitmq_variables/2" do
+    test "renders nothing on oci unless --rabbitmq is passed" do
+      assert TerraformVariables.terraform_rabbitmq_variables([], :oci) === ""
+    end
+
+    test "renders a DatabaseKey-tagged single node on oci when opted in" do
+      rendered = TerraformVariables.terraform_rabbitmq_variables([rabbitmq: true], :oci)
+
+      assert rendered =~ "_rabbitmq = {"
+      assert rendered =~ "_rabbitmq\""
+      refute rendered =~ "instance_count"
+    end
+
+    test "renders nothing on aws" do
+      assert TerraformVariables.terraform_rabbitmq_variables([rabbitmq: true], :aws) === ""
+    end
+  end
 end
