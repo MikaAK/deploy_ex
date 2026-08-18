@@ -82,9 +82,9 @@ variable "resource_group" {
 ########################################
 
 variable "vcn_cidr" {
-  description = "CIDR for the VCN"
+  description = "CIDR for the VCN. Rendered from config :deploy_ex, :oci, vcn_cidr so ansible's intra-network allowlists (clickhouse) agree with it."
   type        = string
-  default     = "10.20.0.0/16"
+  default     = "<%= @oci_vcn_cidr %>"
 }
 
 variable "subnet_cidr" {

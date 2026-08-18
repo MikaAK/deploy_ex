@@ -1,6 +1,11 @@
 oci_release_bucket: <%= @oci_release_bucket %>
 oci_namespace: <%= @oci_namespace %>
 
+# The VCN CIDR — roles that hold an intra-network allowlist (clickhouse's <networks>) read
+# this instead of their AWS-VPC-shaped default. Must match terraform's vcn_cidr; both default
+# to 10.20.0.0/16 and both read config :deploy_ex, :oci, vcn_cidr when set.
+clickhouse_allowed_network_cidr: "<%= @oci_vcn_cidr %>"
+
 # grafana_loki/prometheus_db still read S3-shaped credentials — OCI logging/monitoring
 # storage is a separate, not-yet-built phase, so these stay as AWS-shaped placeholders
 # (unused unless those roles are pointed at an OCI-backed store) rather than leaving the

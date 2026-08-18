@@ -322,7 +322,8 @@ defmodule Mix.Tasks.Ansible.Build do
       is_logging_enabled: !opts[:no_logging],
       is_prometheus_enabled: !opts[:no_prometheus],
       oci_namespace: oci_setting(opts, :namespace),
-      oci_release_bucket: oci_release_bucket(opts)
+      oci_release_bucket: oci_release_bucket(opts),
+      oci_vcn_cidr: oci_setting(opts, :vcn_cidr) || "10.20.0.0/16"
     }
   end
 
