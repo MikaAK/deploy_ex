@@ -102,8 +102,37 @@ defmodule DeployEx.TerraformVariables do
     end
   end
 
+  # Opt-in (--clickhouse), unlike redis: ClickHouse is not part of the default stack on either
+  # provider — an AWS user hand-writes this entry — so an OCI render must not grow a node
+  # nobody asked for. The DatabaseKey tag is what routes it into the database_*_clickhouse
+  # inventory group the setup playbook targets.
+  def terraform_clickhouse_variables(opts, :oci) do
+    if opts[:clickhouse] do
+      """
+          #{DeployExHelpers.underscored_project_name()}_clickhouse = {
+            name = "#{DeployExHelpers.title_case_project_name()} Clickhouse"
 
+            shape       = "VM.Standard.E6.Flex"
+            ocpus       = 2
+            memory_gbs  = 16
 
+            boot_volume_size_gbs = 200
+
+            tags = {
+              Vendor      = "ClickHouse"
+              Type        = "Database"
+              DatabaseKey = "#{DeployExHelpers.underscored_project_name()}_clickhouse"
+            }
+          },
+      """
+    else
+      ""
+    end
+  end
+
+  def terraform_clickhouse_variables(_opts, _provider), do: ""
+
+  # Sentry carries no sizing keys on either provider, so one clause serves both.
   def terraform_sentry_variables(opts, _provider) do
     if opts[:no_sentry] do
       ""
