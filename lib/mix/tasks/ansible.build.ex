@@ -370,7 +370,8 @@ defmodule Mix.Tasks.Ansible.Build do
     Map.merge(ansible_group_vars_enabled_flags(opts), %{
       is_mimir_enabled: DeployEx.Mimir.enabled?(opts),
       oci_namespace: oci_setting(opts, :namespace),
-      oci_release_bucket: oci_release_bucket(opts)
+      oci_release_bucket: oci_release_bucket(opts),
+      oci_vcn_cidr: oci_setting(opts, :vcn_cidr) || "10.20.0.0/16"
     })
   end
 

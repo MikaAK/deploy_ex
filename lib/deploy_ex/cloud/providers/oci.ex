@@ -29,6 +29,7 @@ defmodule DeployEx.Cloud.Providers.Oci do
     release_bucket: [type: {:or, [:string, nil]}],
     release_state_bucket: [type: {:or, [:string, nil]}],
     release_state_key: [type: {:or, [:string, nil]}],
+    vcn_cidr: [type: {:or, [:string, nil]}],
     state_profile: [type: {:or, [:string, nil]}],
     log_bucket: [type: {:or, [:string, nil]}],
     log_region: [type: {:or, [:string, nil]}],
