@@ -719,6 +719,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
         input(:no_sentry, "Disable Sentry", :boolean),
         input(:no_grafana, "Disable Grafana", :boolean),
         input(:no_redis, "Disable Redis", :boolean),
+        input(:clickhouse, "Add a ClickHouse node (OCI)", :boolean),
         input(:no_prometheus, "Disable Prometheus", :boolean)
       ]
     },
