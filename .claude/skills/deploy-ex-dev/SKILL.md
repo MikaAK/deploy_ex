@@ -12,14 +12,18 @@ Guide for contributing to the deploy_ex codebase — adding features, extending 
 ```
 lib/
   deploy_ex/              # Core modules (AWS, release, TUI, config)
+    cloud/                # Multi-cloud provider abstraction (AWS + OCI)
+      providers/          # DeployEx.Cloud.Providers.{Aws,Oci}
     release_uploader/     # Release management subsystem
     tui/                  # Terminal UI components (ExRatatui)
   mix/
-    tasks/                # 73 Mix tasks (the CLI interface)
+    tasks/                # ~69 Mix tasks (the CLI interface)
     deploy_ex_helpers.ex  # Shared helpers all tasks use
 priv/
-  terraform/              # Terraform EEx templates + modules
-  ansible/                # Ansible EEx templates + roles (21 roles)
+  terraform/              # Terraform EEx templates + modules (AWS default)
+    providers/oci/        # OCI provider template set (seeded per --provider)
+  ansible/                # Ansible EEx templates + roles (20 roles)
+    providers/oci/        # OCI-specific ansible overrides
 test/
   deploy_ex/              # Unit tests
 ```
@@ -90,7 +94,7 @@ Execute through `DeployEx.Utils` — never `System.cmd` or `System.shell` direct
 - `Utils.run_command_with_input/3` — interactive
 
 ### Configuration
-Access via `DeployEx.Config` — never `Application.get_env(:deploy_ex, ...)` directly.
+Access via `DeployEx.Config` — never `Application.get_env(:deploy_ex, ...)` directly. Provider selection: `Config.cloud_provider()` (`:aws` default, `:oci`), OCI keys via `Config.oci_setting(key)`, IaC binary via `Config.iac_tool()` (terraform/tofu).
 
 ### AWS Calls
 Include explicit region on every ExAws request:
@@ -163,11 +167,16 @@ Use `refute` over `assert !`. Never `Application.put_env/3` in tests.
 | `DeployEx.Utils` | Shell execution, error aggregation | Adding shell command patterns |
 | `DeployEx.ReleaseUploader` | Release coordination | Changing release build/upload flow |
 | `DeployEx.ReleaseUploader.UpdateValidator` | Change detection (git diff, deps) | Modifying when rebuilds trigger |
-| `DeployEx.Terraform` | Terraform CLI wrapper | Adding terraform commands |
+| `DeployEx.Terraform` | Terraform/OpenTofu CLI wrapper (`Config.iac_tool()`) | Adding terraform commands |
+| `DeployEx.Cloud.Provider` | Provider behaviour (machine, object store, security) | Multi-cloud features |
+| `DeployEx.Cloud.Providers.{Aws,Oci}` | Provider implementations | Adding/altering a cloud provider |
+| `DeployEx.Cloud.OciCli` | `oci` CLI wrapper (OCI has no ExAws-style S3 compat) | OCI API calls |
+| `DeployEx.Cloud.PrivFileSet` | Per-provider priv template seeding | Provider template layout |
 | `DeployEx.SSH` | SSH connections and tunneling | Remote execution features |
 | `DeployEx.QaNode` | QA instance lifecycle | QA features |
 | `DeployEx.K6Runner` | Load testing runners | Load test features |
 | `DeployEx.TUI.*` | Terminal UI | Interactive features |
 
-For architecture diagrams and data flows, read `docs/system-architecture.md`.
-For full module inventory, read `docs/codebase-summary.md`.
+For architecture diagrams and data flows, read `guides/explanation/architecture.md`.
+For full module inventory, read `guides/reference/codebase_summary.md`.
+For code standards detail, read `guides/explanation/code_standards.md`.

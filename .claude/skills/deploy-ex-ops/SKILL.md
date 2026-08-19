@@ -18,8 +18,13 @@ mix ansible.deploy [--only app1]                  # deploy to EC2
 
 ### First-time Setup
 ```bash
-mix deploy_ex.full_setup -ya     # -y auto-approve, -a auto-pull AWS creds (no deploy step; CI handles deploys)
+mix deploy_ex.full_setup [--skip-setup]   # build + apply + ansible setup (no deploy step; CI handles deploys)
 mix deploy_ex.install_github_action
+```
+
+### Interactive Wizard
+```bash
+mix deploy_ex     # TUI wizard over all deploy_ex commands
 ```
 
 ### Rollback
@@ -35,7 +40,7 @@ deploy_ex detects which apps changed since the last release using git diff, mix.
 
 1. `mix deploy_ex.release` — builds releases for changed apps. For Phoenix apps, runs the full asset pipeline (npm, esbuild, sass, tailwind, phx.digest) automatically.
 2. `mix deploy_ex.upload` — uploads `.tar.gz` artifacts to S3. QA releases auto-detected from `qa/*` or `qa-*` branch names.
-3. `mix ansible.deploy` — runs Ansible playbooks against EC2 instances. Use `--target-sha abc1234` to deploy a specific SHA.
+3. `mix ansible.deploy` — runs Ansible playbooks against instances. Use `--target-sha abc1234` for a specific SHA, `--select-sha` for an interactive picker, `--release-prefix prod|qa` to pick the artifact channel, `--qa`/`--include-qa` to target QA nodes.
 
 Force rebuild all: `mix deploy_ex.release --force`
 Target specific apps: `--only app1 --only app2` or `--except app3`
@@ -45,8 +50,9 @@ Target specific apps: `--only app1 --only app2` or `--except app3`
 Ephemeral EC2 instances for testing specific SHAs:
 
 ```bash
-mix deploy_ex.qa.create my_app --sha abc1234 [--attach-lb]
+mix deploy_ex.qa.create my_app --sha abc1234 [--attach-lb] [--use-ami] [--public-ip-cert]
 mix deploy_ex.qa.deploy my_app --sha def5678       # redeploy different SHA
+mix deploy_ex.qa.modify my_app [...]                # resize instance/EBS, Elastic IP, cert
 mix deploy_ex.qa.attach_lb my_app                   # route traffic
 mix deploy_ex.qa.detach_lb my_app                   # stop traffic
 mix deploy_ex.qa.destroy my_app [--all]              # clean up
@@ -86,6 +92,8 @@ mix deploy_ex.ssh my_app --root       # SSH as root
 mix deploy_ex.ssh my_app --log        # stream app logs (journalctl)
 mix deploy_ex.ssh my_app --iex        # remote IEx console
 mix deploy_ex.ssh.authorize my_app    # add your SSH key
+mix deploy_ex.download_file my_app remote_path [local_path]   # SCP file down
+mix deploy_ex.select_node             # pick an instance, print its instance id
 ```
 
 ### Instance Management
@@ -96,6 +104,7 @@ mix deploy_ex.instance.health [--qa] [--all]
 mix deploy_ex.restart_app my_app
 mix deploy_ex.start_app my_app / mix deploy_ex.stop_app my_app
 mix deploy_ex.restart_machine my_app
+mix deploy_ex.remake my_app [--no-deploy]        # replace node + redeploy
 mix deploy_ex.find_nodes [--tag key=value] [--format table|json|ids]
 ```
 
@@ -121,5 +130,6 @@ Most tasks accept: `--only` (multi), `--except` (multi), `--force`/`-f`, `--quie
 - TUI is auto-disabled in CI or when stdin isn't a TTY
 - Release artifacts stored in S3 at `{app}/{timestamp}-{sha}-{filename}.tar.gz`
 
-For full task reference, read `docs/api-reference.md`.
-For configuration, read `docs/configuration-guide.md`.
+For full task reference, read `guides/reference/mix_tasks.md`.
+For configuration, read `guides/reference/configuration.md`.
+For diagnostics, read `guides/how-to/troubleshooting.md`.

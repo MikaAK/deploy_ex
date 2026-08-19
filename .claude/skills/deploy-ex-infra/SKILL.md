@@ -1,6 +1,6 @@
 ---
 name: deploy-ex-infra
-description: "Use this skill whenever the user wants to run terraform or ansible commands for AWS infrastructure. Covers: terraform plan, apply, build, init, drop, replace, refresh, state fixes; ansible setup and ansible build; database dump and restore; EBS snapshot create or delete; state bucket and lock table management; deploy_ex configuration changes; GitHub Actions CI/CD workflow installation; tearing down or destroying environments; generating PEM keys; setting up new project infrastructure from scratch; regenerating .tf files after adding releases. Do NOT use for: deploying releases with ansible.deploy, SSH access to servers, building release artifacts, or editing deploy_ex library source code."
+description: "Use this skill whenever the user wants to run terraform/tofu or ansible commands for cloud infrastructure (AWS or OCI). Covers: terraform plan, apply, build, init, drop, replace, refresh, state fixes; provider selection (--provider aws|oci, cloud_provider config); ansible setup and ansible build; database dump and restore; EBS snapshot create or delete; state bucket and lock table management; deploy_ex configuration changes; GitHub Actions CI/CD workflow installation; tearing down or destroying environments; generating PEM keys; setting up new project infrastructure from scratch; regenerating .tf files after adding releases. Do NOT use for: deploying releases with ansible.deploy, SSH access to servers, building release artifacts, or editing deploy_ex library source code."
 ---
 
 # deploy_ex Infrastructure Management
@@ -17,15 +17,22 @@ mix terraform.build [options]
 
 Renders EEx templates from `priv/terraform/` into `./deploys/terraform/`. Generated files include: `variables.tf`, `ec2.tf`, `database.tf`, `providers.tf`, `key-pair-main.tf`, `outputs.tf`, plus static files (`bucket.tf`, `network.tf`, `iam.tf`) and modules.
 
+Cloud provider: `--provider aws|oci` (or `config :deploy_ex, cloud_provider: :oci`). Only the active provider's template set is seeded into `./deploys/terraform/` (OCI templates live in `priv/terraform/providers/oci/`); the sync runs on every build so static files stay current.
+
 Options to disable services:
 - `--no-database` — skip RDS
 - `--no-redis` — skip Redis
 - `--no-grafana` — skip Grafana UI
 - `--no-loki` — skip Grafana Loki logging
+- `--no-logging` — skip logging stack
 - `--no-prometheus` — skip Prometheus metrics
 - `--no-sentry` — skip Sentry error tracking
 
-Other: `--env`, `--aws-region`, `--aws-bucket`, `--aws-log-bucket`
+Opt-in nodes:
+- `--clickhouse` — add a ClickHouse node
+- `--rabbitmq` — add a RabbitMQ node
+
+Other: `--env`, `--aws-region`, `--directory`, `--render-dir`, `--pem-app-name`, `--db-password`
 
 ### Plan and Apply
 
@@ -108,7 +115,9 @@ Generates from `priv/ansible/` templates:
 - `playbooks/{app}.yaml` — per-app deploy playbooks
 - `setup/{app}.yaml` — per-app setup playbooks
 
-Options: `-a` auto-pull AWS credentials from `~/.aws/credentials`, `-h` host-only (skip playbooks), `-n` new-only (skip existing playbooks)
+Options: `-a` auto-pull AWS credentials from `~/.aws/credentials`, `-h` host-only (skip playbooks), `-n` new-only (skip existing playbooks), `--provider aws|oci`
+
+OCI provider flags: `--oci-compartment-id`, `--oci-profile`, `--oci-region`, `--oci-namespace`, `--oci-release-bucket`
 
 ### Server Setup and Deployment
 
@@ -119,7 +128,7 @@ mix ansible.deploy [--only app1] [--parallel] [-t sha]  # deploy
 mix ansible.rollback my_app [--select]    # rollback to previous release
 ```
 
-Setup installs: system packages, awscli, BEAM tuning, log rotation, S3 crash dumps, systemd service.
+Setup installs: BEAM tuning, log rotation, pip3, awscli (oci_cli on OCI), IPv6, Prometheus exporter, Grafana Alloy log shipping, save_ami (AWS only).
 
 Deploy pulls release from S3 and restarts the systemd service.
 
@@ -129,13 +138,19 @@ Deploy pulls release from S3 and restarts the systemd service.
 |------|---------|
 | `deploy_node` | Main application deployment |
 | `grafana_ui` | Grafana dashboard |
-| `grafana_loki` / `grafana_loki_promtail` | Log aggregation |
+| `grafana_loki` / `grafana_alloy` | Log aggregation (Alloy ships logs to Loki) |
 | `prometheus_db` / `prometheus_exporter` | Metrics collection |
+| `redis_server` | Redis node |
+| `rabbitmq_server` | RabbitMQ node (opt-in via `terraform.build --rabbitmq`) |
+| `clickhouse` | ClickHouse node (opt-in via `terraform.build --clickhouse`) |
 | `letsencrypt` | SSL certificates |
 | `beam_linux_tuning` | BEAM VM optimization |
+| `elixir_runner` | Elixir runtime for script hosts |
+| `save_ami` | Snapshot instance to AMI (QA node reuse) |
 | `awscli` | AWS CLI installation |
 | `log_cleanup` | Log rotation |
 | `ipv6` | IPv6 configuration |
+| `chromedriver` / `chromedriver_setup` / `ffmpeg` / `pip3` | Utility installs |
 
 ## Configuration
 
@@ -155,7 +170,9 @@ config :deploy_ex,
 
 Key config: `aws_region`, `aws_release_bucket`, `deploy_folder` ("./deploys"), `terraform_backend` (`:s3` or `:local`), `aws_base_ami_name` ("debian-13").
 
-For full config reference, read `docs/configuration-guide.md`.
+Multi-cloud: `cloud_provider: :aws | :oci` (default `:aws`), `iac_tool: "terraform" | "tofu"`, and OCI settings under `config :deploy_ex, :oci, [...]` (compartment id, region, namespace, release bucket) — read per-key via `DeployEx.Config.oci_setting/1`.
+
+For full config reference, read `guides/reference/configuration.md`.
 
 ## Template Customization
 
@@ -189,4 +206,4 @@ mix deploy_ex.install_github_action
 
 Generates CI/CD workflows. Secrets prefixed with `__DEPLOY_EX__` are automatically injected as environment variables during deployment.
 
-For the full deployment walkthrough, read `docs/deployment-guide.md`.
+For the full deployment walkthrough, read `guides/how-to/deploying_releases.md`; infra management detail in `guides/how-to/managing_infrastructure.md`.
