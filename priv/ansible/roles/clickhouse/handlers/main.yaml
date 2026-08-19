@@ -1,6 +1,0 @@
-- name: restart clickhouse-server
-  become: true
-  systemd:
-    name: clickhouse-server
-    state: restarted
-    daemon_reload: true

@@ -5,36 +5,26 @@ defmodule DeployEx.AwsDatabase do
 
   import SweetXml, only: [sigil_x: 2]
 
-  @doc """
-  Every RDS instance in the region, following pagination to completion.
-
-  DescribeDBInstances caps a response (default 100) and signals more via `Marker`. A single
-  request therefore truncates silently on a large account — it returns `{:ok, partial}`, not an
-  error — same class of bug already fixed in `AwsAutoscaling.fetch_all_asgs/5`.
-  """
-  def fetch_aws_databases(opts \\ []) do
-    fetch_databases_page(opts, [])
-  end
-
-  defp fetch_databases_page(opts, acc) do
-    {request_fn, describe_opts} = Keyword.pop(opts, :request_fn, &ExAws.request/2)
-
-    response =
-      describe_opts
-      |> ExAws.RDS.describe_db_instances()
-      |> request_fn.(region: DeployEx.Config.aws_region())
-
-    case response do
+  def fetch_aws_databases do
+    case ExAws.request(ExAws.RDS.describe_db_instances(), region: DeployEx.Config.aws_region()) do
       {:ok, %{body: body}} ->
-        accumulated = acc ++ extract_instances(body)
-
-        case extract_marker(body) do
-          marker when is_binary(marker) and marker !== "" ->
-            fetch_databases_page(Keyword.put(opts, :marker, marker), accumulated)
-
-          _no_more_pages ->
-            {:ok, accumulated}
-        end
+        instances = body
+          |> SweetXml.xpath(~x"//DBInstances/DBInstance"l,
+            identifier: ~x"./DBInstanceIdentifier/text()"s,
+            endpoint: [
+              ~x"./Endpoint",
+              host: ~x"./Address/text()"s,
+              port: ~x"./Port/text()"i
+            ],
+            username: ~x"./MasterUsername/text()"s,
+            database: ~x"./DBName/text()"s,
+            tags: [
+              ~x"./TagList/Tag"l,
+              key: ~x"./Key/text()"s,
+              value: ~x"./Value/text()"s
+            ]
+          )
+        {:ok, instances}
 
       {:error, {"AccessDenied", message}} ->
         {:error, ErrorMessage.unauthorized("AWS RDS access denied", %{message: message})}
@@ -50,26 +40,6 @@ defmodule DeployEx.AwsDatabase do
     end
   end
 
-  defp extract_instances(body) do
-    SweetXml.xpath(body, ~x"//DBInstances/DBInstance"l,
-      identifier: ~x"./DBInstanceIdentifier/text()"s,
-      endpoint: [
-        ~x"./Endpoint",
-        host: ~x"./Address/text()"s,
-        port: ~x"./Port/text()"i
-      ],
-      username: ~x"./MasterUsername/text()"s,
-      database: ~x"./DBName/text()"s,
-      tags: [
-        ~x"./TagList/Tag"l,
-        key: ~x"./Key/text()"s,
-        value: ~x"./Value/text()"s
-      ]
-    )
-  end
-
-  defp extract_marker(body), do: SweetXml.xpath(body, ~x"//Marker/text()"s)
-
   def fetch_aws_databases_by_identifier(identifier) do
     with {:ok, instances} <- fetch_aws_databases() do
       case Enum.find(instances, fn instance -> instance.identifier == identifier end) do
@@ -82,7 +52,7 @@ defmodule DeployEx.AwsDatabase do
   def fetch_aws_databases_by_tag(key, value) do
     with {:ok, instances} <- fetch_aws_databases() do
       filtered_dbs = instances
-        |> Enum.to_list()
+        |> Enum.to_list() |> IO.inspect()
         |> Stream.filter(fn instance ->
           Enum.any?(instance.tags, fn
             %{key: ^key, value: ^value} -> true

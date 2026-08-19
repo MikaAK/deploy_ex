@@ -4,33 +4,15 @@ defmodule DeployEx.AwsInfrastructureTest do
   alias DeployEx.AwsInfrastructure
 
   describe "find_iam_instance_profile/1" do
-    # This test used to call find_iam_instance_profile/1 with no request_fn, which meant the
-    # SUITE HIT THE REAL AWS IAM API — it failed with a list of actual profiles from whatever
-    # account happened to be configured. Tests must not depend on a live account.
-    test "an explicitly configured profile short-circuits the lookup entirely" do
-      never_called = fn _operation, _opts -> flunk("should not have called AWS") end
+    test "returns expected profile name based on resource group" do
+      assert {:ok, "my-project-instance-profile"} ===
+               AwsInfrastructure.find_iam_instance_profile(resource_group: "My_Project")
 
-      assert AwsInfrastructure.find_iam_instance_profile(
-               iam_instance_profile: "preset-profile",
-               request_fn: never_called
-             ) === {:ok, "preset-profile"}
-    end
+      assert {:ok, "test-backend-instance-profile"} ===
+               AwsInfrastructure.find_iam_instance_profile(resource_group: "Test Backend")
 
-    test "returns the environment default when AWS reports it exists" do
-      default = "deploy-ex-ec2-instance-profile-#{DeployEx.Config.env()}"
-
-      assert AwsInfrastructure.find_iam_instance_profile(
-               request_fn: instance_profiles_response([default, "unrelated"])
-             ) === {:ok, default}
-    end
-
-    test "reports what IS available when the default is absent, rather than a bare not_found" do
-      assert {:error, %ErrorMessage{code: :not_found} = error} =
-               AwsInfrastructure.find_iam_instance_profile(
-                 request_fn: instance_profiles_response(["something-else"])
-               )
-
-      assert error.details.available === ["something-else"]
+      assert {:ok, "simple-instance-profile"} ===
+               AwsInfrastructure.find_iam_instance_profile(resource_group: "Simple")
     end
   end
 
@@ -130,39 +112,73 @@ defmodule DeployEx.AwsInfrastructureTest do
     end
   end
 
-  describe "find_key_pair_name/1" do
-    # parse_key_pairs_response/2 was deleted when key-pair parsing moved inline, but its four
-    # tests stayed and kept the suite red. These exercise the CURRENT public path instead.
-    test "picks the newest matching key pair" do
-      response = key_pairs_response(["my-project-AAA-key-pair", "my-project-ZZZ-key-pair"])
+  describe "parse_key_pairs_response/2" do
+    test "parses key pair from list" do
+      xml = """
+      <?xml version="1.0" encoding="UTF-8"?>
+      <DescribeKeyPairsResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
+        <keySet>
+          <item>
+            <keyName>my-project-key-pair</keyName>
+            <keyFingerprint>abc123</keyFingerprint>
+          </item>
+          <item>
+            <keyName>other-key-pair</keyName>
+            <keyFingerprint>def456</keyFingerprint>
+          </item>
+        </keySet>
+      </DescribeKeyPairsResponse>
+      """
 
-      assert AwsInfrastructure.find_key_pair_name(
-               project_name: "my-project",
-               request_fn: response
-             ) === {:ok, "my-project-ZZZ-key-pair"}
+      assert {:ok, "my-project-key-pair"} === AwsInfrastructure.parse_key_pairs_response(xml, "my-project-key-pair")
     end
 
-    test "parses a single-element key set, which AWS returns unwrapped" do
-      assert AwsInfrastructure.find_key_pair_name(
-               project_name: "my-project",
-               request_fn: key_pairs_response(["my-project-solo-key-pair"])
-             ) === {:ok, "my-project-solo-key-pair"}
+    test "parses single key pair" do
+      xml = """
+      <?xml version="1.0" encoding="UTF-8"?>
+      <DescribeKeyPairsResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
+        <keySet>
+          <item>
+            <keyName>single-key</keyName>
+            <keyFingerprint>abc123</keyFingerprint>
+          </item>
+        </keySet>
+      </DescribeKeyPairsResponse>
+      """
+
+      assert {:ok, "single-key"} === AwsInfrastructure.parse_key_pairs_response(xml, "single-key")
     end
 
-    test "ignores key pairs belonging to other projects" do
-      assert {:error, %ErrorMessage{code: :not_found}} =
-               AwsInfrastructure.find_key_pair_name(
-                 project_name: "my-project",
-                 request_fn: key_pairs_response(["other-project-key-pair"])
-               )
+    test "returns error when key pair not found in list" do
+      xml = """
+      <?xml version="1.0" encoding="UTF-8"?>
+      <DescribeKeyPairsResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
+        <keySet>
+          <item>
+            <keyName>other-key</keyName>
+            <keyFingerprint>abc123</keyFingerprint>
+          </item>
+          <item>
+            <keyName>another-key</keyName>
+            <keyFingerprint>def456</keyFingerprint>
+          </item>
+        </keySet>
+      </DescribeKeyPairsResponse>
+      """
+
+      assert {:error, %ErrorMessage{code: :not_found, message: "key pair my-key not found"}} =
+               AwsInfrastructure.parse_key_pairs_response(xml, "my-key")
     end
 
-    test "an empty key set is not_found, not a crash" do
-      assert {:error, %ErrorMessage{code: :not_found}} =
-               AwsInfrastructure.find_key_pair_name(
-                 project_name: "my-project",
-                 request_fn: key_pairs_response([])
-               )
+    test "returns error for empty key set" do
+      xml = """
+      <?xml version="1.0" encoding="UTF-8"?>
+      <DescribeKeyPairsResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
+        <keySet/>
+      </DescribeKeyPairsResponse>
+      """
+
+      assert {:error, %ErrorMessage{code: :not_found}} = AwsInfrastructure.parse_key_pairs_response(xml, "my-key")
     end
   end
 
@@ -266,34 +282,5 @@ defmodule DeployEx.AwsInfrastructureTest do
 
       assert {:error, %ErrorMessage{code: :not_found}} = AwsInfrastructure.parse_images_response(xml)
     end
-  end
-
-  defp instance_profiles_response(names) do
-    profiles = Enum.map_join(names, "", &"<member><InstanceProfileName>#{&1}</InstanceProfileName></member>")
-
-    body = """
-    <ListInstanceProfilesResponse xmlns="https://iam.amazonaws.com/doc/2010-05-08/">
-      <ListInstanceProfilesResult>
-        <IsTruncated>false</IsTruncated>
-        <InstanceProfiles>#{profiles}</InstanceProfiles>
-      </ListInstanceProfilesResult>
-    </ListInstanceProfilesResponse>
-    """
-
-    fn _operation, _opts -> {:ok, %{body: body}} end
-  end
-
-  defp key_pairs_response(key_names) do
-    items = Enum.map_join(key_names, "", &"<item><keyName>#{&1}</keyName></item>")
-    key_set = if Enum.empty?(key_names), do: "<keySet/>", else: "<keySet>#{items}</keySet>"
-
-    body = """
-    <?xml version="1.0" encoding="UTF-8"?>
-    <DescribeKeyPairsResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
-      #{key_set}
-    </DescribeKeyPairsResponse>
-    """
-
-    fn _operation, _opts -> {:ok, %{body: body}} end
   end
 end

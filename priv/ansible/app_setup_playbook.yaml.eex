@@ -8,11 +8,10 @@
     - beam_linux_tuning
     - log_cleanup
     - pip3
-    <%= if @cloud_provider == :oci do %>- oci_cli
-    <% else %>- awscli
-    <% end %>- ipv6
+    - awscli
+    - ipv6
     <%= unless @no_prometheus do %>- prometheus_exporter
     <% end %>
     <%= unless @no_logging do %>- grafana_alloy
     <% end %>
-    <%= if @cloud_provider !== :oci do %>- save_ami<% end %>
+    - save_ami

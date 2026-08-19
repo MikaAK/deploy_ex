@@ -33,26 +33,8 @@ defmodule DeployEx.TUI.DeployProgress do
     app_playbooks
       |> Task.async_stream(fn playbook ->
         run_fn.(playbook, fn line -> IO.puts(line) end)
-      end, max_concurrency: max_concurrency, timeout: timeout, on_timeout: :kill_task)
-      |> unwrap_task_results()
+      end, max_concurrency: max_concurrency, timeout: timeout)
       |> DeployEx.Utils.reduce_status_tuples()
-  end
-
-  # Task.async_stream reports task COMPLETION, not the task's own result: a run_fn returning
-  # {:error, _} arrives here as {:ok, {:error, _}}, which reduce_status_tuples/1 matches with
-  # its `{:ok, record}` SUCCESS clause and accumulates as a successful record. The aggregate
-  # then reads :ok, ansible.setup/ansible.deploy skip their Mix.raise, and the task exits 0 —
-  # a failed play reported as a clean deploy, which in CI is a green pipeline that deployed
-  # nothing. reduce_status_tuples/1 is shared with callers that pass plain status tuples, so
-  # the envelope is stripped here rather than by loosening the reducer.
-  defp unwrap_task_results(stream) do
-    Stream.map(stream, fn
-      {:ok, result} ->
-        result
-
-      {:exit, reason} ->
-        {:error, ErrorMessage.internal_server_error("playbook task exited", %{reason: inspect(reason)})}
-    end)
   end
 
   defp run_tui(app_playbooks, run_fn, opts) do
@@ -99,8 +81,7 @@ defmodule DeployEx.TUI.DeployProgress do
 
             send(coordinator, {:deploy_finished, app_name, result})
             result
-          end, max_concurrency: max_concurrency, timeout: timeout, on_timeout: :kill_task)
-          |> unwrap_task_results()
+          end, max_concurrency: max_concurrency, timeout: timeout)
           |> DeployEx.Utils.reduce_status_tuples()
       end)
 

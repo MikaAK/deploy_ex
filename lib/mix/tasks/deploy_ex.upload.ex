@@ -22,7 +22,6 @@ defmodule Mix.Tasks.DeployEx.Upload do
   - `aws-region` - Region for aws (default: `#{Config.aws_region()}`)
   - `aws-bucket` - Region for aws (default: `#{Config.aws_release_bucket()}`)
   - `qa` - Marks the release as a QA release
-  - `upload-timeout` - Per-release upload ceiling in ms (default: 600000)
   """
 
   def run(args) do
@@ -35,7 +34,6 @@ defmodule Mix.Tasks.DeployEx.Upload do
       |> Keyword.put_new(:aws_release_bucket, Config.aws_release_bucket())
       |> Keyword.put_new(:aws_region, Config.aws_region())
       |> Keyword.put_new(:parallel, @max_upload_concurrency)
-      |> Keyword.put_new(:upload_timeout, :timer.minutes(10))
       |> then(&Keyword.put(&1, :qa_release, qa_release?(&1)))
       |> Keyword.put_new(:branch, git_branch_name())
 
@@ -70,7 +68,6 @@ defmodule Mix.Tasks.DeployEx.Upload do
         aws_region: :string,
         aws_release_bucket: :string,
         parallel: :integer,
-        upload_timeout: :integer,
         qa: :boolean
       ]
     )
@@ -132,17 +129,11 @@ defmodule Mix.Tasks.DeployEx.Upload do
     ]))
   end
 
-  # A 60s per-release ceiling made seven parallel ~30MB uploads race a GitHub runner's
-  # bandwidth to OCI: six landed and the seventh's timeout took the whole stream down with
-  # `Task.Supervised.stream(60000) ** (EXIT) time out` (measured on a real prod build), so
-  # the run failed AFTER most artifacts were already in the bucket — a partial release set
-  # with a red build. Timeout is now per release, generous, and overridable.
   defp upload_releases(release_candidates, opts) do
     release_candidates
       |> Task.async_stream(&upload_release(&1, opts),
         max_concurrency: opts[:parallel],
-        timeout: opts[:upload_timeout],
-        on_timeout: :kill_task
+        timeout: :timer.seconds(60)
       )
       |> DeployEx.Utils.reduce_task_status_tuples
   end

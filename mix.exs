@@ -35,7 +35,6 @@ defmodule DeployEx.MixProject do
     [
       {:jason, "~> 1.3"},
       {:error_message, "~> 0.2"},
-      {:nimble_options, "~> 1.0"},
       {:ex_aws, "~> 2.3"},
       {:ex_aws_s3, "~> 2.3"},
       {:ex_aws_dynamo, "~> 4.2"},

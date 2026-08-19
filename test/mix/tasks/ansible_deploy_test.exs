@@ -10,7 +10,6 @@ defmodule Mix.Tasks.Ansible.DeployTest do
       aliases: [f: :force, q: :quit, d: :directory, l: :only_local_release, t: :target_sha],
       switches: [
         directory: :string,
-        provider: :string,
         quiet: :boolean,
         only: :keep,
         except: :keep,
@@ -40,16 +39,6 @@ defmodule Mix.Tasks.Ansible.DeployTest do
   end
 
   describe "parse_args/1 option parsing" do
-    test "--provider parses to opts[:provider]" do
-      opts = parse_args(["--provider", "oci"])
-      assert opts[:provider] === "oci"
-    end
-
-    test "opts[:provider] is nil when --provider not passed" do
-      opts = parse_args([])
-      assert is_nil(opts[:provider])
-    end
-
     test "--target-sha parses to opts[:target_sha]" do
       opts = parse_args(["--target-sha", "abc1234"])
       assert opts[:target_sha] === "abc1234"

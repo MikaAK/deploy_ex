@@ -4,15 +4,6 @@
   - name: Populate service facts
     service_facts:
 
-  # The redis-stack-server binary (/opt/redis-stack) is a Debian-only artefact: it links
-  # libssl1.1, which Ubuntu 24.04 does not ship, and packages.redis.io publishes no
-  # redis-stack-server for noble at all. Redis 8 folded the stack modules into redis-server
-  # itself, so an Ubuntu host with redis_stack_enabled installs redis-server 8.x from
-  # packages.redis.io and runs it under the plain redis unit — same features, no /opt binary.
-  - name: Decide whether the redis-stack binary path applies
-    set_fact:
-      redis_use_stack_binary: "{{ redis_stack_enabled and ansible_facts['distribution'] == 'Debian' }}"
-
   - name: Configure vm.overcommit_memory for Redis
     sysctl:
       name: vm.overcommit_memory
@@ -40,8 +31,6 @@
       mode: '0755'
       insertbefore: 'exit 0'
 
-  # redis_version is a Debian package revision (…+deb13u1) that does not exist in Ubuntu's
-  # archive; Ubuntu gets its redis from packages.redis.io further down.
   - name: Install Redis packages
     apt:
       name:
@@ -50,7 +39,6 @@
         - redis={{ redis_version }}
       state: present
       update_cache: true
-    when: ansible_facts['distribution'] == 'Debian'
 
   - name: Install GPG
     apt:
@@ -77,15 +65,9 @@
   - name: Add source repository into sources list
     shell: |
       echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb bullseye main" | tee /etc/apt/sources.list.d/redis.list
-    when: redis_stack_enabled and not redis_stack_source_list.stat.exists and ansible_facts['distribution'] == 'Debian'
-
-  - name: Add source repository into sources list (Ubuntu codename)
-    shell: |
-      echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb {{ ansible_facts['distribution_release'] }} main" | tee /etc/apt/sources.list.d/redis.list
-    when: redis_stack_enabled and not redis_stack_source_list.stat.exists and ansible_facts['distribution'] == 'Ubuntu'
+    when: redis_stack_enabled and not redis_stack_source_list.stat.exists
 
   - name: Add bullseye repo (deb822) for libssl1.1 only
-    when: ansible_facts['distribution'] == 'Debian'
     deb822_repository:
       name: debian-bullseye
       types: [deb]
@@ -96,7 +78,6 @@
       state: present
 
   - name: Pin libssl1.1 so only that package can come from bullseye
-    when: ansible_facts['distribution'] == 'Debian'
     copy:
       dest: /etc/apt/preferences.d/libssl1.1.pref
       mode: '0644'
@@ -122,7 +103,6 @@
     apt:
       name: libssl1.1
       state: present
-    when: ansible_facts['distribution'] == 'Debian'
 
   - name: Install Redis Stack
     apt:
@@ -130,16 +110,7 @@
       update_cache: true
       default_release: "bullseye"
       state: present
-    when: redis_use_stack_binary
-
-  - name: Install Redis 8 from packages.redis.io (Ubuntu)
-    apt:
-      name:
-        - redis-server
-        - redis-tools
-      update_cache: true
-      state: present
-    when: ansible_facts['distribution'] == 'Ubuntu'
+    when: redis_stack_enabled
 
   - name: Add redis.conf file to /etc/redis/redis.conf
     template:
@@ -156,7 +127,7 @@
       owner: root
       group: root
       mode: 0644
-    when: redis_use_stack_binary
+    when: redis_stack_enabled
 
   - name: Run ulimit -n 65536
     shell: ulimit -n 65536 # noqa command-instead-of-shell
@@ -190,26 +161,26 @@
     systemd:
       name: redis-server
       state: stopped
-    when: redis_use_stack_binary
+    when: redis_stack_enabled
 
   - name: Disable redis-server service when redis stack is enabled
     systemd:
       name: redis-server
       enabled: false
-    when: redis_use_stack_binary
+    when: redis_stack_enabled
 
   - name: Check if redis.service is a symlink
     stat:
       path: /etc/systemd/system/redis.service
     register: redis_service_unit
-    when: redis_use_stack_binary
+    when: redis_stack_enabled
 
   - name: Remove redis.service symlink when redis stack is enabled
     file:
       path: /etc/systemd/system/redis.service
       state: absent
     when:
-      - redis_use_stack_binary
+      - redis_stack_enabled
       - redis_service_unit.stat.exists | default(false)
       - redis_service_unit.stat.islnk | default(false)
 
@@ -217,7 +188,7 @@
     systemd:
       name: redis-server
       masked: true
-    when: redis_use_stack_binary
+    when: redis_stack_enabled
 
   - name: Stop and disable redis alias service when redis stack is enabled
     systemd:
@@ -225,53 +196,13 @@
       state: stopped
       enabled: false
     failed_when: false
-    when: redis_use_stack_binary
+    when: redis_stack_enabled
 
   - name: Start redis service
     systemd:
       name: redis
       state: started
-    when: not redis_use_stack_binary and ansible_facts['distribution'] == 'Debian'
-
-  # The Debian units run redis as root, and /data arrives from the EBS mount role there. The
-  # Ubuntu package unit runs as User=redis under ProtectSystem, so redis.conf's `dir /data`
-  # needs the directory to exist, be owned by redis, and be whitelisted for the unit —
-  # otherwise the restart fails with a bare "No such file or directory" (measured).
-  - name: Create /data for redis (Ubuntu)
-    file:
-      path: /data
-      state: directory
-      owner: redis
-      group: redis
-      mode: '0750'
-    when: ansible_facts['distribution'] == 'Ubuntu'
-
-  - name: Create the redis-server unit drop-in directory (Ubuntu)
-    file:
-      path: /etc/systemd/system/redis-server.service.d
-      state: directory
-      mode: '0755'
-    when: ansible_facts['distribution'] == 'Ubuntu'
-
-  - name: Allow the redis-server unit to write /data (Ubuntu)
-    copy:
-      dest: /etc/systemd/system/redis-server.service.d/data-dir.conf
-      mode: '0644'
-      content: |
-        [Service]
-        ReadWritePaths=-/data
-    when: ansible_facts['distribution'] == 'Ubuntu'
-
-  # restarted, not started: the packages.redis.io install already brought redis up on the
-  # stock conf, so a plain `started` would leave our /etc/redis/redis.conf unread until the
-  # next reboot.
-  - name: Restart redis-server with the managed config (Ubuntu)
-    systemd:
-      name: redis-server
-      daemon_reload: true
-      enabled: true
-      state: restarted
-    when: ansible_facts['distribution'] == 'Ubuntu'
+    when: not redis_stack_enabled
 
   - name: Reload, Enable & Stop redis stack service
     systemd:
@@ -279,13 +210,13 @@
       daemon_reload: true
       enabled: true
       state: stopped
-    when: redis_use_stack_binary
+    when: redis_stack_enabled
 
   - name: Start redis stack service
     systemd:
       name: redis-stack
       state: started
-    when: redis_use_stack_binary
+    when: redis_stack_enabled
 
   - name: Stop redis-exporter service
     systemd:

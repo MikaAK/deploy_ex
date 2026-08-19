@@ -122,7 +122,6 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
         input(:aws_region, "AWS region", :string, description: "Override AWS region"),
         input(:aws_release_bucket, "AWS release bucket", :string),
         input(:parallel, "Max concurrency", :integer),
-        input(:upload_timeout, "Per-release upload timeout (ms)", :integer),
         input(:qa, "QA upload", :boolean, description: "Upload to the QA prefix")
       ]
     },
@@ -449,9 +448,6 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.DeployEx.Autoscale.RefreshStatus,
       category: "Autoscaling",
       inputs: [
-        input(:wait, "Wait for completion", :boolean),
-        input(:timeout, "Timeout in seconds", :integer),
-        input(:poll_interval, "Poll interval in seconds", :integer),
         input(:app_name, "App name", :select,
           required: true,
           positional: true,
@@ -523,7 +519,6 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.DeployEx.Qa.Deploy,
       category: "QA",
       inputs: [
-        input(:only_local_release, "Only deploy apps built locally", :boolean),
         input(:app_name, "App name", :select,
           required: true,
           positional: true,
@@ -605,12 +600,6 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.Ansible.Build,
       category: "Ansible",
       inputs: [
-        input(:provider, "Cloud provider (aws or oci)", :string),
-        input(:oci_compartment_id, "OCI compartment OCID", :string),
-        input(:oci_profile, "OCI CLI profile", :string),
-        input(:oci_region, "OCI region", :string),
-        input(:oci_namespace, "OCI object storage namespace", :string),
-        input(:oci_release_bucket, "OCI release bucket", :string),
         input(:new_only, "New only", :boolean, description: "Only render new files; skip existing"),
         input(:force, "Force overwrite", :boolean),
         input(:host_only, "Host only", :boolean),
@@ -631,7 +620,6 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.Ansible.Deploy,
       category: "Ansible",
       inputs: [
-        input(:provider, "Cloud provider (aws or oci)", :string),
         input(:directory, "Ansible directory", :string),
         input(:quiet, "Quiet", :boolean),
         input(:only, "Only app(s)", :string, description: "Comma-separated app names to deploy"),
@@ -676,10 +664,6 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.Ansible.Setup,
       category: "Ansible",
       inputs: [
-        input(:aws_region, "AWS region", :string),
-        input(:instance_id, "Instance ID", :string),
-        input(:git_branch, "Git branch of the QA nodes to target", :string),
-        input(:provider, "Cloud provider (aws or oci)", :string),
         input(:directory, "Ansible directory", :string),
         input(:only, "Only app(s)", :string),
         input(:except, "Except app(s)", :string),
@@ -707,7 +691,6 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.Terraform.Build,
       category: "Terraform",
       inputs: [
-        input(:provider, "Cloud provider (aws or oci)", :string),
         input(:directory, "Terraform directory", :string),
         input(:force, "Force overwrite", :boolean),
         input(:quiet, "Quiet", :boolean),
@@ -720,8 +703,6 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
         input(:no_sentry, "Disable Sentry", :boolean),
         input(:no_grafana, "Disable Grafana", :boolean),
         input(:no_redis, "Disable Redis", :boolean),
-        input(:clickhouse, "Add a ClickHouse node (OCI)", :boolean),
-        input(:rabbitmq, "Add a RabbitMQ node (OCI)", :boolean),
         input(:no_prometheus, "Disable Prometheus", :boolean)
       ]
     },

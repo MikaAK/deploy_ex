@@ -38,92 +38,40 @@ defmodule DeployEx.PrivRenderer do
 
   # SECTION: Terraform Rendering
 
-  # Exports only the ACTIVE provider's file set, the same selection terraform.build uses. A
-  # whole-directory copy put every provider's templates into the user's ./deploys — an :oci
-  # project got the AWS tree plus an unrendered providers/oci/*.eex, and an :aws project got
-  # providers/oci/*.tf sitting in its terraform root where tofu would try to load them.
   defp render_terraform(temp_dir, opts) do
     priv_terraform = priv_source_path("terraform")
     target_dir = Path.join(temp_dir, "terraform")
-    provider = active_provider(opts)
 
-    with {:ok, files} <- DeployEx.Cloud.PrivFileSet.files(provider, priv_terraform) do
-      File.mkdir_p!(target_dir)
-
-      copy_provider_files(priv_terraform, target_dir, files)
-
-      render_provider_templates(priv_terraform, target_dir, files, build_terraform_params(opts, provider))
+    with :ok <- copy_directory(priv_terraform, target_dir),
+         :ok <- remove_eex_files(target_dir),
+         :ok <- render_terraform_templates(priv_terraform, target_dir, opts) do
+      :ok
     end
   end
 
-  defp copy_provider_files(priv_terraform, target_dir, files) do
-    files
-    |> Enum.reject(fn {source, _dest} -> String.ends_with?(source, ".eex") end)
-    |> Enum.each(fn {source, dest} ->
-      target = Path.join(target_dir, dest)
+  defp render_terraform_templates(priv_terraform, target_dir, opts) do
+    params = build_terraform_params(opts)
 
-      target |> Path.dirname() |> File.mkdir_p!()
-      File.cp!(Path.join(priv_terraform, source), target)
-    end)
-  end
+    priv_terraform
+      |> Path.join("*.eex")
+      |> Path.wildcard()
+      |> Enum.each(fn template_file ->
+        rendered = EEx.eval_file(template_file, assigns: params)
 
-  # Provider-scoped templates flatten on the way out — providers/oci/variables.tf.eex becomes
-  # variables.tf at the terraform root — because tofu reads one directory, matching how
-  # terraform.build writes them.
-  defp render_provider_templates(priv_terraform, target_dir, files, params) do
-    files
-    |> Enum.filter(fn {source, _dest} -> String.ends_with?(source, ".eex") end)
-    |> Enum.each(fn {source, dest} ->
-      rendered = EEx.eval_file(Path.join(priv_terraform, source), assigns: params)
-      target = Path.join(target_dir, String.replace_suffix(dest, ".eex", ""))
+        output_name =
+          template_file
+          |> Path.basename()
+          |> String.replace_suffix(".eex", "")
 
-      target |> Path.dirname() |> File.mkdir_p!()
-      File.write!(target, rendered)
-    end)
+        output_path = Path.join(target_dir, output_name)
+
+        File.write!(output_path, rendered)
+      end)
 
     :ok
   end
 
-  defp active_provider(opts), do: opts[:provider] || DeployEx.Config.cloud_provider()
-
-  # Falls back to the shared template when a provider ships no variant, so a provider that
-  # only overrides some files does not need copies of the rest.
-  defp provider_template(priv_dir, provider, relative) do
-    provider_path = Path.join([priv_dir, "providers", to_string(provider), relative])
-
-    if File.exists?(provider_path) do
-      provider_path
-    else
-      Path.join(priv_dir, relative)
-    end
-  end
-
-  # AWS's inventory is a dynamic plugin config, so exporting it renders fully. OCI's is a
-  # point-in-time snapshot generated from the live compartment, which export cannot know — it
-  # is written EMPTY here on purpose, and `mix ansible.build` fills it in. Emitting a
-  # plausible-looking inventory with invented hosts would be worse than an obviously empty one.
-  defp render_inventory_template(priv_ansible, target_dir, provider, app_name) do
-    case DeployEx.Cloud.inventory(provider) do
-      {:ok, %{strategy: :aws_ec2_plugin, template: template, filename: filename}} ->
-        render_template(
-          Path.join(priv_ansible, Path.basename(template)),
-          Path.join(target_dir, filename),
-          %{app_name: app_name}
-        )
-
-      {:ok, %{template: template, filename: filename}} ->
-        render_template(
-          Path.join(priv_ansible, String.replace_prefix(template, "ansible/", "")),
-          Path.join(target_dir, filename),
-          %{hosts_section: "{}", children_section: "{}"}
-        )
-
-      {:error, _no_inventory} ->
-        :ok
-    end
-  end
-
-  defp build_terraform_params(opts, provider) do
+  defp build_terraform_params(opts) do
     release_names = fetch_release_names()
     app_name = opts[:app_name] || DeployExHelpers.underscored_project_name()
     kebab_app_name = opts[:kebab_app_name] || DeployExHelpers.kebab_project_name()
@@ -133,7 +81,7 @@ defmodule DeployEx.PrivRenderer do
     aws_log_bucket = opts[:aws_log_bucket] || DeployEx.Config.aws_log_bucket()
 
     terraform_app_releases_variables = release_names
-      |> Enum.map_join(",\n\n", &DeployEx.TerraformVariables.generate_terraform_release_variables(&1, provider))
+      |> Enum.map_join(",\n\n", &generate_terraform_release_variables/1)
 
     random_bytes = 6 |> :crypto.strong_rand_bytes() |> Base.encode32(padding: false)
 
@@ -154,14 +102,7 @@ defmodule DeployEx.PrivRenderer do
 
       terraform_backend: DeployEx.Config.terraform_backend(),
 
-      oci_region: DeployEx.Config.oci_setting(:region),
-      oci_namespace: DeployEx.Config.oci_setting(:namespace),
-      oci_state_bucket: DeployEx.Config.oci_setting(:release_state_bucket),
-      oci_state_key: DeployEx.Config.oci_release_state_key(),
-      oci_state_profile: DeployEx.Config.oci_setting(:state_profile),
-      oci_vcn_cidr: DeployEx.Config.oci_setting(:vcn_cidr) || "10.20.0.0/16",
-
-      pem_app_name: opts[:pem_app_name] || "#{kebab_app_name}-#{random_bytes}",
+      pem_app_name: "#{kebab_app_name}-#{random_bytes}",
       app_name: app_name,
       kebab_app_name: kebab_app_name,
 
@@ -174,21 +115,16 @@ defmodule DeployEx.PrivRenderer do
 
       terraform_app_releases_variables: terraform_app_releases_variables,
       terraform_release_variables: terraform_app_releases_variables,
-      terraform_redis_variables: DeployEx.TerraformVariables.terraform_redis_variables(opts, provider),
-      terraform_clickhouse_variables: DeployEx.TerraformVariables.terraform_clickhouse_variables(opts, provider),
-      terraform_rabbitmq_variables: DeployEx.TerraformVariables.terraform_rabbitmq_variables(opts, provider),
-      terraform_sentry_variables: DeployEx.TerraformVariables.terraform_sentry_variables(opts, provider),
-      terraform_grafana_variables: DeployEx.TerraformVariables.terraform_grafana_variables(opts, provider),
-      terraform_loki_variables: DeployEx.TerraformVariables.terraform_loki_variables(opts, provider),
-      terraform_prometheus_variables: DeployEx.TerraformVariables.terraform_prometheus_variables(opts, provider)
+      terraform_redis_variables: terraform_redis_variables(opts),
+      terraform_sentry_variables: terraform_sentry_variables(opts),
+      terraform_grafana_variables: terraform_grafana_variables(opts),
+      terraform_loki_variables: terraform_loki_variables(opts),
+      terraform_prometheus_variables: terraform_prometheus_variables(opts)
     }
   end
 
   # SECTION: Ansible Rendering
 
-  # The roles/setup/playbook templates are provider-neutral and ship to everyone, but the
-  # provider-EXCLUSIVE subtree is stripped back out: leaving it would put an oci user's
-  # ansible.cfg into an aws export and vice versa, and both are rendered fresh below.
   defp render_ansible(temp_dir, opts) do
     priv_ansible = priv_source_path("ansible")
     target_dir = Path.join(temp_dir, "ansible")
@@ -196,29 +132,32 @@ defmodule DeployEx.PrivRenderer do
     with :ok <- copy_directory(priv_ansible, target_dir),
          :ok <- remove_eex_files_recursive(target_dir),
          :ok <- render_ansible_templates(priv_ansible, target_dir, opts) do
-      File.rm_rf!(Path.join(target_dir, "providers"))
-
       :ok
     end
   end
 
   defp render_ansible_templates(priv_ansible, target_dir, opts) do
     app_name = opts[:app_name] || DeployExHelpers.underscored_project_name()
-    provider = active_provider(opts)
 
-    # ansible.cfg — the provider variant when one exists, since the OCI config sets a different
-    # remote_user and points at a static inventory rather than the aws_ec2 plugin.
+    # ansible.cfg
     ansible_cfg_vars = %{
       pem_file_path: "../terraform/#{String.replace(app_name, "_", "-")}*pem"
     }
 
     render_template(
-      provider_template(priv_ansible, provider, "ansible.cfg.eex"),
+      Path.join(priv_ansible, "ansible.cfg.eex"),
       Path.join(target_dir, "ansible.cfg"),
       ansible_cfg_vars
     )
 
-    render_inventory_template(priv_ansible, target_dir, provider, app_name)
+    # aws_ec2.yaml
+    hosts_vars = %{app_name: app_name}
+
+    render_template(
+      Path.join(priv_ansible, "aws_ec2.yaml.eex"),
+      Path.join(target_dir, "aws_ec2.yaml"),
+      hosts_vars
+    )
 
     # group_vars/all.yaml
     group_vars_vars = %{
@@ -243,13 +182,9 @@ defmodule DeployEx.PrivRenderer do
     File.mkdir_p!(Path.join(target_dir, "setup"))
 
     Enum.each(release_names, fn release_name ->
-      # cloud_provider is load-bearing in app_setup_playbook.yaml.eex — it selects awscli vs
-      # oci_cli and gates the AWS-only save_ami role. Omitting it raised
-      # "assign @cloud_provider not available" mid-render.
       playbook_vars = %{
         no_logging: Keyword.get(opts, :no_logging, false),
         no_prometheus: Keyword.get(opts, :no_prometheus, false),
-        cloud_provider: provider,
         app_name: release_name,
         port: 80
       }
@@ -276,6 +211,141 @@ defmodule DeployEx.PrivRenderer do
 
   # SECTION: Terraform Variable Generators
 
+  defp generate_terraform_release_variables(release_name) do
+    String.trim_trailing("""
+        #{release_name} = {
+          name = "#{DeployEx.Utils.upper_title_case(release_name)}"
+          tags = {
+            Vendor = "Self"
+            Type   = "Self Made"
+          }
+
+          # Autoscaling Configuration (optional)
+          # Uncomment and configure to enable AWS Auto Scaling Groups
+          # autoscaling = {
+          #   enable             = true
+          #   min_size           = 1
+          #   max_size           = 5
+          #   desired_capacity   = 2
+          #   cpu_target_percent = 60
+          # }
+        }
+    """, "\n")
+  end
+
+  defp terraform_redis_variables(opts) do
+    if Keyword.get(opts, :no_redis, false) do
+      ""
+    else
+      app_name = opts[:app_name] || DeployExHelpers.underscored_project_name()
+      title = DeployExHelpers.title_case_project_name()
+
+      """
+          #{app_name}_redis = {
+            name        = "#{title} Redis"
+            private_ip  = "10.0.1.60"
+            enable_ebs  = true
+
+            # This is a suggestion for instance
+
+            instance_type = "r7g.medium"
+
+            instance_ebs_secondary_size = 16
+
+            tags = {
+              Vendor      = "Redis"
+              Type        = "Database"
+              DatabaseKey = "#{app_name}_redis"
+            }
+          },
+      """
+    end
+  end
+
+  defp terraform_sentry_variables(opts) do
+    if Keyword.get(opts, :no_sentry, false) do
+      ""
+    else
+      """
+          sentry = {
+            name = "Sentry Monitoring"
+            tags = {
+              Vendor = "Sentry"
+              Type   = "Monitoring"
+            }
+          },
+      """
+    end
+  end
+
+  defp terraform_loki_variables(opts) do
+    if Keyword.get(opts, :no_logging, false) do
+      ""
+    else
+      """
+          loki_aggregator = {
+            name          = "Grafana Loki Logs"
+            instance_type = "t3.micro"
+            private_ip    = "10.0.1.50"
+
+            enable_ebs                  = true
+            instance_ebs_secondary_size = 8
+
+            tags = {
+              Vendor = "Grafana"
+              Type   = "Monitoring"
+              MonitoringKey = "loki_logger"
+            }
+          },
+      """
+    end
+  end
+
+  defp terraform_grafana_variables(opts) do
+    if Keyword.get(opts, :no_grafana, false) do
+      ""
+    else
+      """
+          grafana_ui = {
+            name                        = "Grafana UI"
+            enable_ebs                  = true
+            enable_eip                  = true
+            instance_ebs_secondary_size = 8
+
+            tags = {
+              Vendor = "Grafana"
+              Type   = "Monitoring"
+              MonitoringKey = "grafana_ui"
+            }
+          },
+      """
+    end
+  end
+
+  defp terraform_prometheus_variables(opts) do
+    if Keyword.get(opts, :no_prometheus, false) do
+      ""
+    else
+      """
+          prometheus_db = {
+            name                        = "Prometheus Metrics Database"
+            instance_type               = "t3.micro"
+            enable_ebs                  = true
+            instance_ebs_secondary_size = 16
+            private_ip                  = "10.0.1.40"
+
+            tags = {
+              Vendor = "Grafana"
+              Type   = "Monitoring"
+              MonitoringKey = "prometheus_db"
+            }
+          },
+      """
+    end
+  end
+
+  # SECTION: Helpers
+
   defp priv_source_path(subdirectory) do
     :deploy_ex |> :code.priv_dir() |> Path.join(subdirectory)
   end
@@ -290,6 +360,15 @@ defmodule DeployEx.PrivRenderer do
   defp copy_directory(source, target) do
     File.mkdir_p!(target)
     File.cp_r!(source, target)
+    :ok
+  end
+
+  defp remove_eex_files(directory) do
+    directory
+      |> Path.join("*.eex")
+      |> Path.wildcard()
+      |> Enum.each(&File.rm!/1)
+
     :ok
   end
 

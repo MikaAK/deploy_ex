@@ -8,10 +8,6 @@ defmodule DeployEx.TUI.Wizard.CommandRegistryTest do
   @hidden_per_task %{
     # `--no-tui` is a tooling-internal flag set automatically when the wizard
     # invokes the task; users do not need to toggle it through the wizard UI.
-    # The render-harness flags (`--render-dir`, `--pem-app-name`,
-    # `--db-password`) are likewise tooling-internal: bin/render_harness.sh
-    # drives them to produce a deterministic render for cross-revision diffing.
-    "ansible.build" => [:render_dir],
     "ansible.deploy" => [:no_tui],
     "ansible.setup" => [:no_tui],
     "deploy_ex.autoscale.refresh" => [:no_tui],
@@ -23,8 +19,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistryTest do
     "deploy_ex.restart_app" => [:no_tui],
     "deploy_ex.restart_machine" => [:no_tui],
     "deploy_ex.start_app" => [:no_tui],
-    "deploy_ex.stop_app" => [:no_tui],
-    "terraform.build" => [:render_dir, :pem_app_name, :db_password]
+    "deploy_ex.stop_app" => [:no_tui]
   }
 
   # Tasks that accept positional arguments — these are surfaced as

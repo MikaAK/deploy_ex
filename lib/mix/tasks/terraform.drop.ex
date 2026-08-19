@@ -5,10 +5,10 @@ defmodule Mix.Tasks.Terraform.Drop do
 
   @shortdoc "Destroys all resources built by terraform"
   @moduledoc """
-  Destroys all infrastructure resources managed by Terraform.
+  Destroys all AWS infrastructure resources managed by Terraform.
 
   This is a destructive operation that will tear down all provisioned resources
-  including compute instances, load balancers, security groups, and other infrastructure.
+  including EC2 instances, load balancers, security groups, and other infrastructure.
 
   ## Example
   ```bash
@@ -31,14 +31,7 @@ defmodule Mix.Tasks.Terraform.Drop do
       cmd = "destroy #{DeployEx.Terraform.parse_args(args, :destroy)}"
       cmd = if opts[:auto_approve], do: "#{cmd} --auto-approve", else: cmd
 
-      # Mix does NOT fail a task based on run/1's return value — only a raise produces a
-      # non-zero exit. Returning the error tuple made a FAILED destroy exit 0. MEASURED: a
-      # destroy that left an object-storage bucket behind ("409-BucketNotEmpty") still
-      # reported success, so infrastructure you believe is gone is still there and billing.
-      case DeployEx.Terraform.run_command_with_input(cmd, opts[:directory]) do
-        :ok -> :ok
-        {:error, error} -> Mix.raise(to_string(error))
-      end
+      DeployEx.Terraform.run_command_with_input(cmd, opts[:directory])
     end
   end
 

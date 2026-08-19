@@ -1,10 +1,6 @@
 defmodule DeployEx.AwsDynamodb do
   alias ExAws.Dynamo
 
-  # ex_aws_dynamo's Dynamo.list_tables/0 wraps ListTables with no way to pass
-  # ExclusiveStartTableName, so the raw JSON operation is built by hand to page through it.
-  @namespace "DynamoDB_20120810"
-
   @type table_res :: %{table_name: String.t(), table_status: String.t()}
 
   @spec create_table(String.t(), String.t(), String.t(), String.t(), Keyword.t()) :: ErrorMessage.t_res(any)
@@ -21,49 +17,14 @@ defmodule DeployEx.AwsDynamodb do
     end
   end
 
-  @doc """
-  Every DynamoDB table name in the region, following pagination to completion.
-
-  ListTables caps a response (default 100) and signals more via `LastEvaluatedTableName`. A
-  single request therefore truncates silently on an account with many tables — it returns
-  `{:ok, partial}`, not an error. `Dynamo.list_tables/0` has no way to pass
-  `ExclusiveStartTableName`, so pages are requested via a hand-built JSON operation instead.
-  """
   @spec list_tables() :: ErrorMessage.t_res([String.t()])
   @spec list_tables(String.t()) :: ErrorMessage.t_res([String.t()])
-  @spec list_tables(String.t(), Keyword.t()) :: ErrorMessage.t_res([String.t()])
-  def list_tables(region \\ DeployEx.Config.aws_region(), opts \\ []) do
-    list_tables_page(region, opts, %{}, [])
-  end
-
-  defp list_tables_page(region, opts, data, acc) do
-    request_fn = opts[:request_fn] || (&ExAws.request/2)
-
-    case request_fn.(list_tables_operation(data), region: region) do
-      {:ok, %{"TableNames" => table_names} = body} ->
-        accumulated = acc ++ table_names
-
-        case body["LastEvaluatedTableName"] do
-          name when is_binary(name) and name !== "" ->
-            list_tables_page(region, opts, %{"ExclusiveStartTableName" => name}, accumulated)
-
-          _no_more_pages ->
-            {:ok, accumulated}
-        end
-
+  def list_tables(region \\ DeployEx.Config.aws_region()) do
+    case ExAws.request(Dynamo.list_tables(), region: region) do
+      {:ok, %{"TableNames" => table_names}} -> {:ok, table_names}
       {:error, {:http_error, code, message}} ->
         {:error, handle_error(code, message, %{region: region})}
     end
-  end
-
-  defp list_tables_operation(data) do
-    ExAws.Operation.JSON.new(:dynamodb, %{
-      data: data,
-      headers: [
-        {"x-amz-target", "#{@namespace}.ListTables"},
-        {"content-type", "application/x-amz-json-1.0"}
-      ]
-    })
   end
 
   @spec describe_table(String.t()) :: ErrorMessage.t_res(table_res)

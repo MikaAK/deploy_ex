@@ -1,9 +1,0 @@
-- hosts: database_*_clickhouse
-  roles:
-    - beam_linux_tuning
-    - pip3
-    - awscli
-    - log_cleanup
-    - prometheus_exporter
-    - clickhouse
-    - ipv6

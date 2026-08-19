@@ -1,9 +1,0 @@
-- hosts: database_*_rabbitmq
-  roles:
-    - beam_linux_tuning
-    - pip3
-    - awscli
-    - log_cleanup
-    - prometheus_exporter
-    - rabbitmq_server
-    - ipv6

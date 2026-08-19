@@ -29,11 +29,7 @@ defmodule DeployExHelpers do
   def kebab_project_name, do: String.replace(underscored_project_name(), "_", "-")
   def title_case_project_name, do: DeployEx.Utils.upper_title_case(underscored_project_name())
 
-  def check_valid_project do
-    with :ok <- DeployEx.ProjectContext.check_valid_project() do
-      DeployEx.Cloud.validate_config()
-    end
-  end
+  def check_valid_project, do: DeployEx.ProjectContext.check_valid_project()
 
   def priv_folder(priv_subdirectory) do
     priv_path = :deploy_ex |> :code.priv_dir() |> Path.join(priv_subdirectory)
@@ -69,25 +65,9 @@ defmodule DeployExHelpers do
         if !opts[:quiet] do
           Mix.shell().info(opts[:message])
         end
-      else
-        warn_write_skipped(file_path, opts)
       end
     else
       Mix.Generator.create_file(file_path, contents, opts)
-    end
-  end
-
-  # Mix.Generator.overwrite?/2 only prompts when the new contents DIFFER from what is on disk,
-  # and it returns false at EOF. So under `< /dev/null`, or anywhere without a tty, the files
-  # that most need updating are precisely the ones left stale — and the task still exits 0.
-  # MEASURED: a rebuilt ansible tree kept its previous inventory and setup playbook this way,
-  # which in CI is a deploy against the wrong host list reported as a success.
-  defp warn_write_skipped(file_path, opts) do
-    if !opts[:quiet] do
-      Mix.shell().error(
-        "* SKIPPED #{file_path} — on-disk contents differ and the overwrite was declined; " <>
-          "pass --force to update it"
-      )
     end
   end
 

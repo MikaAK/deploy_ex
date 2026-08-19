@@ -111,55 +111,18 @@ defmodule DeployEx.K6Runner do
     end
   end
 
-  @doc """
-  Every K6Runner-tagged instance in the region, following pagination to completion.
-
-  DescribeInstances caps a response and signals more via `nextToken`. A single request
-  therefore truncates silently on a large fleet — it returns `{:ok, partial}`, not an error —
-  which would make `load_test.destroy_instance` miss instances and leave them running (and
-  billing).
-  """
   def find_runners_from_ec2(opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
     resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
 
-    find_runners_from_ec2_page(region, resource_group, opts, nil, [])
-  end
-
-  defp find_runners_from_ec2_page(region, resource_group, opts, next_token, acc) do
-    request_fn = opts[:request_fn] || (&ExAws.request/2)
-
-    filters = [
+    ExAws.EC2.describe_instances(filters: [
       "tag:K6Runner": ["true"],
       "tag:Group": [resource_group],
       "instance-state-name": ["running", "pending", "stopping", "stopped"]
-    ]
-
-    describe_opts = if next_token, do: [filters: filters, next_token: next_token], else: [filters: filters]
-
-    response =
-      describe_opts
-      |> ExAws.EC2.describe_instances()
-      |> request_fn.(region: region)
-
-    with {:ok, runners} <- handle_describe_instances(response) do
-      accumulated = acc ++ runners
-
-      case describe_instances_next_token(response) do
-        nil -> {:ok, accumulated}
-        token -> find_runners_from_ec2_page(region, resource_group, opts, token, accumulated)
-      end
-    end
+    ])
+    |> ExAws.request(region: region)
+    |> handle_describe_instances()
   end
-
-  defp describe_instances_next_token({:ok, %{body: body}}) do
-    case XmlToMap.naive_map(body) do
-      %{"DescribeInstancesResponse" => %{"nextToken" => token}} when is_binary(token) and token !== "" -> token
-      _no_more_pages -> nil
-    end
-  end
-
-  defp describe_instances_next_token(_response), do: nil
 
   def verify_instance_exists(nil), do: {:ok, nil}
 
@@ -215,69 +178,30 @@ defmodule DeployEx.K6Runner do
     end
   end
 
-  @doc """
-  Every stored runner state under `#{@state_prefix}/`, following pagination to completion.
-
-  S3 caps a ListObjects response at 1000 keys and signals more via `is_truncated`. A single
-  request therefore truncates silently — `{:ok, partial}`, not an error — which would make
-  every caller here (list/exec/destroy_instance/upload/create_instance) see a partial runner
-  list.
-  """
   def fetch_all_runners(opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
     bucket = opts[:bucket] || DeployEx.Config.aws_release_bucket()
-    request_fn = opts[:request_fn] || (&ExAws.request/2)
 
-    with {:ok, contents} <- list_runner_state_objects(bucket, region, opts) do
-      runners = Enum.map(contents, fn content ->
-        case ExAws.S3.get_object(bucket, content.key) |> request_fn.(region: region) do
-          {:ok, %{body: body}} -> from_json(body)
-          _ -> nil
-        end
-      end)
-      |> Enum.reject(&is_nil/1)
+    bucket
+    |> ExAws.S3.list_objects(prefix: "#{@state_prefix}/")
+    |> ExAws.request(region: region)
+    |> case do
+      {:ok, %{body: %{contents: contents}}} when is_list(contents) ->
+        runners = Enum.map(contents, fn content ->
+          case ExAws.S3.get_object(bucket, content.key) |> ExAws.request(region: region) do
+            {:ok, %{body: body}} -> from_json(body)
+            _ -> nil
+          end
+        end)
+        |> Enum.reject(&is_nil/1)
 
-      {:ok, runners}
-    end
-  end
-
-  defp list_runner_state_objects(bucket, region, opts) do
-    list_runner_state_objects_page(bucket, region, opts, nil, [])
-  end
-
-  defp list_runner_state_objects_page(bucket, region, opts, marker, acc) do
-    request_fn = opts[:request_fn] || (&ExAws.request/2)
-    list_opts = if marker, do: [prefix: "#{@state_prefix}/", marker: marker], else: [prefix: "#{@state_prefix}/"]
-
-    response =
-      bucket
-      |> ExAws.S3.list_objects(list_opts)
-      |> request_fn.(region: region)
-
-    case response do
-      {:ok, %{body: %{contents: contents} = body}} when is_list(contents) ->
-        accumulated = acc ++ contents
-
-        if truncated_listing?(body) and not Enum.empty?(contents) do
-          list_runner_state_objects_page(bucket, region, opts, next_listing_marker(body, contents), accumulated)
-        else
-          {:ok, accumulated}
-        end
+        {:ok, runners}
 
       {:ok, _} ->
-        {:ok, acc}
+        {:ok, []}
 
       {:error, error} ->
         {:error, ErrorMessage.failed_dependency("failed to list k6 runner states", %{error: error})}
-    end
-  end
-
-  defp truncated_listing?(body), do: Map.get(body, :is_truncated) in [true, "true"]
-
-  defp next_listing_marker(body, contents) do
-    case Map.get(body, :next_marker) do
-      marker when is_binary(marker) and marker !== "" -> marker
-      _absent -> contents |> List.last() |> Map.fetch!(:key)
     end
   end
 
