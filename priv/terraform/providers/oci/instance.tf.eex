@@ -1,0 +1,42 @@
+# Latest Ubuntu 24.04 image for the configured shape, mirroring the AWS `data.aws_ami.base`
+# fallback. Per-app entries may still pin `image_ocid` explicitly.
+data "oci_core_images" "base" {
+  compartment_id           = var.compartment_ocid
+  operating_system         = "Canonical Ubuntu"
+  operating_system_version = "24.04"
+  shape                    = var.instance_shape
+  sort_by                  = "TIMECREATED"
+  sort_order               = "DESC"
+}
+
+module "oci_instance" {
+  source = "./modules/oci-instance"
+
+  for_each = var.<%= @app_name %>_project
+
+  resource_group       = var.resource_group
+  environment          = var.environment
+  compartment_ocid     = var.compartment_ocid
+  availability_domain  = var.availability_domain
+  subnet_id            = oci_core_subnet.public.id
+  nsg_ids              = [oci_core_network_security_group.ssh.id]
+
+  instance_name  = each.value.name
+  instance_count = try(each.value.instance_count, null)
+
+  instance_shape      = try(each.value.shape, var.instance_shape)
+  instance_ocpus      = try(each.value.ocpus, var.instance_ocpus)
+  instance_memory_gbs = try(each.value.memory_gbs, var.instance_memory_gbs)
+
+  instance_image_ocid = coalesce(
+    try(each.value.image_ocid, null),
+    var.instance_image_ocid,
+    try(data.oci_core_images.base.images[0].id, null)
+  )
+
+  boot_volume_size_gbs = try(each.value.boot_volume_size_gbs, null)
+  assign_public_ip     = try(each.value.assign_public_ip, var.assign_public_ip)
+  ssh_public_key        = local.ssh_public_key
+
+  tags = try(each.value.tags, {})
+}

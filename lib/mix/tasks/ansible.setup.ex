@@ -75,6 +75,12 @@ defmodule Mix.Tasks.Ansible.Setup do
 
   ## Options
   - `directory` - Directory containing ansible playbooks (default: ./deploys/ansible)
+  - `provider` - Cloud provider whose inventory the directory was built with
+    (default: `DeployEx.Config.cloud_provider/0`). Only affects which inventory
+    filename is checked for before setup runs — mismatch raises rather than
+    silently running against the wrong (or a stale) inventory. `--instance-id`
+    and `--git-branch` targeting stay AWS-only regardless of this flag (they
+    resolve through `DeployEx.AwsMachine`/`DeployEx.QaNode` directly).
   - `parallel` - Maximum number of concurrent setup operations (default: 4)
   - `only` - Only setup specified apps (can be used multiple times)
   - `except` - Skip setup for specified apps (can be used multiple times)
@@ -117,7 +123,9 @@ defmodule Mix.Tasks.Ansible.Setup do
       targets = resolve_targets(instance_ids, git_branch, opts)
       ansible_args = ansible_args ++ build_limit_args(targets.patterns)
 
-      DeployExHelpers.check_file_exists!(Path.join(opts[:directory], "aws_ec2.yaml"))
+      provider = resolve_provider(opts)
+
+      DeployExHelpers.check_file_exists!(Path.join(opts[:directory], inventory_filename(provider)))
 
       DeployEx.TUI.setup_no_tui(opts)
 
@@ -320,6 +328,7 @@ defmodule Mix.Tasks.Ansible.Setup do
       aliases: [f: :force, q: :quit, d: :directory, i: :instance_id, b: :git_branch],
       switches: [
         directory: :string,
+        provider: :string,
         only: :keep,
         except: :keep,
         force: :boolean,
@@ -334,5 +343,29 @@ defmodule Mix.Tasks.Ansible.Setup do
     )
 
     opts
+  end
+
+  # Matches the flag against the registered providers rather than calling to_existing_atom/1 —
+  # see terraform.build.ex's identical resolve_provider/1 for the rationale.
+  defp resolve_provider(opts) do
+    case opts[:provider] do
+      nil ->
+        DeployEx.Config.cloud_provider()
+
+      name ->
+        known = DeployEx.Cloud.providers()
+
+        case Enum.find(known, &(to_string(&1) === name)) do
+          nil -> Mix.raise("unknown provider #{inspect(name)}, expected one of #{inspect(known)}")
+          provider -> provider
+        end
+    end
+  end
+
+  defp inventory_filename(provider) do
+    case DeployEx.Cloud.inventory(provider) do
+      {:ok, %{filename: filename}} -> filename
+      {:error, error} -> Mix.raise(to_string(error))
+    end
   end
 end

@@ -1,0 +1,17 @@
+# Managed by deploy_ex (roles/rabbitmq_server). Single-node broker; quorum queues are
+# declared by the application with x-queue-type=quorum and work on one node (Raft majority
+# of 1). Adding nodes buys HA, not correctness — and a 2-node cluster is the one layout to
+# avoid (majority of 2 is 2, so losing either halts every queue).
+
+listeners.tcp.default = {{ rabbitmq_amqp_port }}
+management.tcp.port = {{ rabbitmq_management_listener_port }}
+management.tcp.ip = 0.0.0.0
+
+# guest stays loopback-only; the app authenticates as {{ rabbitmq_app_user }}.
+loopback_users.guest = true
+
+disk_free_limit.absolute = {{ rabbitmq_disk_free_limit }}
+vm_memory_high_watermark.relative = {{ rabbitmq_vm_memory_high_watermark }}
+
+# Consumers that vanish mid-delivery re-queue promptly.
+heartbeat = 60

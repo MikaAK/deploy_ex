@@ -123,38 +123,17 @@ defmodule Mix.Tasks.Terraform.DeleteEbsSnapshot do
     end
   end
 
-  defp get_snapshots_by_ids(region, snapshot_ids) do
-    ExAws.EC2.describe_snapshots(snapshot_ids: snapshot_ids)
-      |> ExAws.request(region: region)
-      |> case do
-        {:ok, %{body: body}} ->
-          case parse_snapshots_response(body) do
-            {:ok, snapshots} ->
-              snapshot_data = Enum.map(snapshots, fn snapshot ->
-                %{
-                  snapshot_id: snapshot["snapshotId"],
-                  volume_id: snapshot["volumeId"],
-                  description: snapshot["description"],
-                  start_time: snapshot["startTime"]
-                }
-              end)
-              {:ok, snapshot_data}
+  # AWS rejects DescribeSnapshots calls that combine SnapshotIds with MaxResults
+  # ("InvalidParameterCombination: The parameter snapshotSet cannot be used with the parameter
+  # maxResults") -- confirmed against a live account. :max_results is dropped here so an opts
+  # value meant for the filter-based paginators can never be forwarded into an id lookup and
+  # blow up the request; a nextToken is still followed if AWS ever sends one.
+  def get_snapshots_by_ids(region, snapshot_ids, opts \\ []) do
+    opts = Keyword.delete(opts, :max_results)
 
-            {:error, _} = error -> error
-          end
-
-        {:error, {:http_error, status_code, %{body: body}}} ->
-          {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-            "Error fetching snapshots from AWS",
-            %{error_body: body, snapshot_ids: snapshot_ids}
-          ])}
-
-        {:error, error} ->
-          {:error, ErrorMessage.bad_request(
-            "Failed to describe snapshots",
-            %{error: error, snapshot_ids: snapshot_ids}
-          )}
-      end
+    with {:ok, snapshots} <- fetch_all_snapshots(region, [snapshot_ids: snapshot_ids], opts, %{snapshot_ids: snapshot_ids}) do
+      {:ok, Enum.map(snapshots, &snapshot_summary/1)}
+    end
   end
 
   defp find_instances_by_ips(region, instance_ips) do
@@ -177,26 +156,79 @@ defmodule Mix.Tasks.Terraform.DeleteEbsSnapshot do
     end
   end
 
-  defp find_volumes_for_instances(region, instances) do
+  def find_volumes_for_instances(region, instances, opts \\ []) do
     instance_ids = Enum.map(instances, & &1["instanceId"])
-    
+
     filters = [
       {"attachment.instance-id", instance_ids}
     ]
 
-    ExAws.EC2.describe_volumes(filters: filters)
-      |> ExAws.request(region: region)
+    with {:ok, volumes} <- fetch_all_volumes(region, [filters: filters], opts, %{instance_ids: instance_ids}) do
+      case volumes do
+        [] ->
+          {:error, ErrorMessage.not_found(
+            "No volumes found for instances",
+            %{instance_ids: instance_ids}
+          )}
+
+        volumes ->
+          {:ok, volumes}
+      end
+    end
+  end
+
+  def find_snapshots_for_volumes(region, volumes, opts \\ []) do
+    volume_ids = Enum.map(volumes, & &1["volumeId"])
+
+    filters = [
+      {"volume-id", volume_ids}
+    ]
+
+    # `owner: ["self"]` is what makes this query terminate. Snapshots are the one EC2 resource
+    # with a public/shared universe, and AWS applies MaxResults to the UNSCOPED scan before
+    # applying the volume-id filter — so unscoped, page one comes back empty WITH a nextToken and
+    # the pagination loop walks every public snapshot in the region.
+    #
+    # It has to be the Owner REQUEST PARAMETER, not an `owner-id` filter: MEASURED, the filter
+    # form silently matches zero snapshots (self is not a valid filter value), which looks like a
+    # fast fix and is actually a query that can never find anything.
+    request_opts = [owner: ["self"], filters: filters]
+
+    with {:ok, snapshots} <- fetch_all_snapshots(region, request_opts, opts, %{volume_ids: volume_ids}) do
+      filtered_snapshots = snapshots
+        |> filter_snapshots_by_age(opts[:max_age_days])
+        |> Enum.map(&snapshot_summary/1)
+
+      {:ok, filtered_snapshots}
+    end
+  end
+
+  # DescribeVolumes/DescribeSnapshots cap a response and signal more via `nextToken`. A single
+  # request therefore truncates silently -- it returns `{:ok, partial}`, not an error -- which
+  # here feeds destructive snapshot-deletion selection directly. `AwsMachine.fetch_instances/2`
+  # already paginates the same EC2 Query API for the same reason.
+  defp fetch_all_volumes(region, base_opts, opts, details) do
+    fetch_volumes_page(region, base_opts, opts, details, nil, [])
+  end
+
+  defp fetch_volumes_page(region, base_opts, opts, details, next_token, acc) do
+    request_fn = opts[:request_fn] || (&ExAws.request/2)
+
+    base_opts
+      |> maybe_put_ec2_opt(:max_results, opts[:max_results])
+      |> maybe_put_ec2_opt(:next_token, next_token)
+      |> ExAws.EC2.describe_volumes()
+      |> request_fn.(region: region)
       |> case do
         {:ok, %{body: body}} ->
           case parse_volumes_response(body) do
-            {:ok, []} ->
-              {:error, ErrorMessage.not_found(
-                "No volumes found for instances",
-                %{instance_ids: instance_ids}
-              )}
-
             {:ok, volumes} ->
-              {:ok, volumes}
+              accumulated = acc ++ volumes
+
+              case ec2_next_token(body, "DescribeVolumesResponse") do
+                nil -> {:ok, accumulated}
+                token -> fetch_volumes_page(region, base_opts, opts, details, token, accumulated)
+              end
 
             {:error, _} = error -> error
           end
@@ -204,42 +236,39 @@ defmodule Mix.Tasks.Terraform.DeleteEbsSnapshot do
         {:error, {:http_error, status_code, %{body: body}}} ->
           {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
             "Error fetching volumes from AWS",
-            %{error_body: body, instance_ids: instance_ids}
+            Map.put(details, :error_body, body)
           ])}
 
         {:error, error} ->
           {:error, ErrorMessage.bad_request(
             "Failed to describe volumes",
-            %{error: error, instance_ids: instance_ids}
+            Map.put(details, :error, error)
           )}
       end
   end
 
-  defp find_snapshots_for_volumes(region, volumes, opts) do
-    volume_ids = Enum.map(volumes, & &1["volumeId"])
-    
-    filters = [
-      {"volume-id", volume_ids}
-    ]
+  defp fetch_all_snapshots(region, base_opts, opts, details) do
+    fetch_snapshots_page(region, base_opts, opts, details, nil, [])
+  end
 
-    ExAws.EC2.describe_snapshots(filters: filters)
-      |> ExAws.request(region: region)
+  defp fetch_snapshots_page(region, base_opts, opts, details, next_token, acc) do
+    request_fn = opts[:request_fn] || (&ExAws.request/2)
+
+    base_opts
+      |> maybe_put_ec2_opt(:max_results, opts[:max_results])
+      |> maybe_put_ec2_opt(:next_token, next_token)
+      |> ExAws.EC2.describe_snapshots()
+      |> request_fn.(region: region)
       |> case do
         {:ok, %{body: body}} ->
           case parse_snapshots_response(body) do
             {:ok, snapshots} ->
-              filtered_snapshots = snapshots
-                |> filter_snapshots_by_age(opts[:max_age_days])
-                |> Enum.map(fn snapshot ->
-                  %{
-                    snapshot_id: snapshot["snapshotId"],
-                    volume_id: snapshot["volumeId"],
-                    description: snapshot["description"],
-                    start_time: snapshot["startTime"]
-                  }
-                end)
+              accumulated = acc ++ snapshots
 
-              {:ok, filtered_snapshots}
+              case ec2_next_token(body, "DescribeSnapshotsResponse") do
+                nil -> {:ok, accumulated}
+                token -> fetch_snapshots_page(region, base_opts, opts, details, token, accumulated)
+              end
 
             {:error, _} = error -> error
           end
@@ -247,15 +276,36 @@ defmodule Mix.Tasks.Terraform.DeleteEbsSnapshot do
         {:error, {:http_error, status_code, %{body: body}}} ->
           {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
             "Error fetching snapshots from AWS",
-            %{error_body: body, volume_ids: volume_ids}
+            Map.put(details, :error_body, body)
           ])}
 
         {:error, error} ->
           {:error, ErrorMessage.bad_request(
             "Failed to describe snapshots",
-            %{error: error, volume_ids: volume_ids}
+            Map.put(details, :error, error)
           )}
       end
+  end
+
+  # AWS signals more pages via `nextToken`, absent once the last page is reached -- not via a
+  # truthy/falsy flag, so presence (not truthiness) is what terminates the loop.
+  defp ec2_next_token(body, response_key) do
+    case XmlToMap.naive_map(body) do
+      %{^response_key => %{"nextToken" => token}} when is_binary(token) and token !== "" -> token
+      _no_more_pages -> nil
+    end
+  end
+
+  defp maybe_put_ec2_opt(opts, _key, nil), do: opts
+  defp maybe_put_ec2_opt(opts, key, value), do: Keyword.put(opts, key, value)
+
+  defp snapshot_summary(snapshot) do
+    %{
+      snapshot_id: snapshot["snapshotId"],
+      volume_id: snapshot["volumeId"],
+      description: snapshot["description"],
+      start_time: snapshot["startTime"]
+    }
   end
 
   defp filter_snapshots_by_age(snapshots, nil), do: snapshots
