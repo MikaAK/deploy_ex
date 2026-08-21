@@ -26,6 +26,26 @@ defmodule DeployEx.TerraformVariables do
           # memory_gbs           = 16
           # boot_volume_size_gbs = 100
           # instance_count       = 2
+
+          # Load balancer is optional — uncomment to front this app with an OCI Network Load
+          # Balancer. Unlike AWS, OCI gates creation on `enable` alone (no instance_count /
+          # autoscaling gate — see providers/oci/README.md). There is no `port` / `instance_port`
+          # here: the listener is unconditionally 80 (and 443 when enable_https), matching what
+          # AWS already does under the hood.
+          # load_balancer = {
+          #   enable            = true
+          #   enable_https      = false
+          #   reserved_ip_ocid  = null
+          #
+          #   health_check = {
+          #     path                = "/health"
+          #     return_code         = 200
+          #     https_return_code   = 200
+          #     unhealthy_threshold = 3
+          #     timeout             = 3
+          #     interval            = 10
+          #   }
+          # }
         }
     """, "\n")
   end

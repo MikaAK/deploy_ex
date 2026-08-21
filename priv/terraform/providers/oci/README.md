@@ -15,12 +15,92 @@ shape.**
 
 ## What's here vs. AWS
 
-Deliberately minimal compared to the AWS `aws-instance` module — no load balancer, no EBS
-snapshot restore, no autoscaling. Per-app instances support: instance count, shape, ocpus,
-memory, image OCID (auto-detected if unset), boot volume size, public IP, ssh key, and freeform
-tags. Cloud-init / release bootstrapping (AWS's `cloud_init_data.yaml.tftpl`) is also not ported
-yet — it needs the `oci` CLI instance-principal flow (Phase 3, `cli_adapter` in
+Deliberately minimal compared to the AWS `aws-instance` module — no EBS snapshot restore, no
+autoscaling. Per-app instances support: instance count, shape, ocpus, memory, image OCID
+(auto-detected if unset), boot volume size, public IP, ssh key, load balancer, and freeform tags.
+Cloud-init / release bootstrapping (AWS's `cloud_init_data.yaml.tftpl`) is also not ported yet —
+it needs the `oci` CLI instance-principal flow (Phase 3, `cli_adapter` in
 `DeployEx.Cloud.Providers.Oci` is still `nil`), not the AMI-style `awscli` bootstrap AWS uses.
+
+## Load balancer
+
+Set `load_balancer = { enable = true, ... }` inside an app's entry in `<app>_project` and
+`mix terraform.apply` provisions an OCI Network Load Balancer (`oci_network_load_balancer_*`) in
+`modules/oci-instance/load_balancer.tf` — one NLB per LB-enabled app, listening on 80 (and 443
+when `enable_https = true`) and forwarding to that app's instances.
+
+```hcl
+load_balancer = {
+  enable            = true
+  enable_https      = false
+  reserved_ip_ocid  = null
+
+  health_check = {
+    path                = "/health"
+    return_code         = 200
+    https_return_code   = 200
+    unhealthy_threshold = 3
+    timeout             = 3
+    interval            = 10
+  }
+}
+```
+
+**Gate divergence (D1):** AWS only creates a load balancer when
+`enable && (instance_count > 1 || autoscaling.enable)` — OCI gates on `enable` alone. OCI has no
+autoscaling and defaults `instance_count` to `1`, so copying AWS's gate would make
+`load_balancer.enable = true` a silent no-op for the common single-instance case.
+
+**Security posture (D3):** the NSG that opens 80/443 is created *per app*, attached to both the
+NLB and the LB-enabled app's own instances — not a rule on the shared `network.tf` security list.
+`network.tf` is untouched by this feature. Consequence: **ports 80/443 are reachable directly on
+an LB-backed app's instances**, not only through the NLB — OCI's NSG and security-list rules are
+additive (union), so the LB-scoped NSG opens those ports on the instance's VNIC regardless of the
+NLB path. Apps without `load_balancer.enable = true` are unaffected.
+
+**Portability (D6):** `health_check.return_code` and `health_check.https_return_code` are
+OCI-only keys. An AWS-shaped `load_balancer` block runs unchanged on OCI, but an OCI block that
+sets `return_code` / `https_return_code` is rejected by AWS's typed `variables.tf` — portability
+is one-way (AWS -> OCI, not OCI -> AWS).
+
+**Keys AWS has that OCI ignores**, and why:
+
+| Key | Why ignored on OCI |
+|---|---|
+| `port` | Dead on AWS too — declared but never wired into a target group. OCI's listener is always 80/443. |
+| `instance_port` | Same as above — always falls back to 80/443 on both providers. |
+| `health_check.protocol` | AWS hardcodes `HTTP` on the 80 check and `HTTPS` on the 443 check. OCI derives the same thing: `HTTP`/`HTTPS` when `health_check.path` is set, `TCP` (connect-only) when it is not — OCI's health checker cannot be omitted the way AWS's can. |
+| `health_check.matcher` / `health_check.https_matcher` | AWS accepts a status-code *range* string (`"200-299,301"`). OCI's `return_code` is a single number — not representable, so it is a distinct key rather than a lossy mapping. |
+| `health_check.healthy_threshold` | OCI has one threshold (`retries`) that governs both directions — see `health_check.unhealthy_threshold` below. |
+
+**Keys that map directly:**
+
+| Key | Maps to |
+|---|---|
+| `health_check.unhealthy_threshold` | `health_checker.retries` — OCI's own docs describe this as the retry count before *and* after a state flip, covering both AWS thresholds |
+| `health_check.timeout` | `health_checker.timeout_in_millis` (seconds × 1000) |
+| `health_check.interval` | `health_checker.interval_in_millis` (seconds × 1000) |
+
+An unset health-check key passes `null` and takes OCI's own provider default (3 retries, 3s
+timeout, 10s interval) rather than transplanting AWS's defaults (2/5s/20s) — deliberate, to avoid
+a second set of magic numbers to keep in sync across providers.
+
+`reserved_ip_ocid` is OCI-only, with no AWS equivalent: an NLB's public IP is ephemeral by
+default and can change on NLB replacement. Set it to a pre-created reserved public IP OCID to
+pin the address DNS targets.
+
+## Operator notes — adopting the load balancer on an existing tree
+
+- **Never `--force` an adopted tree.** `mix terraform.build --force` discards hand-edited drift
+  in `variables.tf` (including any `load_balancer` block you've already enabled) and can close
+  public ingress mid-cutover. Rebuild without `--force`, then re-apply your `load_balancer`
+  edits if the regenerated defaults collided with them.
+- **Opt-in flags are part of tree identity.** `--clickhouse` / `--rabbitmq` (and any other
+  opt-in rebuild flag) must be passed on *every* `terraform.build` run against a tree that
+  already has those nodes — a bare rebuild plans their destruction.
+- **The load-balancer enable bit lives in the regenerated default map.** Enabling it is declared
+  drift against the generator's default output, the same way any other hand-edited
+  `<app>_project` value is — expected, not a bug to chase.
 
 ## Use
 
