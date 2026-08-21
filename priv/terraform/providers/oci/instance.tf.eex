@@ -20,6 +20,7 @@ module "oci_instance" {
   availability_domain  = var.availability_domain
   subnet_id            = oci_core_subnet.public.id
   nsg_ids              = [oci_core_network_security_group.ssh.id]
+  vcn_id               = oci_core_vcn.main.id
 
   instance_name  = each.value.name
   instance_count = try(each.value.instance_count, null)
@@ -37,6 +38,16 @@ module "oci_instance" {
   boot_volume_size_gbs = try(each.value.boot_volume_size_gbs, null)
   assign_public_ip     = try(each.value.assign_public_ip, var.assign_public_ip)
   ssh_public_key        = local.ssh_public_key
+
+  enable_load_balancer                         = try(each.value.load_balancer.enable, false)
+  enable_load_balancer_https                   = try(each.value.load_balancer.enable_https, true)
+  load_balancer_health_check_path              = try(each.value.load_balancer.health_check.path, "")
+  load_balancer_health_check_return_code       = try(each.value.load_balancer.health_check.return_code, null)
+  load_balancer_health_check_https_return_code = try(each.value.load_balancer.health_check.https_return_code, null)
+  load_balancer_health_check_retries           = try(each.value.load_balancer.health_check.unhealthy_threshold, null)
+  load_balancer_health_check_timeout_seconds   = try(each.value.load_balancer.health_check.timeout, null)
+  load_balancer_health_check_interval_seconds  = try(each.value.load_balancer.health_check.interval, null)
+  reserved_ip_ocid                             = try(each.value.load_balancer.reserved_ip_ocid, null)
 
   tags = try(each.value.tags, {})
 }
