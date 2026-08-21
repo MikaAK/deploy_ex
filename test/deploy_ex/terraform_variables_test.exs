@@ -22,6 +22,48 @@ defmodule DeployEx.TerraformVariablesTest do
     end
   end
 
+  describe "generate_terraform_release_variables/2" do
+    test "T18: oci clause discovers load_balancer via a commented example block" do
+      rendered = TerraformVariables.generate_terraform_release_variables("my_app", :oci)
+
+      assert rendered =~ ~r/#\s*load_balancer\s*=\s*\{/
+      assert rendered =~ ~r/#\s*enable\s*=\s*true/
+      assert rendered =~ ~r/#\s*enable_https\s*=\s*false/
+      assert rendered =~ ~r/#\s*reserved_ip_ocid\s*=\s*null/
+      assert rendered =~ ~r/#\s*health_check\s*=\s*\{/
+      assert rendered =~ ~r/#\s*path\s*=/
+      assert rendered =~ ~r/#\s*return_code\s*=/
+      assert rendered =~ ~r/#\s*https_return_code\s*=/
+      assert rendered =~ ~r/#\s*unhealthy_threshold\s*=/
+      assert rendered =~ ~r/#\s*timeout\s*=/
+      assert rendered =~ ~r/#\s*interval\s*=/
+    end
+
+    test "T18: aws clause is byte-identical to the current pinned string" do
+      rendered = TerraformVariables.generate_terraform_release_variables("my_app", :aws)
+
+      assert rendered === String.trim_trailing("""
+          my_app = {
+            name = "My App"
+            tags = {
+              Vendor = "Self"
+              Type   = "Self Made"
+            }
+
+            # Autoscaling Configuration (optional)
+            # Uncomment and configure to enable AWS Auto Scaling Groups
+            # autoscaling = {
+            #   enable             = true
+            #   min_size           = 1
+            #   max_size           = 5
+            #   desired_capacity   = 2
+            #   cpu_target_percent = 60
+            # }
+          }
+      """, "\n")
+    end
+  end
+
   describe "terraform_rabbitmq_variables/2" do
     test "renders nothing on oci unless --rabbitmq is passed" do
       assert TerraformVariables.terraform_rabbitmq_variables([], :oci) === ""
