@@ -3,17 +3,37 @@ defmodule Mix.Tasks.Terraform.BuildOciLbTest do
   # in later sprints (S2/S3) alongside these template-content rows
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureIO
+
+  alias Mix.Tasks.Terraform.Build
+
   @load_balancer_tf "terraform/providers/oci/modules/oci-instance/load_balancer.tf"
   @module_outputs_tf "terraform/providers/oci/modules/oci-instance/outputs.tf"
   @module_main_tf "terraform/providers/oci/modules/oci-instance/main.tf"
   @module_variables_tf "terraform/providers/oci/modules/oci-instance/variables.tf"
   @root_variables_tf_eex "terraform/variables.tf.eex"
   @aws_instance_main_tf "terraform/modules/aws-instance/main.tf"
+  @root_variables_tf_eex_oci "terraform/providers/oci/variables.tf.eex"
 
   defp load_balancer_tf, do: @load_balancer_tf |> DeployExHelpers.priv_folder() |> File.read!()
   defp module_outputs_tf, do: @module_outputs_tf |> DeployExHelpers.priv_folder() |> File.read!()
   defp module_main_tf, do: @module_main_tf |> DeployExHelpers.priv_folder() |> File.read!()
   defp module_variables_tf, do: @module_variables_tf |> DeployExHelpers.priv_folder() |> File.read!()
+  defp root_variables_tf_eex_oci, do: @root_variables_tf_eex_oci |> DeployExHelpers.priv_folder() |> File.read!()
+
+  defp render(args), do: capture_io(fn -> Build.run(args) end)
+
+  defp render_dir do
+    Path.join(System.tmp_dir!(), "p00_tf_lb_#{System.unique_integer([:positive])}")
+  end
+
+  defp file_tree(dir) do
+    dir
+      |> Path.join("**/*")
+      |> Path.wildcard(match_dot: true)
+      |> Enum.map(&Path.relative_to(&1, dir))
+      |> Enum.sort()
+  end
 
   describe "load_balancer.tf — resource declarations" do
     test "T1: declares all six load-balancer resource types" do
@@ -179,6 +199,105 @@ defmodule Mix.Tasks.Terraform.BuildOciLbTest do
 
       refute variables_contents =~ ~r/return_code\s*=\s*optional\(number\)/
       refute aws_main_contents =~ ~r/oci_/
+    end
+  end
+
+  describe "PrivFileSet — load_balancer.tf resolves for oci, not aws" do
+    setup do
+      {:ok, priv_path: DeployExHelpers.priv_folder("terraform")}
+    end
+
+    test "T12: oci file set includes load_balancer.tf flattened; aws set has nothing under providers/", %{priv_path: priv_path} do
+      {:ok, oci_files} = DeployEx.Cloud.PrivFileSet.files(:oci, priv_path)
+      {:ok, aws_files} = DeployEx.Cloud.PrivFileSet.files(:aws, priv_path)
+
+      assert {"providers/oci/modules/oci-instance/load_balancer.tf", "modules/oci-instance/load_balancer.tf"} in oci_files
+      refute Enum.any?(aws_files, fn {source, _dest} -> String.starts_with?(source, "providers/") end)
+    end
+  end
+
+  describe "render — instance.tf wiring and outputs" do
+    setup do
+      dir = render_dir()
+      on_exit(fn -> File.rm_rf!(dir) end)
+      render(["--provider", "oci", "--render-dir", dir, "--pem-app-name", "s2-render", "--quiet"])
+
+      {:ok, dir: dir}
+    end
+
+    test "T13: instance.tf wires vcn_id and all 8 load_balancer_* keys via try() with the module's own defaults", %{dir: dir} do
+      contents = Path.join(dir, "instance.tf") |> File.read!()
+
+      assert contents =~ ~r/^\s*vcn_id\s*=\s*oci_core_vcn\.main\.id/m
+      assert contents =~ ~r/^\s*enable_load_balancer\s*=\s*try\(each\.value\.load_balancer\.enable,\s*false\)/m
+      assert contents =~ ~r/^\s*enable_load_balancer_https\s*=\s*try\(each\.value\.load_balancer\.enable_https,\s*true\)/m
+      assert contents =~ ~r/^\s*load_balancer_health_check_path\s*=\s*try\(each\.value\.load_balancer\.health_check\.path,\s*""\)/m
+      assert contents =~ ~r/^\s*load_balancer_health_check_return_code\s*=\s*try\(each\.value\.load_balancer\.health_check\.return_code,\s*null\)/m
+      assert contents =~ ~r/^\s*load_balancer_health_check_https_return_code\s*=\s*try\(each\.value\.load_balancer\.health_check\.https_return_code,\s*null\)/m
+      assert contents =~ ~r/^\s*load_balancer_health_check_retries\s*=\s*try\(each\.value\.load_balancer\.health_check\.unhealthy_threshold,\s*null\)/m
+      assert contents =~ ~r/^\s*load_balancer_health_check_timeout_seconds\s*=\s*try\(each\.value\.load_balancer\.health_check\.timeout,\s*null\)/m
+      assert contents =~ ~r/^\s*load_balancer_health_check_interval_seconds\s*=\s*try\(each\.value\.load_balancer\.health_check\.interval,\s*null\)/m
+      assert contents =~ ~r/^\s*reserved_ip_ocid\s*=\s*try\(each\.value\.load_balancer\.reserved_ip_ocid,\s*null\)/m
+    end
+
+    test "T14: instance.tf wires neither load_balancer.port nor load_balancer.instance_port", %{dir: dir} do
+      contents = Path.join(dir, "instance.tf") |> File.read!()
+
+      refute contents =~ ~r/load_balancer\.port\b/
+      refute contents =~ ~r/load_balancer\.instance_port\b/
+      refute contents =~ ~r/load_balancer\[\s*"(instance_)?port"\s*\]/
+    end
+
+    test "T15: outputs.tf exposes load_balancer_public_ips keyed by app, with a description", %{dir: dir} do
+      contents = Path.join(dir, "outputs.tf") |> File.read!()
+
+      assert contents =~ ~r/output\s+"load_balancer_public_ips"/
+      assert contents =~ ~r/for\s+app,\s*mod\s+in\s+module\.oci_instance\s*:\s*app\s*=>\s*mod\.load_balancer_public_ips/
+      assert contents =~ ~r/output\s+"load_balancer_public_ips"\s*\{\s*description\s*=/
+    end
+  end
+
+  describe "render — aws/oci render sets stay disjoint on load_balancer.tf" do
+    test "T11: oci render carries load_balancer.tf; aws render has neither providers/ nor load_balancer.tf" do
+      aws_dir = render_dir()
+      on_exit(fn -> File.rm_rf!(aws_dir) end)
+      render(["--render-dir", aws_dir, "--pem-app-name", "s2-render-aws", "--quiet"])
+
+      oci_dir = render_dir()
+      on_exit(fn -> File.rm_rf!(oci_dir) end)
+      render(["--provider", "oci", "--render-dir", oci_dir, "--pem-app-name", "s2-render-oci", "--quiet"])
+
+      assert File.exists?(Path.join(oci_dir, "modules/oci-instance/load_balancer.tf"))
+      refute File.dir?(Path.join(aws_dir, "providers"))
+      refute Enum.any?(file_tree(aws_dir), &(Path.basename(&1) === "load_balancer.tf"))
+    end
+  end
+
+  describe "root variables.tf.eex (oci) — recognized keys" do
+    test "T16: the <app>_project description lists load_balancer among recognized keys" do
+      contents = root_variables_tf_eex_oci()
+
+      assert contents =~ ~r/variable\s+"<%= @app_name %>_project"\s*\{\s*description\s*=\s*"[^"]*Recognized keys:[^"]*\bload_balancer\b[^"]*"/
+    end
+  end
+
+  describe "render determinism" do
+    test "T17: two pinned oci renders are byte-identical across the whole tree" do
+      one = render_dir()
+      on_exit(fn -> File.rm_rf!(one) end)
+      two = render_dir()
+      on_exit(fn -> File.rm_rf!(two) end)
+
+      render(["--provider", "oci", "--render-dir", one, "--pem-app-name", "s2-determinism", "--quiet"])
+      render(["--provider", "oci", "--render-dir", two, "--pem-app-name", "s2-determinism", "--quiet"])
+
+      assert file_tree(one) === file_tree(two)
+
+      for relative_path <- file_tree(one), File.regular?(Path.join(one, relative_path)) do
+        assert File.read!(Path.join(one, relative_path)) ===
+                 File.read!(Path.join(two, relative_path)),
+               "#{relative_path} differed between runs"
+      end
     end
   end
 end
