@@ -113,30 +113,58 @@ defmodule Mix.Tasks.Terraform.CreateEbsSnapshot do
     end
   end
 
-  defp find_volumes_for_instances(region, instances) do
+  def find_volumes_for_instances(region, instances, opts \\ []) do
     instance_ids = Enum.map(instances, & &1["instanceId"])
 
     filters = [
       {"attachment.instance-id", instance_ids}
     ]
 
-    ExAws.EC2.describe_volumes(filters: filters)
-      |> ExAws.request(region: region)
+    with {:ok, volumes} <- fetch_all_volumes(region, [filters: filters], opts, %{instance_ids: instance_ids}) do
+      case volumes do
+        [] ->
+          {:error, ErrorMessage.not_found(
+            "No volumes found for instances",
+            %{instance_ids: instance_ids}
+          )}
+
+        volumes ->
+          Mix.shell().info([
+            :green, "Found ", :bright, "#{length(volumes)}", :reset, :green,
+            " volume(s) across all instances", :reset
+          ])
+          {:ok, volumes}
+      end
+    end
+  end
+
+  # DescribeVolumes caps a response and signals more via `nextToken`. A single request therefore
+  # truncates silently -- it returns `{:ok, partial}`, not an error -- which here determines which
+  # volumes get a snapshot while the task prints a confident "Found N volume(s)" from the
+  # truncated count. `AwsMachine.fetch_instances/2` already paginates the same EC2 Query API for
+  # the same reason.
+  defp fetch_all_volumes(region, base_opts, opts, details) do
+    fetch_volumes_page(region, base_opts, opts, details, nil, [])
+  end
+
+  defp fetch_volumes_page(region, base_opts, opts, details, next_token, acc) do
+    request_fn = opts[:request_fn] || (&ExAws.request/2)
+
+    base_opts
+      |> maybe_put_ec2_opt(:max_results, opts[:max_results])
+      |> maybe_put_ec2_opt(:next_token, next_token)
+      |> ExAws.EC2.describe_volumes()
+      |> request_fn.(region: region)
       |> case do
         {:ok, %{body: body}} ->
           case parse_volumes_response(body) do
-            {:ok, []} ->
-              {:error, ErrorMessage.not_found(
-                "No volumes found for instances",
-                %{instance_ids: instance_ids}
-              )}
-
             {:ok, volumes} ->
-              Mix.shell().info([
-                :green, "Found ", :bright, "#{length(volumes)}", :reset, :green,
-                " volume(s) across all instances", :reset
-              ])
-              {:ok, volumes}
+              accumulated = acc ++ volumes
+
+              case ec2_next_token(body, "DescribeVolumesResponse") do
+                nil -> {:ok, accumulated}
+                token -> fetch_volumes_page(region, base_opts, opts, details, token, accumulated)
+              end
 
             {:error, _} = error -> error
           end
@@ -144,16 +172,28 @@ defmodule Mix.Tasks.Terraform.CreateEbsSnapshot do
         {:error, {:http_error, status_code, %{body: body}}} ->
           {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
             "Error fetching volumes from AWS",
-            %{error_body: body, instance_ids: instance_ids}
+            Map.put(details, :error_body, body)
           ])}
 
         {:error, error} ->
           {:error, ErrorMessage.bad_request(
             "Failed to describe volumes",
-            %{error: error, instance_ids: instance_ids}
+            Map.put(details, :error, error)
           )}
       end
   end
+
+  # AWS signals more pages via `nextToken`, absent once the last page is reached -- not via a
+  # truthy/falsy flag, so presence (not truthiness) is what terminates the loop.
+  defp ec2_next_token(body, response_key) do
+    case XmlToMap.naive_map(body) do
+      %{^response_key => %{"nextToken" => token}} when is_binary(token) and token !== "" -> token
+      _no_more_pages -> nil
+    end
+  end
+
+  defp maybe_put_ec2_opt(opts, _key, nil), do: opts
+  defp maybe_put_ec2_opt(opts, key, value), do: Keyword.put(opts, key, value)
 
   defp filter_volumes_by_type(volumes, opts) do
     include_root = opts[:include_root] || false

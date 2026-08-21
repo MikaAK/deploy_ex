@@ -1,0 +1,18 @@
+app_name: ""
+bucket_name: "{{ oci_release_bucket }}"
+
+# instance_principal is the production mode: the node authenticates as itself via a dynamic
+# group, with no credential on disk, mirroring an EC2 instance profile. It requires a dynamic
+# group and policy in the TENANCY (IAM writes land in the home region, not the resource
+# region), which a compartment-scoped operator may not be able to create. Override to
+# `api_key` where the node carries an ~/.oci/config instead — that is also how a CI runner
+# reaches object storage.
+oci_cli_auth: instance_principal
+target_release_sha: ""
+release_prefix: ""
+release_state_prefix: "release-state"
+qa_node_suffix: ""
+app_port: 80
+extra_env: []
+system_env: []
+open_files_limit: 65536

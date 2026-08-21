@@ -88,12 +88,20 @@ my_app_project = {
 
 ### `load_balancer`
 
+Listener and forwarded ports are **fixed at 80 (and 443 when `enable_https = true`) on both
+providers** — there is no key that changes them. AWS declares `port` / `instance_port` in its
+schema but never reads them (dead keys, kept only for backward compatibility); OCI's schema has
+no such keys at all.
+
+`enable_https` defaults to `true` on both providers — the examples below set it `false`
+deliberately (no TLS cert wired up yet).
+
+**AWS**
+
 ```hcl
 load_balancer = {
   enable        = true
   enable_https  = false
-  port          = 80
-  instance_port = 4000
 
   health_check = {
     path                = "/health"
@@ -111,15 +119,48 @@ load_balancer = {
 | Field | Default | Notes |
 |-------|---------|-------|
 | `enable` | `false` | Required when `instance_count > 1` or autoscaling |
-| `enable_https` | `false` | Adds a 443 listener; needs an ACM cert (set up separately) |
-| `port` | `80` | LB listener port (the URL clients hit) |
-| `instance_port` | `4000` | Forwarded port on the instance |
+| `enable_https` | `true` | Set `false` to skip the 443 listener; needs an ACM cert (set up separately) |
 | `health_check.path` | `/` | Endpoint hit by the LB |
 | `health_check.matcher` | `200-299,301` | HTTP status codes considered healthy |
 | `health_check.unhealthy_threshold` | `2` | Failed checks before unhealthy |
 | `health_check.healthy_threshold` | `2` | Successful checks before healthy |
 | `health_check.timeout` | `5` | Seconds per check |
 | `health_check.interval` | `20` | Seconds between checks |
+
+**OCI**
+
+```hcl
+load_balancer = {
+  enable            = true
+  enable_https      = false
+  reserved_ip_ocid  = null
+
+  health_check = {
+    path                = "/health"
+    return_code         = 200
+    https_return_code   = 200
+    unhealthy_threshold = 3
+    timeout             = 3
+    interval            = 10
+  }
+}
+```
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| `enable` | `false` | Gates on this alone — OCI has no autoscaling and no `instance_count > 1` requirement the way AWS does |
+| `enable_https` | `true` | Set `false` to skip the 443 listener/backend set/NSG rule |
+| `reserved_ip_ocid` | `null` | OCI-only. Pins the NLB's public IP to a pre-created reserved IP; unset leaves it ephemeral |
+| `health_check.path` | `""` | Empty performs a TCP connect-only check; set performs an HTTP/HTTPS check |
+| `health_check.return_code` / `https_return_code` | `200` | OCI-only — a single expected status code, not a range like AWS's `matcher` |
+| `health_check.unhealthy_threshold` | `3` | Retries before a backend flips unhealthy (and before recovering it — OCI has one threshold, not two) |
+| `health_check.timeout` | `3` | Seconds per check |
+| `health_check.interval` | `10` | Seconds between checks |
+
+AWS keys ignored on OCI: `port`, `instance_port`, `health_check.protocol`, `health_check.matcher`,
+`health_check.https_matcher`, `health_check.healthy_threshold` — see
+`priv/terraform/providers/oci/README.md` for the full AWS-key-to-OCI mapping, the reason each is
+ignored, and the per-app NSG security posture.
 
 ### `autoscaling`
 
@@ -280,8 +321,6 @@ my_app = {
   instance_count = 2                # bump capacity first
   load_balancer = {
     enable        = true
-    port          = 80
-    instance_port = 4000
     health_check  = { path = "/health" }
   }
 }
@@ -308,7 +347,7 @@ my_app = {
     desired_capacity   = 3
     cpu_target_percent = 60
   }
-  load_balancer = { enable = true, port = 80, instance_port = 4000 }
+  load_balancer = { enable = true }
 }
 ```
 
