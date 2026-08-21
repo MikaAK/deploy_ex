@@ -28,6 +28,11 @@ output "instance_private_ips" {
   value       = { for app, mod in module.oci_instance : app => mod.private_ips }
 }
 
+output "load_balancer_public_ips" {
+  description = "Load balancer public IPs, keyed by app name (empty list when load_balancer.enable is false)"
+  value       = { for app, mod in module.oci_instance : app => mod.load_balancer_public_ips }
+}
+
 output "release_bucket_name" {
   description = "Name of the release bucket"
   value       = oci_objectstorage_bucket.releases.name
