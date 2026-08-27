@@ -51,23 +51,3 @@ loki.write "default" {
     url = "{{ grafana_loki_url }}/loki/api/v1/push"
   }
 }
-{% if grafana_mimir_url is defined %}
-
-prometheus.scrape "node_exporter" {
-  targets    = [{"__address__" = "localhost:9100"}]
-  forward_to = [prometheus.remote_write.mimir.receiver]
-}
-{% if app_name is defined %}
-
-prometheus.scrape "app" {
-  targets    = [{"__address__" = "localhost:4050"}]
-  forward_to = [prometheus.remote_write.mimir.receiver]
-}
-{% endif %}
-
-prometheus.remote_write "mimir" {
-  endpoint {
-    url = "{{ grafana_mimir_url }}/api/v1/push"
-  }
-}
-{% endif %}

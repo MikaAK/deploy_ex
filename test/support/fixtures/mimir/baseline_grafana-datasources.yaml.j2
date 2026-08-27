@@ -10,10 +10,3 @@ datasources:
     type: prometheus
     user: $USER
     url: {{ grafana_prometheus_url }}
-{% if grafana_mimir_url is defined %}
-
-  - name: Mimir Metrics
-    type: prometheus
-    user: $USER
-    url: {{ grafana_mimir_url }}
-{% endif %}

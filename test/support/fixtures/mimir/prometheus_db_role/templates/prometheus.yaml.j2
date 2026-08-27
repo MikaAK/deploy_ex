@@ -1,0 +1,52 @@
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /root/prometheus-rules.yaml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9100']
+
+  # Host metrics (node_exporter). Every instance runs this.
+  - job_name: nodes
+    ec2_sd_configs:
+      - region: {{ prometheus_scrape_region }}
+        port: 9100
+        access_key: {{ aws_credentials['AWS_ACCESS_KEY_ID'] }}
+        secret_key: {{ aws_credentials['AWS_SECRET_ACCESS_KEY'] }}
+        filters:
+          - name: tag:Environment
+            values:
+              - {{ env }}
+    relabel_configs:
+      - source_labels: [__meta_ec2_tag_Name]
+        target_label: 'instance'
+
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: 'instance_id'
+
+  # App/exporter metrics. Monitoring nodes (Grafana, Prometheus, Loki) run no
+  # app on 4050, so they are dropped instead of alerting as permanently down.
+  - job_name: apps
+    ec2_sd_configs:
+      - region: {{ prometheus_scrape_region }}
+        port: 4050
+        access_key: {{ aws_credentials['AWS_ACCESS_KEY_ID'] }}
+        secret_key: {{ aws_credentials['AWS_SECRET_ACCESS_KEY'] }}
+        filters:
+          - name: tag:Environment
+            values:
+              - {{ env }}
+    relabel_configs:
+      - source_labels: [__meta_ec2_tag_MonitoringKey]
+        regex: '.+'
+        action: drop
+
+      - source_labels: [__meta_ec2_tag_Name]
+        target_label: 'instance'
+
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: 'instance_id'

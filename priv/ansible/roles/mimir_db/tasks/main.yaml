@@ -1,0 +1,68 @@
+- name: mimir_db
+  block:
+    - name: Check if Mimir binary exists
+      stat:
+        path: /root/mimir-{{ mimir_architecture }}
+      register: mimir_binary
+
+    - name: 'Download Mimir {{ mimir_architecture }}/{{ mimir_version }}'
+      get_url:
+        url: >-
+          https://github.com/grafana/mimir/releases/download/mimir-{{
+          mimir_version }}/mimir-{{ mimir_architecture }}
+        dest: /root/mimir-{{ mimir_architecture }}
+        mode: '0755'
+      when: not mimir_binary.stat.exists
+
+    - name: Ensure Mimir ruler rules directory exists
+      file:
+        path: /data/mimir/rules/anonymous
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Add Mimir config to /root/mimir-config.yaml
+      register: mimir_config
+      template:
+        src: mimir-config.yaml.j2
+        dest: /root/mimir-config.yaml
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Add shared alert rules to Mimir ruler (single source, prometheus_db/templates/prometheus-rules.yaml.j2)
+      register: mimir_rules
+      template:
+        src: "{{ role_path }}/../prometheus_db/templates/prometheus-rules.yaml.j2"
+        dest: /data/mimir/rules/anonymous/rules.yaml
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Add mimir.service file to /etc/systemd/system/mimir.service
+      template:
+        src: mimir_systemd.service.j2
+        dest: /etc/systemd/system/mimir.service
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Enable mimir service
+      systemd:
+        name: mimir
+        enabled: true
+
+    - name: Start mimir service
+      systemd:
+        daemon_reload: true
+        name: mimir
+        state: started
+
+    - name: Restart mimir service when config or rules changed
+      systemd:
+        name: mimir
+        state: restarted
+      when: mimir_config.changed or mimir_rules.changed
+
+  become: true

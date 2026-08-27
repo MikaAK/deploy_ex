@@ -1,0 +1,8 @@
+- hosts: monitoring_mimir_db
+  roles:
+    - pip3
+    - awscli
+    - prometheus_exporter
+    - grafana_alloy
+    - mimir_db
+    - ipv6

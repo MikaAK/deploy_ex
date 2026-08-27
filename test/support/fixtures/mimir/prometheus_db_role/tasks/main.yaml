@@ -1,0 +1,59 @@
+- name: prometheus_db
+  block:
+    - name: Install Prometheus DB
+      apt:
+        name: prometheus
+        policy_rc_d: 101 # Don't start on install
+        update_cache: true
+
+    - name: Add PrometheusDB config to /root/prometheus.yaml
+      register: prometheus_config
+      template:
+        src: prometheus.yaml.j2
+        dest: /root/prometheus-config.yaml
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Add PrometheusDB alert rules to /root/prometheus-rules.yaml
+      register: prometheus_rules
+      template:
+        src: prometheus-rules.yaml.j2
+        dest: /root/prometheus-rules.yaml
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Add prometheus_scraper.service file to /etc/systemd/system/prometheus_scraper.service
+      template:
+        src: prometheus.service.j2
+        dest: /etc/systemd/system/prometheus.service
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Enable prometheus service
+      systemd:
+        name: prometheus
+        enabled: true
+
+    - name: Stop prometheus service
+      systemd:
+        name: prometheus
+        state: stopped
+      when: ansible_facts.services[prometheus] is not defined
+
+    - name: Start prometheus service
+      systemd:
+        daemon_reload: true
+        name: prometheus
+        state: started
+
+    - name: Restart prometheus service when config or rules changed
+      systemd:
+        name: prometheus
+        state: restarted
+      when: prometheus_config.changed or prometheus_rules.changed
+
+  become: true
+

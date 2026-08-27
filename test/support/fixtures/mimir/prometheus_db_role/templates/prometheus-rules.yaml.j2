@@ -1,0 +1,34 @@
+groups:
+  - name: node
+    rules:
+      - alert: SystemdUnitFailed
+        expr: node_systemd_unit_state{state="failed"} == 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "systemd unit {{ '{{ $labels.name }}' }} failed on {{ '{{ $labels.instance }}' }}"
+
+      - alert: TargetDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ '{{ $labels.job }}' }} target {{ '{{ $labels.instance }}' }} is down"
+
+      - alert: NoNodesDiscovered
+        expr: count(up{job="nodes"}) == 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "EC2 service discovery returned no targets for job=nodes"
+
+      - alert: NoAppsDiscovered
+        expr: count(up{job="apps"}) == 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "EC2 service discovery returned no targets for job=apps"

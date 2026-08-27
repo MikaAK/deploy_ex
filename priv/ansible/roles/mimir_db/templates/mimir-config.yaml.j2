@@ -1,0 +1,49 @@
+multitenancy_enabled: false
+
+target: all
+
+server:
+  http_listen_port: {{ mimir_http_port }}
+
+common:
+  storage:
+    backend: filesystem
+    filesystem:
+      dir: /data/mimir/common
+
+blocks_storage:
+  filesystem:
+    dir: /data/mimir/blocks
+  bucket_store:
+    sync_dir: /data/mimir/tsdb-sync
+  tsdb:
+    dir: /data/mimir/tsdb
+
+compactor:
+  data_dir: /data/mimir/compactor
+
+ruler:
+  rule_path: /data/mimir/ruler
+  enable_api: true
+
+ruler_storage:
+  filesystem:
+    dir: /data/mimir/rules
+
+alertmanager:
+  data_dir: /data/mimir/alertmanager
+
+alertmanager_storage:
+  filesystem:
+    dir: /data/mimir/alertmanager-config
+
+ingester:
+  ring:
+    replication_factor: 1
+
+store_gateway:
+  sharding_ring:
+    replication_factor: 1
+
+limits:
+  compactor_blocks_retention_period: 30d

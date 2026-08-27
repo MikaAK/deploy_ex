@@ -1,0 +1,4 @@
+mimir_version: 2.14.0
+mimir_architecture: linux-amd64
+mimir_http_port: 8080
+extra_mimir_env: []

@@ -1,0 +1,21 @@
+[Unit]
+Description=Grafana Mimir Metrics Database
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/root/
+ExecStart=/root/mimir-{{ mimir_architecture }} -config.file=/root/mimir-config.yaml
+Restart=on-failure
+RestartSec=5
+{% for env in extra_mimir_env %}
+Environment={{ env }}
+{% endfor %}
+SyslogIdentifier=mimir
+RemainAfterExit=no
+LimitNOFILE=infinity
+
+[Install]
+WantedBy=multi-user.target
