@@ -26,6 +26,7 @@ defmodule Mix.Tasks.Ansible.Build do
   - `no_sentry` - Disable Sentry error tracking configuration
   - `no_grafana` - Disable Grafana monitoring configuration
   - `no_prometheus` - Disable Prometheus metrics configuration
+  - `no_mimir` - Disable Mimir metrics configuration (push-based, replaces Prometheus scraping)
   """
 
   def run(args) do
@@ -81,7 +82,8 @@ defmodule Mix.Tasks.Ansible.Build do
         no_loki: :boolean,
         no_sentry: :boolean,
         no_grafana: :boolean,
-        no_prometheus: :boolean
+        no_prometheus: :boolean,
+        no_mimir: :boolean
       ]
     )
 
@@ -169,6 +171,7 @@ defmodule Mix.Tasks.Ansible.Build do
       variables = %{
         is_logging_enabled: !opts[:no_logging],
         is_prometheus_enabled: !opts[:no_prometheus],
+        is_mimir_enabled: !opts[:no_mimir],
         loki_logger_s3_region: opts[:aws_logging_bucket],
         loki_logger_s3_bucket_name: opts[:aws_logging_region]
       }

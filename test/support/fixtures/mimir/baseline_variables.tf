@@ -1,19 +1,19 @@
 variable "environment" {
   description = "Name of the project in kebab case for use in names"
   type        = string
-  default     = "<%= @environment %>"
+  default     = "dev"
 }
 
 variable "project_name" {
   description = "Name of the project in kebab case for use in names"
   type        = string
-  default     = "<%= @app_name %>"
+  default     = "deploy_ex"
 }
 
 variable "resource_group" {
   description = "Value of the Group tag for all resources"
   type        = string
-  default     = "<%= DeployEx.Utils.upper_title_case(@app_name) %> Backend"
+  default     = "Deploy Ex Backend"
 }
 
 variable "enable_ipv4" {
@@ -59,12 +59,12 @@ variable "resource_databases" {
     tags                                       = optional(map(string))
   }))
 
-  default = <%= if @use_db do %>{
-    <%= @app_name %>_db = {
-      name              = "<%= DeployEx.Utils.upper_title_case(@app_name) %> Main"
-      database_username = "<%= @app_name %>"
+  default = {
+    deploy_ex_db = {
+      name              = "Deploy Ex Main"
+      database_username = "deploy_ex"
     }
-  }<% else %>{}<% end %>
+  }
 }
 
 
@@ -73,14 +73,14 @@ variable "resource_buckets" {
   type        = map(any)
 
   default = {
-    <%= if @terraform_loki_variables !== "" do %>logger = {
-      bucket_name       = "<%= @logging_bucket_name %>"
-      bucket_title_name = "<%= DeployEx.Utils.upper_title_case(@logging_bucket_name) %>"
-    },<% end %>
+    logger = {
+      bucket_name       = "deploy-ex-backend-logs-test"
+      bucket_title_name = "Deploy Ex Backend Logs Test"
+    },
 
     releases = {
-      bucket_name       = "<%= @release_bucket_name %>"
-      bucket_title_name = "<%= DeployEx.Utils.upper_title_case(@release_bucket_name) %>"
+      bucket_name       = "deploy-ex-elixir-deploys-test"
+      bucket_title_name = "Deploy Ex Elixir Deploys Test"
     }
   }
 }
@@ -102,7 +102,7 @@ variable "upload_buckets" {
   default = {}
 }
 
-variable "<%= @app_name %>_project" {
+variable "deploy_ex_project" {
   description = "Map of project names to configuration."
   type        = map(object({
     name = string
@@ -185,11 +185,90 @@ variable "<%= @app_name %>_project" {
   }))
 
   default = {
-<%= @terraform_sentry_variables %>
-<%= @terraform_redis_variables %>
-<%= @terraform_grafana_variables %>
-<%= @terraform_prometheus_variables %><%= @terraform_mimir_variables %>
-<%= @terraform_loki_variables %>
-<%= @terraform_release_variables %>
+    sentry = {
+      name = "Sentry Monitoring"
+      tags = {
+        Vendor = "Sentry"
+        Type   = "Monitoring"
+      }
+    },
+
+    deploy_ex_redis = {
+      name        = "Deploy Ex Redis"
+      private_ip  = "10.0.1.60"
+      enable_ebs  = true
+
+      # This is a suggestion for instance
+
+      instance_type = "r7g.medium"
+
+      instance_ebs_secondary_size = 16
+
+      tags = {
+        Vendor      = "Redis"
+        Type        = "Database"
+        DatabaseKey = "deploy_ex_redis"
+      }
+    },
+
+    grafana_ui = {
+      name                        = "Grafana UI"
+      enable_ebs                  = true
+      enable_eip                  = true
+      instance_ebs_secondary_size = 8
+
+      tags = {
+        Vendor = "Grafana"
+        Type   = "Monitoring"
+        MonitoringKey = "grafana_ui"
+      }
+    },
+
+    prometheus_db = {
+      name                        = "Prometheus Metrics Database"
+      instance_type               = "t3.micro"
+      enable_ebs                  = true
+      instance_ebs_secondary_size = 16
+      private_ip                  = "10.0.1.40"
+
+      tags = {
+        Vendor = "Grafana"
+        Type   = "Monitoring"
+        MonitoringKey = "prometheus_db"
+      }
+    },
+
+    loki_aggregator = {
+      name          = "Grafana Loki Logs"
+      instance_type = "t3.micro"
+      private_ip    = "10.0.1.50"
+
+      enable_ebs                  = true
+      instance_ebs_secondary_size = 8
+
+      tags = {
+        Vendor = "Grafana"
+        Type   = "Monitoring"
+        MonitoringKey = "loki_logger"
+      }
+    },
+
+    deploy_ex = {
+      name = "Deploy Ex"
+      tags = {
+        Vendor = "Self"
+        Type   = "Self Made"
+      }
+
+      # Autoscaling Configuration (optional)
+      # Uncomment and configure to enable AWS Auto Scaling Groups
+      # autoscaling = {
+      #   enable             = true
+      #   min_size           = 1
+      #   max_size           = 5
+      #   desired_capacity   = 2
+      #   cpu_target_percent = 60
+      # }
+    }
   }
 }

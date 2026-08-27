@@ -119,8 +119,32 @@ defmodule DeployEx.PrivRenderer do
       terraform_sentry_variables: terraform_sentry_variables(opts),
       terraform_grafana_variables: terraform_grafana_variables(opts),
       terraform_loki_variables: terraform_loki_variables(opts),
-      terraform_prometheus_variables: terraform_prometheus_variables(opts)
+      terraform_prometheus_variables: terraform_prometheus_variables(opts),
+      terraform_mimir_variables: terraform_mimir_variables(opts)
     }
+  end
+
+  defp terraform_mimir_variables(opts) do
+    if Keyword.get(opts, :no_mimir, false) do
+      ""
+    else
+      """
+
+          mimir_db = {
+            name                        = "Mimir Metrics Database"
+            instance_type               = "t3.small"
+            enable_ebs                  = true
+            instance_ebs_secondary_size = 16
+            private_ip                  = "10.0.1.70"
+
+            tags = {
+              Vendor = "Grafana"
+              Type   = "Monitoring"
+              MonitoringKey = "mimir_db"
+            }
+          },
+      """
+    end
   end
 
   # SECTION: Ansible Rendering
@@ -163,6 +187,7 @@ defmodule DeployEx.PrivRenderer do
     group_vars_vars = %{
       is_logging_enabled: not Keyword.get(opts, :no_logging, false),
       is_prometheus_enabled: not Keyword.get(opts, :no_prometheus, false),
+      is_mimir_enabled: not Keyword.get(opts, :no_mimir, false),
       loki_logger_s3_region: DeployEx.Config.aws_log_region(),
       loki_logger_s3_bucket_name: DeployEx.Config.aws_log_bucket()
     }

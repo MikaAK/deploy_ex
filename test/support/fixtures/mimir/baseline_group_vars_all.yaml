@@ -1,0 +1,24 @@
+deploy_s3_bucket: deploy-ex-elixir-deploys-test
+
+aws_credentials:
+  AWS_ACCESS_KEY_ID: "<INSERT_SECRET_OR_PRELOAD_ON_MACHINE>"
+  AWS_SECRET_ACCESS_KEY: "<INSERT_SECRET_OR_PRELOAD_ON_MACHINE>"
+
+
+loki_logger_s3_region: us-west-2
+loki_logger_s3_bucket_name: deploy-ex-backend-logs-test
+loki_logger_retention: 30d
+
+env: test
+
+grafana_loki_url: "http://10.0.1.50:3100"
+
+grafana_prometheus_url: "http://10.0.1.40:9090"
+
+prometheus_scrape_region: us-west-2
+prometheus_retention_size: 4GB
+prometheus_retention_time: 7d
+
+
+system_env:
+  - PATH=/root/.asdf/shims:/root/.asdf/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
