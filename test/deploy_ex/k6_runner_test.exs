@@ -3,6 +3,12 @@ defmodule DeployEx.K6RunnerTest do
 
   alias DeployEx.K6Runner
 
+  defp line_index(script, regex) do
+    script
+    |> String.split("\n")
+    |> Enum.find_index(&(&1 =~ regex))
+  end
+
   describe "to_json/1" do
     test "serializes a K6Runner struct to JSON" do
       runner = %K6Runner{
@@ -142,6 +148,63 @@ defmodule DeployEx.K6RunnerTest do
   describe "verify_instance_exists/1" do
     test "returns {:ok, nil} for nil input" do
       assert K6Runner.verify_instance_exists(nil) === {:ok, nil}
+    end
+  end
+
+  describe "build_user_data/0 (D1: debian-13 compatibility)" do
+    setup do
+      %{script: K6Runner.build_user_data()}
+    end
+
+    test "does not invoke ec2-metadata (Amazon Linux-only, absent on debian-13)", %{script: script} do
+      refute script =~ "ec2-metadata"
+    end
+
+    test "does not shell out to the aws CLI (not installed on the debian-13 base AMI)", %{script: script} do
+      refute script =~ ~r/\baws\s+ec2\b/
+    end
+
+    test "installs curl before curl is invoked", %{script: script} do
+      install_index = line_index(script, ~r/^apt-get install.*\bcurl\b/)
+      usage_index = line_index(script, ~r/^curl\s/)
+
+      refute is_nil(install_index)
+      refute is_nil(usage_index)
+      assert install_index < usage_index
+    end
+
+    test "installs gnupg before gpg is invoked", %{script: script} do
+      install_index = line_index(script, ~r/^apt-get install.*\bgnupg\b/)
+      usage_index = line_index(script, ~r/gpg --dearmor/)
+
+      refute is_nil(install_index)
+      refute is_nil(usage_index)
+      assert install_index < usage_index
+    end
+
+    test "installs k6 via apt before verifying its version", %{script: script} do
+      install_index = line_index(script, ~r/^apt-get install -y k6$/)
+      version_index = line_index(script, ~r/^k6 version$/)
+
+      refute is_nil(install_index)
+      refute is_nil(version_index)
+      assert install_index < version_index
+    end
+
+    test "creates /srv/k6/scripts", %{script: script} do
+      assert script =~ "mkdir -p /srv/k6/scripts"
+    end
+
+    test "makes /srv/k6 writable by the admin ssh user before setup completes (D2)", %{script: script} do
+      mkdir_index = line_index(script, ~r{^mkdir -p /srv/k6/scripts$})
+      chown_index = line_index(script, ~r/^chown.*admin.*\/srv\/k6/)
+
+      refute is_nil(chown_index)
+      assert mkdir_index < chown_index
+    end
+
+    test "aborts on first failing command", %{script: script} do
+      assert script =~ "set -euo pipefail"
     end
   end
 end

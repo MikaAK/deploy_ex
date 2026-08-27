@@ -255,22 +255,18 @@ defmodule DeployEx.K6Runner do
 
   # User Data
 
-  defp build_user_data do
+  @doc false
+  def build_user_data do
     """
     #!/bin/bash
     set -euo pipefail
 
-    exec > >(tee /var/log/k6-setup.log | logger -t k6-setup -s 2>/dev/console) 2>&1
+    exec > >(tee /var/log/k6-setup.log) 2>&1
 
     echo "k6 Runner setup starting..."
 
-    INSTANCE_ID=$(ec2-metadata --instance-id | cut -d " " -f 2)
-    REGION=$(ec2-metadata --availability-zone | cut -d " " -f 2 | sed 's/[a-z]$//')
-
-    hostnamectl set-hostname "$INSTANCE_ID"
-
     apt-get update -y
-    apt-get install -y gnupg software-properties-common
+    apt-get install -y curl gnupg ca-certificates
 
     mkdir -p /etc/apt/keyrings
     curl -fsSL https://dl.k6.io/key.gpg | gpg --dearmor -o /etc/apt/keyrings/k6.gpg
@@ -280,8 +276,7 @@ defmodule DeployEx.K6Runner do
     apt-get install -y k6
 
     mkdir -p /srv/k6/scripts
-
-    aws ec2 create-tags --region "$REGION" --resources "$INSTANCE_ID" --tags Key=SetupComplete,Value=true
+    chown -R admin:admin /srv/k6
 
     echo "k6 Runner setup complete!"
     k6 version
