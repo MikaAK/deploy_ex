@@ -15,6 +15,12 @@ defmodule Mix.Tasks.DeployEx.LoadTest.UploadTest do
     def verify_instance_exists(_runner), do: {:ok, nil}
   end
 
+  defmodule FakeK6RunnerFetchYieldsNil do
+    def fetch_all_runners(_opts), do: {:ok, nil}
+    def fetch_state(_instance_id, _opts), do: {:ok, nil}
+    def verify_instance_exists(_runner), do: {:ok, nil}
+  end
+
   defmodule FakeK6RunnerActive do
     def fetch_all_runners(_opts) do
       {:ok, [%DeployEx.K6Runner{instance_id: "i-live", public_ip: "1.2.3.4"}]}
@@ -45,6 +51,13 @@ defmodule Mix.Tasks.DeployEx.LoadTest.UploadTest do
     test "returns the verified runner when active" do
       assert {:ok, %DeployEx.K6Runner{instance_id: "i-live", state: "running"}} =
                Upload.resolve_runner([], FakeK6RunnerActive)
+    end
+
+    test "returns a not_found error naming create_instance when fetch_all_runners itself yields nil" do
+      assert {:error, %ErrorMessage{code: :not_found, message: message}} =
+               Upload.resolve_runner([], FakeK6RunnerFetchYieldsNil)
+
+      assert message =~ "mix deploy_ex.load_test.create_instance"
     end
   end
 

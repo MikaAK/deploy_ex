@@ -89,7 +89,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Upload do
   defp resolve_default_runner(opts, k6_runner_impl) do
     case k6_runner_impl.fetch_all_runners(opts) do
       {:ok, [runner | _]} -> verify_runner(runner, k6_runner_impl)
-      {:ok, []} -> {:error, no_runner_error()}
+      {:ok, empty} when empty in [nil, []] -> {:error, no_runner_error()}
       error -> error
     end
   end
