@@ -79,6 +79,13 @@ defmodule DeployEx.MimirRoleTest do
       assert content =~ "enable_api: true"
       assert content =~ "http_listen_port: {{ mimir_http_port }}"
     end
+
+    test "pins prometheus_http_prefix so the Grafana datasource query path can't drift with Mimir versions" do
+      content = File.read!(Path.join(@mimir_role_dir, "templates/mimir-config.yaml.j2"))
+
+      assert content =~ "api:"
+      assert content =~ "prometheus_http_prefix: /prometheus"
+    end
   end
 
   # SECTION: alloy metrics pipeline (raw j2 — structural assertions)
@@ -117,7 +124,7 @@ defmodule DeployEx.MimirRoleTest do
       assert content =~ "{% if grafana_mimir_url is defined %}"
       assert content =~ "name: Mimir Metrics"
       assert content =~ "type: prometheus"
-      assert content =~ "url: {{ grafana_mimir_url }}"
+      assert content =~ "url: {{ grafana_mimir_url }}/prometheus"
     end
 
     test "existing Loki + Prometheus datasource entries are untouched" do

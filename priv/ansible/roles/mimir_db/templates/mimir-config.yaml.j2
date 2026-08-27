@@ -5,6 +5,9 @@ target: all
 server:
   http_listen_port: {{ mimir_http_port }}
 
+api:
+  prometheus_http_prefix: /prometheus
+
 common:
   storage:
     backend: filesystem

@@ -54,8 +54,11 @@ independently and to pause between.
 
 4. **Flip the Grafana default datasource** from "Prometheus Metrics" to "Mimir
    Metrics" (both are already provisioned as `type: prometheus` datasources — see
-   `grafana-datasources.yaml.j2`). Point dashboards at Mimir; confirm panels render
-   identically.
+   `grafana-datasources.yaml.j2`). The Mimir datasource URL already carries the
+   `/prometheus` query-path prefix (`{{ grafana_mimir_url }}/prometheus`), pinned
+   server-side via `api.prometheus_http_prefix` in `mimir-config.yaml.j2` so it can't
+   drift with Mimir version upgrades — no manual URL edit needed. Point dashboards at
+   Mimir; confirm panels render identically.
 
 5. **Point k6 load-test pushes at Mimir.** `k6`'s remote-write target
    (`DeployEx.K6Runner`/`exec.ex`) currently pushes to Prometheus — repoint it at
