@@ -1,0 +1,17 @@
+# Rendered by deploy_ex — see priv/ansible/roles/sentry_server/templates/config.yml.j2.
+# Based on getsentry/self-hosted's sentry/config.example.yml at
+# {{ sentry_release_version }}, trimmed to the settings deploy_ex manages.
+# Private VPC access only this cycle — no mail backend, no letsencrypt.
+
+###################
+# System Settings #
+###################
+
+# Main URL prefix Sentry uses to build links to the web UI. Kept in sync
+# with group_vars `sentry_url` (the node's private_ip + sentry_web_port) —
+# operators reach it over an SSH tunnel, never directly.
+system.url-prefix: '{{ sentry_url }}'
+
+# Communication between containers — do not change (see upstream docs:
+# https://develop.sentry.dev/self-hosted/#productionalizing).
+system.internal-url-prefix: 'http://web:9000'

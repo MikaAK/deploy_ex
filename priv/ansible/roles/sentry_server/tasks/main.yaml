@@ -1,0 +1,159 @@
+# Pure YAML/j2 role content — template exemption per docs/superpowers/plans/sentry/sprint-1-templates.md.
+# Verified this cycle via render-diff (mix ansible.build); correctness of the
+# device path, docker apt repo, and getsentry/self-hosted install flow is
+# verified live in Sprint 2 against a real t3.large node.
+- name: sentry_server
+  block:
+    - name: Install Docker prerequisite packages
+      apt:
+        name: [ca-certificates, curl, gnupg]
+        update_cache: true
+
+    - name: Create /etc/apt/keyrings directory
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Check for Docker GPG key
+      stat:
+        path: /etc/apt/keyrings/docker.asc
+      register: sentry_docker_gpg_key
+
+    - name: Add Docker's official GPG key
+      get_url:
+        url: https://download.docker.com/linux/debian/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: '0644'
+      when: not sentry_docker_gpg_key.stat.exists
+
+    - name: Check for /etc/apt/sources.list.d/docker.list
+      stat:
+        path: /etc/apt/sources.list.d/docker.list
+      register: sentry_docker_apt_source
+
+    - name: Add Docker apt repository
+      shell: |
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+        | tee /etc/apt/sources.list.d/docker.list > /dev/null
+      when: not sentry_docker_apt_source.stat.exists
+
+    - name: Install Docker Engine and Compose plugin
+      apt:
+        name: [docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin]
+        update_cache: true
+        state: present
+
+    - name: Enable and start Docker service
+      systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Check if {{ sentry_data_device }} already has a filesystem
+      command: blkid {{ sentry_data_device }}
+      register: sentry_data_device_blkid
+      failed_when: false
+      changed_when: false
+
+    - name: Format {{ sentry_data_device }} as ext4
+      command: mkfs.ext4 {{ sentry_data_device }}
+      when: sentry_data_device_blkid.rc != 0
+
+    - name: Create Sentry data directory {{ sentry_data_dir }}
+      file:
+        path: "{{ sentry_data_dir }}"
+        state: directory
+        mode: '0750'
+
+    - name: Check if {{ sentry_data_device }} is mounted at {{ sentry_data_dir }}
+      command: findmnt --noheadings --output SOURCE {{ sentry_data_dir }}
+      register: sentry_data_mount_check
+      failed_when: false
+      changed_when: false
+
+    - name: Mount {{ sentry_data_device }} at {{ sentry_data_dir }}
+      command: mount {{ sentry_data_device }} {{ sentry_data_dir }}
+      when: sentry_data_device not in sentry_data_mount_check.stdout
+
+    - name: Persist the Sentry data mount via fstab
+      lineinfile:
+        path: /etc/fstab
+        line: "{{ sentry_data_device }} {{ sentry_data_dir }} ext4 defaults,nofail 0 2"
+        create: true
+
+    - name: Point Docker's data-root at the Sentry data mount
+      register: sentry_docker_daemon_config
+      copy:
+        dest: /etc/docker/daemon.json
+        mode: '0644'
+        content: |
+          {
+            "data-root": "{{ sentry_data_dir }}/docker"
+          }
+
+    - name: Restart Docker when data-root changes
+      systemd:
+        name: docker
+        state: restarted
+      when: sentry_docker_daemon_config.changed
+
+    - name: Clone getsentry/self-hosted at {{ sentry_release_version }}
+      git:
+        repo: https://github.com/getsentry/self-hosted.git
+        dest: "{{ sentry_install_dir }}"
+        version: "{{ sentry_release_version }}"
+
+    - name: Render Sentry .env
+      template:
+        src: env.j2
+        dest: "{{ sentry_install_dir }}/.env"
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Render Sentry config.yml (system.url-prefix from sentry_url)
+      template:
+        src: config.yml.j2
+        dest: "{{ sentry_install_dir }}/sentry/config.yml"
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Check for an existing installed-version marker
+      stat:
+        path: "{{ sentry_install_dir }}/.deploy_ex_installed_{{ sentry_release_version }}"
+      register: sentry_installed_marker
+
+    # install.sh runs a full docker image pull + DB migration — only re-run
+    # it when the pinned version hasn't been installed yet.
+    - name: Run the Sentry self-hosted install script
+      command: ./install.sh --skip-user-creation --skip-commit-check
+      args:
+        chdir: "{{ sentry_install_dir }}"
+      when: not sentry_installed_marker.stat.exists
+
+    - name: Record the installed-version marker for {{ sentry_release_version }}
+      file:
+        path: "{{ sentry_install_dir }}/.deploy_ex_installed_{{ sentry_release_version }}"
+        state: touch
+        mode: '0644'
+      when: not sentry_installed_marker.stat.exists
+
+    - name: Ensure Sentry services are up (docker compose up -d, restart policy from compose)
+      command: docker compose up -d
+      args:
+        chdir: "{{ sentry_install_dir }}"
+      changed_when: false
+
+    - name: Wait for the Sentry web service to become healthy
+      uri:
+        url: "http://127.0.0.1:{{ sentry_web_port }}/auth/login/"
+        status_code: 200
+        timeout: 10
+      register: sentry_health
+      retries: 30
+      delay: 10
+      until: sentry_health.status == 200
+
+  become: true

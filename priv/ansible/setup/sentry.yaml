@@ -1,0 +1,7 @@
+- hosts: monitoring_sentry
+  roles:
+    - pip3
+    - awscli
+    - prometheus_exporter
+    - sentry_server
+    - ipv6
