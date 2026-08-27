@@ -69,7 +69,15 @@ defmodule Mix.Tasks.DeployEx.LoadTest.List do
     end
   end
 
-  defp output_runners(runners, %{json: true}) do
+  def output_runners(runners, opts) do
+    if Keyword.get(opts, :json, false) do
+      output_runners_json(runners)
+    else
+      output_runners_table(runners, opts)
+    end
+  end
+
+  defp output_runners_json(runners) do
     json = runners
     |> Enum.map(&runner_to_map/1)
     |> Jason.encode!(pretty: true)
@@ -77,7 +85,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.List do
     Mix.shell().info(json)
   end
 
-  defp output_runners(runners, opts) do
+  defp output_runners_table(runners, opts) do
     unless opts[:quiet] do
       Mix.shell().info("\nk6 Runners:")
       Mix.shell().info(String.duplicate("-", 80))
