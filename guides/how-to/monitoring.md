@@ -1,6 +1,6 @@
 # How to Set Up Monitoring
 
-Out of the box, deploy_ex provisions Prometheus, Grafana UI, Grafana Loki, and Sentry (WIP). Each is a separate node type that you can disable at build time with `--no-grafana`, `--no-loki`, `--no-prometheus`, `--no-sentry`.
+Out of the box, deploy_ex provisions Prometheus, Mimir, Grafana UI, Grafana Loki, and Sentry (WIP). Each is a separate node type that you can disable at build time with `--no-grafana`, `--no-loki`, `--no-prometheus`, `--no-mimir`, `--no-sentry`.
 
 ## Stack Overview
 
@@ -8,8 +8,9 @@ Out of the box, deploy_ex provisions Prometheus, Grafana UI, Grafana Loki, and S
 |-----------|-----------|---------|
 | `grafana_ui` | (Elastic IP) | UI / dashboards (port 80, default user/pass `admin`/`admin`) |
 | `loki_log_aggregator` | `10.0.1.50` | Log aggregator (Loki) |
-| `prometheus` | `10.0.1.40` | Metrics TSDB |
-| `alloy` (per app node) | n/a | Tails systemd journal, ships to Loki |
+| `prometheus` | `10.0.1.40` | Metrics TSDB (pull, via `ec2_sd`) |
+| `mimir_db` | `10.0.1.70` | Metrics TSDB + ruler (push, via Alloy `remote_write`) |
+| `alloy` (every node) | n/a | Tails systemd journal (ships to Loki); scrapes `node_exporter`/app locally and pushes to Mimir |
 | `prometheus_exporter` (per app node) | n/a | Exposes node + app metrics |
 
 ## Grafana UI
@@ -47,6 +48,28 @@ mix ansible.setup --only prometheus
 ```
 
 The Prometheus service template enables `--web.enable-remote-write-receiver` so external sources (like the k6 load tester) can push metrics directly.
+
+## Mimir (Metrics, Push-Based)
+
+Mimir is provisioned by default alongside Prometheus — additive this cycle, no
+teardown. Every node (not just app nodes) runs Alloy, which scrapes only itself
+(`node_exporter` on `:9100`, plus the app on `:4050` where one runs) and
+`remote_write`s to Mimir. Mimir's ruler evaluates the exact same alert rules as
+Prometheus, templated from the single shared source
+(`prometheus_db/templates/prometheus-rules.yaml.j2` — never duplicated).
+
+If the Mimir node isn't running:
+
+```bash
+mix ansible.setup --only mimir_db
+```
+
+Disable it entirely with `mix terraform.build --no-mimir`.
+
+To actually cut over from Prometheus to Mimir (verify parity, flip the Grafana
+datasource, tear down Prometheus), see
+[Replacing Prometheus with Mimir](replacing_prometheus_with_mimir.md) — that swap is
+a deliberate, future action, not something this provisioning does automatically.
 
 ## Installing Grafana Dashboards
 

@@ -79,7 +79,7 @@ Both LLM modes require `:deploy_ex, :llm_provider` configured.
 | Task | Switches |
 |------|----------|
 | `mix terraform.init` | `-d directory`, `-u upgrade` |
-| `mix terraform.build` | `-d directory`, `-f force`, `-q quiet`, `-v verbose`, `--aws-region`, `--env`, `--no-database`, `--no-loki`, `--no-grafana`, `--no-redis`, `--no-prometheus`, `--no-sentry`, `--no-logging` |
+| `mix terraform.build` | `-d directory`, `-f force`, `-q quiet`, `-v verbose`, `--aws-region`, `--env`, `--no-database`, `--no-loki`, `--no-grafana`, `--no-redis`, `--no-prometheus`, `--no-mimir`, `--no-sentry`, `--no-logging` |
 | `mix terraform.plan` | `-d directory`, `-f force`, `-q quiet` (forwards remaining args to `terraform plan`, e.g. `--var-file`, `--target`) |
 | `mix terraform.apply` | `-d directory`, `-y auto-approve`, `-f force`, `-q quiet` (forwards `--var-file`, `--target`) |
 | `mix terraform.refresh` | `-d directory`, `-f force`, `-q quiet` |
@@ -101,7 +101,7 @@ Both LLM modes require `:deploy_ex, :llm_provider` configured.
 
 | Task | Switches |
 |------|----------|
-| `mix ansible.build` | `-d directory`, `-f force`, `-q quiet`, `-a auto-pull-aws`, `-h host-only`, `-n new-only`, `--terraform-directory`, `--aws-release-bucket`, `--no-database` (n/a here), `--no-loki`, `--no-grafana`, `--no-prometheus`, `--no-sentry`, `--no-logging` |
+| `mix ansible.build` | `-d directory`, `-f force`, `-q quiet`, `-a auto-pull-aws`, `-h host-only`, `-n new-only`, `--terraform-directory`, `--aws-release-bucket`, `--no-database` (n/a here), `--no-loki`, `--no-grafana`, `--no-prometheus`, `--no-mimir`, `--no-sentry`, `--no-logging` |
 | `mix ansible.setup` | `-d directory`, `-f force`, `-q quiet`, `--only`, `--except`, `--parallel <n>`, `--include-qa`, `-i --instance-id <id>` (repeatable; targets specific EC2 instances by id, bypasses QA exclusion), `--aws-region`, `--no-tui` |
 | `mix ansible.deploy` | `-d directory`, `-l only-local-release`, `-t target-sha` (`auto` resolves newest SHA on branch), `--only`, `--except`, `--copy-json-env-file`, `--parallel <n>`, `--include-qa`, `--qa`, `--no-tui`, `-q quiet` |
 | `mix ansible.ping` | `-d directory` |

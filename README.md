@@ -67,7 +67,7 @@ TUI wizard with search, form-based inputs, and progress streams. Auto-disables i
 ### What's underneath (when you need to know)
 Terraform for AWS provisioning (VPC, EC2, RDS, ALB, IAM, S3, DynamoDB state lock). Ansible for server config (BEAM tuning, log shipping, monitoring agents). All templates live in `priv/` and render to `./deploys/` — fully owned by you, never overwritten by deploy_ex updates.
 
-Optional services, toggle off with `--no-*` at build time: Postgres, Redis, Grafana UI, Loki, Prometheus, Sentry.
+Optional services, toggle off with `--no-*` at build time: Postgres, Redis, Grafana UI, Loki, Prometheus, Mimir, Sentry.
 
 ## Quickstart
 
@@ -396,7 +396,8 @@ The [`guides/`](guides/) folder is the canonical documentation:
   - [Autoscaling](guides/how-to/autoscaling.md) — scale, refresh, deployment strategies
   - [Database Operations](guides/how-to/database_operations.md)
   - [Load Testing](guides/how-to/load_testing.md) — k6 runners + Prometheus remote-write
-  - [Monitoring](guides/how-to/monitoring.md) — Grafana, Loki, Prometheus, Sentry, dashboards
+  - [Monitoring](guides/how-to/monitoring.md) — Grafana, Loki, Prometheus, Mimir, Sentry, dashboards
+  - [Replacing Prometheus with Mimir](guides/how-to/replacing_prometheus_with_mimir.md) — push-model swap runbook
   - [Clustering](guides/how-to/clustering.md) — libcluster + EC2Tag strategy
   - **[Troubleshooting](guides/how-to/troubleshooting.md)** — Ansible, SSH, autoscaling, RDS upgrades, monitoring, tags
 - **Reference**

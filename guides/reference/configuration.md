@@ -120,6 +120,7 @@ mix terraform.plan --target module.aws_instance_my_app
 | `--no-grafana` | Grafana UI |
 | `--no-loki` | Grafana Loki + Alloy log shipping |
 | `--no-prometheus` | Prometheus + node_exporter |
+| `--no-mimir` | Mimir push-based metrics + ruler |
 | `--no-sentry` | Sentry |
 | `--no-logging` | All log shipping (Loki + Alloy) |
 
