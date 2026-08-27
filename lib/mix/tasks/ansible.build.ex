@@ -173,6 +173,7 @@ defmodule Mix.Tasks.Ansible.Build do
         is_logging_enabled: !opts[:no_logging],
         is_prometheus_enabled: !opts[:no_prometheus],
         is_mimir_enabled: DeployEx.Mimir.enabled?(opts),
+        is_sentry_enabled: !opts[:no_sentry],
         loki_logger_s3_region: opts[:aws_logging_bucket],
         loki_logger_s3_bucket_name: opts[:aws_logging_region]
       }

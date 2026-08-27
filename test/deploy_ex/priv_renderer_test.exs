@@ -119,6 +119,45 @@ defmodule DeployEx.PrivRendererTest do
 
       refute dir1 === dir2
     end
+
+    test "variables.tf includes the completed sentry node by default" do
+      assert {:ok, temp_dir} = PrivRenderer.render_to_temp()
+      on_exit(fn -> File.rm_rf!(temp_dir) end)
+
+      variables_content = Path.join(temp_dir, "terraform/variables.tf") |> File.read!()
+
+      assert variables_content =~ "sentry = {"
+      assert variables_content =~ ~s(instance_type = "t3.large")
+      assert variables_content =~ ~s(private_ip    = "10.0.1.70")
+      assert variables_content =~ ~s(MonitoringKey = "sentry")
+    end
+
+    test "variables.tf omits the sentry node when no_sentry: true" do
+      assert {:ok, temp_dir} = PrivRenderer.render_to_temp(no_sentry: true)
+      on_exit(fn -> File.rm_rf!(temp_dir) end)
+
+      variables_content = Path.join(temp_dir, "terraform/variables.tf") |> File.read!()
+
+      refute variables_content =~ "sentry = {"
+    end
+
+    test "group_vars/all.yaml includes sentry_url at the sentry node's private_ip by default" do
+      assert {:ok, temp_dir} = PrivRenderer.render_to_temp()
+      on_exit(fn -> File.rm_rf!(temp_dir) end)
+
+      group_vars_content = Path.join(temp_dir, "ansible/group_vars/all.yaml") |> File.read!()
+
+      assert group_vars_content =~ ~s(sentry_url: "http://10.0.1.70:9000")
+    end
+
+    test "group_vars/all.yaml omits sentry_url when no_sentry: true" do
+      assert {:ok, temp_dir} = PrivRenderer.render_to_temp(no_sentry: true)
+      on_exit(fn -> File.rm_rf!(temp_dir) end)
+
+      group_vars_content = Path.join(temp_dir, "ansible/group_vars/all.yaml") |> File.read!()
+
+      refute group_vars_content =~ "sentry_url"
+    end
   end
 
   describe "render_to_temp/1 - ebs nested form" do

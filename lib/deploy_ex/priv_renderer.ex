@@ -168,6 +168,7 @@ defmodule DeployEx.PrivRenderer do
       is_logging_enabled: not Keyword.get(opts, :no_logging, false),
       is_prometheus_enabled: not Keyword.get(opts, :no_prometheus, false),
       is_mimir_enabled: DeployEx.Mimir.enabled?(opts),
+      is_sentry_enabled: not Keyword.get(opts, :no_sentry, false),
       loki_logger_s3_region: DeployEx.Config.aws_log_region(),
       loki_logger_s3_bucket_name: DeployEx.Config.aws_log_bucket()
     }
@@ -295,11 +296,29 @@ defmodule DeployEx.PrivRenderer do
       """
           sentry = {
             name                       = "Sentry Monitoring"
+            instance_type              = "t3.large"
             instance_availability_zone = "#{opts[:availability_zone]}"
+
+            # Sized for getsentry/self-hosted's "errors-only" compose profile
+            # (COMPOSE_PROFILES=errors-only in
+            # priv/ansible/roles/sentry_server/templates/env.j2) — upstream's
+            # install.sh hard-exits below 2 vCPU / 7000MB for that profile;
+            # t3.large (2 vCPU / 8GB) clears it. The "feature-complete"
+            # profile needs >= 4 vCPU / 14000MB (t3.large does NOT clear
+            # this — a deterministic preflight exit, not an occasional
+            # failure). To upgrade: raise instance_type here to >= 4
+            # vCPU/14GB (e.g. t3.xlarge), set
+            # COMPOSE_PROFILES=feature-complete in env.j2, then
+            # `mix terraform.apply --target 'module.ec2_instance["sentry"]'`.
+            ebs = {
+              enable_secondary = true
+              secondary_size   = 64
+            }
 
             tags = {
               Vendor = "Sentry"
               Type   = "Monitoring"
+              MonitoringKey = "sentry"
             }
           },
       """

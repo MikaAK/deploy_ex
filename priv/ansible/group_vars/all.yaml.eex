@@ -25,7 +25,9 @@ prometheus_scrape_region: <%= DeployEx.Config.aws_region() %>
 prometheus_retention_size: 4GB
 prometheus_retention_time: 7d
 <% end %>
-
+<%= if @is_sentry_enabled do %>
+sentry_url: "http://10.0.1.70:9000"
+<% end %>
 system_env:
   - PATH=/root/.asdf/shims:/root/.asdf/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 <%= if @is_mimir_enabled do %>
