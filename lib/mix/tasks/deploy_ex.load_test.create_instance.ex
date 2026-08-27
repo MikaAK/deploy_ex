@@ -227,7 +227,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
     if probe_fn.(ip) do
       :ok
     else
-      sleep_fn.(@ssh_wait_sleep_ms)
+      if retries > 1, do: sleep_fn.(@ssh_wait_sleep_ms)
       do_wait_for_ssh(instance_id, ip, retries - 1, probe_fn, sleep_fn)
     end
   end
@@ -277,7 +277,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
     if check_fn.(ip, pem_file) do
       :ok
     else
-      sleep_fn.(@setup_wait_sleep_ms)
+      if retries > 1, do: sleep_fn.(@setup_wait_sleep_ms)
       do_wait_for_setup_complete(instance_id, ip, pem_file, retries - 1, check_fn, sleep_fn)
     end
   end

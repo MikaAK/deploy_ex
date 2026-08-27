@@ -73,6 +73,32 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstanceTest do
 
       refute CreateInstance.do_wait_for_ssh("i-123", "1.2.3.4", 1, probe_fn, sleep_fn) === :ok
     end
+
+    test "sleeps only between attempts — never after the final exhausting probe" do
+      parent = self()
+      probe_fn = fn _ip -> send(parent, :probed) && false end
+      sleep_fn = fn _ms -> send(parent, :slept) end
+
+      CreateInstance.do_wait_for_ssh("i-123", "1.2.3.4", 3, probe_fn, sleep_fn)
+
+      assert_received :probed
+      assert_received :slept
+      assert_received :probed
+      assert_received :slept
+      assert_received :probed
+      refute_received :slept
+    end
+
+    test "does not sleep at all when there is only one attempt" do
+      parent = self()
+      probe_fn = fn _ip -> send(parent, :probed) && false end
+      sleep_fn = fn _ms -> send(parent, :slept) end
+
+      CreateInstance.do_wait_for_ssh("i-123", "1.2.3.4", 1, probe_fn, sleep_fn)
+
+      assert_received :probed
+      refute_received :slept
+    end
   end
 
   describe "do_wait_for_setup_complete/6 (D3: readiness gate)" do
@@ -98,6 +124,32 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstanceTest do
 
       assert message =~ "i-123"
       assert message =~ "/var/log/k6-setup.log"
+    end
+
+    test "sleeps only between attempts — never after the final exhausting check" do
+      parent = self()
+      check_fn = fn _ip, _pem_file -> send(parent, :checked) && false end
+      sleep_fn = fn _ms -> send(parent, :slept) end
+
+      CreateInstance.do_wait_for_setup_complete("i-123", "1.2.3.4", "/tmp/key.pem", 3, check_fn, sleep_fn)
+
+      assert_received :checked
+      assert_received :slept
+      assert_received :checked
+      assert_received :slept
+      assert_received :checked
+      refute_received :slept
+    end
+
+    test "does not sleep at all when there is only one attempt" do
+      parent = self()
+      check_fn = fn _ip, _pem_file -> send(parent, :checked) && false end
+      sleep_fn = fn _ms -> send(parent, :slept) end
+
+      CreateInstance.do_wait_for_setup_complete("i-123", "1.2.3.4", "/tmp/key.pem", 1, check_fn, sleep_fn)
+
+      assert_received :checked
+      refute_received :slept
     end
   end
 end
