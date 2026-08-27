@@ -128,7 +128,7 @@ defmodule DeployEx.PrivRendererTest do
 
       assert variables_content =~ "sentry = {"
       assert variables_content =~ ~s(instance_type = "t3.large")
-      assert variables_content =~ ~s(private_ip    = "10.0.1.70")
+      assert variables_content =~ ~s(private_ip    = "10.0.1.80")
       assert variables_content =~ ~s(MonitoringKey = "sentry")
     end
 
@@ -147,7 +147,7 @@ defmodule DeployEx.PrivRendererTest do
 
       group_vars_content = Path.join(temp_dir, "ansible/group_vars/all.yaml") |> File.read!()
 
-      assert group_vars_content =~ ~s(sentry_url: "http://10.0.1.70:9000")
+      assert group_vars_content =~ ~s(sentry_url: "http://10.0.1.80:9000")
     end
 
     test "group_vars/all.yaml omits sentry_url when no_sentry: true" do
