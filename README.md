@@ -69,6 +69,8 @@ Terraform for AWS provisioning (VPC, EC2, RDS, ALB, IAM, S3, DynamoDB state lock
 
 Optional services, toggle off with `--no-*` at build time: Postgres, Redis, Grafana UI, Loki, Prometheus, Mimir, Sentry.
 
+Sentry defaults to a `t3.large` node (upstream `getsentry/self-hosted` publishes a 4 vCPU / 16GB minimum — resize up in `deploys/terraform/variables.tf` only on a measured install failure) and is reachable only via SSH tunnel, never a public IP — see [Monitoring → Sentry](guides/how-to/monitoring.md#sentry).
+
 ## Quickstart
 
 Each step is one action. Run them in order; deploys flow through GitHub Actions, not your machine.
@@ -432,7 +434,7 @@ No mocks — dependency injection via parameters. See [Testing Guide](guides/ref
 - [x] OpenTofu support via `:iac_tool`
 - [ ] Canary deploys
 - [ ] Automated IP whitelist removal lambda (paired with `mix deploy_ex.ssh.authorize`)
-- [ ] Sentry integration (currently WIP)
+- [ ] Sentry integration (terraform node + `sentry_server` ansible role shipped; live apply + client-app integration pending)
 - [ ] Vault integration
 - [ ] Static way to set up Redis from apps
 - [ ] Auto-run `ansible.setup` on nodes created via GitHub Actions

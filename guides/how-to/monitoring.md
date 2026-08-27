@@ -1,6 +1,6 @@
 # How to Set Up Monitoring
 
-Out of the box, deploy_ex provisions Prometheus, Mimir, Grafana UI, Grafana Loki, and Sentry (WIP). Each is a separate node type that you can disable at build time with `--no-grafana`, `--no-loki`, `--no-prometheus`, `--no-mimir`, `--no-sentry`.
+Out of the box, deploy_ex provisions Prometheus, Mimir, Grafana UI, Grafana Loki, and Sentry. Each is a separate node type that you can disable at build time with `--no-grafana`, `--no-loki`, `--no-prometheus`, `--no-mimir`, `--no-sentry`.
 
 ## Stack Overview
 
@@ -11,7 +11,7 @@ Out of the box, deploy_ex provisions Prometheus, Mimir, Grafana UI, Grafana Loki
 | `prometheus` | AZ-pinned (DHCP) | Metrics TSDB (pull, via `ec2_sd`) |
 | `mimir_db` | AZ-pinned (DHCP) | Metrics TSDB + ruler (push, via Alloy `remote_write`) |
 | `redis` | AZ-pinned (DHCP) | Session/cache store |
-| `sentry` | AZ-pinned (DHCP) | Error tracking (WIP) |
+| `sentry` | AZ-pinned (DHCP) | Error monitoring (`getsentry/self-hosted`, private VPC only) |
 | `alloy` (every node) | n/a | Tails systemd journal (ships to Loki); scrapes `node_exporter`/app locally and pushes to Mimir |
 | `prometheus_exporter` (per app node) | n/a | Exposes node + app metrics |
 
@@ -156,9 +156,34 @@ Useful dashboard IDs:
 - **Node Exporter Full**: `1860`
 - **Loki Logs**: `13639`
 
-## Sentry (WIP)
+## Sentry
 
-Sentry is currently a work in progress. The Terraform/Ansible provisioning is scaffolded with `--no-sentry` to disable, but the role implementation is incomplete.
+Self-hosted error monitoring (`getsentry/self-hosted`, pinned release — see `deploys/ansible/roles/sentry_server/defaults/main.yaml` for the current tag). Provisioned by default; disable at build time with `--no-sentry`.
+
+### Sizing
+
+Defaults to a `t3.large` instance (2 vCPU / 8GB) with a 64GB secondary EBS volume for the compose stack's Postgres/Kafka/ClickHouse data. Upstream `getsentry/self-hosted` publishes a **4 vCPU / 16GB minimum** — `t3.large` is a deliberately smaller starting point. Resize up in `deploys/terraform/variables.tf` (the `sentry.instance_type` field) only on a measured install failure, then `mix terraform.apply --target 'module.ec2_instance["sentry"]'`.
+
+### Access — private VPC only
+
+The Sentry web service binds to `127.0.0.1` on the node (never the VPC private IP, never a public IP) — there is no public exposure and no Let's Encrypt cert this cycle. Reach the UI through an SSH tunnel:
+
+```bash
+mix deploy_ex.find_nodes --tag MonitoringKey=sentry     # find the node's IP
+ssh -i deploys/terraform/*.pem -L 9000:127.0.0.1:9000 admin@<sentry-node-ip>
+```
+
+Then browse `http://localhost:9000` locally. `group_vars/all.yaml`'s `sentry_url` (`http://10.0.1.70:9000`) is what the Sentry container itself uses to build links back to the UI — it is not a directly-reachable URL from your machine.
+
+If the node isn't running:
+
+```bash
+mix ansible.setup --only sentry
+```
+
+### Idempotence
+
+`sentry_server`'s install task is guarded by a marker file (`.deploy_ex_installed_<version>` in the install directory) — re-running `ansible.setup` on a healthy node does not re-run `install.sh` (a full image pull + DB migration) or re-clone the repo unnecessarily. Bumping `sentry_release_version` removes that guard for the new version and re-runs the install.
 
 ## Troubleshooting
 
