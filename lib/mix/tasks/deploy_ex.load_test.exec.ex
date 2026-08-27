@@ -2,26 +2,28 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
   use Mix.Task
 
   @terraform_default_path DeployEx.Config.terraform_folder_path()
-  @default_prometheus_url "http://10.0.1.40:9090"
+  @prometheus_monitoring_tag {"MonitoringKey", "prometheus_db"}
 
   @shortdoc "Executes a k6 test on a runner"
   @moduledoc """
   Runs a k6 load test on a runner instance via SSH, streaming output back.
 
   Results are pushed to Prometheus via remote write for Grafana visualization.
+  When no `--prometheus-url` is given, the running prometheus node's private IP
+  is discovered by tag; if none is found, the test runs without metrics export.
 
   ## Example
   ```bash
   mix deploy_ex.load_test.exec my_app
   mix deploy_ex.load_test.exec my_app --target-url http://my-app:4000
   mix deploy_ex.load_test.exec my_app --script custom_test.js
-  mix deploy_ex.load_test.exec my_app --prometheus-url http://10.0.1.40:9090
+  mix deploy_ex.load_test.exec my_app --prometheus-url http://10.0.101.171:9090
   ```
 
   ## Options
   - `--script` - Script filename on runner (default: load_test.js)
   - `--target-url` - Application endpoint URL passed as TARGET_URL env var
-  - `--prometheus-url` - Prometheus remote write base URL (default: http://10.0.1.40:9090)
+  - `--prometheus-url` - Prometheus remote write base URL (default: discovered by tag)
   - `--instance-id, -i` - Specific runner instance ID
   - `--pem` - Path to PEM file
   - `--quiet, -q` - Suppress output messages
@@ -41,16 +43,25 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
         [] -> Mix.raise("App name is required: mix deploy_ex.load_test.exec <app_name>")
       end
 
-      with {:ok, runner} <- find_runner(opts),
-           {:ok, pem_file} <- DeployEx.Terraform.find_pem_file(@terraform_default_path, opts[:pem]) do
+      with {:ok, runner} <- resolve_runner(opts),
+           {:ok, pem_file} <- DeployEx.Terraform.find_pem_file(@terraform_default_path, opts[:pem]),
+           {:ok, prometheus_url} <- resolve_prometheus_url(opts) do
         ip = runner.public_ip || runner.ipv6_address
 
         if is_nil(ip) do
           Mix.raise("Runner has no reachable IP address")
         end
 
+        unless opts[:quiet] do
+          if is_nil(prometheus_url) do
+            Mix.shell().info([
+              :yellow,
+              "⚠ No prometheus node found and --prometheus-url not set — running without metrics export"
+            ])
+          end
+        end
+
         script = opts[:script] || "load_test.js"
-        prometheus_url = opts[:prometheus_url] || @default_prometheus_url
         target_url = opts[:target_url]
 
         unless opts[:quiet] do
@@ -59,17 +70,21 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
             "  Runner:     ", :cyan, ip, :reset, "\n",
             "  App:        ", :cyan, app_name, :reset, "\n",
             "  Script:     ", :cyan, script, :reset, "\n",
-            "  Prometheus: ", :cyan, prometheus_url, :reset, "\n",
+            "  Prometheus: ", :cyan, prometheus_url || "(disabled)", :reset, "\n",
             "  Target URL: ", :cyan, target_url || "(from script)", :reset, "\n",
             "\n"
           ])
         end
 
-        command = build_k6_command(script, prometheus_url, target_url)
+        with :ok <- preflight_k6(ip, pem_file) do
+          command = build_k6_command(script, prometheus_url, target_url)
 
-        case run_k6_via_ssh(ip, pem_file, command) do
-          :ok -> :ok
-          {:error, reason} -> Mix.raise(reason)
+          case run_k6_via_ssh(ip, pem_file, command) do
+            :ok -> :ok
+            {:error, reason} -> Mix.raise(reason)
+          end
+        else
+          {:error, error} -> Mix.raise(ErrorMessage.to_string(error))
         end
       else
         {:error, error} -> Mix.raise(ErrorMessage.to_string(error))
@@ -91,52 +106,122 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
     )
   end
 
-  defp find_runner(opts) do
+  def resolve_runner(opts, k6_runner_impl \\ DeployEx.K6Runner) do
     case opts[:instance_id] do
-      nil ->
-        case DeployEx.K6Runner.fetch_all_runners(opts) do
-          {:ok, [runner | _]} ->
-            case DeployEx.K6Runner.verify_instance_exists(runner) do
-              {:ok, verified} when not is_nil(verified) -> {:ok, verified}
-              _ -> {:error, ErrorMessage.not_found("k6 runner not found or terminated")}
-            end
-
-          {:ok, []} ->
-            {:error, ErrorMessage.not_found("no k6 runners found, create one with: mix deploy_ex.load_test.create_instance")}
-
-          error ->
-            error
-        end
-
-      instance_id ->
-        case DeployEx.K6Runner.fetch_state(instance_id, opts) do
-          {:ok, runner} when not is_nil(runner) ->
-            DeployEx.K6Runner.verify_instance_exists(runner)
-
-          {:ok, nil} ->
-            {:error, ErrorMessage.not_found("k6 runner #{instance_id} not found")}
-
-          error ->
-            error
-        end
+      nil -> resolve_default_runner(opts, k6_runner_impl)
+      instance_id -> resolve_runner_by_instance_id(instance_id, opts, k6_runner_impl)
     end
   end
 
-  defp build_k6_command(script, prometheus_url, target_url) do
-    env_vars = [
-      "K6_PROMETHEUS_RW_SERVER_URL=#{prometheus_url}/api/v1/write"
-    ]
-
-    env_vars = if target_url do
-      ["TARGET_URL=#{target_url}" | env_vars]
-    else
-      env_vars
+  defp resolve_default_runner(opts, k6_runner_impl) do
+    case k6_runner_impl.fetch_all_runners(opts) do
+      {:ok, [runner | _]} -> verify_runner(runner, k6_runner_impl)
+      {:ok, []} -> {:error, no_runner_error()}
+      error -> error
     end
-
-    env_string = Enum.join(env_vars, " ")
-
-    "#{env_string} k6 run -o experimental-prometheus-rw /srv/k6/scripts/#{script}"
   end
+
+  defp resolve_runner_by_instance_id(instance_id, opts, k6_runner_impl) do
+    case k6_runner_impl.fetch_state(instance_id, opts) do
+      {:ok, nil} -> {:error, no_runner_error()}
+      {:ok, runner} -> verify_runner(runner, k6_runner_impl)
+      error -> error
+    end
+  end
+
+  defp verify_runner(runner, k6_runner_impl) do
+    case k6_runner_impl.verify_instance_exists(runner) do
+      {:ok, nil} -> {:error, no_runner_error()}
+      {:ok, verified} -> {:ok, verified}
+      error -> error
+    end
+  end
+
+  defp no_runner_error do
+    ErrorMessage.not_found(
+      "no active k6 runner found (missing or terminated) — create one with: mix deploy_ex.load_test.create_instance"
+    )
+  end
+
+  def resolve_prometheus_url(opts, discover_fn \\ &discover_prometheus_ip/0) do
+    case opts[:prometheus_url] do
+      url when is_binary(url) -> {:ok, url}
+      _ -> resolve_discovered_prometheus_url(discover_fn)
+    end
+  end
+
+  defp resolve_discovered_prometheus_url(discover_fn) do
+    case discover_fn.() do
+      {:ok, ip} when is_binary(ip) -> {:ok, "http://#{ip}:9090"}
+      _ -> {:ok, nil}
+    end
+  end
+
+  defp discover_prometheus_ip do
+    case DeployEx.AwsMachine.find_instances_by_tags([@prometheus_monitoring_tag]) do
+      {:ok, instances} -> find_running_prometheus_ip(instances)
+      error -> error
+    end
+  end
+
+  defp find_running_prometheus_ip(instances) do
+    case Enum.find(instances, &running_instance?/1) do
+      nil -> {:error, ErrorMessage.not_found("no running prometheus node found")}
+      instance -> {:ok, instance["privateIpAddress"]}
+    end
+  end
+
+  defp running_instance?(instance), do: get_in(instance, ["instanceState", "name"]) === "running"
+
+  defp preflight_k6(ip, pem_file) do
+    case run_ssh_command(ip, pem_file, "k6 version") do
+      {:ok, _output} ->
+        :ok
+
+      {:error, reason} ->
+        {:error, ErrorMessage.failed_dependency(
+          "k6 is not available on the runner — verify setup completed via mix deploy_ex.load_test.create_instance",
+          %{reason: reason}
+        )}
+    end
+  end
+
+  # SSH transport shell-out — dev-tooling exemption (spawns the ssh binary, no pure
+  # logic to unit test; behavior is pinned by run_k6_via_ssh's Port-based sibling below).
+  defp run_ssh_command(ip, pem_file, command) do
+    abs_pem = Path.expand(pem_file)
+
+    case System.cmd("ssh", [
+      "-i", abs_pem,
+      "-o", "StrictHostKeyChecking=no",
+      "-o", "UserKnownHostsFile=/dev/null",
+      "admin@#{ip}",
+      command
+    ], stderr_to_stdout: true) do
+      {output, 0} -> {:ok, output}
+      {output, _code} -> {:error, output}
+    end
+  end
+
+  def build_k6_command(script, prometheus_url, target_url) do
+    env_vars = []
+    |> maybe_add_env_var("TARGET_URL", target_url)
+    |> maybe_add_env_var("K6_PROMETHEUS_RW_SERVER_URL", prometheus_write_url(prometheus_url))
+
+    "#{env_var_prefix(env_vars)}k6 run#{prometheus_flag(prometheus_url)} /srv/k6/scripts/#{script}"
+  end
+
+  defp maybe_add_env_var(env_vars, _name, nil), do: env_vars
+  defp maybe_add_env_var(env_vars, name, value), do: env_vars ++ ["#{name}=#{value}"]
+
+  defp prometheus_write_url(nil), do: nil
+  defp prometheus_write_url(prometheus_url), do: "#{prometheus_url}/api/v1/write"
+
+  defp prometheus_flag(nil), do: ""
+  defp prometheus_flag(_prometheus_url), do: " -o experimental-prometheus-rw"
+
+  defp env_var_prefix([]), do: ""
+  defp env_var_prefix(env_vars), do: "#{Enum.join(env_vars, " ")} "
 
   defp run_k6_via_ssh(ip, pem_file, command) do
     abs_pem = Path.expand(pem_file)
