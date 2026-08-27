@@ -1,11 +1,23 @@
 defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
   use Mix.Task
 
+  @terraform_default_path DeployEx.Config.terraform_folder_path()
+
+  @ssh_wait_retries 30
+  @ssh_wait_sleep_ms 5_000
+
+  @setup_wait_retries 30
+  @setup_wait_sleep_ms 10_000
+
+  @setup_log_path "/var/log/k6-setup.log"
+
   @shortdoc "Creates a k6 runner EC2 instance"
   @moduledoc """
   Provisions an EC2 instance with k6 pre-installed for load testing.
 
   Checks for an existing runner first and reuses it unless --force is provided.
+  A freshly created runner is not reported ready until SSH is reachable and k6
+  is confirmed installed on the instance.
 
   ## Example
   ```bash
@@ -16,13 +28,14 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
 
   ## Options
   - `--instance-type` - EC2 instance type (default: t3.small)
-  - `--force, -f` - Replace existing runner without prompting
+  - `--force, -f` - Terminate existing runner(s) and their state, then create a new one
   - `--quiet, -q` - Suppress output messages
   - `--resource-group` - Specify a custom resource group name
   - `--pem` - Specify a custom pem file
   """
 
   def run(args) do
+    :ssh.start()
     Application.ensure_all_started(:hackney)
     Application.ensure_all_started(:telemetry)
     Application.ensure_all_started(:ex_aws)
@@ -57,9 +70,9 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
     end
 
     case DeployEx.K6Runner.fetch_all_runners(opts) do
-      {:ok, [runner | _]} ->
+      {:ok, [runner | _] = runners} ->
         if opts[:force] do
-          create_new_runner(opts)
+          replace_runners(runners, opts)
         else
           case DeployEx.K6Runner.verify_instance_exists(runner) do
             {:ok, verified} when not is_nil(verified) ->
@@ -85,6 +98,32 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
     end
   end
 
+  defp replace_runners(runners, opts) do
+    if !opts[:quiet] do
+      Mix.shell().info([
+        :faint, "--force: replacing ", :reset, :cyan, "#{length(runners)}", :reset,
+        :faint, " existing runner(s)...", :reset
+      ])
+    end
+
+    terminate_fn = opts[:terminate_fn] || (&DeployEx.K6Runner.terminate_runner/2)
+
+    case terminate_all_runners(runners, terminate_fn, opts) do
+      :ok -> create_new_runner(opts)
+      {:error, _} = error -> error
+    end
+  end
+
+  @doc false
+  def terminate_all_runners(runners, terminate_fn, opts) do
+    Enum.reduce_while(runners, :ok, fn runner, :ok ->
+      case terminate_fn.(runner, opts) do
+        :ok -> {:cont, :ok}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
   defp create_new_runner(opts) do
     if !opts[:quiet] do
       Mix.shell().info([:cyan, "Creating k6 runner instance..."])
@@ -107,17 +146,30 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
         {:ok, verified} when not is_nil(verified) ->
           if !opts[:quiet] do
             Mix.shell().info([:green, "  ✓ ", :reset, "Instance running"])
-            wait_for_ssh(verified)
-            Mix.shell().info([:green, "  ✓ ", :reset, "SSH ready"])
-            print_runner_info(verified)
           end
 
-          {:ok, verified}
+          await_runner_ready(verified, opts)
 
         other ->
           other
       end
     end
+  end
+
+  defp await_runner_ready(runner, opts) do
+    with {:ok, pem_file} <- find_pem_file(opts),
+         :ok <- wait_for_ssh(runner, opts),
+         :ok <- wait_for_setup_complete(runner, pem_file, opts) do
+      if !opts[:quiet] do
+        print_runner_info(runner)
+      end
+
+      {:ok, runner}
+    end
+  end
+
+  defp find_pem_file(opts) do
+    DeployEx.Terraform.find_pem_file(@terraform_default_path, opts[:pem])
   end
 
   defp gather_infrastructure(opts) do
@@ -130,22 +182,110 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
     )
   end
 
-  defp wait_for_ssh(runner) do
+  # SSH reachability wait (D7: honest failure — never claims ready after exhausting retries)
+
+  defp wait_for_ssh(runner, opts) do
     ip = runner.public_ip || runner.ipv6_address
 
-    if ip do
-      Mix.shell().info([:faint, "Waiting for SSH on ", :reset, :cyan, ip, :reset, :faint, "..."])
-      do_wait_for_ssh(ip, 30)
+    if is_nil(ip) do
+      {:error, ErrorMessage.not_found(
+        "k6 runner #{runner.instance_id} has no reachable ip address",
+        %{instance_id: runner.instance_id}
+      )}
+    else
+      if !opts[:quiet] do
+        Mix.shell().info([:faint, "Waiting for SSH on ", :reset, :cyan, ip, :reset, :faint, "..."])
+      end
+
+      probe_fn = opts[:ssh_probe_fn] || (&default_ssh_probe?/1)
+      sleep_fn = opts[:sleep_fn] || (&Process.sleep/1)
+      retries = opts[:ssh_wait_retries] || @ssh_wait_retries
+
+      case do_wait_for_ssh(runner.instance_id, ip, retries, probe_fn, sleep_fn) do
+        :ok ->
+          if !opts[:quiet] do
+            Mix.shell().info([:green, "  ✓ ", :reset, "SSH ready"])
+          end
+
+          :ok
+
+        error ->
+          error
+      end
     end
   end
 
-  defp do_wait_for_ssh(ip, retries) do
-    case System.cmd("nc", ["-z", "-w", "5", ip, "22"], stderr_to_stdout: true) do
-      {_, 0} -> :ok
-      _ when retries > 0 ->
-        Process.sleep(5000)
-        do_wait_for_ssh(ip, retries - 1)
-      _ -> :ok
+  @doc false
+  def do_wait_for_ssh(instance_id, ip, 0, _probe_fn, _sleep_fn) do
+    {:error, ErrorMessage.failed_dependency(
+      "ssh did not become reachable on #{instance_id} (#{ip}) before timeout",
+      %{instance_id: instance_id, ip: ip}
+    )}
+  end
+
+  def do_wait_for_ssh(instance_id, ip, retries, probe_fn, sleep_fn) do
+    if probe_fn.(ip) do
+      :ok
+    else
+      sleep_fn.(@ssh_wait_sleep_ms)
+      do_wait_for_ssh(instance_id, ip, retries - 1, probe_fn, sleep_fn)
+    end
+  end
+
+  defp default_ssh_probe?(ip) do
+    case DeployEx.Utils.run_command_with_return("nc -z -w 5 #{ip} 22", File.cwd!()) do
+      {:ok, _output} -> true
+      _ -> false
+    end
+  end
+
+  # k6 setup readiness gate (D3: no success claim until k6 is verified installed)
+
+  defp wait_for_setup_complete(runner, pem_file, opts) do
+    ip = runner.public_ip || runner.ipv6_address
+
+    if !opts[:quiet] do
+      Mix.shell().info([:faint, "Waiting for k6 setup to complete on ", :reset, :cyan, ip, :reset, :faint, "..."])
+    end
+
+    check_fn = opts[:check_fn] || (&default_k6_ready?/2)
+    sleep_fn = opts[:sleep_fn] || (&Process.sleep/1)
+    retries = opts[:setup_wait_retries] || @setup_wait_retries
+
+    case do_wait_for_setup_complete(runner.instance_id, ip, pem_file, retries, check_fn, sleep_fn) do
+      :ok ->
+        if !opts[:quiet] do
+          Mix.shell().info([:green, "  ✓ ", :reset, "k6 setup complete"])
+        end
+
+        :ok
+
+      error ->
+        error
+    end
+  end
+
+  @doc false
+  def do_wait_for_setup_complete(instance_id, ip, _pem_file, 0, _check_fn, _sleep_fn) do
+    {:error, ErrorMessage.failed_dependency(
+      "k6 setup did not complete on #{instance_id} before timeout — check #{@setup_log_path} on #{ip}",
+      %{instance_id: instance_id, ip: ip, setup_log: @setup_log_path}
+    )}
+  end
+
+  def do_wait_for_setup_complete(instance_id, ip, pem_file, retries, check_fn, sleep_fn) do
+    if check_fn.(ip, pem_file) do
+      :ok
+    else
+      sleep_fn.(@setup_wait_sleep_ms)
+      do_wait_for_setup_complete(instance_id, ip, pem_file, retries - 1, check_fn, sleep_fn)
+    end
+  end
+
+  defp default_k6_ready?(ip, pem_file) do
+    case DeployEx.SSH.run_command(ip, 22, pem_file, "k6 version") do
+      {:ok, _output} -> true
+      _ -> false
     end
   end
 
