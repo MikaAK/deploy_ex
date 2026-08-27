@@ -4,6 +4,5 @@
     - awscli
     - prometheus_exporter
     - grafana_ui
-    - grafana_alloy
     - ipv6
 

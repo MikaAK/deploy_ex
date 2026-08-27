@@ -5,4 +5,5 @@
     - log_cleanup
     - prometheus_exporter
     - grafana_loki
+    - grafana_alloy
     - ipv6

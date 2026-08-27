@@ -1,9 +1,8 @@
-- hosts: monitoring_grafana_ui
+- hosts: monitoring_loki_logger
   roles:
     - pip3
     - awscli
+    - log_cleanup
     - prometheus_exporter
-    - grafana_ui
-    - grafana_alloy
+    - grafana_loki
     - ipv6
-
