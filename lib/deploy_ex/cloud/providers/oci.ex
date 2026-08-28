@@ -22,6 +22,7 @@ defmodule DeployEx.Cloud.Providers.Oci do
     compartment_id: [type: {:or, [:string, nil]}],
     namespace: [type: {:or, [:string, nil]}],
     availability_domain: [type: {:or, [:string, nil]}],
+    subnet_id: [type: {:or, [:string, nil]}],
     base_image: [type: {:or, [:keyword_list, :string, nil]}],
     shape: [type: {:or, [:string, nil]}],
     shape_ocpus: [type: {:or, [:pos_integer, nil]}],
