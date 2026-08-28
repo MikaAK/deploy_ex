@@ -203,13 +203,18 @@ defmodule Mix.Tasks.Ansible.Build do
 
       Enum.each(DeployEx.Mimir.monitoring_setup_playbooks(), fn name ->
         output_path = Path.join(setup_path, "#{name}.yaml")
+        rendered = EEx.eval_file(DeployExHelpers.priv_folder("ansible/setup/#{name}.yaml.eex"), assigns: variables)
 
-        DeployExHelpers.write_template(
-          DeployExHelpers.priv_folder("ansible/setup/#{name}.yaml.eex"),
-          output_path,
-          variables,
-          opts
-        )
+        if DeployEx.Mimir.should_write_setup_playbook?(output_path, rendered, opts) do
+          File.write!(output_path, rendered)
+        else
+          unless opts[:quiet] do
+            Mix.shell().info([
+              :yellow, "* skipping ", :reset, output_path,
+              " (customized — run mix deploy_ex.upgrade_priv to pull template updates)"
+            ])
+          end
+        end
 
         if File.exists?("#{output_path}.eex") do
           File.rm!("#{output_path}.eex")

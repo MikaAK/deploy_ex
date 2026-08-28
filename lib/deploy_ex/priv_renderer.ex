@@ -219,12 +219,12 @@ defmodule DeployEx.PrivRenderer do
 
     Enum.each(DeployEx.Mimir.monitoring_setup_playbooks(), fn name ->
       output_path = Path.join(target_dir, "setup/#{name}.yaml")
+      rendered = EEx.eval_file(Path.join(priv_ansible, "setup/#{name}.yaml.eex"), assigns: playbook_vars)
 
-      render_template(
-        Path.join(priv_ansible, "setup/#{name}.yaml.eex"),
-        output_path,
-        playbook_vars
-      )
+      if DeployEx.Mimir.should_write_setup_playbook?(output_path, rendered, opts) do
+        File.mkdir_p!(Path.dirname(output_path))
+        File.write!(output_path, rendered)
+      end
 
       remove_if_exists("#{output_path}.eex")
     end)

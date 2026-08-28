@@ -45,4 +45,49 @@ defmodule DeployEx.MimirTest do
       assert Mimir.monitoring_setup_playbooks() === ["grafana_ui", "loki_log_aggregator", "prometheus_db"]
     end
   end
+
+  # SECTION: should_write_setup_playbook?/3 — bounding the ansible.build write path
+  #
+  # These 3 files are consumer-owned generated output (README: "fully owned by
+  # you, never overwritten by deploy_ex updates"), not deploy_ex-managed config
+  # like group_vars — a build must never silently clobber a customized copy.
+
+  describe "should_write_setup_playbook?/3" do
+    setup do
+      tmp_dir = Path.join(System.tmp_dir!(), "deploy_ex_mimir_write_test_#{System.unique_integer([:positive])}")
+      File.mkdir_p!(tmp_dir)
+      on_exit(fn -> File.rm_rf!(tmp_dir) end)
+
+      %{output_path: Path.join(tmp_dir, "grafana_ui.yaml")}
+    end
+
+    test "returns true when the output file does not exist (first delivery)", %{output_path: output_path} do
+      assert Mimir.should_write_setup_playbook?(output_path, "rendered content", [])
+    end
+
+    test "returns true when the file exists and content is identical to the rendered content (no-op refresh)",
+         %{output_path: output_path} do
+      File.write!(output_path, "rendered content")
+
+      assert Mimir.should_write_setup_playbook?(output_path, "rendered content", [])
+    end
+
+    test "returns false when the file exists and content diverges (protects a customized copy)",
+         %{output_path: output_path} do
+      File.write!(output_path, "a cfx operator's hand-customized playbook")
+
+      refute Mimir.should_write_setup_playbook?(output_path, "rendered content", [])
+    end
+
+    test "returns false when new_only is set and the file exists, even with identical content",
+         %{output_path: output_path} do
+      File.write!(output_path, "rendered content")
+
+      refute Mimir.should_write_setup_playbook?(output_path, "rendered content", new_only: true)
+    end
+
+    test "returns true when new_only is set and the file does not exist", %{output_path: output_path} do
+      assert Mimir.should_write_setup_playbook?(output_path, "rendered content", new_only: true)
+    end
+  end
 end

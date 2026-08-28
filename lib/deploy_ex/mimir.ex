@@ -14,6 +14,27 @@ defmodule DeployEx.Mimir do
   @doc "Setup playbook node types that gain the grafana_alloy role line when mimir is enabled."
   def monitoring_setup_playbooks, do: @monitoring_setup_playbooks
 
+  @doc """
+  Whether a generated monitoring setup playbook should be (re)written.
+
+  These 3 files are consumer-owned generated output, not deploy_ex-managed
+  config — a build must never silently clobber a customized copy:
+
+    * absent → write it (first delivery)
+    * `new_only` set and the file exists → never write, regardless of content
+    * exists with content identical to the render → write (no-op refresh)
+    * exists and diverges → do not write; the consumer must pull template
+      updates explicitly via `mix deploy_ex.upgrade_priv`
+  """
+  def should_write_setup_playbook?(output_path, rendered_content, opts) do
+    cond do
+      not File.exists?(output_path) -> true
+      Keyword.get(opts, :new_only, false) -> false
+      File.read!(output_path) === rendered_content -> true
+      true -> false
+    end
+  end
+
   @doc "Whether mimir is enabled for this build (default ON, disabled via --no-mimir)."
   def enabled?(opts), do: not Keyword.get(opts, :no_mimir, false)
 
