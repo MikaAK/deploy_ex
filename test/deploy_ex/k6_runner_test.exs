@@ -191,19 +191,37 @@ defmodule DeployEx.K6RunnerTest do
     end
   end
 
-  describe "K6Runner :oci contract — not_implemented vs OCI-routed (LT-OCI review-fix)" do
-    test "machine ops are not_implemented under :oci — the Machine capability is not wired yet" do
+  describe "K6Runner :oci contract — not_implemented vs OCI-routed (LT-OCI S2 update)" do
+    test "machine ops now route to OciMachine (LT-OCI S2) — no longer not_implemented" do
       runner = %K6Runner{instance_id: "i-contract-1"}
+      terminate_run_fn = fn _command, _cwd -> {:ok, ""} end
 
-      assert {:error, %ErrorMessage{code: :not_implemented}} =
+      describe_run_fn = fn command, _cwd ->
+        cond do
+          command =~ "instance get" ->
+            {:ok, Jason.encode!(%{"data" => %{"id" => "i-contract-1", "lifecycle-state" => "RUNNING", "freeform-tags" => %{}}})}
+
+          command =~ "list-vnics" ->
+            {:ok, Jason.encode!(%{"data" => []})}
+        end
+      end
+
+      # create_instance still needs subnet_id/base_image/availability_domain even when a
+      # run_fn is given — those are checked before the CLI is ever called (no run_fn needed
+      # to exercise this specific error), proving the request reached OciMachine, not a
+      # not_implemented short-circuit at the capability lookup.
+      assert {:error, %ErrorMessage{code: :bad_request, message: create_message}} =
                K6Runner.create_instance(%{}, provider: :oci)
 
-      assert {:error, %ErrorMessage{code: :not_implemented}} =
-               K6Runner.terminate_instance("i-contract-1", provider: :oci)
+      assert create_message =~ "compartment_id"
 
-      assert {:error, %ErrorMessage{code: :not_implemented}} =
-               K6Runner.verify_instance_exists(runner, provider: :oci)
+      assert :ok = K6Runner.terminate_instance("i-contract-1", provider: :oci, run_fn: terminate_run_fn)
 
+      assert {:ok, %K6Runner{instance_id: "i-contract-1", state: "RUNNING"}} =
+               K6Runner.verify_instance_exists(runner, provider: :oci, run_fn: describe_run_fn)
+
+      # find_runners_from_ec2 is explicitly AWS-only regardless of S2 — this stays
+      # not_implemented forever, it is not part of the machine-capability wiring.
       assert {:error, %ErrorMessage{code: :not_implemented}} =
                K6Runner.find_runners_from_ec2(provider: :oci)
     end
@@ -222,11 +240,13 @@ defmodule DeployEx.K6RunnerTest do
       end)
     end
 
-    test "with a CONFIGURED oci bucket and a real stored runner, resolve_runner reaches :not_implemented cleanly — never AWS (review cycle 2 item 3)" do
+    test "with oci bucket + machine config + a stored runner, resolve_runner verifies via OciMachine, never AWS" do
       # Simulates the exact reviewer-measured scenario: bucket configured (via the explicit
-      # :bucket opt, bypassing the unset-namespace error) and a runner actually on disk, proving
-      # resolution stops at the not-yet-wired machine capability instead of silently falling
-      # through to AwsMachine/EC2 and, on a miss there, deleting the real OCI state object.
+      # :bucket opt, bypassing the unset-namespace error) and a runner actually on disk. As of
+      # S2, OciMachine is wired, so resolution now goes all the way through to a verified
+      # runner via OCI's own CLI calls — the point being it is OciMachine doing the verifying,
+      # never AwsMachine/EC2, so a miss there would delete the real OCI state object correctly
+      # scoped to OCI, not based on an AWS lookup against the wrong provider's instances.
       stored_runner = %K6Runner{instance_id: "i-oci-stored", state: "running"}
 
       run_fn = fn command, _cwd ->
@@ -239,13 +259,24 @@ defmodule DeployEx.K6RunnerTest do
             File.write!(path, K6Runner.to_json(stored_runner))
             {:ok, ""}
 
+          command =~ "instance get" ->
+            {:ok,
+             Jason.encode!(%{
+               "data" => %{"id" => "i-oci-stored", "lifecycle-state" => "RUNNING", "freeform-tags" => %{}}
+             })}
+
+          command =~ "list-vnics" ->
+            {:ok, Jason.encode!(%{"data" => []})}
+
           true ->
             flunk("unexpected oci command: #{command}")
         end
       end
 
-      assert {:error, %ErrorMessage{code: :not_implemented}} =
-               K6Runner.resolve_runner([provider: :oci, bucket: "configured-bucket", run_fn: run_fn], K6Runner)
+      opts = [provider: :oci, bucket: "configured-bucket", run_fn: run_fn]
+
+      assert {:ok, %K6Runner{instance_id: "i-oci-stored", state: "RUNNING"}} =
+               K6Runner.resolve_runner(opts, K6Runner)
     end
   end
 
@@ -326,11 +357,25 @@ defmodule DeployEx.K6RunnerTest do
       assert {:error, %ErrorMessage{}} = K6Runner.verify_instance_exists(runner, request_fn: request_fn)
     end
 
-    test "capability not implemented (e.g. under :oci): propagates the error WITHOUT deleting state (cross-provider leak guard)" do
-      runner = %K6Runner{instance_id: "i-oci-1"}
+    test "capability not implemented (e.g. an unregistered provider): propagates the error WITHOUT deleting state (cross-provider leak guard)" do
+      # :oci's machine capability is wired as of LT-OCI S2, so this now needs a provider that
+      # is genuinely never implemented to exercise the capability-lookup-failure branch of
+      # verify_instance_exists/2 (as opposed to :oci's own describe_instance failure modes,
+      # covered separately below).
+      runner = %K6Runner{instance_id: "i-gcp-1"}
 
       assert {:error, %ErrorMessage{code: :not_implemented}} =
-               K6Runner.verify_instance_exists(runner, provider: :oci)
+               K6Runner.verify_instance_exists(runner, provider: :gcp)
+    end
+
+    test "a real OCI describe_instance failure (e.g. under :oci) also propagates WITHOUT deleting state" do
+      runner = %K6Runner{instance_id: "i-oci-1"}
+
+      run_fn = fn command, _cwd ->
+        {:error, ErrorMessage.internal_server_error("#{command} exited 1: boom", %{output: "boom", code: 1, command: command})}
+      end
+
+      assert {:error, %ErrorMessage{}} = K6Runner.verify_instance_exists(runner, provider: :oci, run_fn: run_fn)
     end
   end
 
