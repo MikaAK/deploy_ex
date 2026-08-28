@@ -18,6 +18,16 @@ OCI is the second provider behind the `DeployEx.Cloud` seam. Everything OCI goes
 
 Verified live: `terraform.build/init/plan --provider oci`, `ansible.build`, `ansible.ping`, `ansible.setup`, `deploy_ex.upload`. Roughly 26 mix tasks remain AWS-only (`ssh`, `instance.*`, `restart_app`, `find_nodes`, `qa.*`, `autoscale.*`, load balancer, EBS snapshots, DB dump/restore) — check `capabilities/0` in `lib/deploy_ex/cloud/providers/oci.ex` before promising a task works on OCI.
 
+`deploy_ex.load_test.*` (all accept `--provider oci`, validated — an unrecognized value raises rather than silently running against AWS):
+
+| Task | Under `--provider oci` |
+|------|------|
+| `create_instance` / `destroy_instance` | `{:error, :not_implemented}` — `machine` capability not wired (S2) |
+| `exec` | `{:error, :not_implemented}` — same, resolving the runner needs `machine` |
+| `upload` | Same — resolving the runner needs `machine` |
+| `list` | State-op paths (`fetch_all_runners`) route through `object_store` and work once `:oci` `release_bucket` is configured; the EC2-fallback path (`find_runners_from_ec2`) errors `:not_implemented` under any non-AWS provider by design — it must never print AWS's leftover runners as OCI's |
+| `init` | Provider-agnostic (writes local files only) |
+
 ## Configuration
 
 ```elixir
@@ -29,11 +39,12 @@ config :deploy_ex,
     compartment_id: "ocid1.compartment...",
     namespace: "...",
     release_bucket: "...",
+    resource_group: "...",
     profile: "DEFAULT"
   ]
 ```
 
-The `:oci` namespace is validated strictly (NimbleOptions) — a typo'd key fails at task start. All keys optional. Read via `Config.oci_setting(key)`; task opts carry an `oci_` prefix (`--oci-region`) so a bare AWS `:region` can never leak in as the OCI region. Full key list: `@config_schema` in `lib/deploy_ex/cloud/providers/oci.ex`.
+The `:oci` namespace is validated strictly (NimbleOptions) — a typo'd key fails at task start. All keys optional, but `release_bucket` and `resource_group` are read eagerly (not lazily defaulted like their AWS flat-key equivalents) by anything going through `Cloud.release_bucket/1` / `Cloud.resource_group/1` — e.g. `deploy_ex.load_test.*`'s state ops — and left unset they error loudly (`{:error, %ErrorMessage{code: :bad_request}}`) rather than silently sending an empty container/tag name to the `oci` CLI. Read via `Config.oci_setting(key)` (a thin wrapper over the generic `Config.provider_setting(:oci, key)`); task opts carry an `oci_` prefix (`--oci-region`) so a bare AWS `:region` can never leak in as the OCI region. Full key list: `@config_schema` in `lib/deploy_ex/cloud/providers/oci.ex`.
 
 ## Auth
 

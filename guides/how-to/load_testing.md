@@ -1,6 +1,8 @@
 # How to Run Load Tests
 
-deploy_ex provides built-in k6 load testing infrastructure using ephemeral EC2 runner instances. Test results push to Prometheus via remote-write and visualise in Grafana.
+deploy_ex provides built-in k6 load testing infrastructure using ephemeral runner instances. Test results push to Prometheus via remote-write and visualise in Grafana.
+
+Runner **state** (save/fetch/list/delete) is provider-routed through `DeployEx.Cloud`'s object-store capability, so it works against either provider's configured bucket. Runner **lifecycle** (create/terminate/list-from-cloud) is AWS-only today — the `--provider` flag is accepted by every `load_test.*` task and validated, but passing `--provider oci` currently surfaces `:not_implemented` for create/destroy/exec/upload (OCI's machine capability isn't wired yet).
 
 ## Quick Start
 
@@ -32,7 +34,7 @@ The template also sets `thresholds.http_req_failed` with `abortOnFail: true`, so
 
 ## Runner Management
 
-Runners are standalone EC2 instances with k6 pre-installed via cloud-init. State is stored in S3 at `k6-runners/{instance_id}.json`. The create command checks for existing runners before launching new ones, so calling it repeatedly is safe — whether reusing or freshly creating a runner, it isn't reported ready until SSH is reachable and `k6 version` succeeds on the instance. If a found runner fails that check, recreate it with `--force`.
+Runners are standalone compute instances with k6 pre-installed via cloud-init — today provisioned on AWS EC2 only. Runner state is stored via the active provider's object store at `k6-runners/{instance_id}.json` (AWS: S3; a correctly-configured OCI object store would work the same way once machine provisioning lands). The create command checks for existing runners before launching new ones, so calling it repeatedly is safe — whether reusing or freshly creating a runner, it isn't reported ready until SSH is reachable and `k6 version` succeeds on the instance. If a found runner fails that check, recreate it with `--force`.
 
 ```bash
 mix deploy_ex.load_test.create_instance --instance-type t3.medium    # default is t3.small
