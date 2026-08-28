@@ -1,19 +1,17 @@
 defmodule Mix.Tasks.Terraform.BuildTest do
   use ExUnit.Case, async: true
 
-  # terraform_redis_variables/1, terraform_loki_variables/1, terraform_grafana_variables/1,
-  # and terraform_prometheus_variables/1 are private and only reachable through run/1, which
-  # performs live AWS/terraform side effects. We instead assert against the literal heredoc
-  # text shipped in this module's source, which is exactly what write_terraform_template_files/2
-  # interpolates into variables.tf. See test/deploy_ex/priv_renderer_test.exs for the
-  # equivalent assertions against the actually-rendered output of the mirrored functions in
-  # lib/deploy_ex/priv_renderer.ex.
+  # These generators originally lived as private heredocs inside Mix.Tasks.Terraform.Build and
+  # were asserted by scraping this file's source. They are now public in
+  # DeployEx.TerraformVariables (one copy, both callers — terraform.build and priv_renderer),
+  # so the AWS-clause output is asserted directly. See test/deploy_ex/priv_renderer_test.exs
+  # for the render-level assertions.
 
-  @source_path Path.join([__DIR__, "..", "..", "..", "lib", "mix", "tasks", "terraform.build.ex"])
+  alias DeployEx.TerraformVariables
 
-  describe "terraform_redis_variables/1 heredoc" do
+  describe "terraform_redis_variables/2 (AWS)" do
     test "uses nested ebs form with secondary_size 16" do
-      block = fetch_block("terraform_redis_variables", "terraform_sentry_variables")
+      block = TerraformVariables.terraform_redis_variables([], :aws)
 
       assert block =~ ~r/ebs\s*=\s*\{/
       assert block =~ ~r/enable_secondary\s*=\s*true/
@@ -39,9 +37,9 @@ defmodule Mix.Tasks.Terraform.BuildTest do
     end
   end
 
-  describe "terraform_loki_variables/1 heredoc" do
+  describe "terraform_loki_variables/2 (AWS)" do
     test "uses nested ebs form with secondary_size 8" do
-      block = fetch_block("terraform_loki_variables", "terraform_grafana_variables")
+      block = TerraformVariables.terraform_loki_variables([], :aws)
 
       assert block =~ ~r/ebs\s*=\s*\{/
       assert block =~ ~r/enable_secondary\s*=\s*true/
@@ -58,9 +56,9 @@ defmodule Mix.Tasks.Terraform.BuildTest do
     end
   end
 
-  describe "terraform_grafana_variables/1 heredoc" do
+  describe "terraform_grafana_variables/2 (AWS)" do
     test "uses nested ebs form with secondary_size 8, enable_eip untouched" do
-      block = fetch_block("terraform_grafana_variables", "terraform_prometheus_variables")
+      block = TerraformVariables.terraform_grafana_variables([], :aws)
 
       assert block =~ ~r/ebs\s*=\s*\{/
       assert block =~ ~r/enable_secondary\s*=\s*true/
@@ -77,9 +75,9 @@ defmodule Mix.Tasks.Terraform.BuildTest do
     end
   end
 
-  describe "terraform_prometheus_variables/1 heredoc" do
+  describe "terraform_prometheus_variables/2 (AWS)" do
     test "uses nested ebs form with secondary_size 16" do
-      block = fetch_block("terraform_prometheus_variables", "generate_db_password")
+      block = TerraformVariables.terraform_prometheus_variables([], :aws)
 
       assert block =~ ~r/ebs\s*=\s*\{/
       assert block =~ ~r/enable_secondary\s*=\s*true/
@@ -112,16 +110,6 @@ defmodule Mix.Tasks.Terraform.BuildTest do
       opts = Mix.Tasks.Terraform.Build.build_opts(["--aws-region", "us-east-1", "--availability-zone", "us-east-1c"])
 
       assert opts[:availability_zone] === "us-east-1c"
-    end
-  end
-
-  defp fetch_block(start_function_name, end_function_name) do
-    source = File.read!(@source_path)
-    regex = Regex.compile!("defp #{start_function_name}\\(opts\\) do(.*?)defp #{end_function_name}", "s")
-
-    case Regex.run(regex, source) do
-      [_full, block] -> block
-      nil -> flunk("could not locate #{start_function_name} in #{@source_path}")
     end
   end
 end

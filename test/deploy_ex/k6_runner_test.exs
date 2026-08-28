@@ -289,6 +289,9 @@ defmodule DeployEx.K6RunnerTest do
     test "--instance-id path: returns the verified runner for a live instance id" do
       assert {:ok, %K6Runner{instance_id: "i-live", state: "running"}} =
                K6Runner.resolve_runner([instance_id: "i-live"], ResolveFakeActive)
+    end
+  end
+
   # Behavioural pagination tests. Responses are queued in the process dictionary — per-PID
   # isolated, no setup/teardown. Mirrors test/deploy_ex/cloud/pagination_test.exs: replacing the
   # recursion with a single request makes these red.
