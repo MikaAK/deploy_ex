@@ -113,6 +113,12 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Upload do
     end
   end
 
+  @doc """
+  `user@host:path` scp target for a runner, resolved through `DeployEx.Cloud.ssh_user/1` so a
+  non-AWS provider's default user (e.g. OCI's `ubuntu`) reaches this SSH transport.
+  """
+  def scp_target(ip, remote_path, opts \\ []), do: "#{DeployEx.Cloud.ssh_user(opts)}@#{ip}:#{remote_path}"
+
   defp upload_script(script_path, ip, pem_file, opts) do
     filename = Path.basename(script_path)
     remote_path = "/srv/k6/scripts/#{filename}"
@@ -128,7 +134,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Upload do
       "-o", "StrictHostKeyChecking=no",
       "-o", "UserKnownHostsFile=/dev/null",
       script_path,
-      "admin@#{ip}:#{remote_path}"
+      scp_target(ip, remote_path, opts)
     ], stderr_to_stdout: true) do
       {_, 0} ->
         unless opts[:quiet] do

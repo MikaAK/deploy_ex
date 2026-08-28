@@ -168,7 +168,8 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
          ),
          {:ok, :saved} <- DeployEx.K6Runner.save_state(runner, opts),
          :ok <- announce_instance_created(runner, opts),
-         :ok <- DeployEx.AwsMachine.wait_for_started([runner.instance_id]),
+         {:ok, machine} <- DeployEx.Cloud.capability(:machine, opts),
+         :ok <- machine.await_running([runner.instance_id], opts),
          {:ok, verified} <- verify_created_runner(runner, opts) do
       if !opts[:quiet] do
         Mix.shell().info([:green, "  ✓ ", :reset, "Instance running"])
@@ -238,9 +239,9 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
       Mix.shell().info([:faint, "Gathering infrastructure..."])
     end
 
-    DeployEx.AwsInfrastructure.gather_infrastructure(
-      Keyword.take(opts, [:resource_group])
-    )
+    with {:ok, infrastructure} <- DeployEx.Cloud.capability(:infrastructure, opts) do
+      infrastructure.gather_infrastructure(Keyword.take(opts, [:resource_group]))
+    end
   end
 
   # SSH reachability wait (D7: honest failure — never claims ready after exhausting retries)

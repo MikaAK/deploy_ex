@@ -33,6 +33,18 @@ defmodule Mix.Tasks.DeployEx.LoadTest.UploadTest do
     def verify_instance_exists(runner), do: {:ok, %{runner | state: "running"}}
   end
 
+  describe "scp_target/3 — SSH user via Cloud.ssh_user/1 (LT-OCI S1)" do
+    test "defaults to admin@ip:path under the AWS provider (unchanged AWS behavior)" do
+      assert Upload.scp_target("1.2.3.4", "/srv/k6/scripts/load_test.js", []) ===
+               "admin@1.2.3.4:/srv/k6/scripts/load_test.js"
+    end
+
+    test "resolves ubuntu@ip:path for an overridden provider" do
+      assert Upload.scp_target("1.2.3.4", "/srv/k6/scripts/load_test.js", provider: :oci) ===
+               "ubuntu@1.2.3.4:/srv/k6/scripts/load_test.js"
+    end
+  end
+
   describe "resolve_runner/2 default path (no --instance-id)" do
     test "returns a not_found error naming create_instance when the only runner is terminated" do
       assert {:error, %ErrorMessage{code: :not_found, message: message}} =

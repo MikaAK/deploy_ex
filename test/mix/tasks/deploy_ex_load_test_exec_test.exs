@@ -103,6 +103,16 @@ defmodule Mix.Tasks.DeployEx.LoadTest.ExecTest do
     end
   end
 
+  describe "ssh_target/2 — SSH user via Cloud.ssh_user/1 (LT-OCI S1)" do
+    test "defaults to admin@ip under the AWS provider (unchanged AWS behavior)" do
+      assert Exec.ssh_target("1.2.3.4", []) === "admin@1.2.3.4"
+    end
+
+    test "resolves ubuntu@ip for an overridden provider" do
+      assert Exec.ssh_target("1.2.3.4", provider: :oci) === "ubuntu@1.2.3.4"
+    end
+  end
+
   describe "build_k6_command/3" do
     test "includes TARGET_URL and K6_PROMETHEUS_RW_SERVER_URL with the -o flag when both are configured" do
       command = Exec.build_k6_command("load_test.js", "http://10.0.101.171:9090", "http://app:4000")
