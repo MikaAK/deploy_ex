@@ -146,18 +146,16 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
 
   defp running_instance?(instance), do: instance.state === "running"
 
-  @doc """
-  SSH `user@host` target for a runner, resolved through `DeployEx.Cloud.ssh_user/1` so a
-  non-AWS provider's default user (e.g. OCI's `ubuntu`) reaches these SSH transports.
-  """
+  # SSH `user@host` target for a runner, resolved through `DeployEx.Cloud.ssh_user/1` so a
+  # non-AWS provider's default user (e.g. OCI's `ubuntu`) reaches these SSH transports.
+  @doc false
   def ssh_target(ip, opts \\ []), do: "#{DeployEx.Cloud.ssh_user(opts)}@#{ip}"
 
-  @doc """
-  Argv for the `ssh` binary, shared by both SSH transports below (`System.cmd` preflight and
-  the `Port.open` k6 run). Pure and pinned directly by tests — mirrors `build_k6_command/3` —
-  so a regression to a hardcoded ssh user shows up as a failing assertion on the argv itself,
-  not just on the `ssh_target/2` helper that could silently go unused at a call site.
-  """
+  # Argv for the `ssh` binary, shared by both SSH transports below (`System.cmd` preflight and
+  # the `Port.open` k6 run). Pure and pinned directly by tests — mirrors `build_k6_command/3` —
+  # so a regression to a hardcoded ssh user shows up as a failing assertion on the argv itself,
+  # not just on the `ssh_target/2` helper that could silently go unused at a call site.
+  @doc false
   def ssh_args(ip, pem_file, command, opts \\ []) do
     [
       "-i", Path.expand(pem_file),

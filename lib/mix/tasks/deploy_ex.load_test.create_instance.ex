@@ -78,7 +78,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
         if opts[:force] do
           replace_runners(runners, opts)
         else
-          case DeployEx.K6Runner.verify_instance_exists(runner) do
+          case DeployEx.K6Runner.verify_instance_exists(runner, opts) do
             {:ok, verified} when not is_nil(verified) ->
               reuse_existing_runner(verified, opts)
 
@@ -350,7 +350,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
   end
 
   defp default_k6_ready?(ip, pem_file, opts) do
-    case DeployEx.SSH.run_command(ip, 22, pem_file, "k6 version", DeployEx.Cloud.ssh_user(opts)) do
+    case DeployEx.SSH.run_command(ip, pem_file, "k6 version", user: DeployEx.Cloud.ssh_user(opts)) do
       {:ok, _output} -> true
       _ -> false
     end
