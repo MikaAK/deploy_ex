@@ -13,7 +13,7 @@ loki.relabel "journal" {
 
   rule {
     target_label = "service_name"
-    replacement  = "{{ app_name }}"
+    replacement  = "{{ app_name | default('') }}"
   }
 
   rule {
@@ -54,13 +54,23 @@ loki.write "default" {
 {% if grafana_mimir_url is defined %}
 
 prometheus.scrape "node_exporter" {
-  targets    = [{"__address__" = "localhost:9100"}]
+  job_name = "nodes"
+  targets = [{
+    "__address__" = "localhost:9100",
+    "instance"    = "{{ inventory_hostname }}",
+    "instance_id" = "{{ instance_id | default('unknown') }}",
+  }]
   forward_to = [prometheus.remote_write.mimir.receiver]
 }
 {% if app_name is defined %}
 
 prometheus.scrape "app" {
-  targets    = [{"__address__" = "localhost:4050"}]
+  job_name = "apps"
+  targets = [{
+    "__address__" = "localhost:4050",
+    "instance"    = "{{ inventory_hostname }}",
+    "instance_id" = "{{ instance_id | default('unknown') }}",
+  }]
   forward_to = [prometheus.remote_write.mimir.receiver]
 }
 {% endif %}

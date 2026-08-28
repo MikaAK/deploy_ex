@@ -29,9 +29,16 @@ ruler:
   rule_path: /data/mimir/ruler
   enable_api: true
 
+# backend "local" (not "filesystem") is required for the ruler to actually
+# load rule groups from files on disk — "filesystem" is a blocks-storage-only
+# backend name and the ruler silently serves zero rule groups against it.
+# This makes Mimir's ruler config HTTP API (POST/PUT/DELETE rule groups)
+# read-only; rules are managed exclusively via the file below, sourced from
+# prometheus_db's shared alert-rules template.
 ruler_storage:
-  filesystem:
-    dir: /data/mimir/rules
+  backend: local
+  local:
+    directory: /data/mimir/rules
 
 alertmanager:
   data_dir: /data/mimir/alertmanager

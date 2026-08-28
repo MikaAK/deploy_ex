@@ -1,5 +1,10 @@
 - name: mimir_db
   block:
+    - name: Assert /data is a mounted filesystem before writing Mimir data there
+      assert:
+        that: ansible_facts.mounts | selectattr('mount', 'equalto', '/data') | list | length > 0
+        fail_msg: "/data is not a mounted filesystem — Mimir must not write TSDB/blocks/rules to the root volume"
+
     - name: Check if Mimir binary exists
       stat:
         path: /root/mimir-{{ mimir_architecture }}

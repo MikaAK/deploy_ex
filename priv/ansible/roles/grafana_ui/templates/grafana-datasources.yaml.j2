@@ -5,11 +5,13 @@ datasources:
     type: loki
     user: $USER
     url: {{ grafana_loki_url }}
+{% if grafana_prometheus_url is defined %}
 
   - name: Prometheus Metrics
     type: prometheus
     user: $USER
     url: {{ grafana_prometheus_url }}
+{% endif %}
 {% if grafana_mimir_url is defined %}
 
   - name: Mimir Metrics

@@ -5,6 +5,9 @@ defmodule DeployEx.MimirRoleTest do
   # content, not Elixir-rendered — covered here via raw structural/content assertions
   # (template exemption per the sprint contract; deeper render-diff done manually with
   # the local ansible-bundled jinja2 as evidence, not as a committed `mix test` dependency).
+  #
+  # Baseline fixtures under test/support/fixtures/mimir/ were captured from the
+  # pre-mimir tree (main @ e06649a) before any of this sprint's edits landed.
 
   @priv_roles_dir Path.expand("../../priv/ansible/roles", __DIR__)
   @mimir_role_dir Path.join(@priv_roles_dir, "mimir_db")
@@ -45,6 +48,25 @@ defmodule DeployEx.MimirRoleTest do
 
       refute File.exists?(duplicate_path)
     end
+
+    test "the role_path-resolved rules file is byte-identical to prometheus_db's canonical template (rendered-content equality, not a path-string grep)" do
+      tasks_content = File.read!(Path.join(@mimir_role_dir, "tasks/main.yaml"))
+      assert tasks_content =~ "{{ role_path }}/../prometheus_db/templates/prometheus-rules.yaml.j2"
+
+      # Resolve the exact relative path Ansible computes for `role_path` when
+      # running the mimir_db role (its own directory) and read what that
+      # reference actually points at on disk — proving content equality, not
+      # just that the src: line mentions the right-looking string.
+      resolved_rules_path =
+        @mimir_role_dir
+        |> Path.join("../prometheus_db/templates/prometheus-rules.yaml.j2")
+        |> Path.expand()
+
+      canonical_rules_path = Path.expand(Path.join(@prometheus_role_dir, "templates/prometheus-rules.yaml.j2"))
+
+      assert resolved_rules_path === canonical_rules_path
+      assert File.read!(resolved_rules_path) === File.read!(canonical_rules_path)
+    end
   end
 
   # SECTION: mimir_db role — structure
@@ -57,6 +79,13 @@ defmodule DeployEx.MimirRoleTest do
       assert content =~ "mimir-config.yaml.j2"
       assert content =~ "mimir_systemd.service.j2"
       assert content =~ "name: mimir"
+    end
+
+    test "asserts /data is a mounted filesystem before writing Mimir data there (guards against filling the root volume)" do
+      content = File.read!(Path.join(@mimir_role_dir, "tasks/main.yaml"))
+
+      assert content =~ "assert:"
+      assert content =~ ~s[selectattr('mount', 'equalto', '/data')]
     end
   end
 
@@ -86,6 +115,14 @@ defmodule DeployEx.MimirRoleTest do
       assert content =~ "api:"
       assert content =~ "prometheus_http_prefix: /prometheus"
     end
+
+    test "ruler_storage uses the local backend so the ruler actually loads rule groups from disk" do
+      content = File.read!(Path.join(@mimir_role_dir, "templates/mimir-config.yaml.j2"))
+
+      assert content =~ ~r/ruler_storage:\s*\n\s*backend: local/
+      assert content =~ ~r/local:\s*\n\s*directory: \/data\/mimir\/rules/
+      refute content =~ ~r/ruler_storage:\s*\n\s*filesystem:/
+    end
   end
 
   # SECTION: alloy metrics pipeline (raw j2 — structural assertions)
@@ -105,11 +142,50 @@ defmodule DeployEx.MimirRoleTest do
       refute content =~ "ec2_sd"
     end
 
-    test "loki pipeline is byte-identical to the pre-mimir baseline" do
+    test "the journal relabel rule's app_name reference defaults instead of crashing monitoring-node plays" do
+      content = File.read!(@alloy_path)
+
+      # Every monitoring setup playbook (grafana_ui, loki_log_aggregator,
+      # prometheus_db, mimir_db) now carries grafana_alloy but never sets
+      # `app_name` — an unguarded {{ app_name }} raises AnsibleUndefinedVariable
+      # and aborts the whole play.
+      refute content =~ ~s[replacement  = "{{ app_name }}"]
+      assert content =~ ~s[replacement  = "{{ app_name | default('') }}"]
+    end
+
+    test "labels scraped series job=nodes/job=apps so the shared NoNodesDiscovered/NoAppsDiscovered/TargetDown rules stay live under push" do
+      content = File.read!(@alloy_path)
+
+      assert content =~ ~r/prometheus\.scrape "node_exporter" \{\s*\n\s*job_name\s*=\s*"nodes"/
+      assert content =~ ~r/prometheus\.scrape "app" \{\s*\n\s*job_name\s*=\s*"apps"/
+    end
+
+    test "attaches instance + instance_id labels to pushed series, mirroring prometheus.yaml.j2's EC2 relabeling" do
+      content = File.read!(@alloy_path)
+
+      assert content =~ ~s["instance"    = "{{ inventory_hostname }}"]
+      assert content =~ ~s["instance_id" = "{{ instance_id | default('unknown') }}"]
+    end
+
+    test "everything added after the loki baseline is gated behind one balanced {% if grafana_mimir_url is defined %} block — nothing leaks outside it" do
       baseline = File.read!(Path.join(@fixtures_dir, "baseline_alloy_config.alloy.j2"))
       content = File.read!(@alloy_path)
 
       assert String.starts_with?(content, baseline)
+
+      remainder =
+        content
+        |> String.trim_leading(baseline)
+        |> String.trim_trailing()
+
+      assert String.starts_with?(remainder, "{% if grafana_mimir_url is defined %}")
+      assert String.ends_with?(remainder, "{% endif %}")
+
+      open_tags = remainder |> String.split(~r/\{%\s*if\s+\S+\s+is\s+defined\s*%\}/) |> length() |> Kernel.-(1)
+      close_tags = remainder |> String.split(~r/\{%\s*endif\s*%\}/) |> length() |> Kernel.-(1)
+
+      assert open_tags > 0
+      assert open_tags === close_tags
     end
   end
 
@@ -127,11 +203,39 @@ defmodule DeployEx.MimirRoleTest do
       assert content =~ "url: {{ grafana_mimir_url }}/prometheus"
     end
 
-    test "existing Loki + Prometheus datasource entries are untouched" do
-      baseline = File.read!(Path.join(@fixtures_dir, "baseline_grafana-datasources.yaml.j2"))
+    test "existing Loki entry is untouched" do
+      loki_entry = """
+      apiVersion: 1
+
+      datasources:
+        - name: Loki Logs
+          type: loki
+          user: $USER
+          url: {{ grafana_loki_url }}
+      """
+
       content = File.read!(@datasource_path)
 
-      assert String.starts_with?(content, baseline)
+      assert String.starts_with?(content, String.trim_trailing(loki_entry))
+    end
+
+    test "wraps the Prometheus entry in {% if grafana_prometheus_url is defined %} so --no-prometheus + mimir renders instead of crashing" do
+      content = File.read!(@datasource_path)
+
+      assert content =~ "{% if grafana_prometheus_url is defined %}"
+      assert content =~ "name: Prometheus Metrics"
+
+      # The Prometheus block must be closed before the Mimir block opens —
+      # not one giant span covering both (which would make Mimir's datasource
+      # disappear whenever --no-prometheus is set, defeating the replacement bar).
+      prometheus_if = :binary.match(content, "{% if grafana_prometheus_url is defined %}") |> elem(0)
+      mimir_if = :binary.match(content, "{% if grafana_mimir_url is defined %}") |> elem(0)
+      endif_positions = for [{pos, _}] <- Regex.scan(~r/\{% endif %\}/, content, return: :index), do: pos
+
+      prometheus_endif = Enum.find(endif_positions, &(&1 > prometheus_if))
+
+      assert prometheus_if < prometheus_endif
+      assert prometheus_endif < mimir_if
     end
   end
 end

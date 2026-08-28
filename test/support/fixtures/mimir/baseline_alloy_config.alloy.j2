@@ -13,7 +13,7 @@ loki.relabel "journal" {
 
   rule {
     target_label = "service_name"
-    replacement  = "{{ app_name }}"
+    replacement  = "{{ app_name | default('') }}"
   }
 
   rule {
