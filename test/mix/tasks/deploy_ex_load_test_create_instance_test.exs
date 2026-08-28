@@ -20,6 +20,26 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstanceTest do
     def save_state(_runner, _opts), do: {:ok, :saved}
   end
 
+  describe "parse_args/1 — --provider CLI flag (LT-OCI review-fix item 7)" do
+    test "a valid --provider flag is converted to an atom in the returned opts" do
+      {opts, _extra_args} = CreateInstance.parse_args(["--provider", "oci"])
+
+      assert opts[:provider] === :oci
+    end
+
+    test "no --provider flag leaves :provider absent (defaults resolve through Cloud.active_provider/1 later)" do
+      {opts, _extra_args} = CreateInstance.parse_args(["--instance-type", "t3.medium"])
+
+      refute Keyword.has_key?(opts, :provider)
+    end
+
+    test "an unrecognized --provider value raises Mix.Error instead of silently running against AWS" do
+      assert_raise Mix.Error, ~r/gcp/, fn ->
+        CreateInstance.parse_args(["--provider", "gcp"])
+      end
+    end
+  end
+
   describe "terminate_all_runners/3 (D5: --force = replace)" do
     test "terminates every runner it is given" do
       runners = [

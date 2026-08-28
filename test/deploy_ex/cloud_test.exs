@@ -232,6 +232,31 @@ defmodule DeployEx.CloudTest do
     end
   end
 
+  describe "parse_provider/1 — safe CLI --provider flag parsing (LT-OCI review-fix)" do
+    test "parses a known provider string into its atom" do
+      assert Cloud.parse_provider("aws") === {:ok, :aws}
+      assert Cloud.parse_provider("oci") === {:ok, :oci}
+    end
+
+    test "nil (flag absent) resolves to nil, not an error" do
+      assert Cloud.parse_provider(nil) === {:ok, nil}
+    end
+
+    test "an unknown provider string errors instead of silently being swallowed" do
+      assert {:error, %ErrorMessage{code: :bad_request, message: message}} = Cloud.parse_provider("gcp")
+
+      assert message =~ "gcp"
+      assert message =~ "aws"
+      assert message =~ "oci"
+    end
+
+    test "a fresh, never-before-seen string still errors cleanly rather than raising" do
+      random = "totally-unrecognized-#{System.unique_integer([:positive])}"
+
+      assert {:error, %ErrorMessage{code: :bad_request}} = Cloud.parse_provider(random)
+    end
+  end
+
   describe "%Cloud.Instance{}" do
     test "has the exact provider-neutral field set" do
       keys =
@@ -309,8 +334,13 @@ defmodule DeployEx.CloudTest do
                find_instance_identity: 1,
                find_key_pair: 2,
                find_network: 1,
-               find_subnet: 1
+               find_subnet: 1,
+               gather_infrastructure: 1
              ]
+    end
+
+    test "gather_infrastructure/1 is optional so a provider conforms without it (LT-OCI review-fix)" do
+      assert DeployEx.Cloud.Infrastructure.behaviour_info(:optional_callbacks) === [gather_infrastructure: 1]
     end
 
     test "Security declares its exact callback set" do

@@ -102,6 +102,30 @@ defmodule DeployEx.Cloud do
   def providers, do: Map.keys(@providers)
 
   @doc """
+  Parses a CLI `--provider` flag value into a registered provider atom.
+
+  Never `String.to_atom/1`s the input — an unrecognized value errors instead of interning a
+  fresh atom for every typo a caller makes. `nil` (the flag was not given) resolves to `nil`,
+  not an error, so callers can `opts[:provider] || Config.cloud_provider()` unchanged.
+  """
+  @spec parse_provider(String.t() | nil) :: {:ok, atom() | nil} | {:error, ErrorMessage.t()}
+  def parse_provider(nil), do: {:ok, nil}
+
+  def parse_provider(value) when is_binary(value) do
+    case Enum.find(providers(), &(Atom.to_string(&1) === value)) do
+      nil ->
+        {:error,
+         ErrorMessage.bad_request("unknown provider #{inspect(value)} — known providers: #{inspect(providers())}", %{
+           provider: value,
+           known_providers: providers()
+         })}
+
+      provider ->
+        {:ok, provider}
+    end
+  end
+
+  @doc """
   SSH user for the active (or overridden) provider, resolved through its descriptor.
 
   Falls back to `"admin"` when the descriptor cannot be resolved (unregistered provider) or
