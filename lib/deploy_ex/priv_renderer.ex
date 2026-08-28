@@ -120,31 +120,8 @@ defmodule DeployEx.PrivRenderer do
       terraform_grafana_variables: terraform_grafana_variables(opts),
       terraform_loki_variables: terraform_loki_variables(opts),
       terraform_prometheus_variables: terraform_prometheus_variables(opts),
-      terraform_mimir_variables: terraform_mimir_variables(opts)
+      terraform_mimir_variables: DeployEx.Mimir.terraform_variables(opts)
     }
-  end
-
-  defp terraform_mimir_variables(opts) do
-    if Keyword.get(opts, :no_mimir, false) do
-      ""
-    else
-      """
-
-          mimir_db = {
-            name                        = "Mimir Metrics Database"
-            instance_type               = "t3.small"
-            enable_ebs                  = true
-            instance_ebs_secondary_size = 16
-            private_ip                  = "10.0.1.70"
-
-            tags = {
-              Vendor = "Grafana"
-              Type   = "Monitoring"
-              MonitoringKey = "mimir_db"
-            }
-          },
-      """
-    end
   end
 
   # SECTION: Ansible Rendering
@@ -187,7 +164,7 @@ defmodule DeployEx.PrivRenderer do
     group_vars_vars = %{
       is_logging_enabled: not Keyword.get(opts, :no_logging, false),
       is_prometheus_enabled: not Keyword.get(opts, :no_prometheus, false),
-      is_mimir_enabled: not Keyword.get(opts, :no_mimir, false),
+      is_mimir_enabled: DeployEx.Mimir.enabled?(opts),
       loki_logger_s3_region: DeployEx.Config.aws_log_region(),
       loki_logger_s3_bucket_name: DeployEx.Config.aws_log_bucket()
     }
@@ -210,6 +187,7 @@ defmodule DeployEx.PrivRenderer do
       playbook_vars = %{
         no_logging: Keyword.get(opts, :no_logging, false),
         no_prometheus: Keyword.get(opts, :no_prometheus, false),
+        no_mimir: Keyword.get(opts, :no_mimir, false),
         app_name: release_name,
         port: 80
       }
@@ -231,7 +209,25 @@ defmodule DeployEx.PrivRenderer do
     remove_if_exists(Path.join(target_dir, "app_playbook.yaml.eex"))
     remove_if_exists(Path.join(target_dir, "app_setup_playbook.yaml.eex"))
 
+    render_monitoring_setup_playbooks(priv_ansible, target_dir, opts)
+
     :ok
+  end
+
+  defp render_monitoring_setup_playbooks(priv_ansible, target_dir, opts) do
+    playbook_vars = %{use_mimir: DeployEx.Mimir.enabled?(opts)}
+
+    Enum.each(DeployEx.Mimir.monitoring_setup_playbooks(), fn name ->
+      output_path = Path.join(target_dir, "setup/#{name}.yaml")
+
+      render_template(
+        Path.join(priv_ansible, "setup/#{name}.yaml.eex"),
+        output_path,
+        playbook_vars
+      )
+
+      remove_if_exists("#{output_path}.eex")
+    end)
   end
 
   # SECTION: Terraform Variable Generators

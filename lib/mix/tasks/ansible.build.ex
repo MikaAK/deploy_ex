@@ -54,6 +54,7 @@ defmodule Mix.Tasks.Ansible.Build do
          :ok <- create_ansible_hosts_file(opts),
          :ok <- create_ansible_config_file(opts),
          :ok <- create_ansible_group_vars_file(opts),
+         :ok <- create_monitoring_setup_playbooks(opts),
          {:ok, app_names} <- DeployExHelpers.fetch_mix_release_names(),
          :ok <- create_ansible_playbooks(app_names, opts) do
       :ok
@@ -171,7 +172,7 @@ defmodule Mix.Tasks.Ansible.Build do
       variables = %{
         is_logging_enabled: !opts[:no_logging],
         is_prometheus_enabled: !opts[:no_prometheus],
-        is_mimir_enabled: !opts[:no_mimir],
+        is_mimir_enabled: DeployEx.Mimir.enabled?(opts),
         loki_logger_s3_region: opts[:aws_logging_bucket],
         loki_logger_s3_bucket_name: opts[:aws_logging_region]
       }
@@ -186,6 +187,34 @@ defmodule Mix.Tasks.Ansible.Build do
       if File.exists?("#{opts[:group_vars_file]}.eex") do
         File.rm!("#{opts[:group_vars_file]}.eex")
       end
+
+      :ok
+    end
+  end
+
+  defp create_monitoring_setup_playbooks(opts) do
+    if opts[:host_only] do
+      :ok
+    else
+      setup_path = Path.join(opts[:directory], "setup")
+      File.mkdir_p!(setup_path)
+
+      variables = %{use_mimir: DeployEx.Mimir.enabled?(opts)}
+
+      Enum.each(DeployEx.Mimir.monitoring_setup_playbooks(), fn name ->
+        output_path = Path.join(setup_path, "#{name}.yaml")
+
+        DeployExHelpers.write_template(
+          DeployExHelpers.priv_folder("ansible/setup/#{name}.yaml.eex"),
+          output_path,
+          variables,
+          opts
+        )
+
+        if File.exists?("#{output_path}.eex") do
+          File.rm!("#{output_path}.eex")
+        end
+      end)
 
       :ok
     end
@@ -334,6 +363,7 @@ defmodule Mix.Tasks.Ansible.Build do
     variables = %{
       no_logging: opts[:no_logging],
       no_prometheus: opts[:no_prometheus],
+      no_mimir: opts[:no_mimir],
       app_name: app_name,
       port: 80
     }

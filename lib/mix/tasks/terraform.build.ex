@@ -83,7 +83,7 @@ defmodule Mix.Tasks.Terraform.Build do
         terraform_grafana_variables: terraform_grafana_variables(opts),
         terraform_loki_variables: terraform_loki_variables(opts),
         terraform_prometheus_variables: terraform_prometheus_variables(opts),
-        terraform_mimir_variables: terraform_mimir_variables(opts),
+        terraform_mimir_variables: DeployEx.Mimir.terraform_variables(opts),
       }
 
       write_terraform_template_files(params, opts)
@@ -266,29 +266,6 @@ defmodule Mix.Tasks.Terraform.Build do
               Vendor = "Grafana"
               Type   = "Monitoring"
               MonitoringKey = "prometheus_db"
-            }
-          },
-      """
-    end
-  end
-
-  defp terraform_mimir_variables(opts) do
-    if opts[:no_mimir] do
-      ""
-    else
-      """
-
-          mimir_db = {
-            name                        = "Mimir Metrics Database"
-            instance_type               = "t3.small"
-            enable_ebs                  = true
-            instance_ebs_secondary_size = 16
-            private_ip                  = "10.0.1.70"
-
-            tags = {
-              Vendor = "Grafana"
-              Type   = "Monitoring"
-              MonitoringKey = "mimir_db"
             }
           },
       """

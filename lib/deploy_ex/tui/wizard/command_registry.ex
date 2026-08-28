@@ -612,7 +612,8 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
         input(:no_loki, "Disable Loki", :boolean),
         input(:no_sentry, "Disable Sentry", :boolean),
         input(:no_grafana, "Disable Grafana", :boolean),
-        input(:no_prometheus, "Disable Prometheus", :boolean)
+        input(:no_prometheus, "Disable Prometheus", :boolean),
+        input(:no_mimir, "Disable Mimir", :boolean)
       ]
     },
     %{
@@ -703,7 +704,8 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
         input(:no_sentry, "Disable Sentry", :boolean),
         input(:no_grafana, "Disable Grafana", :boolean),
         input(:no_redis, "Disable Redis", :boolean),
-        input(:no_prometheus, "Disable Prometheus", :boolean)
+        input(:no_prometheus, "Disable Prometheus", :boolean),
+        input(:no_mimir, "Disable Mimir", :boolean)
       ]
     },
     %{

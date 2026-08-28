@@ -10,7 +10,7 @@
     - pip3
     - awscli
     - ipv6
-    <%= unless @no_prometheus do %>- prometheus_exporter
+    <%= unless @no_prometheus && @no_mimir do %>- prometheus_exporter
     <% end %>
     <%= unless @no_logging do %>- grafana_alloy
     <% end %>
