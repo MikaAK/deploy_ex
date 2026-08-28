@@ -155,21 +155,34 @@ defmodule DeployEx.Cloud do
   @spec release_bucket(keyword()) :: {:ok, String.t()} | {:error, ErrorMessage.t()}
   def release_bucket(opts \\ []), do: provider_config_value(opts, :release_bucket, &Config.aws_release_bucket/0)
 
-  # Routes through fetch_descriptor/1 rather than switching on active_provider(opts) directly
-  # so a descriptor MODULE (the put_env-free test injection seam — same one capability/2 and
-  # validate_config/2 already accept) resolves through the same registry key as its atom form.
-  # Comparing the descriptor to DeployEx.Cloud.Providers.Aws (rather than the input atom to
-  # :aws) makes that true for AWS too, not only for non-AWS providers.
-  defp provider_config_value(opts, key, aws_reader) do
+  @doc """
+  Whether the active (or overridden) provider is AWS — the single shared answer to "is this
+  AWS", for any caller that needs to special-case the AWS path.
+
+  Routes through `fetch_descriptor/1` and compares the resolved DESCRIPTOR to
+  `DeployEx.Cloud.Providers.Aws`, rather than comparing the raw `active_provider(opts)` value
+  to the atom `:aws` — a caller passing the descriptor MODULE (the put_env-free test injection
+  seam `capability/2` and `validate_config/2` already accept) is AWS too, and a bare
+  `case active_provider(opts) do :aws -> ...` silently answers "no" for it. This exact gap has
+  recurred more than once (this module's own config accessors, then `K6Runner.find_runners_from_ec2/1`)
+  as separate ad-hoc `:aws` comparisons — one shared predicate instead of another one.
+  """
+  @spec aws?(keyword()) :: boolean()
+  def aws?(opts \\ []) do
     case opts |> active_provider() |> fetch_descriptor() do
-      {:ok, DeployEx.Cloud.Providers.Aws} ->
-        {:ok, aws_reader.()}
+      {:ok, DeployEx.Cloud.Providers.Aws} -> true
+      _not_aws_or_error -> false
+    end
+  end
 
-      {:ok, descriptor} ->
-        provider_setting_or_error(registry_key_for(descriptor), key)
-
-      {:error, _reason} = error ->
-        error
+  defp provider_config_value(opts, key, aws_reader) do
+    if aws?(opts) do
+      {:ok, aws_reader.()}
+    else
+      case opts |> active_provider() |> fetch_descriptor() do
+        {:ok, descriptor} -> provider_setting_or_error(registry_key_for(descriptor), key)
+        {:error, _reason} = error -> error
+      end
     end
   end
 

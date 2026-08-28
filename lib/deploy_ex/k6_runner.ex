@@ -126,25 +126,29 @@ defmodule DeployEx.K6Runner do
   billing).
   """
   def find_runners_from_ec2(opts \\ []) do
-    case DeployEx.Cloud.active_provider(opts) do
-      :aws ->
-        region = opts[:region] || DeployEx.Config.aws_region()
-        resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
+    # Cloud.aws?/1, not a bare `case active_provider(opts) do :aws -> ...` — the latter answers
+    # "no" for the descriptor MODULE override (the put_env-free test seam capability/2 and
+    # validate_config/2 already accept), which is a real AWS override, not a different provider.
+    # This exact gap has recurred (F1): once in this module's own config accessors, now here.
+    if DeployEx.Cloud.aws?(opts) do
+      region = opts[:region] || DeployEx.Config.aws_region()
+      resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
 
-        find_runners_from_ec2_page(region, resource_group, opts, nil, [])
+      find_runners_from_ec2_page(region, resource_group, opts, nil, [])
+    else
+      # AWS-only EC2 DescribeInstances fallback path (see the moduledoc above and the
+      # module doc note at the top of this section) — deliberately NOT routed through
+      # Cloud.capability(:machine) this sprint (docs/superpowers/plans/lt-oci/spec.md § S2
+      # adds the OCI-native runner-listing path). Erroring here instead of running the EC2
+      # query under a non-AWS provider stops list/destroy_instance from printing another
+      # provider's leftover AWS runners as if they belonged to the active one.
+      provider = DeployEx.Cloud.active_provider(opts)
 
-      provider ->
-        # AWS-only EC2 DescribeInstances fallback path (see the moduledoc above and the
-        # module doc note at the top of this section) — deliberately NOT routed through
-        # Cloud.capability(:machine) this sprint (docs/superpowers/plans/lt-oci/spec.md § S2
-        # adds the OCI-native runner-listing path). Erroring here instead of running the EC2
-        # query under a non-AWS provider stops list/destroy_instance from printing another
-        # provider's leftover AWS runners as if they belonged to the active one.
-        {:error,
-         ErrorMessage.not_implemented(
-           "find_runners_from_ec2 is AWS-only (EC2 DescribeInstances) — not available for #{inspect(provider)}",
-           %{provider: provider}
-         )}
+      {:error,
+       ErrorMessage.not_implemented(
+         "find_runners_from_ec2 is AWS-only (EC2 DescribeInstances) — not available for #{inspect(provider)}",
+         %{provider: provider}
+       )}
     end
   end
 

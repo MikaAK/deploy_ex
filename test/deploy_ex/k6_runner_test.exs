@@ -277,6 +277,25 @@ defmodule DeployEx.K6RunnerTest do
                K6Runner.verify_instance_exists(runner, request_fn: request_fn)
     end
 
+    test "does NOT leak the caller's opts (e.g. a --pem path) into the downstream EC2 request params (G1 leak class, end-to-end)" do
+      request_fn = fn request, _config ->
+        send(self(), {:ec2_request, request})
+        {:ok, %{body: describe_instance_response("i-found-2", "running", "10.0.0.6")}}
+      end
+
+      runner = %K6Runner{instance_id: "i-found-2"}
+
+      K6Runner.verify_instance_exists(runner,
+        request_fn: request_fn,
+        pem: "/secret/path/key.pem",
+        quiet: true
+      )
+
+      assert_received {:ec2_request, %ExAws.Operation.Query{params: params}}
+      refute Map.has_key?(params, "Pem")
+      refute Map.has_key?(params, "Quiet")
+    end
+
     test "not found: deletes the stale state and returns {:ok, nil}" do
       request_fn = fn
         %ExAws.Operation.Query{}, _config ->
@@ -637,6 +656,15 @@ defmodule DeployEx.K6RunnerTest do
       end
 
       K6Runner.find_runners_from_ec2(provider: :oci, request_fn: request_fn)
+    end
+
+    test "the descriptor MODULE override for AWS still paginates (F1 recurrence guard, review-fix cycle 3)" do
+      request_fn = fn _request, _config ->
+        {:ok, %{body: "<DescribeInstancesResponse><reservationSet/></DescribeInstancesResponse>"}}
+      end
+
+      assert {:ok, []} =
+               K6Runner.find_runners_from_ec2(provider: DeployEx.Cloud.Providers.Aws, request_fn: request_fn)
     end
   end
 
