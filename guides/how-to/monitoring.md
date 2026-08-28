@@ -13,6 +13,27 @@ Out of the box, deploy_ex provisions Prometheus, Mimir, Grafana UI, Grafana Loki
 | `alloy` (every node) | n/a | Tails systemd journal (ships to Loki); scrapes `node_exporter`/app locally and pushes to Mimir |
 | `prometheus_exporter` (per app node) | n/a | Exposes node + app metrics |
 
+## Upgrading — secondary EBS volumes now attach correctly
+
+Prior to this fix, the `redis`, `loki_log_aggregator`, `grafana_ui`, and `prometheus` variable
+blocks used a flat `enable_ebs` / `instance_ebs_secondary_size` pair that the `ebs` schema in
+`variables.tf` silently ignores (`tofu validate` warns "Object attribute is ignored"). No
+secondary EBS volume was ever created for these nodes from a stock render.
+
+After re-rendering with `mix terraform.build` (or `mix deploy_ex.upgrade_priv`), these blocks
+use the correct nested form:
+
+```hcl
+ebs = {
+  enable_secondary = true
+  secondary_size   = 16
+}
+```
+
+Your next `mix terraform.plan` will show a NEW secondary EBS volume being created for each of
+these nodes — this is expected, not a regression. If you've hand-edited your `tfvars` to already
+use the nested `ebs = { ... }` form (as recommended for production), you are unaffected.
+
 ## Grafana UI
 
 Out of the box, the `grafana_ui` node serves on port 80 with Loki and Prometheus pre-wired as data sources. Default credentials are `admin` / `admin` — change them on first login.

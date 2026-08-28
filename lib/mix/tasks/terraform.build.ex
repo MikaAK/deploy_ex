@@ -172,13 +172,15 @@ defmodule Mix.Tasks.Terraform.Build do
           #{DeployExHelpers.underscored_project_name()}_redis = {
             name        = "#{DeployExHelpers.title_case_project_name()} Redis"
             private_ip  = "10.0.1.60"
-            enable_ebs  = true
 
             # This is a suggestion for instance
 
             instance_type = "r7g.medium"
 
-            instance_ebs_secondary_size = 16
+            ebs = {
+              enable_secondary = true
+              secondary_size   = 16
+            }
 
             tags = {
               Vendor      = "Redis"
@@ -216,8 +218,10 @@ defmodule Mix.Tasks.Terraform.Build do
             instance_type = "t3.micro"
             private_ip    = "10.0.1.50"
 
-            enable_ebs                  = true
-            instance_ebs_secondary_size = 8
+            ebs = {
+              enable_secondary = true
+              secondary_size   = 8
+            }
 
             tags = {
               Vendor = "Grafana"
@@ -236,9 +240,12 @@ defmodule Mix.Tasks.Terraform.Build do
       """
           grafana_ui = {
             name                        = "Grafana UI"
-            enable_ebs                  = true
             enable_eip                  = true
-            instance_ebs_secondary_size = 8
+
+            ebs = {
+              enable_secondary = true
+              secondary_size   = 8
+            }
 
             tags = {
               Vendor = "Grafana"
@@ -258,9 +265,12 @@ defmodule Mix.Tasks.Terraform.Build do
           prometheus_db = {
             name                        = "Prometheus Metrics Database"
             instance_type               = "t3.micro"
-            enable_ebs                  = true
-            instance_ebs_secondary_size = 16
             private_ip                  = "10.0.1.40"
+
+            ebs = {
+              enable_secondary = true
+              secondary_size   = 16
+            }
 
             tags = {
               Vendor = "Grafana"

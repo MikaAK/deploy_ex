@@ -120,4 +120,63 @@ defmodule DeployEx.PrivRendererTest do
       refute dir1 === dir2
     end
   end
+
+  describe "render_to_temp/1 - ebs nested form" do
+    setup do
+      assert {:ok, temp_dir} = PrivRenderer.render_to_temp()
+      on_exit(fn -> File.rm_rf!(temp_dir) end)
+
+      variables_content = temp_dir |> Path.join("terraform/variables.tf") |> File.read!()
+
+      {:ok, variables_content: variables_content}
+    end
+
+    test "redis block uses nested ebs form with secondary_size 16", %{variables_content: variables_content} do
+      block = fetch_block(variables_content, ~r/\w*_redis\s*=\s*\{.*?\n\s*\},/s)
+
+      assert block =~ ~r/ebs\s*=\s*\{/
+      assert block =~ ~r/enable_secondary\s*=\s*true/
+      assert block =~ ~r/secondary_size\s*=\s*16/
+      refute block =~ "enable_ebs"
+      refute block =~ "instance_ebs_secondary_size"
+    end
+
+    test "loki block uses nested ebs form with secondary_size 8", %{variables_content: variables_content} do
+      block = fetch_block(variables_content, ~r/loki_aggregator\s*=\s*\{.*?\n\s*\},/s)
+
+      assert block =~ ~r/ebs\s*=\s*\{/
+      assert block =~ ~r/enable_secondary\s*=\s*true/
+      assert block =~ ~r/secondary_size\s*=\s*8/
+      refute block =~ "enable_ebs"
+      refute block =~ "instance_ebs_secondary_size"
+    end
+
+    test "grafana block uses nested ebs form with secondary_size 8, enable_eip untouched", %{variables_content: variables_content} do
+      block = fetch_block(variables_content, ~r/grafana_ui\s*=\s*\{.*?\n\s*\},/s)
+
+      assert block =~ ~r/ebs\s*=\s*\{/
+      assert block =~ ~r/enable_secondary\s*=\s*true/
+      assert block =~ ~r/secondary_size\s*=\s*8/
+      assert block =~ ~r/enable_eip\s*=\s*true/
+      refute block =~ "enable_ebs"
+      refute block =~ "instance_ebs_secondary_size"
+    end
+
+    test "prometheus block uses nested ebs form with secondary_size 16", %{variables_content: variables_content} do
+      block = fetch_block(variables_content, ~r/prometheus_db\s*=\s*\{.*?\n\s*\},/s)
+
+      assert block =~ ~r/ebs\s*=\s*\{/
+      assert block =~ ~r/enable_secondary\s*=\s*true/
+      assert block =~ ~r/secondary_size\s*=\s*16/
+      refute block =~ "enable_ebs"
+      refute block =~ "instance_ebs_secondary_size"
+    end
+  end
+
+  defp fetch_block(content, regex) do
+    case Regex.run(regex, content) do
+      [block] -> block
+      nil -> flunk("could not locate block matching #{inspect(regex)} in:\n#{content}")
+    end
+  end
 end
