@@ -54,8 +54,9 @@ The Prometheus service template enables `--web.enable-remote-write-receiver` so 
 Mimir is provisioned by default alongside Prometheus — additive this cycle, no
 teardown. Every node (not just app nodes) runs Alloy, which scrapes only itself
 (`node_exporter` on `:9100`, plus the app on `:4050` where one runs) and
-`remote_write`s to Mimir. Mimir's ruler evaluates the exact same alert rules as
-Prometheus, templated from the single shared source
+`remote_write`s to Mimir with `job="nodes"`/`job="apps"` labels plus `instance`/
+`instance_id`, matching Prometheus's EC2 relabeling. Mimir's ruler evaluates the
+same rule *definitions* as Prometheus, templated from the single shared source
 (`prometheus_db/templates/prometheus-rules.yaml.j2` — never duplicated).
 
 If the Mimir node isn't running:
