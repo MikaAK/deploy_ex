@@ -81,7 +81,15 @@ defmodule DeployEx.SSH do
     end
   end
 
-  def run_command(ip, port \\ 22, pem_file_path, command, user \\ "admin") do
+  # opts-keyword rather than a second \\-defaulted positional (port \\ 22, ..., user \\ "admin")
+  # straddling the required pem_file_path/command args — two defaults on either side of
+  # required positions meant a 4-arg call like run_command(ip, pem, command, user) silently
+  # mis-bound user into the port slot instead of raising, since Elixir fills a short call's
+  # positions left-to-right rather than by which params happen to have defaults.
+  def run_command(ip, pem_file_path, command, opts \\ []) do
+    port = opts[:port] || 22
+    user = opts[:user] || "admin"
+
     case connect_to_ssh(ip, port, pem_file_path, user) do
       {:error, reason} -> {:error, ErrorMessage.bad_gateway("couldn't connect over ssh: #{reason}")}
 

@@ -6,25 +6,41 @@ defmodule DeployEx.K6RunnerTest do
   defmodule ResolveFakeTerminated do
     def fetch_all_runners(_opts), do: {:ok, [%K6Runner{instance_id: "i-dead"}]}
     def fetch_state(_instance_id, _opts), do: {:ok, %K6Runner{instance_id: "i-dead"}}
-    def verify_instance_exists(_runner), do: {:ok, nil}
+    def verify_instance_exists(_runner, _opts \\ []), do: {:ok, nil}
   end
 
   defmodule ResolveFakeAbsent do
     def fetch_all_runners(_opts), do: {:ok, []}
     def fetch_state(_instance_id, _opts), do: {:ok, nil}
-    def verify_instance_exists(_runner), do: {:ok, nil}
+    def verify_instance_exists(_runner, _opts \\ []), do: {:ok, nil}
   end
 
   defmodule ResolveFakeFetchYieldsNil do
     def fetch_all_runners(_opts), do: {:ok, nil}
     def fetch_state(_instance_id, _opts), do: {:ok, nil}
-    def verify_instance_exists(_runner), do: {:ok, nil}
+    def verify_instance_exists(_runner, _opts \\ []), do: {:ok, nil}
   end
 
   defmodule ResolveFakeActive do
     def fetch_all_runners(_opts), do: {:ok, [%K6Runner{instance_id: "i-live"}]}
     def fetch_state(_instance_id, _opts), do: {:ok, %K6Runner{instance_id: "i-live"}}
-    def verify_instance_exists(runner), do: {:ok, %{runner | state: "running"}}
+    def verify_instance_exists(runner, _opts \\ []), do: {:ok, %{runner | state: "running"}}
+  end
+
+  defmodule ResolveOptsCapture do
+    @moduledoc """
+    Captures the opts resolve_runner/2 passes into verify_instance_exists — closes the class
+    of bug where a dropped-opts call site can't be caught by a contract test that passes
+    `provider: :oci` directly to verify_instance_exists itself (LT-OCI review-fix cycle 2).
+    """
+
+    def fetch_all_runners(_opts), do: {:ok, [%K6Runner{instance_id: "i-opts-capture"}]}
+    def fetch_state(_instance_id, _opts), do: {:ok, %K6Runner{instance_id: "i-opts-capture"}}
+
+    def verify_instance_exists(runner, opts) do
+      send(self(), {:verify_instance_exists_called, runner, opts})
+      {:ok, %{runner | state: "running"}}
+    end
   end
 
   defp line_index(script, regex) do
@@ -204,6 +220,32 @@ defmodule DeployEx.K6RunnerTest do
         assert {:error, %ErrorMessage{code: :bad_request}} = result,
                "#{label} under :oci expected :bad_request (unset release_bucket), got #{inspect(result)}"
       end)
+    end
+
+    test "with a CONFIGURED oci bucket and a real stored runner, resolve_runner reaches :not_implemented cleanly — never AWS (review cycle 2 item 3)" do
+      # Simulates the exact reviewer-measured scenario: bucket configured (via the explicit
+      # :bucket opt, bypassing the unset-namespace error) and a runner actually on disk, proving
+      # resolution stops at the not-yet-wired machine capability instead of silently falling
+      # through to AwsMachine/EC2 and, on a miss there, deleting the real OCI state object.
+      stored_runner = %K6Runner{instance_id: "i-oci-stored", state: "running"}
+
+      run_fn = fn command, _cwd ->
+        cond do
+          command =~ "os object list" ->
+            {:ok, Jason.encode!(%{"data" => [%{"name" => "k6-runners/i-oci-stored.json"}]})}
+
+          command =~ "os object get" ->
+            [_match, path] = Regex.run(~r/--file '([^']+)'/, command)
+            File.write!(path, K6Runner.to_json(stored_runner))
+            {:ok, ""}
+
+          true ->
+            flunk("unexpected oci command: #{command}")
+        end
+      end
+
+      assert {:error, %ErrorMessage{code: :not_implemented}} =
+               K6Runner.resolve_runner([provider: :oci, bucket: "configured-bucket", run_fn: run_fn], K6Runner)
     end
   end
 
@@ -561,6 +603,22 @@ defmodule DeployEx.K6RunnerTest do
     test "--instance-id path: returns the verified runner for a live instance id" do
       assert {:ok, %K6Runner{instance_id: "i-live", state: "running"}} =
                K6Runner.resolve_runner([instance_id: "i-live"], ResolveFakeActive)
+    end
+  end
+
+  describe "resolve_runner/2 threads opts into verify_instance_exists (LT-OCI review-fix cycle 2)" do
+    test "default path: a :provider override reaches verify_instance_exists, not just fetch_all_runners" do
+      K6Runner.resolve_runner([provider: :oci], ResolveOptsCapture)
+
+      assert_received {:verify_instance_exists_called, _runner, opts}
+      assert opts[:provider] === :oci
+    end
+
+    test "--instance-id path: a :provider override reaches verify_instance_exists, not just fetch_state" do
+      K6Runner.resolve_runner([provider: :oci, instance_id: "i-opts-capture"], ResolveOptsCapture)
+
+      assert_received {:verify_instance_exists_called, _runner, opts}
+      assert opts[:provider] === :oci
     end
   end
 

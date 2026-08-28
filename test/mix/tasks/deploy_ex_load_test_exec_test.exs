@@ -6,19 +6,19 @@ defmodule Mix.Tasks.DeployEx.LoadTest.ExecTest do
   defmodule FakeK6RunnerTerminated do
     def fetch_all_runners(_opts), do: {:ok, [%DeployEx.K6Runner{instance_id: "i-dead"}]}
     def fetch_state(_instance_id, _opts), do: {:ok, %DeployEx.K6Runner{instance_id: "i-dead"}}
-    def verify_instance_exists(_runner), do: {:ok, nil}
+    def verify_instance_exists(_runner, _opts \\ []), do: {:ok, nil}
   end
 
   defmodule FakeK6RunnerAbsent do
     def fetch_all_runners(_opts), do: {:ok, []}
     def fetch_state(_instance_id, _opts), do: {:ok, nil}
-    def verify_instance_exists(_runner), do: {:ok, nil}
+    def verify_instance_exists(_runner, _opts \\ []), do: {:ok, nil}
   end
 
   defmodule FakeK6RunnerFetchYieldsNil do
     def fetch_all_runners(_opts), do: {:ok, nil}
     def fetch_state(_instance_id, _opts), do: {:ok, nil}
-    def verify_instance_exists(_runner), do: {:ok, nil}
+    def verify_instance_exists(_runner, _opts \\ []), do: {:ok, nil}
   end
 
   defmodule FakeK6RunnerActive do
@@ -30,7 +30,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.ExecTest do
       {:ok, %DeployEx.K6Runner{instance_id: "i-live", public_ip: "1.2.3.4"}}
     end
 
-    def verify_instance_exists(runner), do: {:ok, %{runner | state: "running"}}
+    def verify_instance_exists(runner, _opts \\ []), do: {:ok, %{runner | state: "running"}}
   end
 
   describe "resolve_runner/2 default path (no --instance-id)" do

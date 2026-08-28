@@ -213,7 +213,7 @@ defmodule DeployExHelpers do
         |> prompt_for_instance_choice(true)
         |> Enum.map(fn ip_address ->
           Mix.shell().info([:yellow, "Running '#{command}' on #{ip_address}"])
-          DeployEx.SSH.run_command(ip_address, opts[:port] || 22, pem_rsa_path, command)
+          DeployEx.SSH.run_command(ip_address, pem_rsa_path, command, port: opts[:port] || 22)
         end)
         |> DeployEx.Utils.reduce_status_tuples
 
@@ -241,7 +241,7 @@ defmodule DeployExHelpers do
         |> Enum.reduce_while(:ok, fn instance_ip, :ok ->
           Mix.shell().info([:yellow, "Running #{command} on #{instance_ip}"])
 
-          case DeployEx.SSH.run_command(instance_ip, opts[:port] || 22, pem_rsa_path, command) do
+          case DeployEx.SSH.run_command(instance_ip, pem_rsa_path, command, port: opts[:port] || 22) do
             {:ok, _} -> {:cont, :ok}
             {:error, _} = error -> {:halt, error}
           end
