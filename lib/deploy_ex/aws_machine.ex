@@ -38,7 +38,14 @@ defmodule DeployEx.AwsMachine do
   def describe_instance(instance_id, opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
 
-    with {:ok, [instance | _rest]} <- find_instances_by_id(region, [instance_id], opts) do
+    # Whitelisted, not forwarded whole: opts reaching this callback often carries a caller's
+    # full task opts (--pem path, :provider, :quiet, ...), and find_instances_by_id/3 passes
+    # anything beyond :request_fn straight into ExAws.EC2.describe_instances/1 as real API
+    # query params — an unfiltered forward would leak a pem file PATH to AWS and CloudTrail as
+    # "Pem" => "/secret/path/key.pem", and camelize every other stray key into a bogus filter.
+    ec2_opts = Keyword.take(opts, [:request_fn])
+
+    with {:ok, [instance | _rest]} <- find_instances_by_id(region, [instance_id], ec2_opts) do
       {:ok, to_instance(instance)}
     end
   end
@@ -559,7 +566,12 @@ defmodule DeployEx.AwsMachine do
     region = opts[:region] || DeployEx.Config.aws_region()
     all_filters = tag_filters ++ resource_group_filter(opts)
 
-    with {:ok, instances} <- fetch_instances(region) do
+    # Same G1 leak class as describe_instance/2: opts reaching here is often a caller's whole
+    # task opts (--pem path, :provider, :quiet, ...), and fetch_instances/2 forwards anything
+    # beyond :request_fn straight into ExAws.EC2.describe_instances/1 as real API query params.
+    ec2_opts = Keyword.take(opts, [:request_fn])
+
+    with {:ok, instances} <- fetch_instances(region, ec2_opts) do
       {:ok, filter_instances_by_tags(instances, all_filters)}
     end
   end

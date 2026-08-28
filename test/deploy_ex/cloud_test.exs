@@ -257,6 +257,29 @@ defmodule DeployEx.CloudTest do
     end
   end
 
+  describe "aws?/1 — single shared answer for \"is this AWS\" (LT-OCI review-fix cycle 3, F1 recurrence)" do
+    test "true under the default provider" do
+      assert Cloud.aws?([]) === true
+    end
+
+    test "true for the atom override :aws" do
+      assert Cloud.aws?(provider: :aws) === true
+    end
+
+    test "true for the descriptor MODULE override — the exact case that recurred (F1)" do
+      assert Cloud.aws?(provider: DeployEx.Cloud.Providers.Aws) === true
+    end
+
+    test "false for a registered non-AWS provider" do
+      assert Cloud.aws?(provider: :oci) === false
+      assert Cloud.aws?(provider: DeployEx.Cloud.Providers.Oci) === false
+    end
+
+    test "false for an unregistered provider instead of raising" do
+      assert Cloud.aws?(provider: :gcp) === false
+    end
+  end
+
   describe "%Cloud.Instance{}" do
     test "has the exact provider-neutral field set" do
       keys =
