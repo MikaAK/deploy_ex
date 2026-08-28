@@ -20,9 +20,14 @@ defmodule DeployEx.CloudTest do
   end
 
   describe "capability/2 — explicit provider" do
-    test "an OCI capability is honestly not implemented" do
+    test "OCI now resolves machine/infrastructure too (LT-OCI S2)" do
+      assert Cloud.capability(:machine, provider: :oci) === {:ok, DeployEx.Cloud.OciMachine}
+      assert Cloud.capability(:infrastructure, provider: :oci) === {:ok, DeployEx.Cloud.OciInfrastructure}
+    end
+
+    test "a capability OCI does not implement is honestly not implemented" do
       assert {:error, %ErrorMessage{code: :not_implemented}} =
-               Cloud.capability(:machine, provider: :oci)
+               Cloud.capability(:autoscaling, provider: :oci)
     end
 
     test "an unknown provider errors instead of raising KeyError" do
@@ -35,11 +40,14 @@ defmodule DeployEx.CloudTest do
     test "accepts a descriptor MODULE and resolves through it" do
       assert Cloud.capability(:machine, provider: DeployEx.Cloud.Providers.Aws) ===
                {:ok, DeployEx.AwsMachine}
+
+      assert Cloud.capability(:machine, provider: DeployEx.Cloud.Providers.Oci) ===
+               {:ok, DeployEx.Cloud.OciMachine}
     end
 
     test "a module descriptor lacking the capability reports :not_implemented" do
       assert {:error, %ErrorMessage{code: :not_implemented}} =
-               Cloud.capability(:machine, provider: DeployEx.Cloud.Providers.Oci)
+               Cloud.capability(:autoscaling, provider: DeployEx.Cloud.Providers.Oci)
     end
 
     test "a module that is not a descriptor errors instead of raising" do

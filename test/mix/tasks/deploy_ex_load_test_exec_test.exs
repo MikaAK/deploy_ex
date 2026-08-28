@@ -104,8 +104,15 @@ defmodule Mix.Tasks.DeployEx.LoadTest.ExecTest do
   end
 
   describe "discover_prometheus_ip/1 — threads opts through Cloud.capability (LT-OCI review-fix)" do
-    test "an unregistered/unimplemented provider override propagates instead of being dropped" do
-      assert {:error, %ErrorMessage{code: :not_implemented}} = Exec.discover_prometheus_ip(provider: :oci)
+    test "an unregistered provider override propagates instead of being dropped" do
+      assert {:error, %ErrorMessage{code: :not_implemented}} = Exec.discover_prometheus_ip(provider: :gcp)
+    end
+
+    test "under :oci (machine wired as of LT-OCI S2), a config error propagates instead of falling through to AWS" do
+      assert {:error, %ErrorMessage{code: :bad_request, message: message}} =
+               Exec.discover_prometheus_ip(provider: :oci)
+
+      assert message =~ "compartment_id"
     end
   end
 

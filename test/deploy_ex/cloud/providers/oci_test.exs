@@ -7,10 +7,12 @@ defmodule DeployEx.Cloud.Providers.OciTest do
     assert DeployEx.Cloud.Provider in (Oci.module_info(:attributes)[:behaviour] || [])
   end
 
-  test "capabilities/0 exposes the object store and security group and nothing else" do
+  test "capabilities/0 exposes object store, security, machine and infrastructure (LT-OCI S2)" do
     assert Oci.capabilities() === %{
              object_store: DeployEx.Cloud.OciObjectStore,
-             security: DeployEx.Cloud.OciSecurityGroup
+             security: DeployEx.Cloud.OciSecurityGroup,
+             machine: DeployEx.Cloud.OciMachine,
+             infrastructure: DeployEx.Cloud.OciInfrastructure
            }
   end
 
