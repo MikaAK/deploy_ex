@@ -21,18 +21,18 @@ defmodule Mix.Tasks.Terraform.BuildTest do
     end
 
     test "pins instance_availability_zone from opts and drops the fixed private_ip" do
-      block = fetch_block("terraform_redis_variables", "terraform_sentry_variables")
+      block = TerraformVariables.terraform_redis_variables([availability_zone: "us-test-9z"], :aws)
 
-      assert block =~ ~S(instance_availability_zone = "#{opts[:availability_zone]}")
+      assert block =~ ~s(instance_availability_zone = "us-test-9z")
       refute block =~ "private_ip"
     end
   end
 
-  describe "terraform_sentry_variables/1 heredoc" do
+  describe "terraform_sentry_variables/2 (AWS)" do
     test "pins instance_availability_zone from opts" do
-      block = fetch_block("terraform_sentry_variables", "terraform_loki_variables")
+      block = TerraformVariables.terraform_sentry_variables([availability_zone: "us-test-9z"], :aws)
 
-      assert block =~ ~S(instance_availability_zone = "#{opts[:availability_zone]}")
+      assert block =~ ~s(instance_availability_zone = "us-test-9z")
       refute block =~ "private_ip"
     end
   end
@@ -49,9 +49,9 @@ defmodule Mix.Tasks.Terraform.BuildTest do
     end
 
     test "pins instance_availability_zone from opts and drops the fixed private_ip" do
-      block = fetch_block("terraform_loki_variables", "terraform_grafana_variables")
+      block = TerraformVariables.terraform_loki_variables([availability_zone: "us-test-9z"], :aws)
 
-      assert block =~ ~S(instance_availability_zone = "#{opts[:availability_zone]}")
+      assert block =~ ~s(instance_availability_zone = "us-test-9z")
       refute block =~ "private_ip"
     end
   end
@@ -69,9 +69,9 @@ defmodule Mix.Tasks.Terraform.BuildTest do
     end
 
     test "pins instance_availability_zone from opts" do
-      block = fetch_block("terraform_grafana_variables", "terraform_prometheus_variables")
+      block = TerraformVariables.terraform_grafana_variables([availability_zone: "us-test-9z"], :aws)
 
-      assert block =~ ~S(instance_availability_zone = "#{opts[:availability_zone]}")
+      assert block =~ ~s(instance_availability_zone = "us-test-9z")
     end
   end
 
@@ -87,9 +87,9 @@ defmodule Mix.Tasks.Terraform.BuildTest do
     end
 
     test "pins instance_availability_zone from opts and drops the fixed private_ip" do
-      block = fetch_block("terraform_prometheus_variables", "generate_db_password")
+      block = TerraformVariables.terraform_prometheus_variables([availability_zone: "us-test-9z"], :aws)
 
-      assert block =~ ~S(instance_availability_zone = "#{opts[:availability_zone]}")
+      assert block =~ ~s(instance_availability_zone = "us-test-9z")
       refute block =~ "private_ip"
     end
   end
