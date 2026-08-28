@@ -45,6 +45,41 @@ defmodule Mix.Tasks.DeployEx.LoadTest.UploadTest do
     end
   end
 
+  describe "scp_args/5 — pure scp argv builder, pins the actual upload_script call site (LT-OCI review-fix)" do
+    test "builds the exact scp argv under the default AWS provider" do
+      assert Upload.scp_args("/tmp/key.pem", "/local/load_test.js", "1.2.3.4", "/srv/k6/scripts/load_test.js", []) ===
+               [
+                 "-i",
+                 "/tmp/key.pem",
+                 "-o",
+                 "StrictHostKeyChecking=no",
+                 "-o",
+                 "UserKnownHostsFile=/dev/null",
+                 "/local/load_test.js",
+                 "admin@1.2.3.4:/srv/k6/scripts/load_test.js"
+               ]
+    end
+
+    test "resolves the ssh user through Cloud.ssh_user/1 for an overridden provider" do
+      argv =
+        Upload.scp_args(
+          "/tmp/key.pem",
+          "/local/load_test.js",
+          "1.2.3.4",
+          "/srv/k6/scripts/load_test.js",
+          provider: :oci
+        )
+
+      assert Enum.at(argv, 7) === "ubuntu@1.2.3.4:/srv/k6/scripts/load_test.js"
+    end
+
+    test "expands a relative pem path" do
+      argv = Upload.scp_args("key.pem", "/local/load_test.js", "1.2.3.4", "/srv/k6/scripts/load_test.js", [])
+
+      assert Enum.at(argv, 1) === Path.expand("key.pem")
+    end
+  end
+
   describe "resolve_runner/2 default path (no --instance-id)" do
     test "returns a not_found error naming create_instance when the only runner is terminated" do
       assert {:error, %ErrorMessage{code: :not_found, message: message}} =

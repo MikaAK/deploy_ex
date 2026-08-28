@@ -23,49 +23,67 @@ defmodule DeployEx.K6Runner do
   @default_instance_type "t3.small"
 
   def create_instance(params, opts \\ []) do
-    resource_group = opts[:resource_group] || DeployEx.Cloud.resource_group(opts)
     environment = opts[:environment] || DeployEx.Config.env()
 
-    instance_name = build_instance_name(environment)
-    instance_type = params[:instance_type] || @default_instance_type
+    with {:ok, resource_group} <- resolve_resource_group(opts) do
+      instance_name = build_instance_name(environment)
+      instance_type = params[:instance_type] || @default_instance_type
 
-    tags = [
-      {:Name, instance_name},
-      {:Group, resource_group},
-      {:Environment, environment},
-      {:ManagedBy, "DeployEx"},
-      {:K6Runner, "true"},
-      {:Type, "Load Testing"}
-    ]
+      tags = [
+        {:Name, instance_name},
+        {:Group, resource_group},
+        {:Environment, environment},
+        {:ManagedBy, "DeployEx"},
+        {:K6Runner, "true"},
+        {:Type, "Load Testing"}
+      ]
 
-    spec = %{
-      name: instance_name,
-      instance_type: instance_type,
-      user_data: build_user_data(opts),
-      tags: tags,
-      network: %{
-        key_name: params[:key_name],
-        subnet_id: params[:subnet_id],
-        security_group_id: params[:security_group_id],
-        ami_id: params[:ami_id],
-        iam_instance_profile: params[:iam_instance_profile]
+      spec = %{
+        name: instance_name,
+        instance_type: instance_type,
+        user_data: build_user_data(opts),
+        tags: tags,
+        network: %{
+          key_name: params[:key_name],
+          subnet_id: params[:subnet_id],
+          security_group_id: params[:security_group_id],
+          ami_id: params[:ami_id],
+          iam_instance_profile: params[:iam_instance_profile]
+        }
       }
-    }
 
-    with {:ok, machine} <- DeployEx.Cloud.capability(:machine, opts),
-         {:ok, instance} <- machine.run_instance(spec, opts) do
-      {:ok,
-       %__MODULE__{
-         instance_id: instance.id,
-         instance_name: instance_name,
-         created_at: DateTime.utc_now() |> DateTime.to_iso8601()
-       }}
+      with {:ok, machine} <- DeployEx.Cloud.capability(:machine, opts),
+           {:ok, instance} <- machine.run_instance(spec, opts) do
+        {:ok,
+         %__MODULE__{
+           instance_id: instance.id,
+           instance_name: instance_name,
+           created_at: DateTime.utc_now() |> DateTime.to_iso8601()
+         }}
+      end
     end
   end
 
   def terminate_instance(instance_id, opts \\ []) do
     with {:ok, machine} <- DeployEx.Cloud.capability(:machine, opts) do
       machine.terminate_instance(instance_id, opts)
+    end
+  end
+
+  # An explicit opts override always wins and skips the Cloud lookup entirely — a caller who
+  # already knows the bucket/resource-group should never trip an "unset config" error for a
+  # provider that has not configured the key.
+  defp resolve_resource_group(opts) do
+    case opts[:resource_group] do
+      nil -> DeployEx.Cloud.resource_group(opts)
+      resource_group -> {:ok, resource_group}
+    end
+  end
+
+  defp resolve_bucket(opts) do
+    case opts[:bucket] do
+      nil -> DeployEx.Cloud.release_bucket(opts)
+      bucket -> {:ok, bucket}
     end
   end
 
@@ -220,18 +238,16 @@ defmodule DeployEx.K6Runner do
   end
 
   def save_state(%__MODULE__{instance_id: instance_id} = runner, opts \\ []) do
-    bucket = opts[:bucket] || DeployEx.Cloud.release_bucket(opts)
-
-    with {:ok, object_store} <- DeployEx.Cloud.capability(:object_store, opts),
+    with {:ok, bucket} <- resolve_bucket(opts),
+         {:ok, object_store} <- DeployEx.Cloud.capability(:object_store, opts),
          :ok <- object_store.put_object(bucket, state_key(instance_id), to_json(runner), opts) do
       {:ok, :saved}
     end
   end
 
   def fetch_state(instance_id, opts \\ []) do
-    bucket = opts[:bucket] || DeployEx.Cloud.release_bucket(opts)
-
-    with {:ok, object_store} <- DeployEx.Cloud.capability(:object_store, opts) do
+    with {:ok, bucket} <- resolve_bucket(opts),
+         {:ok, object_store} <- DeployEx.Cloud.capability(:object_store, opts) do
       case object_store.get_object(bucket, state_key(instance_id), opts) do
         {:ok, json} -> {:ok, from_json(json)}
         {:error, %ErrorMessage{code: :not_found}} -> {:ok, nil}
@@ -249,10 +265,10 @@ defmodule DeployEx.K6Runner do
   list.
   """
   def fetch_all_runners(opts \\ []) do
-    bucket = opts[:bucket] || DeployEx.Cloud.release_bucket(opts)
     list_opts = Keyword.put(opts, :prefix, "#{@state_prefix}/")
 
-    with {:ok, object_store} <- DeployEx.Cloud.capability(:object_store, opts),
+    with {:ok, bucket} <- resolve_bucket(opts),
+         {:ok, object_store} <- DeployEx.Cloud.capability(:object_store, opts),
          {:ok, keys} <- object_store.list_objects(bucket, list_opts) do
       runners =
         keys
@@ -275,9 +291,8 @@ defmodule DeployEx.K6Runner do
   end
 
   def delete_state(instance_id, opts) when is_binary(instance_id) do
-    bucket = opts[:bucket] || DeployEx.Cloud.release_bucket(opts)
-
-    with {:ok, object_store} <- DeployEx.Cloud.capability(:object_store, opts) do
+    with {:ok, bucket} <- resolve_bucket(opts),
+         {:ok, object_store} <- DeployEx.Cloud.capability(:object_store, opts) do
       case object_store.delete_object(bucket, state_key(instance_id), opts) do
         :ok -> :ok
         {:error, %ErrorMessage{code: :not_found}} -> :ok

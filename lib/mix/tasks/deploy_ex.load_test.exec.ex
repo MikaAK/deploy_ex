@@ -146,6 +146,22 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
   """
   def ssh_target(ip, opts \\ []), do: "#{DeployEx.Cloud.ssh_user(opts)}@#{ip}"
 
+  @doc """
+  Argv for the `ssh` binary, shared by both SSH transports below (`System.cmd` preflight and
+  the `Port.open` k6 run). Pure and pinned directly by tests — mirrors `build_k6_command/3` —
+  so a regression to a hardcoded ssh user shows up as a failing assertion on the argv itself,
+  not just on the `ssh_target/2` helper that could silently go unused at a call site.
+  """
+  def ssh_args(ip, pem_file, command, opts \\ []) do
+    [
+      "-i", Path.expand(pem_file),
+      "-o", "StrictHostKeyChecking=no",
+      "-o", "UserKnownHostsFile=/dev/null",
+      ssh_target(ip, opts),
+      command
+    ]
+  end
+
   defp preflight_k6(ip, pem_file, opts) do
     case run_ssh_command(ip, pem_file, "k6 version", opts) do
       {:ok, _output} ->
@@ -162,15 +178,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
   # SSH transport shell-out — dev-tooling exemption (spawns the ssh binary, no pure
   # logic to unit test; behavior is pinned by run_k6_via_ssh's Port-based sibling below).
   defp run_ssh_command(ip, pem_file, command, opts) do
-    abs_pem = Path.expand(pem_file)
-
-    case System.cmd("ssh", [
-      "-i", abs_pem,
-      "-o", "StrictHostKeyChecking=no",
-      "-o", "UserKnownHostsFile=/dev/null",
-      ssh_target(ip, opts),
-      command
-    ], stderr_to_stdout: true) do
+    case System.cmd("ssh", ssh_args(ip, pem_file, command, opts), stderr_to_stdout: true) do
       {output, 0} -> {:ok, output}
       {output, _code} -> {:error, output}
     end
@@ -197,19 +205,11 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
   defp env_var_prefix(env_vars), do: "#{Enum.join(env_vars, " ")} "
 
   defp run_k6_via_ssh(ip, pem_file, command, opts) do
-    abs_pem = Path.expand(pem_file)
-
     port = Port.open({:spawn_executable, System.find_executable("ssh")}, [
       :binary,
       :exit_status,
       :stderr_to_stdout,
-      args: [
-        "-i", abs_pem,
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=/dev/null",
-        ssh_target(ip, opts),
-        "sudo #{command}"
-      ]
+      args: ssh_args(ip, pem_file, "sudo #{command}", opts)
     ])
 
     stream_output(port)

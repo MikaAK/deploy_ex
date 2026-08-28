@@ -310,7 +310,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
       Mix.shell().info([:faint, "Waiting for k6 setup to complete on ", :reset, :cyan, ip, :reset, :faint, "..."])
     end
 
-    check_fn = opts[:check_fn] || (&default_k6_ready?/2)
+    check_fn = opts[:check_fn] || (&default_k6_ready?(&1, &2, opts))
     sleep_fn = opts[:sleep_fn] || (&Process.sleep/1)
     retries = opts[:setup_wait_retries] || @setup_wait_retries
 
@@ -344,8 +344,8 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
     end
   end
 
-  defp default_k6_ready?(ip, pem_file) do
-    case DeployEx.SSH.run_command(ip, 22, pem_file, "k6 version") do
+  defp default_k6_ready?(ip, pem_file, opts) do
+    case DeployEx.SSH.run_command(ip, 22, pem_file, "k6 version", DeployEx.Cloud.ssh_user(opts)) do
       {:ok, _output} -> true
       _ -> false
     end

@@ -315,6 +315,50 @@ defmodule DeployEx.K6RunnerTest do
     end
   end
 
+  describe "bucket resolution errors loudly instead of proceeding with nil (LT-OCI review-fix)" do
+    test "save_state propagates a bad_request instead of writing to an empty container name" do
+      runner = %K6Runner{instance_id: "i-unset-bucket"}
+
+      assert {:error, %ErrorMessage{code: :bad_request, message: message}} =
+               K6Runner.save_state(runner, provider: :oci)
+
+      assert message =~ "release_bucket"
+    end
+
+    test "an explicit :bucket opt still bypasses the Cloud lookup entirely, even under a provider with no configured bucket" do
+      runner = %K6Runner{instance_id: "i-explicit-bucket"}
+
+      # provider: :oci routes save_state through OciObjectStore (its DI seam is :run_fn, not
+      # ExAws's :request_fn) — :oci has no configured release_bucket in test config at all, so
+      # a successful save here can only mean the explicit :bucket opt was used directly, never
+      # routed through Cloud.release_bucket(provider: :oci) (which errors for this exact config).
+      run_fn = fn command, _cwd ->
+        send(self(), {:oci_command, command})
+        {:ok, ""}
+      end
+
+      assert {:ok, :saved} =
+               K6Runner.save_state(runner, provider: :oci, bucket: "explicit-bucket", run_fn: run_fn)
+
+      assert_received {:oci_command, command}
+      assert command =~ "--bucket-name 'explicit-bucket'"
+    end
+
+    test "fetch_state propagates a bad_request instead of reading from an empty container name" do
+      assert {:error, %ErrorMessage{code: :bad_request}} =
+               K6Runner.fetch_state("i-unset-bucket", provider: :oci)
+    end
+
+    test "fetch_all_runners propagates a bad_request instead of listing an empty container name" do
+      assert {:error, %ErrorMessage{code: :bad_request}} = K6Runner.fetch_all_runners(provider: :oci)
+    end
+
+    test "delete_state propagates a bad_request instead of deleting from an empty container name" do
+      assert {:error, %ErrorMessage{code: :bad_request}} =
+               K6Runner.delete_state("i-unset-bucket", provider: :oci)
+    end
+  end
+
   describe "create_instance/2 (routed through Cloud.capability(:machine) — LT-OCI S1)" do
     defp run_instances_response(instance_id) do
       "<RunInstancesResponse><instancesSet><item>" <>
@@ -347,7 +391,8 @@ defmodule DeployEx.K6RunnerTest do
       assert ec2_params["ImageId"] === "ami-123"
       assert ec2_params["TagSpecification.1.Tag.1.Key"] === "Name"
       assert ec2_params["TagSpecification.1.Tag.2.Key"] === "Group"
-      assert ec2_params["TagSpecification.1.Tag.2.Value"] === DeployEx.Cloud.resource_group([])
+      assert {:ok, expected_resource_group} = DeployEx.Cloud.resource_group([])
+      assert ec2_params["TagSpecification.1.Tag.2.Value"] === expected_resource_group
     end
   end
 

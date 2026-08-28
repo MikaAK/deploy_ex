@@ -186,23 +186,49 @@ defmodule DeployEx.CloudTest do
     end
   end
 
-  describe "resource_group/1 — LT-OCI S1 accessor" do
+  describe "resource_group/1 — LT-OCI S1/review-fix accessor" do
     test "resolves through DeployEx.Config.aws_resource_group/0 under the default provider" do
-      assert Cloud.resource_group([]) === DeployEx.Config.aws_resource_group()
+      assert Cloud.resource_group([]) === {:ok, DeployEx.Config.aws_resource_group()}
     end
 
-    test "reads the :oci config namespace under an explicit override" do
-      assert Cloud.resource_group(provider: :oci) === DeployEx.Config.oci_setting(:resource_group)
+    test "resolves AWS's flat config when given the descriptor MODULE instead of the atom :aws" do
+      assert Cloud.resource_group(provider: DeployEx.Cloud.Providers.Aws) ===
+               {:ok, DeployEx.Config.aws_resource_group()}
+    end
+
+    test "reads the real, seeded :oci config namespace under an explicit atom override" do
+      assert Cloud.resource_group(provider: :oci) === {:ok, "OCI Test Backend"}
+    end
+
+    test "reads the :oci namespace when given the descriptor MODULE instead of the atom :oci" do
+      assert Cloud.resource_group(provider: DeployEx.Cloud.Providers.Oci) === {:ok, "OCI Test Backend"}
+    end
+
+    test "an unregistered provider errors instead of raising" do
+      assert {:error, %ErrorMessage{code: :not_implemented}} = Cloud.resource_group(provider: :gcp)
     end
   end
 
-  describe "release_bucket/1 — LT-OCI S1 accessor" do
+  describe "release_bucket/1 — LT-OCI S1/review-fix accessor" do
     test "resolves through DeployEx.Config.aws_release_bucket/0 under the default provider" do
-      assert Cloud.release_bucket([]) === DeployEx.Config.aws_release_bucket()
+      assert Cloud.release_bucket([]) === {:ok, DeployEx.Config.aws_release_bucket()}
     end
 
-    test "reads the :oci config namespace under an explicit override" do
-      assert Cloud.release_bucket(provider: :oci) === DeployEx.Config.oci_setting(:release_bucket)
+    test "resolves AWS's flat config when given the descriptor MODULE instead of the atom :aws" do
+      assert Cloud.release_bucket(provider: DeployEx.Cloud.Providers.Aws) ===
+               {:ok, DeployEx.Config.aws_release_bucket()}
+    end
+
+    test "a real, registered provider with the key genuinely unset errors loudly rather than nil" do
+      assert {:error, %ErrorMessage{code: :bad_request, message: message}} =
+               Cloud.release_bucket(provider: :oci)
+
+      assert message =~ "release_bucket"
+      assert message =~ "oci"
+    end
+
+    test "an unregistered provider errors instead of raising" do
+      assert {:error, %ErrorMessage{code: :not_implemented}} = Cloud.release_bucket(provider: :gcp)
     end
   end
 

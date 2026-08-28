@@ -119,6 +119,21 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Upload do
   """
   def scp_target(ip, remote_path, opts \\ []), do: "#{DeployEx.Cloud.ssh_user(opts)}@#{ip}:#{remote_path}"
 
+  @doc """
+  Argv for the `scp` binary. Pure and pinned directly by tests — mirrors `Exec.ssh_args/4` —
+  so a regression to a hardcoded ssh user shows up as a failing assertion on the argv itself,
+  not just on the `scp_target/3` helper that could silently go unused at the call site.
+  """
+  def scp_args(pem_file, script_path, ip, remote_path, opts \\ []) do
+    [
+      "-i", Path.expand(pem_file),
+      "-o", "StrictHostKeyChecking=no",
+      "-o", "UserKnownHostsFile=/dev/null",
+      script_path,
+      scp_target(ip, remote_path, opts)
+    ]
+  end
+
   defp upload_script(script_path, ip, pem_file, opts) do
     filename = Path.basename(script_path)
     remote_path = "/srv/k6/scripts/#{filename}"
@@ -127,15 +142,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Upload do
       Mix.shell().info([:faint, "Uploading ", :reset, filename, :faint, " → ", :reset, remote_path])
     end
 
-    abs_pem = Path.expand(pem_file)
-
-    case System.cmd("scp", [
-      "-i", abs_pem,
-      "-o", "StrictHostKeyChecking=no",
-      "-o", "UserKnownHostsFile=/dev/null",
-      script_path,
-      scp_target(ip, remote_path, opts)
-    ], stderr_to_stdout: true) do
+    case System.cmd("scp", scp_args(pem_file, script_path, ip, remote_path, opts), stderr_to_stdout: true) do
       {_, 0} ->
         unless opts[:quiet] do
           Mix.shell().info([:green, "  ✓ ", :reset, filename])
