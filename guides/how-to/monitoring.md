@@ -13,7 +13,7 @@ Out of the box, deploy_ex provisions Prometheus, Mimir, Grafana UI, Grafana Loki
 | `alloy` (every node) | n/a | Tails systemd journal (ships to Loki); scrapes `node_exporter`/app locally and pushes to Mimir |
 | `prometheus_exporter` (per app node) | n/a | Exposes node + app metrics |
 
-## Upgrading — secondary EBS volumes now attach correctly
+## Upgrading — secondary EBS volumes now attach correctly (mimir_db not yet — see below)
 
 Prior to this fix, the `redis`, `loki_log_aggregator`, `grafana_ui`, and `prometheus` variable
 blocks used a flat `enable_ebs` / `instance_ebs_secondary_size` pair that the `ebs` schema in
@@ -30,9 +30,15 @@ ebs = {
 }
 ```
 
+The `mimir_db` block still carries the flat form and gets NO secondary volume from a stock
+render — its fix is tracked separately; don't rely on a mimir node having `/data` capacity from
+templates alone yet.
+
 Your next `mix terraform.plan` will show a NEW secondary EBS volume being created for each of
-these nodes — this is expected, not a regression. If you've hand-edited your `tfvars` to already
-use the nested `ebs = { ... }` form (as recommended for production), you are unaffected.
+these nodes — this is expected, not a regression. The real upgrade hazard is the rendered
+`deploys/terraform/variables.tf`: a re-render with `--force` OVERWRITES it, so a consumer who
+hand-customized that file must diff before accepting. Hand-edited `tfvars` that already use the
+nested `ebs = { ... }` form (as recommended for production) are unaffected.
 
 ## Grafana UI
 
