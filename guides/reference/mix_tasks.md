@@ -232,11 +232,13 @@ Overview / quick start (no flags).
 |------|----------|
 | `mix deploy_ex.load_test` | (overview, no flags) |
 | `mix deploy_ex.load_test.init` | (scaffolds k6 scripts under `./load_tests/`) |
-| `mix deploy_ex.load_test.create_instance` | `--instance-type`, `--resource-group`, `--pem`, `-f force`, `-q quiet` |
-| `mix deploy_ex.load_test.destroy_instance` | `-i instance-id`, `--all`, `-f force`, `-q quiet` |
-| `mix deploy_ex.load_test.list` | `--json`, `-q quiet` |
-| `mix deploy_ex.load_test.upload` | `-i instance-id`, `--script <path>`, `--pem`, `-q quiet` |
-| `mix deploy_ex.load_test.exec` | `-i instance-id`, `--script <path>`, `--target-url`, `--prometheus-url`, `--pem`, `-q quiet` |
+| `mix deploy_ex.load_test.create_instance` | `--instance-type`, `--resource-group`, `--pem`, `--provider`, `-f force`, `-q quiet` |
+| `mix deploy_ex.load_test.destroy_instance` | `-i instance-id`, `--all`, `--provider`, `-f force`, `-q quiet` |
+| `mix deploy_ex.load_test.list` | `--json`, `--provider`, `-q quiet` |
+| `mix deploy_ex.load_test.upload` | `-i instance-id`, `--script <path>`, `--pem`, `--provider`, `-q quiet` |
+| `mix deploy_ex.load_test.exec` | `-i instance-id`, `--script <path>`, `--target-url`, `--prometheus-url`, `--pem`, `--provider`, `-q quiet` |
+
+`--provider` (`aws` or `oci`) overrides the configured `cloud_provider`; an unrecognized value raises rather than being silently ignored. Machine ops (`create_instance`/`destroy_instance`/`exec`/`upload`) are AWS-only until OCI's `machine` capability lands — see `deploy-ex-oci` skill for the current per-task status under `--provider oci`.
 
 ## Monitoring
 

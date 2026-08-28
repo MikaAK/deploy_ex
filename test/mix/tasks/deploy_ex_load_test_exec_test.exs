@@ -103,6 +103,12 @@ defmodule Mix.Tasks.DeployEx.LoadTest.ExecTest do
     end
   end
 
+  describe "discover_prometheus_ip/1 — threads opts through Cloud.capability (LT-OCI review-fix)" do
+    test "an unregistered/unimplemented provider override propagates instead of being dropped" do
+      assert {:error, %ErrorMessage{code: :not_implemented}} = Exec.discover_prometheus_ip(provider: :oci)
+    end
+  end
+
   describe "ssh_target/2 — SSH user via Cloud.ssh_user/1 (LT-OCI S1)" do
     test "defaults to admin@ip under the AWS provider (unchanged AWS behavior)" do
       assert Exec.ssh_target("1.2.3.4", []) === "admin@1.2.3.4"

@@ -212,13 +212,14 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
 
   defp orphaned_runner_error(runner, opts, k6_runner_impl) do
     k6_runner_impl.save_state(runner, opts)
+    provider = DeployEx.Cloud.active_provider(opts)
 
     {:error, ErrorMessage.failed_dependency(
-      "k6 runner #{runner.instance_id} was created but AWS does not yet report it as running " <>
+      "k6 runner #{runner.instance_id} was created but #{inspect(provider)} does not yet report it as running " <>
         "(eventual consistency) — the instance and its billing still exist; check again with " <>
         "mix deploy_ex.load_test.list, or destroy it with: " <>
         "mix deploy_ex.load_test.destroy_instance --instance-id #{runner.instance_id}",
-      %{instance_id: runner.instance_id}
+      %{instance_id: runner.instance_id, provider: provider}
     )}
   end
 

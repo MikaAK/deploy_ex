@@ -111,7 +111,9 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
 
   defdelegate resolve_runner(opts, k6_runner_impl \\ DeployEx.K6Runner), to: DeployEx.K6Runner
 
-  def resolve_prometheus_url(opts, discover_fn \\ &discover_prometheus_ip/0) do
+  def resolve_prometheus_url(opts, discover_fn \\ nil) do
+    discover_fn = discover_fn || fn -> discover_prometheus_ip(opts) end
+
     case opts[:prometheus_url] do
       url when is_binary(url) -> {:ok, url}
       _ -> resolve_discovered_prometheus_url(discover_fn)
@@ -125,9 +127,10 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
     end
   end
 
-  defp discover_prometheus_ip do
-    with {:ok, machine} <- DeployEx.Cloud.capability(:machine) do
-      case machine.list_instances([@prometheus_monitoring_tag], []) do
+  @doc false
+  def discover_prometheus_ip(opts \\ []) do
+    with {:ok, machine} <- DeployEx.Cloud.capability(:machine, opts) do
+      case machine.list_instances([@prometheus_monitoring_tag], opts) do
         {:ok, instances} -> find_running_prometheus_ip(instances)
         error -> error
       end
