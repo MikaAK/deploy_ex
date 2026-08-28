@@ -113,6 +113,33 @@ defmodule Mix.Tasks.DeployEx.LoadTest.ExecTest do
     end
   end
 
+  describe "ssh_args/4 — pure ssh argv builder, pins the actual transport call sites (LT-OCI review-fix)" do
+    test "builds the exact ssh argv under the default AWS provider" do
+      assert Exec.ssh_args("1.2.3.4", "/tmp/key.pem", "k6 version", []) === [
+               "-i",
+               "/tmp/key.pem",
+               "-o",
+               "StrictHostKeyChecking=no",
+               "-o",
+               "UserKnownHostsFile=/dev/null",
+               "admin@1.2.3.4",
+               "k6 version"
+             ]
+    end
+
+    test "resolves the ssh user through Cloud.ssh_user/1 for an overridden provider" do
+      argv = Exec.ssh_args("1.2.3.4", "/tmp/key.pem", "k6 version", provider: :oci)
+
+      assert Enum.at(argv, 6) === "ubuntu@1.2.3.4"
+    end
+
+    test "expands a relative pem path" do
+      argv = Exec.ssh_args("1.2.3.4", "key.pem", "k6 version", [])
+
+      assert Enum.at(argv, 1) === Path.expand("key.pem")
+    end
+  end
+
   describe "build_k6_command/3" do
     test "includes TARGET_URL and K6_PROMETHEUS_RW_SERVER_URL with the -o flag when both are configured" do
       command = Exec.build_k6_command("load_test.js", "http://10.0.101.171:9090", "http://app:4000")

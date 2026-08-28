@@ -15,6 +15,26 @@ defmodule DeployEx.SSHTest do
   -----END OPENSSH PRIVATE KEY-----
   """
 
+  describe "connect_options/2 — pure :ssh.connect options builder (LT-OCI review-fix)" do
+    test "carries the given user as a charlist under :user" do
+      opts = SSH.connect_options("1.2.3.4", "admin", "/tmp/key_dir")
+
+      assert opts[:user] === ~c"admin"
+    end
+
+    test "resolves a non-default ssh user (e.g. OCI's ubuntu)" do
+      opts = SSH.connect_options("1.2.3.4", "ubuntu", "/tmp/key_dir")
+
+      assert opts[:user] === ~c"ubuntu"
+    end
+
+    test "carries the given key dir as a charlist under :user_dir" do
+      opts = SSH.connect_options("1.2.3.4", "admin", "/tmp/some_key_dir")
+
+      assert opts[:user_dir] === ~c"/tmp/some_key_dir"
+    end
+  end
+
   describe "identity_filename/1 (LT-D12: pem loading for arbitrary filenames)" do
     test "classifies a traditional RSA PEM as id_rsa" do
       assert SSH.identity_filename(@rsa_pem) === "id_rsa"

@@ -17,3 +17,12 @@ if System.get_env("CI") in ["true", true] do
     user: "root",
     limit_users: ["root"]
 end
+
+# Real (non-nil) :oci namespace value so tests can assert on a literal instead of comparing a
+# provider-config accessor against its own read of the same key — a nil===nil comparison would
+# stay green whether the accessor reads the right namespace or nothing at all. :release_bucket
+# is deliberately left UNSET here — DeployEx.CloudTest's "unset config" tests need a real,
+# registered provider whose value is genuinely nil to prove the loud-error path.
+if config_env() === :test do
+  config :deploy_ex, :oci, resource_group: "OCI Test Backend"
+end

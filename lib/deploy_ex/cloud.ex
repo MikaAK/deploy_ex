@@ -121,20 +121,52 @@ defmodule DeployEx.Cloud do
 
   AWS reads its historical flat key; every other provider reads `:resource_group` from its
   own config namespace (`config :deploy_ex, <provider>, resource_group: ...`), which
-  `validate_config/2` already validates against the descriptor's schema.
+  `validate_config/2` already validates against the descriptor's schema. Returns an error
+  rather than `nil` when a real provider has not configured the key — see `provider_config_value/3`.
   """
-  @spec resource_group(keyword()) :: String.t() | nil
+  @spec resource_group(keyword()) :: {:ok, String.t()} | {:error, ErrorMessage.t()}
   def resource_group(opts \\ []), do: provider_config_value(opts, :resource_group, &Config.aws_resource_group/0)
 
   @doc "Release bucket for the active (or overridden) provider, same resolution rule as `resource_group/1`."
-  @spec release_bucket(keyword()) :: String.t() | nil
+  @spec release_bucket(keyword()) :: {:ok, String.t()} | {:error, ErrorMessage.t()}
   def release_bucket(opts \\ []), do: provider_config_value(opts, :release_bucket, &Config.aws_release_bucket/0)
 
+  # Routes through fetch_descriptor/1 rather than switching on active_provider(opts) directly
+  # so a descriptor MODULE (the put_env-free test injection seam — same one capability/2 and
+  # validate_config/2 already accept) resolves through the same registry key as its atom form.
+  # Comparing the descriptor to DeployEx.Cloud.Providers.Aws (rather than the input atom to
+  # :aws) makes that true for AWS too, not only for non-AWS providers.
   defp provider_config_value(opts, key, aws_reader) do
-    case active_provider(opts) do
-      :aws -> aws_reader.()
-      provider when is_atom(provider) -> Application.get_env(:deploy_ex, provider, [])[key]
-      _non_atom -> nil
+    case opts |> active_provider() |> fetch_descriptor() do
+      {:ok, DeployEx.Cloud.Providers.Aws} ->
+        {:ok, aws_reader.()}
+
+      {:ok, descriptor} ->
+        provider_setting_or_error(registry_key_for(descriptor), key)
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  defp registry_key_for(descriptor) do
+    Enum.find_value(@providers, descriptor, fn {registry_key, mod} -> if mod === descriptor, do: registry_key end)
+  end
+
+  # A silent nil here would reach an object-store/CLI call as an empty container name (e.g.
+  # OCI's `--bucket-name ''`) — fail loudly instead, matching OciObjectStore.require_compartment_id/1's
+  # precedent of erroring on a missing config value rather than sending a malformed request.
+  defp provider_setting_or_error(provider, key) do
+    case Config.provider_setting(provider, key) do
+      nil ->
+        {:error,
+         ErrorMessage.bad_request(
+           "#{key} is required for #{inspect(provider)} (config :deploy_ex, #{inspect(provider)}, #{key}: \"...\")",
+           %{provider: provider, key: key}
+         )}
+
+      value ->
+        {:ok, value}
     end
   end
 
