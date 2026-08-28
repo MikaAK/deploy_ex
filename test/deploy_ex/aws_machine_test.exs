@@ -155,6 +155,20 @@ defmodule DeployEx.AwsMachineTest do
              }
     end
 
+    test "nil instance_type in the spec falls back to t3.small — AwsMachine owns its own default (LT-OCI S2)" do
+      request_fn = fn request, _config ->
+        send(self(), {:ec2_request, request})
+        {:ok, %{body: run_instances_response("i-nil-type")}}
+      end
+
+      spec = %{neutral_spec() | instance_type: nil}
+
+      AwsMachine.run_instance(spec, request_fn: request_fn)
+
+      assert_received {:ec2_request, %ExAws.Operation.Query{params: params}}
+      assert params["InstanceType"] === "t3.small"
+    end
+
     test "requests against the given region rather than the configured default" do
       request_fn = fn request, config ->
         send(self(), {:ec2_request, request, config})

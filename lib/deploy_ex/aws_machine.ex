@@ -103,9 +103,11 @@ defmodule DeployEx.AwsMachine do
     |> handle_run_instance_response()
   end
 
+  @default_instance_type "t3.small"
+
   defp run_instance_params(spec) do
     [
-      {"InstanceType", spec.instance_type},
+      {"InstanceType", spec.instance_type || @default_instance_type},
       {"KeyName", spec.network[:key_name]},
       {"NetworkInterface.1.DeviceIndex", "0"},
       {"NetworkInterface.1.SubnetId", spec.network[:subnet_id]},
