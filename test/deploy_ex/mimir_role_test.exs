@@ -6,13 +6,23 @@ defmodule DeployEx.MimirRoleTest do
   # (template exemption per the sprint contract; deeper render-diff done manually with
   # the local ansible-bundled jinja2 as evidence, not as a committed `mix test` dependency).
   #
-  # Baseline fixtures under test/support/fixtures/mimir/ were captured from the
-  # pre-mimir tree (main @ e06649a) before any of this sprint's edits landed.
+  # Baseline fixtures under test/support/fixtures/mimir/{prometheus_db_role,
+  # baseline_alloy_config.alloy.j2} are byte-identical captures of the pre-mimir
+  # tree (main @ e06649a) — untouched since capture. `@expected_loki_pipeline`
+  # below is NOT a main-provenance capture: it's that same baseline with the
+  # one known post-sprint delta (the app_name default filter, item 2 of the
+  # 2026-08-27 fidelity review) applied on top, asserted explicitly so the
+  # delta itself stays pinned instead of silently drifting into the fixture.
 
   @priv_roles_dir Path.expand("../../priv/ansible/roles", __DIR__)
   @mimir_role_dir Path.join(@priv_roles_dir, "mimir_db")
   @prometheus_role_dir Path.join(@priv_roles_dir, "prometheus_db")
   @fixtures_dir Path.expand("../support/fixtures/mimir", __DIR__)
+
+  @main_alloy_config File.read!(Path.join(@fixtures_dir, "baseline_alloy_config.alloy.j2"))
+  @app_name_pre_fix ~s[replacement  = "{{ app_name }}"]
+  @app_name_post_fix ~s[replacement  = "{{ app_name | default('') }}"]
+  @expected_loki_pipeline String.replace(@main_alloy_config, @app_name_pre_fix, @app_name_post_fix)
 
   # SECTION: prometheus_db role untouched (FORBIDDEN list)
 
@@ -149,8 +159,14 @@ defmodule DeployEx.MimirRoleTest do
       # prometheus_db, mimir_db) now carries grafana_alloy but never sets
       # `app_name` — an unguarded {{ app_name }} raises AnsibleUndefinedVariable
       # and aborts the whole play.
-      refute content =~ ~s[replacement  = "{{ app_name }}"]
-      assert content =~ ~s[replacement  = "{{ app_name | default('') }}"]
+      refute content =~ @app_name_pre_fix
+      assert content =~ @app_name_post_fix
+    end
+
+    test "the ONLY delta from main's loki pipeline is the app_name default filter" do
+      content = File.read!(@alloy_path)
+
+      assert String.starts_with?(content, @expected_loki_pipeline)
     end
 
     test "labels scraped series job=nodes/job=apps so the shared NoNodesDiscovered/NoAppsDiscovered/TargetDown rules stay live under push" do
@@ -167,15 +183,14 @@ defmodule DeployEx.MimirRoleTest do
       assert content =~ ~s["instance_id" = "{{ instance_id | default('unknown') }}"]
     end
 
-    test "everything added after the loki baseline is gated behind one balanced {% if grafana_mimir_url is defined %} block — nothing leaks outside it" do
-      baseline = File.read!(Path.join(@fixtures_dir, "baseline_alloy_config.alloy.j2"))
+    test "everything added after the loki pipeline is gated behind one balanced {% if grafana_mimir_url is defined %} block — nothing leaks outside it" do
       content = File.read!(@alloy_path)
 
-      assert String.starts_with?(content, baseline)
+      assert String.starts_with?(content, @expected_loki_pipeline)
 
       remainder =
         content
-        |> String.trim_leading(baseline)
+        |> String.trim_leading(@expected_loki_pipeline)
         |> String.trim_trailing()
 
       assert String.starts_with?(remainder, "{% if grafana_mimir_url is defined %}")

@@ -7,8 +7,12 @@ defmodule Mix.Tasks.AnsibleMonitoringPlaybooksMimirTest do
   # baseline fixtures (no side effects, mirrors the PrivRenderer-based
   # coverage in priv_renderer_mimir_test.exs at the template-source level).
   #
-  # Baseline fixtures under test/support/fixtures/mimir/ were captured from the
-  # pre-mimir tree (main @ e06649a) before any of this sprint's edits landed.
+  # The baseline_setup_{grafana_ui,loki_log_aggregator,prometheus_db}.yaml
+  # fixtures this file reads are byte-identical captures of the pre-mimir tree
+  # (main @ e06649a), untouched since capture — other fixtures under
+  # test/support/fixtures/mimir/ (e.g. baseline_alloy_config.alloy.j2, read by
+  # mimir_role_test.exs) have since had known post-sprint deltas applied on
+  # top and are NOT pure main-provenance; see that file's header comment.
 
   @priv_setup_dir Path.expand("../../../priv/ansible/setup", __DIR__)
   @fixtures_dir Path.expand("../../support/fixtures/mimir", __DIR__)
