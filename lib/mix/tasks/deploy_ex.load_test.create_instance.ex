@@ -166,26 +166,55 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
            Map.put(infra, :instance_type, opts[:instance_type]),
            opts
          ),
-         {:ok, :saved} <- DeployEx.K6Runner.save_state(runner, opts) do
+         {:ok, :saved} <- DeployEx.K6Runner.save_state(runner, opts),
+         :ok <- announce_instance_created(runner, opts),
+         :ok <- DeployEx.AwsMachine.wait_for_started([runner.instance_id]),
+         {:ok, verified} <- verify_created_runner(runner, opts) do
       if !opts[:quiet] do
-        Mix.shell().info([:green, "  ✓ ", :reset, "Instance created: ", :cyan, runner.instance_id])
-        Mix.shell().info([:faint, "Waiting for instance to start..."])
+        Mix.shell().info([:green, "  ✓ ", :reset, "Instance running"])
       end
 
-      DeployEx.AwsMachine.wait_for_started([runner.instance_id])
-
-      case DeployEx.K6Runner.verify_instance_exists(runner) do
-        {:ok, verified} when not is_nil(verified) ->
-          if !opts[:quiet] do
-            Mix.shell().info([:green, "  ✓ ", :reset, "Instance running"])
-          end
-
-          await_runner_ready(verified, opts)
-
-        other ->
-          other
-      end
+      await_runner_ready(verified, opts)
     end
+  end
+
+  defp announce_instance_created(runner, opts) do
+    if !opts[:quiet] do
+      Mix.shell().info([:green, "  ✓ ", :reset, "Instance created: ", :cyan, runner.instance_id])
+      Mix.shell().info([:faint, "Waiting for instance to start..."])
+    end
+
+    :ok
+  end
+
+  # Post-create verify (LT-D6/LT-FIX-A orphan guard) — AWS describe-instances
+  # can lag behind a just-created instance (eventual consistency). Routing
+  # through the shared resolver's {:ok, nil} handling would misreport this as
+  # "no runner exists" and (via verify_instance_exists) delete the S3 state we
+  # just wrote, orphaning an instance that is very much still running and
+  # billing, invisible to list/destroy. Turn that into a loud, actionable
+  # error naming the leaked instance instead of letting {:ok, nil} slip
+  # through as a false success, and re-save state so it stays findable.
+  @doc false
+  def verify_created_runner(runner, opts, k6_runner_impl \\ DeployEx.K6Runner) do
+    resolve_opts = Keyword.put(opts, :instance_id, runner.instance_id)
+
+    case DeployEx.K6Runner.resolve_runner(resolve_opts, k6_runner_impl) do
+      {:ok, verified} -> {:ok, verified}
+      {:error, _reason} -> orphaned_runner_error(runner, opts, k6_runner_impl)
+    end
+  end
+
+  defp orphaned_runner_error(runner, opts, k6_runner_impl) do
+    k6_runner_impl.save_state(runner, opts)
+
+    {:error, ErrorMessage.failed_dependency(
+      "k6 runner #{runner.instance_id} was created but AWS does not yet report it as running " <>
+        "(eventual consistency) — the instance and its billing still exist; check again with " <>
+        "mix deploy_ex.load_test.list, or destroy it with: " <>
+        "mix deploy_ex.load_test.destroy_instance --instance-id #{runner.instance_id}",
+      %{instance_id: runner.instance_id}
+    )}
   end
 
   defp await_runner_ready(runner, opts) do

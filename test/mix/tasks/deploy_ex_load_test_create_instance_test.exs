@@ -4,6 +4,22 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstanceTest do
   alias DeployEx.K6Runner
   alias Mix.Tasks.DeployEx.LoadTest.CreateInstance
 
+  defmodule FakeK6RunnerOrphaned do
+    def fetch_state(_instance_id, _opts), do: {:ok, %K6Runner{instance_id: "i-orphan"}}
+    def verify_instance_exists(_runner), do: {:ok, nil}
+
+    def save_state(runner, _opts) do
+      send(self(), {:save_state_called, runner.instance_id})
+      {:ok, :saved}
+    end
+  end
+
+  defmodule FakeK6RunnerHealthy do
+    def fetch_state(_instance_id, _opts), do: {:ok, %K6Runner{instance_id: "i-healthy"}}
+    def verify_instance_exists(runner), do: {:ok, %{runner | state: "running"}}
+    def save_state(_runner, _opts), do: {:ok, :saved}
+  end
+
   describe "terminate_all_runners/3 (D5: --force = replace)" do
     test "terminates every runner it is given" do
       runners = [
@@ -202,6 +218,38 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstanceTest do
 
       assert message =~ "i-reuse-3"
       assert message =~ "--force"
+    end
+  end
+
+  describe "verify_created_runner/3 (post-create orphan guard, LT-FIX-A)" do
+    test "returns the verified runner when AWS confirms it exists" do
+      runner = %K6Runner{instance_id: "i-healthy"}
+
+      assert {:ok, %K6Runner{instance_id: "i-healthy", state: "running"}} =
+               CreateInstance.verify_created_runner(runner, [], FakeK6RunnerHealthy)
+    end
+
+    test "returns a loud failed_dependency error naming the leaked instance id when AWS still reports nothing" do
+      runner = %K6Runner{instance_id: "i-orphan"}
+
+      assert {:error, %ErrorMessage{code: :failed_dependency, message: message}} =
+               CreateInstance.verify_created_runner(runner, [], FakeK6RunnerOrphaned)
+
+      assert message =~ "i-orphan"
+    end
+
+    test "never returns {:ok, nil} — the create-path bug this guards against" do
+      runner = %K6Runner{instance_id: "i-orphan"}
+
+      refute CreateInstance.verify_created_runner(runner, [], FakeK6RunnerOrphaned) === {:ok, nil}
+    end
+
+    test "re-saves state so the orphaned instance remains findable/destroyable" do
+      runner = %K6Runner{instance_id: "i-orphan"}
+
+      CreateInstance.verify_created_runner(runner, [], FakeK6RunnerOrphaned)
+
+      assert_received {:save_state_called, "i-orphan"}
     end
   end
 end
