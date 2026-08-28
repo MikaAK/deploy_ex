@@ -39,11 +39,16 @@ defmodule Mix.Tasks.DeployEx.LoadTest.DestroyInstance do
             prompt_confirmation(nodes)
           end
 
-          Enum.each(nodes, fn runner ->
-            destroy_runner(runner, opts)
-          end)
+          terminate_fn = opts[:terminate_fn] || (&DeployEx.K6Runner.terminate_runner/2)
+          results = destroy_runners(nodes, terminate_fn, opts)
 
-          Mix.shell().info([:green, "\n✓ Destroyed #{length(nodes)} k6 runner(s)"])
+          case failed_runners(results) do
+            [] ->
+              Mix.shell().info([:green, "\n✓ Destroyed #{length(nodes)} k6 runner(s)"])
+
+            failed ->
+              Mix.raise(destroy_failure_message(nodes, failed))
+          end
       end
     end
   end
@@ -100,19 +105,41 @@ defmodule Mix.Tasks.DeployEx.LoadTest.DestroyInstance do
     end
   end
 
-  defp destroy_runner(runner, opts) do
+  @doc false
+  def destroy_runners(runners, terminate_fn, opts) do
+    Enum.map(runners, fn runner -> {runner, destroy_runner(runner, terminate_fn, opts)} end)
+  end
+
+  @doc false
+  def failed_runners(results) do
+    for {runner, {:error, _error}} <- results, do: runner
+  end
+
+  @doc false
+  def destroy_failure_message(runners, failed) do
+    succeeded_count = length(runners) - length(failed)
+    failed_ids = Enum.map_join(failed, ", ", & &1.instance_id)
+
+    "Destroyed #{succeeded_count}/#{length(runners)} k6 runner(s); still running: #{failed_ids}"
+  end
+
+  defp destroy_runner(runner, terminate_fn, opts) do
     unless opts[:quiet] do
       Mix.shell().info("Destroying #{runner.instance_name || runner.instance_id}...")
     end
 
-    case DeployEx.K6Runner.terminate_runner(runner, opts) do
+    case terminate_fn.(runner, opts) do
       :ok ->
         unless opts[:quiet] do
           Mix.shell().info([:green, "  ✓ Destroyed #{runner.instance_name || runner.instance_id}"])
         end
 
-      {:error, error} ->
+        :ok
+
+      {:error, error} = error_tuple ->
         Mix.shell().error("  ✗ Failed to destroy #{runner.instance_name || runner.instance_id}: #{ErrorMessage.to_string(error)}")
+
+        error_tuple
     end
   end
 end
