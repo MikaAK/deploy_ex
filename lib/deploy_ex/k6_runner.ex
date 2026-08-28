@@ -265,15 +265,15 @@ defmodule DeployEx.K6Runner do
 
     echo "k6 Runner setup starting..."
 
-    apt-get update -y
-    apt-get install -y curl gnupg ca-certificates
+    apt-get update -y -o DPkg::Lock::Timeout=300
+    apt-get install -y -o DPkg::Lock::Timeout=300 curl gnupg ca-certificates
 
     mkdir -p /etc/apt/keyrings
     curl -fsSL https://dl.k6.io/key.gpg | gpg --dearmor -o /etc/apt/keyrings/k6.gpg
     echo "deb [signed-by=/etc/apt/keyrings/k6.gpg] https://dl.k6.io/deb stable main" | tee /etc/apt/sources.list.d/k6.list
 
-    apt-get update -y
-    apt-get install -y k6
+    apt-get update -y -o DPkg::Lock::Timeout=300
+    apt-get install -y -o DPkg::Lock::Timeout=300 k6
 
     mkdir -p /srv/k6/scripts
     chown -R admin:admin /srv/k6

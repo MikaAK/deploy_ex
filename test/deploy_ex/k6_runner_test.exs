@@ -183,7 +183,7 @@ defmodule DeployEx.K6RunnerTest do
     end
 
     test "installs k6 via apt before verifying its version", %{script: script} do
-      install_index = line_index(script, ~r/^apt-get install -y k6$/)
+      install_index = line_index(script, ~r/^apt-get install.*\bk6\b/)
       version_index = line_index(script, ~r/^k6 version$/)
 
       refute is_nil(install_index)
@@ -205,6 +205,19 @@ defmodule DeployEx.K6RunnerTest do
 
     test "aborts on first failing command", %{script: script} do
       assert script =~ "set -euo pipefail"
+    end
+
+    test "every apt-get invocation is lock-tolerant (fresh-boot dpkg lock hardening)", %{script: script} do
+      apt_get_lines =
+        script
+        |> String.split("\n")
+        |> Enum.filter(&String.starts_with?(&1, "apt-get"))
+
+      refute Enum.empty?(apt_get_lines)
+
+      Enum.each(apt_get_lines, fn line ->
+        assert line =~ "DPkg::Lock::Timeout", "expected #{inspect(line)} to be lock-tolerant"
+      end)
     end
   end
 end
