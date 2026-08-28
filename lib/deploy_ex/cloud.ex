@@ -101,6 +101,43 @@ defmodule DeployEx.Cloud do
   @spec providers() :: [atom()]
   def providers, do: Map.keys(@providers)
 
+  @doc """
+  SSH user for the active (or overridden) provider, resolved through its descriptor.
+
+  Falls back to `"admin"` when the descriptor cannot be resolved (unregistered provider) or
+  declares no default — the historical AWS default, so a lookup failure never blocks a task
+  that otherwise ran fine before this accessor existed.
+  """
+  @spec ssh_user(keyword()) :: String.t()
+  def ssh_user(opts \\ []) do
+    case opts |> active_provider() |> fetch_descriptor() do
+      {:ok, descriptor} -> descriptor.default_ssh_user() || "admin"
+      {:error, _reason} -> "admin"
+    end
+  end
+
+  @doc """
+  Resource group / project tag namespace for the active (or overridden) provider.
+
+  AWS reads its historical flat key; every other provider reads `:resource_group` from its
+  own config namespace (`config :deploy_ex, <provider>, resource_group: ...`), which
+  `validate_config/2` already validates against the descriptor's schema.
+  """
+  @spec resource_group(keyword()) :: String.t() | nil
+  def resource_group(opts \\ []), do: provider_config_value(opts, :resource_group, &Config.aws_resource_group/0)
+
+  @doc "Release bucket for the active (or overridden) provider, same resolution rule as `resource_group/1`."
+  @spec release_bucket(keyword()) :: String.t() | nil
+  def release_bucket(opts \\ []), do: provider_config_value(opts, :release_bucket, &Config.aws_release_bucket/0)
+
+  defp provider_config_value(opts, key, aws_reader) do
+    case active_provider(opts) do
+      :aws -> aws_reader.()
+      provider when is_atom(provider) -> Application.get_env(:deploy_ex, provider, [])[key]
+      _non_atom -> nil
+    end
+  end
+
   defp invalid_config_error(provider, env) do
     {:error,
      ErrorMessage.bad_request("#{inspect(provider)} config must be a keyword list", %{

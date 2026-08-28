@@ -69,6 +69,16 @@ defmodule DeployEx.Cloud.Machine do
   @doc "Preferred reachable address for an instance. IPv6 wins when present."
   @callback instance_address(Instance.t()) :: {:ok, String.t()} | {:error, ErrorMessage.t()}
 
+  @doc """
+  Blocks until every given instance id reports as running, or returns an error.
+
+  Optional for the same reason as `run_instance/2`: only a provider whose lifecycle needs an
+  ad-hoc launch-and-wait (today, the load-test runner) implements it. The AWS implementation
+  wraps the pre-existing `DeployEx.AwsMachine.wait_for_started/3` rather than reimplementing
+  the poll loop.
+  """
+  @callback await_running([String.t()], keyword()) :: :ok | {:error, ErrorMessage.t()}
+
   @callback fetch_tags(String.t(), keyword()) ::
               {:ok, %{optional(String.t()) => String.t()}} | {:error, ErrorMessage.t()}
 
@@ -83,5 +93,9 @@ defmodule DeployEx.Cloud.Machine do
   # provider conforms today without them, and the Phase-5 train makes them required when it
   # moves those call sites behind this behaviour. Implementing them now would be unused code
   # with no test that could fail.
-  @optional_callbacks run_instance: 2, terminate_instance: 2, put_tags: 3, delete_tags: 3
+  @optional_callbacks run_instance: 2,
+                      terminate_instance: 2,
+                      put_tags: 3,
+                      delete_tags: 3,
+                      await_running: 2
 end

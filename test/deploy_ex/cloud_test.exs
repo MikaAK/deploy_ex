@@ -172,6 +172,40 @@ defmodule DeployEx.CloudTest do
     end
   end
 
+  describe "ssh_user/1 — LT-OCI S1 accessor" do
+    test "resolves the AWS descriptor's admin user under the default provider" do
+      assert Cloud.ssh_user([]) === "admin"
+    end
+
+    test "resolves the OCI descriptor's ubuntu user under an explicit override" do
+      assert Cloud.ssh_user(provider: :oci) === "ubuntu"
+    end
+
+    test "falls back to admin for an unregistered provider instead of raising" do
+      assert Cloud.ssh_user(provider: :gcp) === "admin"
+    end
+  end
+
+  describe "resource_group/1 — LT-OCI S1 accessor" do
+    test "resolves through DeployEx.Config.aws_resource_group/0 under the default provider" do
+      assert Cloud.resource_group([]) === DeployEx.Config.aws_resource_group()
+    end
+
+    test "reads the :oci config namespace under an explicit override" do
+      assert Cloud.resource_group(provider: :oci) === DeployEx.Config.oci_setting(:resource_group)
+    end
+  end
+
+  describe "release_bucket/1 — LT-OCI S1 accessor" do
+    test "resolves through DeployEx.Config.aws_release_bucket/0 under the default provider" do
+      assert Cloud.release_bucket([]) === DeployEx.Config.aws_release_bucket()
+    end
+
+    test "reads the :oci config namespace under an explicit override" do
+      assert Cloud.release_bucket(provider: :oci) === DeployEx.Config.oci_setting(:release_bucket)
+    end
+  end
+
   describe "%Cloud.Instance{}" do
     test "has the exact provider-neutral field set" do
       keys =
@@ -204,6 +238,7 @@ defmodule DeployEx.CloudTest do
   describe "behaviours" do
     test "Machine declares its exact callback set" do
       assert callback_set(DeployEx.Cloud.Machine) === [
+               await_running: 2,
                delete_tags: 3,
                describe_instance: 2,
                fetch_tags: 2,
@@ -220,6 +255,7 @@ defmodule DeployEx.CloudTest do
 
     test "the Phase-5 callbacks are optional so AwsMachine conforms without them" do
       assert DeployEx.Cloud.Machine.behaviour_info(:optional_callbacks) |> Enum.sort() === [
+               await_running: 2,
                delete_tags: 3,
                put_tags: 3,
                run_instance: 2,
