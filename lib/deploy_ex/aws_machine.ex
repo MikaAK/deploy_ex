@@ -78,6 +78,97 @@ defmodule DeployEx.AwsMachine do
     end
   end
 
+  @doc """
+  Translates a provider-neutral run-instance spec into EC2 `RunInstances` params.
+
+  Implements the optional `DeployEx.Cloud.Machine.run_instance/2` callback so
+  `DeployEx.K6Runner.create_instance/2` can build one spec and let each provider's adapter
+  translate it, instead of assembling EC2-shaped params itself.
+  """
+  @impl DeployEx.Cloud.Machine
+  def run_instance(spec, opts \\ []) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+    request_fn = opts[:request_fn] || (&ExAws.request/2)
+
+    spec.network[:ami_id]
+    |> ExAws.EC2.run_instances(1, 1, run_instance_params(spec))
+    |> request_fn.(region: region)
+    |> handle_run_instance_response()
+  end
+
+  defp run_instance_params(spec) do
+    [
+      {"InstanceType", spec.instance_type},
+      {"KeyName", spec.network[:key_name]},
+      {"NetworkInterface.1.DeviceIndex", "0"},
+      {"NetworkInterface.1.SubnetId", spec.network[:subnet_id]},
+      {"NetworkInterface.1.SecurityGroupId.1", spec.network[:security_group_id]},
+      {"NetworkInterface.1.AssociatePublicIpAddress", "true"},
+      {"UserData", Base.encode64(spec.user_data)},
+      iam_instance_profile: [name: spec.network[:iam_instance_profile]],
+      tag_specifications: [{:instance, spec.tags}]
+    ]
+  end
+
+  defp handle_run_instance_response({:ok, %{body: body}}) do
+    case XmlToMap.naive_map(body) do
+      %{"RunInstancesResponse" => %{"instancesSet" => %{"item" => %{"instanceId" => instance_id}}}} ->
+        {:ok, %DeployEx.Cloud.Instance{id: instance_id}}
+
+      %{"RunInstancesResponse" => %{"instancesSet" => %{"item" => [%{"instanceId" => instance_id} | _]}}} ->
+        {:ok, %DeployEx.Cloud.Instance{id: instance_id}}
+
+      structure ->
+        {:error, ErrorMessage.bad_request(
+          "couldn't parse run instances response from aws",
+          %{structure: structure}
+        )}
+    end
+  end
+
+  defp handle_run_instance_response({:error, {:http_error, status_code, %{body: body}}}) do
+    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+      "error creating instance",
+      %{error_body: body}
+    ])}
+  end
+
+  @doc "Implements the optional `DeployEx.Cloud.Machine.terminate_instance/2` callback."
+  @impl DeployEx.Cloud.Machine
+  def terminate_instance(instance_id, opts \\ []) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+    request_fn = opts[:request_fn] || (&ExAws.request/2)
+
+    [instance_id]
+    |> ExAws.EC2.terminate_instances()
+    |> request_fn.(region: region)
+    |> handle_terminate_instance_response()
+  end
+
+  defp handle_terminate_instance_response({:ok, _}), do: :ok
+
+  defp handle_terminate_instance_response({:error, {:http_error, status_code, %{body: body}}}) do
+    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+      "error terminating instance",
+      %{error_body: body}
+    ])}
+  end
+
+  @doc """
+  Blocks until every instance id reports running. Implements the optional
+  `DeployEx.Cloud.Machine.await_running/2` callback by wrapping `wait_for_started/3` rather
+  than reimplementing its poll loop — `:wait_for_started_fn` is the injection seam that makes
+  the wrapping relationship (not the poll loop itself) testable.
+  """
+  @impl DeployEx.Cloud.Machine
+  def await_running(instance_ids, opts \\ []) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+    retries = opts[:retries] || 10
+    wait_fn = opts[:wait_for_started_fn] || (&wait_for_started/3)
+
+    wait_fn.(region, instance_ids, retries)
+  end
+
   defp scoped_running_instances(opts) do
     region = opts[:region] || DeployEx.Config.aws_region()
     resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
