@@ -12,10 +12,10 @@ mix deploy_ex.load_test.init my_app
 mix deploy_ex.load_test.create_instance
 
 # 3. Upload scripts to the runner
-mix deploy_ex.load_test.upload --script load_tests/my_app/load_test.js
+mix deploy_ex.load_test.upload my_app
 
 # 4. Run the test
-mix deploy_ex.load_test.exec --script load_test.js --target-url http://my-app:4000
+mix deploy_ex.load_test.exec my_app --target-url http://my-app:4000
 
 # 5. Install the k6 Grafana dashboard (one-time)
 mix deploy_ex.grafana.install_dashboard --id 19665
@@ -47,12 +47,12 @@ If more than one runner exists, `destroy_instance` refuses to guess — pass `--
 
 ## Prometheus Remote Write
 
-The Prometheus service template enables `--web.enable-remote-write-receiver`, so k6 pushes metrics straight in. By default `mix deploy_ex.load_test.exec` discovers the running prometheus node's private IP by tag and writes to `http://<discovered-ip>:9090/api/v1/write`; if no prometheus node is found, the test runs without metrics export. Override with `--prometheus-url` if your Prometheus runs elsewhere:
+The Prometheus service template enables `--web.enable-remote-write-receiver`, so k6 pushes metrics straight in. Nodes deployed from an OLDER template may still run a unit without the flag — the push then gets HTTP 404 from `/api/v1/write`; re-run the prometheus setup playbook (or add the flag to the unit and restart) to enable it. By default `mix deploy_ex.load_test.exec` discovers the running prometheus node's private IP by tag and writes to `http://<discovered-ip>:9090/api/v1/write`; if no prometheus node is found, the test runs without metrics export. Override with `--prometheus-url` if your Prometheus runs elsewhere:
 
 ```bash
-mix deploy_ex.load_test.exec --script load_test.js \
+mix deploy_ex.load_test.exec my_app \
   --target-url http://my-app:4000 \
-  --prometheus-url http://prom.internal:9090/api/v1/write
+  --prometheus-url http://prom.internal:9090
 ```
 
 Once metrics are flowing, install dashboard ID `19665` from grafana.com to get k6's standard visualisations:

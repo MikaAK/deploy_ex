@@ -79,8 +79,8 @@ Availability presets: `launch-first` (100%/110%, zero-downtime) or `terminate-fi
 ```bash
 mix deploy_ex.load_test.init my_app
 mix deploy_ex.load_test.create_instance [--instance-type t3.small]
-mix deploy_ex.load_test.upload --script load_test.js
-mix deploy_ex.load_test.exec --target-url http://... [--prometheus-url http://...]
+mix deploy_ex.load_test.upload <app_name>
+mix deploy_ex.load_test.exec <app_name> --target-url http://... [--prometheus-url http://...]
 mix deploy_ex.load_test.destroy_instance                       # single runner
 mix deploy_ex.load_test.destroy_instance --instance-id i-...   # multiple runners: pick one
 mix deploy_ex.load_test.destroy_instance --all                 # multiple runners: destroy all
