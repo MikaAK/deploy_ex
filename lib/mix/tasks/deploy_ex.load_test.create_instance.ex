@@ -76,17 +76,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
         else
           case DeployEx.K6Runner.verify_instance_exists(runner) do
             {:ok, verified} when not is_nil(verified) ->
-              if !opts[:quiet] do
-                Mix.shell().info([
-                  :green, "  ✓ ", :reset, "Found existing runner: ",
-                  :cyan, verified.instance_id, :reset,
-                  " (", verified.state || "unknown", ")"
-                ])
-
-                print_runner_info(verified)
-              end
-
-              {:ok, verified}
+              reuse_existing_runner(verified, opts)
 
             _ ->
               create_new_runner(opts)
@@ -96,6 +86,48 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
       _ ->
         create_new_runner(opts)
     end
+  end
+
+  # Reuse-path readiness gate — an existing runner is only handed back once k6
+  # is confirmed installed, same as a freshly created one; a half-provisioned
+  # or broken existing runner never passes as "ready".
+
+  @doc false
+  def reuse_existing_runner(runner, opts) do
+    if !opts[:quiet] do
+      Mix.shell().info([
+        :green, "  ✓ ", :reset, "Found existing runner: ",
+        :cyan, runner.instance_id, :reset,
+        " (", runner.state || "unknown", ")"
+      ])
+    end
+
+    case find_pem_file(opts) do
+      {:ok, pem_file} -> verify_reused_runner_ready(runner, pem_file, opts)
+      {:error, _} = error -> error
+    end
+  end
+
+  defp verify_reused_runner_ready(runner, pem_file, opts) do
+    case wait_for_setup_complete(runner, pem_file, opts) do
+      :ok ->
+        if !opts[:quiet] do
+          print_runner_info(runner)
+        end
+
+        {:ok, runner}
+
+      {:error, reason} ->
+        reuse_setup_check_failed(runner, reason)
+    end
+  end
+
+  defp reuse_setup_check_failed(runner, reason) do
+    {:error, ErrorMessage.failed_dependency(
+      "existing k6 runner #{runner.instance_id} did not pass the k6 setup check — " <>
+        "recreate it with: mix deploy_ex.load_test.create_instance --force",
+      %{instance_id: runner.instance_id, reason: reason}
+    )}
   end
 
   defp replace_runners(runners, opts) do

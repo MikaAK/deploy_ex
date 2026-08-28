@@ -152,4 +152,56 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstanceTest do
       refute_received :slept
     end
   end
+
+  describe "reuse_existing_runner/2 (reuse-path readiness gate)" do
+    test "returns the runner when the k6 setup check passes" do
+      runner = %K6Runner{instance_id: "i-reuse-1", public_ip: "1.2.3.4", state: "running"}
+
+      opts = [
+        pem: "/tmp/fake.pem",
+        quiet: true,
+        check_fn: fn _ip, _pem_file -> true end,
+        sleep_fn: fn _ms -> :ok end
+      ]
+
+      assert CreateInstance.reuse_existing_runner(runner, opts) === {:ok, runner}
+    end
+
+    test "runs the check through the injected check_fn, not blind trust" do
+      runner = %K6Runner{instance_id: "i-reuse-2", public_ip: "1.2.3.4", state: "running"}
+      parent = self()
+
+      opts = [
+        pem: "/tmp/fake.pem",
+        quiet: true,
+        check_fn: fn ip, pem_file ->
+          send(parent, {:checked, ip, pem_file})
+          true
+        end,
+        sleep_fn: fn _ms -> :ok end
+      ]
+
+      CreateInstance.reuse_existing_runner(runner, opts)
+
+      assert_received {:checked, "1.2.3.4", "/tmp/fake.pem"}
+    end
+
+    test "returns an actionable error naming --force when k6 is not detected" do
+      runner = %K6Runner{instance_id: "i-reuse-3", public_ip: "1.2.3.4", state: "running"}
+
+      opts = [
+        pem: "/tmp/fake.pem",
+        quiet: true,
+        check_fn: fn _ip, _pem_file -> false end,
+        sleep_fn: fn _ms -> :ok end,
+        setup_wait_retries: 1
+      ]
+
+      assert {:error, %ErrorMessage{code: :failed_dependency, message: message}} =
+               CreateInstance.reuse_existing_runner(runner, opts)
+
+      assert message =~ "i-reuse-3"
+      assert message =~ "--force"
+    end
+  end
 end
