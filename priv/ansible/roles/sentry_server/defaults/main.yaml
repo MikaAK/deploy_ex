@@ -14,3 +14,9 @@ sentry_data_device: /dev/nvme1n1
 sentry_data_dir: /mnt/sentry-data
 
 sentry_web_port: 9000
+
+# getsentry/self-hosted ships this as a plaintext default in its committed
+# .env (x-sentry-defaults). Inert under errors-only (launchpad only runs
+# under feature-complete) but must survive the upgrade path — override via
+# group_vars/host_vars before flipping to feature-complete in production.
+sentry_launchpad_rpc_shared_secret: "CHANGE_ME_INSERT_SECRET"

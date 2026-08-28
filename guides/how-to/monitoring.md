@@ -170,15 +170,17 @@ Runs upstream's **`errors-only`** compose profile (error monitoring, per the ori
 | `feature-complete` (performance monitoring, session replay, etc.) | 4 vCPU / 14000MB | Does **not** clear it — a deterministic preflight exit, not an occasional failure |
 
 **To upgrade to `feature-complete`:**
-1. Raise `instance_type` in `terraform.build.ex`'s `terraform_sentry_variables/1` to something ≥ 4 vCPU / 14GB (e.g. `t3.xlarge`).
-2. Flip `COMPOSE_PROFILES=errors-only` → `COMPOSE_PROFILES=feature-complete` in `priv/ansible/roles/sentry_server/templates/env.j2`.
+1. Raise the `sentry` node's `instance_type` in `deploys/terraform/variables.tf` (or your `.tfvars` — e.g. cfx keeps per-node overrides in `prod.tfvars`) to something ≥ 4 vCPU / 14GB (e.g. `t3.xlarge`).
+2. Flip `COMPOSE_PROFILES=errors-only` → `COMPOSE_PROFILES=feature-complete` in `deploys/ansible/roles/sentry_server/templates/env.j2`.
 3. `mix terraform.apply --target 'module.ec2_instance["sentry"]'`, then re-run `mix ansible.setup --only sentry`.
+
+Both edits are to your project's `deploys/` copy — that's where day-to-day changes belong. To change the *shipped default* for every deploy_ex consumer, edit the source templates instead: `terraform.build.ex`'s `terraform_sentry_variables/1` and `priv/ansible/roles/sentry_server/templates/env.j2` in deploy_ex itself.
 
 Disk usage under `errors-only` is meaningfully lower than `feature-complete` (fewer services, no performance/replay event volume) — `SENTRY_EVENT_RETENTION_DAYS` (`.env`, default 90) is still the main lever if the 64GB secondary volume fills up; lower it before resizing the volume.
 
 ### Access — private VPC only
 
-The Sentry web service binds to the node's private VPC address (`SENTRY_BIND` in `.env`, not loopback) — reachability is enforced by the security group, the same convention as the loki/prometheus nodes, not by binding to `127.0.0.1`. There is no public exposure and no Let's Encrypt cert this cycle.
+The Sentry web service binds to the node's private VPC address (`SENTRY_BIND` in `.env`, not `127.0.0.1`) — see the security group note below for what that does and doesn't protect. There is no public exposure and no Let's Encrypt cert this cycle.
 
 ```bash
 mix deploy_ex.ssh.authorize                              # allowlist your IP for SSH (port 22 is allowlist-only)
