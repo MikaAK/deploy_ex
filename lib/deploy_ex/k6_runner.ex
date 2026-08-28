@@ -126,10 +126,26 @@ defmodule DeployEx.K6Runner do
   billing).
   """
   def find_runners_from_ec2(opts \\ []) do
-    region = opts[:region] || DeployEx.Config.aws_region()
-    resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
+    case DeployEx.Cloud.active_provider(opts) do
+      :aws ->
+        region = opts[:region] || DeployEx.Config.aws_region()
+        resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
 
-    find_runners_from_ec2_page(region, resource_group, opts, nil, [])
+        find_runners_from_ec2_page(region, resource_group, opts, nil, [])
+
+      provider ->
+        # AWS-only EC2 DescribeInstances fallback path (see the moduledoc above and the
+        # module doc note at the top of this section) — deliberately NOT routed through
+        # Cloud.capability(:machine) this sprint (docs/superpowers/plans/lt-oci/spec.md § S2
+        # adds the OCI-native runner-listing path). Erroring here instead of running the EC2
+        # query under a non-AWS provider stops list/destroy_instance from printing another
+        # provider's leftover AWS runners as if they belonged to the active one.
+        {:error,
+         ErrorMessage.not_implemented(
+           "find_runners_from_ec2 is AWS-only (EC2 DescribeInstances) — not available for #{inspect(provider)}",
+           %{provider: provider}
+         )}
+    end
   end
 
   defp find_runners_from_ec2_page(region, resource_group, opts, next_token, acc) do
@@ -167,26 +183,31 @@ defmodule DeployEx.K6Runner do
 
   defp describe_instances_next_token(_response), do: nil
 
-  def verify_instance_exists(nil), do: {:ok, nil}
+  def verify_instance_exists(runner, opts \\ [])
 
-  def verify_instance_exists(%__MODULE__{instance_id: instance_id} = runner) do
-    case DeployEx.AwsMachine.find_instances_by_id([instance_id]) do
-      {:ok, [instance]} ->
-        updated = %{runner |
-          public_ip: instance["ipAddress"],
-          ipv6_address: instance["ipv6Address"],
-          private_ip: instance["privateIpAddress"],
-          state: instance["instanceState"]["name"]
-        }
+  def verify_instance_exists(nil, _opts), do: {:ok, nil}
 
-        {:ok, updated}
+  def verify_instance_exists(%__MODULE__{instance_id: instance_id} = runner, opts) do
+    with {:ok, machine} <- DeployEx.Cloud.capability(:machine, opts) do
+      case machine.describe_instance(instance_id, opts) do
+        {:ok, instance} ->
+          updated = %{runner |
+            public_ip: instance.public_ip,
+            ipv6_address: instance.ipv6,
+            private_ip: instance.private_ip,
+            state: instance.state
+          }
 
-      {:error, %ErrorMessage{code: :not_found}} ->
-        :ok = delete_state(runner, [])
-        {:ok, nil}
+          {:ok, updated}
 
-      error ->
-        error
+        {:error, %ErrorMessage{code: :not_found}} ->
+          with :ok <- delete_state(runner, opts) do
+            {:ok, nil}
+          end
+
+        error ->
+          error
+      end
     end
   end
 

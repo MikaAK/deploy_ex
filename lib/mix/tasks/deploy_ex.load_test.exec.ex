@@ -93,7 +93,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
   end
 
   defp parse_args(args) do
-    OptionParser.parse!(args,
+    {opts, extra_args} = OptionParser.parse!(args,
       aliases: [i: :instance_id, q: :quiet],
       switches: [
         script: :string,
@@ -101,9 +101,12 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
         prometheus_url: :string,
         instance_id: :string,
         pem: :string,
-        quiet: :boolean
+        quiet: :boolean,
+        provider: :string
       ]
     )
+
+    {DeployExHelpers.parse_provider_opt!(opts), extra_args}
   end
 
   defdelegate resolve_runner(opts, k6_runner_impl \\ DeployEx.K6Runner), to: DeployEx.K6Runner

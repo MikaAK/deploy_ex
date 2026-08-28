@@ -38,7 +38,7 @@ defmodule DeployEx.AwsMachine do
   def describe_instance(instance_id, opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
 
-    with {:ok, [instance | _rest]} <- find_instances_by_id(region, [instance_id]) do
+    with {:ok, [instance | _rest]} <- find_instances_by_id(region, [instance_id], opts) do
       {:ok, to_instance(instance)}
     end
   end
@@ -280,8 +280,8 @@ defmodule DeployEx.AwsMachine do
     instance["instanceState"]["name"] in ["pending", "running", "starting"]
   end
 
-  def find_instances_by_id(region \\ DeployEx.Config.aws_region(), instance_ids) do
-    with {:ok, instances} <- fetch_instances(region) do
+  def find_instances_by_id(region \\ DeployEx.Config.aws_region(), instance_ids, opts \\ []) do
+    with {:ok, instances} <- fetch_instances(region, opts) do
       case filter_by_instance_id(instances, instance_ids) do
         [] -> {:error, ErrorMessage.not_found("no aws instances found with those instance ids")}
         instances -> {:ok, instances}

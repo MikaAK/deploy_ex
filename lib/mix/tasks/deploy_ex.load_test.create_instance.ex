@@ -51,17 +51,21 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
     end
   end
 
-  defp parse_args(args) do
-    OptionParser.parse!(args,
+  @doc false
+  def parse_args(args) do
+    {opts, extra_args} = OptionParser.parse!(args,
       aliases: [f: :force, q: :quiet],
       switches: [
         instance_type: :string,
         force: :boolean,
         quiet: :boolean,
         resource_group: :string,
-        pem: :string
+        pem: :string,
+        provider: :string
       ]
     )
+
+    {DeployExHelpers.parse_provider_opt!(opts), extra_args}
   end
 
   defp maybe_reuse_or_create(opts) do

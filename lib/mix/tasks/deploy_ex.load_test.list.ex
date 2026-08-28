@@ -36,11 +36,12 @@ defmodule Mix.Tasks.DeployEx.LoadTest.List do
       aliases: [q: :quiet],
       switches: [
         json: :boolean,
-        quiet: :boolean
+        quiet: :boolean,
+        provider: :string
       ]
     )
 
-    opts
+    DeployExHelpers.parse_provider_opt!(opts)
   end
 
   defp list_runners(opts) do
