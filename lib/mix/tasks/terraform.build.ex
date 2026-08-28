@@ -237,7 +237,7 @@ defmodule Mix.Tasks.Terraform.Build do
     end
   end
 
-  defp terraform_loki_variables(opts) do
+  def terraform_loki_variables(opts) do
     if opts[:no_logging] do
       ""
     else

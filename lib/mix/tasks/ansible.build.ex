@@ -165,18 +165,28 @@ defmodule Mix.Tasks.Ansible.Build do
     end
   end
 
+  @doc """
+  Builds the `is_*_enabled` flags shared by group_vars/all.yaml.eex — the
+  single source of truth for both `mix ansible.build` and
+  `DeployEx.PrivRenderer`'s render-diff mirror, so the two can't drift.
+  """
+  def ansible_group_vars_enabled_flags(opts) do
+    %{
+      is_logging_enabled: !opts[:no_logging],
+      is_prometheus_enabled: !opts[:no_prometheus],
+      is_sentry_enabled: !opts[:no_sentry]
+    }
+  end
+
   defp create_ansible_group_vars_file(opts) do
     if opts[:host_only] do
       :ok
     else
-      variables = %{
-        is_logging_enabled: !opts[:no_logging],
-        is_prometheus_enabled: !opts[:no_prometheus],
+      variables = Map.merge(ansible_group_vars_enabled_flags(opts), %{
         is_mimir_enabled: DeployEx.Mimir.enabled?(opts),
-        is_sentry_enabled: !opts[:no_sentry],
         loki_logger_s3_region: opts[:aws_logging_bucket],
         loki_logger_s3_bucket_name: opts[:aws_logging_region]
-      }
+      })
 
       DeployExHelpers.write_template(
         DeployExHelpers.priv_folder("ansible/group_vars/all.yaml.eex"),
