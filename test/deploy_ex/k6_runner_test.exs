@@ -525,6 +525,24 @@ defmodule DeployEx.K6RunnerTest do
         "</item></instancesSet></RunInstancesResponse>"
     end
 
+    test "no --instance-type override: the spec carries no default, AWS still ends up with t3.small (LT-OCI S2)" do
+      # instance_type defaults used to live in K6Runner (AWS-flavored "t3.small") and leaked
+      # into every provider's neutral spec. Moving the default into each provider's own
+      # run_instance/2 (AwsMachine falls back to "t3.small", OciMachine to its own shape
+      # default) means the spec itself carries nil when the caller gave no override, and each
+      # adapter picks its own honest default instead of inheriting AWS's.
+      request_fn = fn request, _config ->
+        send(self(), {:ec2_request, request})
+        {:ok, %{body: run_instances_response("i-default-type")}}
+      end
+
+      assert {:ok, %K6Runner{instance_id: "i-default-type"}} =
+               K6Runner.create_instance(%{}, request_fn: request_fn)
+
+      assert_received {:ec2_request, %ExAws.Operation.Query{params: ec2_params}}
+      assert ec2_params["InstanceType"] === "t3.small"
+    end
+
     test "creates the instance via the machine capability and returns a K6Runner" do
       request_fn = fn request, _config ->
         send(self(), {:ec2_request, request})

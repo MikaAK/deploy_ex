@@ -20,14 +20,13 @@ defmodule DeployEx.K6Runner do
   ]
 
   @state_prefix "k6-runners"
-  @default_instance_type "t3.small"
 
   def create_instance(params, opts \\ []) do
     environment = opts[:environment] || DeployEx.Config.env()
 
     with {:ok, resource_group} <- resolve_resource_group(opts) do
       instance_name = build_instance_name(environment)
-      instance_type = params[:instance_type] || @default_instance_type
+      instance_type = params[:instance_type]
 
       tags = [
         {:Name, instance_name},
