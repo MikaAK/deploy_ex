@@ -5,5 +5,5 @@
     - log_cleanup
     - prometheus_exporter
     - grafana_loki
-    - grafana_alloy
-    - ipv6
+    <%= if @use_mimir do %>- grafana_alloy
+    <% end %>- ipv6

@@ -110,6 +110,12 @@ defmodule DeployEx.PrivRendererMimirTest do
       assert String.starts_with?(content, @baseline_group_vars)
       assert content =~ ~s(grafana_mimir_url: "http://10.0.1.70:8080")
     end
+
+    test "ends with a trailing newline (POSIX text file convention)" do
+      content = render_group_vars([])
+
+      assert String.ends_with?(content, "\n")
+    end
   end
 
   describe "group_vars grafana_mimir_url — --no-mimir" do
@@ -123,6 +129,64 @@ defmodule DeployEx.PrivRendererMimirTest do
       content = render_group_vars(no_mimir: true)
 
       assert content === @baseline_group_vars
+    end
+  end
+
+  # SECTION: app setup playbook — replacement bar (metrics coverage under --no-prometheus)
+
+  defp render_app_setup_playbook(opts) do
+    {:ok, temp_dir} = PrivRenderer.render_to_temp(Keyword.put_new(opts, :environment, "dev"))
+    on_exit(fn -> File.rm_rf!(temp_dir) end)
+    File.read!(Path.join(temp_dir, "ansible/setup/deploy_ex.yaml"))
+  end
+
+  describe "app setup playbook — prometheus_exporter kept unless BOTH no_prometheus and no_mimir" do
+    test "kept by default (both prometheus and mimir enabled)" do
+      content = render_app_setup_playbook([])
+
+      assert content =~ "- prometheus_exporter"
+    end
+
+    test "kept with only --no-prometheus — Alloy still needs it to push node_exporter metrics to Mimir" do
+      content = render_app_setup_playbook(no_prometheus: true)
+
+      assert content =~ "- prometheus_exporter"
+    end
+
+    test "omitted only when BOTH --no-prometheus and --no-mimir — no metrics consumer left" do
+      content = render_app_setup_playbook(no_prometheus: true, no_mimir: true)
+
+      refute content =~ "- prometheus_exporter"
+    end
+
+    test "kept with only --no-mimir (prometheus still pull-scraping it)" do
+      content = render_app_setup_playbook(no_mimir: true)
+
+      assert content =~ "- prometheus_exporter"
+    end
+  end
+
+  # SECTION: monitoring setup playbooks — grafana_alloy gated on mimir being enabled
+
+  defp render_monitoring_setup_playbook(name, opts) do
+    {:ok, temp_dir} = PrivRenderer.render_to_temp(Keyword.put_new(opts, :environment, "dev"))
+    on_exit(fn -> File.rm_rf!(temp_dir) end)
+    File.read!(Path.join(temp_dir, "ansible/setup/#{name}.yaml"))
+  end
+
+  describe "monitoring setup playbooks — grafana_alloy gated on mimir" do
+    for name <- ["grafana_ui", "loki_log_aggregator", "prometheus_db"] do
+      test "#{name}.yaml includes grafana_alloy by default (mimir ON)" do
+        content = render_monitoring_setup_playbook(unquote(name), [])
+
+        assert content =~ "- grafana_alloy"
+      end
+
+      test "#{name}.yaml omits grafana_alloy with --no-mimir (nothing to push metrics to)" do
+        content = render_monitoring_setup_playbook(unquote(name), no_mimir: true)
+
+        refute content =~ "- grafana_alloy"
+      end
     end
   end
 end

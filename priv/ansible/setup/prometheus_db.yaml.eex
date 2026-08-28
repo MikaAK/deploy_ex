@@ -4,5 +4,5 @@
     - awscli
     - prometheus_exporter
     - prometheus_db
-    - grafana_alloy
-    - ipv6
+    <%= if @use_mimir do %>- grafana_alloy
+    <% end %>- ipv6
