@@ -14,7 +14,3 @@ sentry_data_device: /dev/nvme1n1
 sentry_data_dir: /mnt/sentry-data
 
 sentry_web_port: 9000
-
-# getsentry/self-hosted ships this as a plaintext default in its committed
-# .env. Override via group_vars/host_vars before any live/production apply.
-sentry_launchpad_rpc_shared_secret: "CHANGE_ME_INSERT_SECRET"

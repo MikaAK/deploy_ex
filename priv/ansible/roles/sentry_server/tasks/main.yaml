@@ -79,6 +79,7 @@
     - name: Persist the Sentry data mount via fstab
       lineinfile:
         path: /etc/fstab
+        regexp: "^\\S+\\s+{{ sentry_data_dir }}\\s"
         line: "{{ sentry_data_device }} {{ sentry_data_dir }} ext4 defaults,nofail 0 2"
         create: true
 
@@ -98,11 +99,17 @@
         state: restarted
       when: sentry_docker_daemon_config.changed
 
+    # getsentry/self-hosted git-tracks .env with real content, and env.j2
+    # rewrites it below — force:true so a re-run's checkout doesn't abort
+    # with "Local modifications exist" against our previous render.
+    # Untracked files (config.yml, the installed-version marker) survive a
+    # forced checkout; only tracked files reset.
     - name: Clone getsentry/self-hosted at {{ sentry_release_version }}
       git:
         repo: https://github.com/getsentry/self-hosted.git
         dest: "{{ sentry_install_dir }}"
         version: "{{ sentry_release_version }}"
+        force: true
 
     - name: Render Sentry .env
       template:
@@ -112,21 +119,18 @@
         group: root
         mode: '0600'
 
-    - name: Render Sentry config.yml (system.url-prefix from sentry_url)
-      template:
-        src: config.yml.j2
-        dest: "{{ sentry_install_dir }}/sentry/config.yml"
-        owner: root
-        group: root
-        mode: '0600'
-
     - name: Check for an existing installed-version marker
       stat:
         path: "{{ sentry_install_dir }}/.deploy_ex_installed_{{ sentry_release_version }}"
       register: sentry_installed_marker
 
-    # install.sh runs a full docker image pull + DB migration — only re-run
-    # it when the pinned version hasn't been installed yet.
+    # install.sh runs a full docker image pull + DB migration, and (via
+    # ensure-files-from-examples.sh + generate-secret-key.sh) is what
+    # creates sentry/config.yml from the upstream example and writes the
+    # generated system.secret-key — deploy_ex must NOT pre-create
+    # config.yml, or the secret-key generator's `!!changeme!!` grep never
+    # matches and no key gets written. Only re-run when the pinned version
+    # hasn't been installed yet.
     - name: Run the Sentry self-hosted install script
       command: ./install.sh --skip-user-creation --skip-commit-check
       args:
@@ -140,19 +144,36 @@
         mode: '0644'
       when: not sentry_installed_marker.stat.exists
 
+    # Patches system.url-prefix in place on the upstream-generated
+    # config.yml — never templates the whole file, so
+    # system.secret-key (written once by install.sh) and every other
+    # upstream default survive every re-run untouched.
+    - name: Set system.url-prefix in Sentry config.yml
+      register: sentry_config_url_prefix
+      lineinfile:
+        path: "{{ sentry_install_dir }}/sentry/config.yml"
+        regexp: "^#?\\s*system\\.url-prefix:.*$"
+        line: "system.url-prefix: '{{ sentry_url }}'"
+
     - name: Ensure Sentry services are up (docker compose up -d, restart policy from compose)
       command: docker compose up -d
       args:
         chdir: "{{ sentry_install_dir }}"
       changed_when: false
 
+    - name: Restart the Sentry web container when config.yml changes
+      command: docker compose restart web
+      args:
+        chdir: "{{ sentry_install_dir }}"
+      when: sentry_config_url_prefix.changed
+
     - name: Wait for the Sentry web service to become healthy
       uri:
-        url: "http://127.0.0.1:{{ sentry_web_port }}/auth/login/"
+        url: "http://{{ ansible_default_ipv4.address }}:{{ sentry_web_port }}/_health/"
         status_code: 200
         timeout: 10
       register: sentry_health
-      retries: 30
+      retries: 60
       delay: 10
       until: sentry_health.status == 200
 
