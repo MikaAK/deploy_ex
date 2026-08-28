@@ -38,6 +38,63 @@ defmodule DeployEx.AwsMachineTest do
       assert {:error, %ErrorMessage{code: :not_found}} =
                AwsMachine.describe_instance("i-missing", request_fn: request_fn)
     end
+
+    test "does NOT forward arbitrary caller opts into the DescribeInstances request params (G1 credential-leak guard)" do
+      request_fn = fn request, _config ->
+        send(self(), {:ec2_request, request})
+        {:ok, %{body: describe_instance_response("i-1", "running")}}
+      end
+
+      # A caller's whole opts keyword list often carries a pem file PATH (--pem), the resolved
+      # :provider, --quiet, etc. Only :request_fn is a real seam here — everything else must be
+      # whitelisted away before it reaches ExAws.EC2.describe_instances/1, or it becomes a real
+      # EC2 API query parameter (e.g. "Pem" => "/secret/path/key.pem") that reaches AWS and
+      # CloudTrail.
+      AwsMachine.describe_instance("i-1",
+        request_fn: request_fn,
+        pem: "/secret/path/key.pem",
+        quiet: true,
+        provider: :oci
+      )
+
+      assert_received {:ec2_request, %ExAws.Operation.Query{params: params}}
+
+      refute Map.has_key?(params, "Pem")
+      refute Map.has_key?(params, "Quiet")
+      refute Map.has_key?(params, "Provider")
+
+      assert params === %{"Action" => "DescribeInstances", "Version" => "2016-11-15"}
+    end
+  end
+
+  describe "find_instances_by_tags/2 — request_fn seam + no opts leak (LT-OCI review-fix cycle 3)" do
+    test "routes the tag-filter query through the injected request_fn" do
+      request_fn = fn request, _config ->
+        send(self(), {:ec2_request, request})
+        {:ok, %{body: "<DescribeInstancesResponse><reservationSet/></DescribeInstancesResponse>"}}
+      end
+
+      assert {:ok, []} = AwsMachine.find_instances_by_tags([{"K6Runner", "true"}], request_fn: request_fn)
+
+      assert_received {:ec2_request, %ExAws.Operation.Query{action: :describe_instances}}
+    end
+
+    test "does NOT forward arbitrary caller opts into the request params (same G1 leak class)" do
+      request_fn = fn request, _config ->
+        send(self(), {:ec2_request, request})
+        {:ok, %{body: "<DescribeInstancesResponse><reservationSet/></DescribeInstancesResponse>"}}
+      end
+
+      AwsMachine.find_instances_by_tags([{"K6Runner", "true"}],
+        request_fn: request_fn,
+        pem: "/secret/path/key.pem",
+        quiet: true
+      )
+
+      assert_received {:ec2_request, %ExAws.Operation.Query{params: params}}
+      refute Map.has_key?(params, "Pem")
+      refute Map.has_key?(params, "Quiet")
+    end
   end
 
   describe "run_instance/2 — neutral spec to EC2 RunInstances params (LT-OCI S1)" do
