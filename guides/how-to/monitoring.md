@@ -160,20 +160,35 @@ Useful dashboard IDs:
 
 Self-hosted error monitoring (`getsentry/self-hosted`, pinned release — see `deploys/ansible/roles/sentry_server/defaults/main.yaml` for the current tag). Provisioned by default; disable at build time with `--no-sentry`.
 
-### Sizing
+### Sizing and profile
 
-Defaults to a `t3.large` instance (2 vCPU / 8GB) with a 64GB secondary EBS volume for the compose stack's Postgres/Kafka/ClickHouse data. Upstream `getsentry/self-hosted` publishes a **4 vCPU / 16GB minimum** — `t3.large` is a deliberately smaller starting point. Resize up in `deploys/terraform/variables.tf` (the `sentry.instance_type` field) only on a measured install failure, then `mix terraform.apply --target 'module.ec2_instance["sentry"]'`.
+Runs upstream's **`errors-only`** compose profile (error monitoring, per the original ask) on a `t3.large` instance (2 vCPU / 8GB) with a 64GB secondary EBS volume for Postgres/Kafka/ClickHouse data. Upstream's `install.sh` hard-exits in `check-minimum-requirements.sh` when resources are below its floor for the *active* profile:
+
+| Profile | Floor | `t3.large` (2 vCPU / 8GB) |
+|---|---|---|
+| `errors-only` (default here) | 2 vCPU / 7000MB | Clears it |
+| `feature-complete` (performance monitoring, session replay, etc.) | 4 vCPU / 14000MB | Does **not** clear it — a deterministic preflight exit, not an occasional failure |
+
+**To upgrade to `feature-complete`:**
+1. Raise `instance_type` in `terraform.build.ex`'s `terraform_sentry_variables/1` to something ≥ 4 vCPU / 14GB (e.g. `t3.xlarge`).
+2. Flip `COMPOSE_PROFILES=errors-only` → `COMPOSE_PROFILES=feature-complete` in `priv/ansible/roles/sentry_server/templates/env.j2`.
+3. `mix terraform.apply --target 'module.ec2_instance["sentry"]'`, then re-run `mix ansible.setup --only sentry`.
+
+Disk usage under `errors-only` is meaningfully lower than `feature-complete` (fewer services, no performance/replay event volume) — `SENTRY_EVENT_RETENTION_DAYS` (`.env`, default 90) is still the main lever if the 64GB secondary volume fills up; lower it before resizing the volume.
 
 ### Access — private VPC only
 
-The Sentry web service binds to `127.0.0.1` on the node (never the VPC private IP, never a public IP) — there is no public exposure and no Let's Encrypt cert this cycle. Reach the UI through an SSH tunnel:
+The Sentry web service binds to the node's private VPC address (`SENTRY_BIND` in `.env`, not loopback) — reachability is enforced by the security group, the same convention as the loki/prometheus nodes, not by binding to `127.0.0.1`. There is no public exposure and no Let's Encrypt cert this cycle.
 
 ```bash
-mix deploy_ex.find_nodes --tag MonitoringKey=sentry     # find the node's IP
-ssh -i deploys/terraform/*.pem -L 9000:127.0.0.1:9000 admin@<sentry-node-ip>
+mix deploy_ex.ssh.authorize                              # allowlist your IP for SSH (port 22 is allowlist-only)
+mix deploy_ex.find_nodes --tag MonitoringKey=sentry       # find the node's IP
+ssh -i deploys/terraform/*.pem -L 9000:10.0.1.80:9000 admin@<sentry-node-ip>
 ```
 
-Then browse `http://localhost:9000` locally. `group_vars/all.yaml`'s `sentry_url` (`http://10.0.1.70:9000`) is what the Sentry container itself uses to build links back to the UI — it is not a directly-reachable URL from your machine.
+The `-L` remote address (the node's own bound VPC address, on port 9000) is resolved by the SSH server (the sentry node), not your machine. Then browse `http://localhost:9000` locally. `group_vars/all.yaml`'s `sentry_url` is the same address — it's what the Sentry container uses to build links back to the UI, and is also what the tunnel targets.
+
+**Security group note:** a freshly-generated deploy_ex security group has no rule allowing traffic between members of the group itself, and no rule for port 9000 — only `http-80-tcp`/`https-443-tcp` from `0.0.0.0/0` plus the dynamic SSH allowlist. cfx's live security group currently has an all-protocol self-referencing rule (infrastructure drift, not shipped by these templates) which is why the tunnel already works there. New consumers need an equivalent intra-SG (or port-9000-scoped) ingress rule added by hand — **this sprint does not template any security group change.**
 
 If the node isn't running:
 
@@ -183,7 +198,9 @@ mix ansible.setup --only sentry
 
 ### Idempotence
 
-`sentry_server`'s install task is guarded by a marker file (`.deploy_ex_installed_<version>` in the install directory) — re-running `ansible.setup` on a healthy node does not re-run `install.sh` (a full image pull + DB migration) or re-clone the repo unnecessarily. Bumping `sentry_release_version` removes that guard for the new version and re-runs the install.
+- **Install**: guarded by a marker file (`.deploy_ex_installed_<version>` in the install directory) — re-running `ansible.setup` on a healthy node does not re-run `install.sh` (a full image pull + DB migration). Bumping `sentry_release_version` removes the guard for the new version and re-runs the install.
+- **`.env`**: getsentry/self-hosted git-tracks `.env` with real content; deploy_ex's `env.j2` overwrites it every run. The `git` clone task uses `force: true` so a re-run's checkout doesn't abort on "Local modifications exist" — it resets the tracked `.env` and then `env.j2` re-renders the private-bind override immediately after. Untracked files (`sentry/config.yml`, the install marker) are unaffected by the forced checkout.
+- **`config.yml`**: deploy_ex never templates the whole file — only `system.url-prefix` is patched in place (idempotent `lineinfile`, regex-matched) *after* `install.sh` runs. `install.sh` is what creates `config.yml` from upstream's example and writes `system.secret-key` on first install; pre-creating the file would skip both steps and every re-run would wipe the generated key.
 
 ## Troubleshooting
 

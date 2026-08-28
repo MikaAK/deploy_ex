@@ -69,7 +69,7 @@ Terraform for AWS provisioning (VPC, EC2, RDS, ALB, IAM, S3, DynamoDB state lock
 
 Optional services, toggle off with `--no-*` at build time: Postgres, Redis, Grafana UI, Loki, Prometheus, Mimir, Sentry.
 
-Sentry defaults to a `t3.large` node (upstream `getsentry/self-hosted` publishes a 4 vCPU / 16GB minimum — resize up in `deploys/terraform/variables.tf` only on a measured install failure) and is reachable only via SSH tunnel, never a public IP — see [Monitoring → Sentry](guides/how-to/monitoring.md#sentry).
+Sentry runs upstream's `errors-only` profile on a `t3.large` node (clears upstream's 2 vCPU / 7000MB floor for that profile; `feature-complete` needs ≥ 4 vCPU / 14000MB — see the guide for the exact upgrade steps) and is reachable only via SSH tunnel, never a public IP — see [Monitoring → Sentry](guides/how-to/monitoring.md#sentry).
 
 ## Quickstart
 
