@@ -10,6 +10,36 @@ defmodule DeployEx.AwsMachineTest do
   alias DeployEx.AwsMachine
   alias DeployEx.Cloud.Instance
 
+  describe "describe_instance/2 — request_fn seam (LT-OCI review-fix)" do
+    defp describe_instance_response(instance_id, state) do
+      "<DescribeInstancesResponse><reservationSet><item><instancesSet><item>" <>
+        "<instanceId>#{instance_id}</instanceId>" <>
+        "<instanceState><name>#{state}</name></instanceState>" <>
+        "</item></instancesSet></item></reservationSet></DescribeInstancesResponse>"
+    end
+
+    test "routes the DescribeInstances call through the injected request_fn, not the real ExAws.request" do
+      request_fn = fn request, _config ->
+        send(self(), {:ec2_request, request})
+        {:ok, %{body: describe_instance_response("i-1", "running")}}
+      end
+
+      assert {:ok, %Instance{id: "i-1", state: "running"}} =
+               AwsMachine.describe_instance("i-1", request_fn: request_fn)
+
+      assert_received {:ec2_request, %ExAws.Operation.Query{action: :describe_instances}}
+    end
+
+    test "returns a not_found error when no instance matches, without hitting the real network" do
+      request_fn = fn _request, _config ->
+        {:ok, %{body: "<DescribeInstancesResponse><reservationSet/></DescribeInstancesResponse>"}}
+      end
+
+      assert {:error, %ErrorMessage{code: :not_found}} =
+               AwsMachine.describe_instance("i-missing", request_fn: request_fn)
+    end
+  end
+
   describe "run_instance/2 — neutral spec to EC2 RunInstances params (LT-OCI S1)" do
     defp neutral_spec do
       %{

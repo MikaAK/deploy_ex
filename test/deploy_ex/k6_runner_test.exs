@@ -175,6 +175,104 @@ defmodule DeployEx.K6RunnerTest do
     end
   end
 
+  describe "K6Runner :oci contract — not_implemented vs OCI-routed (LT-OCI review-fix)" do
+    test "machine ops are not_implemented under :oci — the Machine capability is not wired yet" do
+      runner = %K6Runner{instance_id: "i-contract-1"}
+
+      assert {:error, %ErrorMessage{code: :not_implemented}} =
+               K6Runner.create_instance(%{}, provider: :oci)
+
+      assert {:error, %ErrorMessage{code: :not_implemented}} =
+               K6Runner.terminate_instance("i-contract-1", provider: :oci)
+
+      assert {:error, %ErrorMessage{code: :not_implemented}} =
+               K6Runner.verify_instance_exists(runner, provider: :oci)
+
+      assert {:error, %ErrorMessage{code: :not_implemented}} =
+               K6Runner.find_runners_from_ec2(provider: :oci)
+    end
+
+    test "state ops route to OciObjectStore — blocked only by unset release_bucket, never :not_implemented" do
+      results = [
+        save_state: K6Runner.save_state(%K6Runner{instance_id: "i-contract-2"}, provider: :oci),
+        fetch_state: K6Runner.fetch_state("i-contract-2", provider: :oci),
+        fetch_all_runners: K6Runner.fetch_all_runners(provider: :oci),
+        delete_state: K6Runner.delete_state("i-contract-2", provider: :oci)
+      ]
+
+      Enum.each(results, fn {label, result} ->
+        assert {:error, %ErrorMessage{code: :bad_request}} = result,
+               "#{label} under :oci expected :bad_request (unset release_bucket), got #{inspect(result)}"
+      end)
+    end
+  end
+
+  describe "verify_instance_exists/2 (routed through Cloud.capability(:machine) — LT-OCI review-fix)" do
+    defp describe_instance_response(instance_id, state, private_ip) do
+      "<DescribeInstancesResponse><reservationSet><item><instancesSet><item>" <>
+        "<instanceId>#{instance_id}</instanceId>" <>
+        "<instanceState><name>#{state}</name></instanceState>" <>
+        "<privateIpAddress>#{private_ip}</privateIpAddress>" <>
+        "</item></instancesSet></item></reservationSet></DescribeInstancesResponse>"
+    end
+
+    defp describe_instance_not_found_response do
+      "<DescribeInstancesResponse><reservationSet/></DescribeInstancesResponse>"
+    end
+
+    test "returns {:ok, nil} for nil input, opts ignored" do
+      assert K6Runner.verify_instance_exists(nil, provider: :oci) === {:ok, nil}
+    end
+
+    test "found instance: maps the normalized Instance struct fields onto the runner" do
+      request_fn = fn _request, _config ->
+        {:ok, %{body: describe_instance_response("i-found-1", "running", "10.0.0.5")}}
+      end
+
+      runner = %K6Runner{instance_id: "i-found-1"}
+
+      assert {:ok, %K6Runner{instance_id: "i-found-1", state: "running", private_ip: "10.0.0.5"}} =
+               K6Runner.verify_instance_exists(runner, request_fn: request_fn)
+    end
+
+    test "not found: deletes the stale state and returns {:ok, nil}" do
+      request_fn = fn
+        %ExAws.Operation.Query{}, _config ->
+          {:ok, %{body: describe_instance_not_found_response()}}
+
+        %ExAws.Operation.S3{} = request, _config ->
+          send(self(), {:s3_delete_request, request})
+          {:ok, %{body: ""}}
+      end
+
+      runner = %K6Runner{instance_id: "i-stale-1"}
+
+      assert {:ok, nil} = K6Runner.verify_instance_exists(runner, request_fn: request_fn)
+      assert_received {:s3_delete_request, %ExAws.Operation.S3{http_method: :delete}}
+    end
+
+    test "not found, but the state delete itself fails: propagates the error rather than crashing" do
+      request_fn = fn
+        %ExAws.Operation.Query{}, _config ->
+          {:ok, %{body: describe_instance_not_found_response()}}
+
+        %ExAws.Operation.S3{}, _config ->
+          {:error, {:http_error, 500, %{body: "boom"}}}
+      end
+
+      runner = %K6Runner{instance_id: "i-stale-delete-fails"}
+
+      assert {:error, %ErrorMessage{}} = K6Runner.verify_instance_exists(runner, request_fn: request_fn)
+    end
+
+    test "capability not implemented (e.g. under :oci): propagates the error WITHOUT deleting state (cross-provider leak guard)" do
+      runner = %K6Runner{instance_id: "i-oci-1"}
+
+      assert {:error, %ErrorMessage{code: :not_implemented}} =
+               K6Runner.verify_instance_exists(runner, provider: :oci)
+    end
+  end
+
   describe "build_user_data/0 (D1: debian-13 compatibility)" do
     setup do
       %{script: K6Runner.build_user_data()}
@@ -469,6 +567,21 @@ defmodule DeployEx.K6RunnerTest do
   # Behavioural pagination tests. Responses are queued in the process dictionary — per-PID
   # isolated, no setup/teardown. Mirrors test/deploy_ex/cloud/pagination_test.exs: replacing the
   # recursion with a single request makes these red.
+  describe "find_runners_from_ec2/1 provider guard (LT-OCI review-fix)" do
+    test "errors instead of paginating EC2 under a non-AWS provider (must not print AWS runners as OCI)" do
+      assert {:error, %ErrorMessage{code: :not_implemented}} =
+               K6Runner.find_runners_from_ec2(provider: :oci)
+    end
+
+    test "does not touch ExAws at all under a non-AWS provider" do
+      request_fn = fn _request, _config ->
+        flunk("find_runners_from_ec2 must not call ExAws under a non-AWS provider")
+      end
+
+      K6Runner.find_runners_from_ec2(provider: :oci, request_fn: request_fn)
+    end
+  end
+
   describe "find_runners_from_ec2/1 pagination" do
     defp queue_responses(responses), do: Process.put(:responses, responses)
 
