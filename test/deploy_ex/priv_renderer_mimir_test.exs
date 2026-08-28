@@ -3,8 +3,12 @@ defmodule DeployEx.PrivRendererMimirTest do
 
   alias DeployEx.PrivRenderer
 
-  # Fixtures captured from the pre-mimir render (main @ e06649a) — the byte-identical
-  # baseline that `--no-mimir` must reproduce exactly.
+  # baseline_variables.tf: re-captured 2026-08-27 from build/ebs-fix (main @ 7c66231 +
+  # the nested-ebs fix, mimir disabled) — reflects the nested `ebs = {}` form now used by
+  # redis/loki/grafana/prometheus. NOT main @ e06649a; those bytes are stale post-ebs-fix.
+  # baseline_group_vars_all.yaml: untouched by the nested-ebs fix (no ebs keys in
+  # group_vars), still the original pre-mimir capture from main @ e06649a.
+  # Both are the byte-identical baseline that `--no-mimir` must reproduce exactly.
   @fixtures_dir Path.expand("../support/fixtures/mimir", __DIR__)
   @baseline_variables_tf File.read!(Path.join(@fixtures_dir, "baseline_variables.tf"))
   @baseline_group_vars File.read!(Path.join(@fixtures_dir, "baseline_group_vars_all.yaml"))
@@ -13,9 +17,12 @@ defmodule DeployEx.PrivRendererMimirTest do
       prometheus_db = {
         name                        = "Prometheus Metrics Database"
         instance_type               = "t3.micro"
-        enable_ebs                  = true
-        instance_ebs_secondary_size = 16
         private_ip                  = "10.0.1.40"
+
+        ebs = {
+          enable_secondary = true
+          secondary_size   = 16
+        }
 
         tags = {
           Vendor = "Grafana"
