@@ -24,6 +24,14 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Init do
       { duration: '1m', target: 20 },
       { duration: '10s', target: 0 },
     ],
+    // Abort with a failing exit code instead of reporting "completed" when
+    // almost every request fails (e.g. hitting the wrong URL/port).
+    thresholds: {
+      http_req_failed: [{ threshold: 'rate<0.01', abortOnFail: true }],
+    },
+    // Uncomment when targeting a self-signed cert or a raw IP with no
+    // matching TLS hostname (e.g. an internal node without a real domain):
+    // insecureSkipTLSVerify: true,
   };
 
   export default function () {
@@ -38,6 +46,9 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Init do
     sleep(1);
   }
   """
+
+  @doc false
+  def script_template, do: @script_template
 
   def run(args) do
     case args do
@@ -62,7 +73,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Init do
     end
 
     File.mkdir_p!(dir)
-    File.write!(script_path, @script_template)
+    File.write!(script_path, script_template())
 
     Mix.shell().info([
       :green, "✓ ", :reset, "Created ", :cyan, script_path, :reset, "\n\n",
