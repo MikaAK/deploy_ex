@@ -245,6 +245,135 @@ defmodule DeployEx.K6RunnerTest do
     end
   end
 
+  describe "save_state/2 (routed through Cloud.capability(:object_store) — LT-OCI S1)" do
+    test "puts to the resolved release bucket at the state key" do
+      runner = %K6Runner{instance_id: "i-save-1"}
+
+      request_fn = fn request, _config ->
+        send(self(), {:s3_request, request})
+        {:ok, %{body: ""}}
+      end
+
+      assert {:ok, :saved} = K6Runner.save_state(runner, request_fn: request_fn)
+
+      assert_received {:s3_request, %ExAws.Operation.S3{bucket: bucket, path: path, http_method: :put}}
+      assert bucket === DeployEx.Config.aws_release_bucket()
+      assert path === "k6-runners/i-save-1.json"
+    end
+
+    test "an explicit :bucket opt overrides the resolved default" do
+      runner = %K6Runner{instance_id: "i-save-2"}
+
+      request_fn = fn request, _config ->
+        send(self(), {:s3_request, request})
+        {:ok, %{body: ""}}
+      end
+
+      K6Runner.save_state(runner, request_fn: request_fn, bucket: "custom-bucket")
+
+      assert_received {:s3_request, %ExAws.Operation.S3{bucket: "custom-bucket"}}
+    end
+  end
+
+  describe "fetch_state/2 (routed through Cloud.capability(:object_store) — LT-OCI S1)" do
+    test "decodes a found state object into a K6Runner struct" do
+      request_fn = fn _request, _config ->
+        {:ok, %{body: K6Runner.to_json(%K6Runner{instance_id: "i-fetch-1", state: "running"})}}
+      end
+
+      assert {:ok, %K6Runner{instance_id: "i-fetch-1", state: "running"}} =
+               K6Runner.fetch_state("i-fetch-1", request_fn: request_fn)
+    end
+
+    test "resolves a missing state object to {:ok, nil} rather than an error" do
+      request_fn = fn _request, _config ->
+        {:error, {:http_error, 404, %{body: ""}}}
+      end
+
+      assert {:ok, nil} = K6Runner.fetch_state("i-fetch-missing", request_fn: request_fn)
+    end
+  end
+
+  describe "delete_state/2 (routed through Cloud.capability(:object_store) — LT-OCI S1)" do
+    test "deletes the state object at the resolved bucket and key" do
+      request_fn = fn request, _config ->
+        send(self(), {:s3_request, request})
+        {:ok, %{body: ""}}
+      end
+
+      assert :ok = K6Runner.delete_state("i-delete-1", request_fn: request_fn)
+
+      assert_received {:s3_request, %ExAws.Operation.S3{path: "k6-runners/i-delete-1.json", http_method: :delete}}
+    end
+
+    test "treats a 404 from the object store as a successful idempotent delete (D-regression)" do
+      request_fn = fn _request, _config ->
+        {:error, {:http_error, 404, %{body: ""}}}
+      end
+
+      assert :ok = K6Runner.delete_state("i-already-gone", request_fn: request_fn)
+    end
+  end
+
+  describe "create_instance/2 (routed through Cloud.capability(:machine) — LT-OCI S1)" do
+    defp run_instances_response(instance_id) do
+      "<RunInstancesResponse><instancesSet><item>" <>
+        "<instanceId>#{instance_id}</instanceId>" <>
+        "</item></instancesSet></RunInstancesResponse>"
+    end
+
+    test "creates the instance via the machine capability and returns a K6Runner" do
+      request_fn = fn request, _config ->
+        send(self(), {:ec2_request, request})
+        {:ok, %{body: run_instances_response("i-created-1")}}
+      end
+
+      params = %{
+        key_name: "my-key",
+        subnet_id: "subnet-123",
+        security_group_id: "sg-123",
+        ami_id: "ami-123",
+        iam_instance_profile: "profile-name",
+        instance_type: "t3.medium"
+      }
+
+      assert {:ok, %K6Runner{instance_id: "i-created-1", instance_name: instance_name}} =
+               K6Runner.create_instance(params, request_fn: request_fn)
+
+      refute is_nil(instance_name)
+
+      assert_received {:ec2_request, %ExAws.Operation.Query{params: ec2_params}}
+      assert ec2_params["InstanceType"] === "t3.medium"
+      assert ec2_params["ImageId"] === "ami-123"
+      assert ec2_params["TagSpecification.1.Tag.1.Key"] === "Name"
+      assert ec2_params["TagSpecification.1.Tag.2.Key"] === "Group"
+      assert ec2_params["TagSpecification.1.Tag.2.Value"] === DeployEx.Cloud.resource_group([])
+    end
+  end
+
+  describe "terminate_instance/2 (routed through Cloud.capability(:machine) — LT-OCI S1)" do
+    test "terminates via the machine capability" do
+      request_fn = fn request, _config ->
+        send(self(), {:ec2_request, request})
+        {:ok, %{body: "<TerminateInstancesResponse></TerminateInstancesResponse>"}}
+      end
+
+      assert :ok = K6Runner.terminate_instance("i-terminate-1", request_fn: request_fn)
+
+      assert_received {:ec2_request, %ExAws.Operation.Query{action: :terminate_instances}}
+    end
+  end
+
+  describe "build_user_data/1 ssh user (LT-OCI S1)" do
+    test "defaults to admin under the AWS provider (unchanged AWS behavior)" do
+      assert K6Runner.build_user_data() =~ ~r/chown -R admin:admin \/srv\/k6/
+    end
+
+    test "resolves through Cloud.ssh_user/1 for an overridden provider" do
+      assert K6Runner.build_user_data(provider: :oci) =~ ~r/chown -R ubuntu:ubuntu \/srv\/k6/
+    end
+  end
+
   describe "resolve_runner/2 (shared runner resolution, extracted for LT-FIX-A)" do
     test "default path: returns a not_found error naming create_instance for a terminated-only runner" do
       assert {:error, %ErrorMessage{code: :not_found, message: message}} =
