@@ -6,7 +6,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstanceTest do
 
   defmodule FakeK6RunnerOrphaned do
     def fetch_state(_instance_id, _opts), do: {:ok, %K6Runner{instance_id: "i-orphan"}}
-    def verify_instance_exists(_runner), do: {:ok, nil}
+    def verify_instance_exists(_runner, _opts \\ []), do: {:ok, nil}
 
     def save_state(runner, _opts) do
       send(self(), {:save_state_called, runner.instance_id})
@@ -16,7 +16,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstanceTest do
 
   defmodule FakeK6RunnerHealthy do
     def fetch_state(_instance_id, _opts), do: {:ok, %K6Runner{instance_id: "i-healthy"}}
-    def verify_instance_exists(runner), do: {:ok, %{runner | state: "running"}}
+    def verify_instance_exists(runner, _opts \\ []), do: {:ok, %{runner | state: "running"}}
     def save_state(_runner, _opts), do: {:ok, :saved}
   end
 

@@ -116,17 +116,15 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Upload do
     end
   end
 
-  @doc """
-  `user@host:path` scp target for a runner, resolved through `DeployEx.Cloud.ssh_user/1` so a
-  non-AWS provider's default user (e.g. OCI's `ubuntu`) reaches this SSH transport.
-  """
+  # `user@host:path` scp target for a runner, resolved through `DeployEx.Cloud.ssh_user/1` so a
+  # non-AWS provider's default user (e.g. OCI's `ubuntu`) reaches this SSH transport.
+  @doc false
   def scp_target(ip, remote_path, opts \\ []), do: "#{DeployEx.Cloud.ssh_user(opts)}@#{ip}:#{remote_path}"
 
-  @doc """
-  Argv for the `scp` binary. Pure and pinned directly by tests — mirrors `Exec.ssh_args/4` —
-  so a regression to a hardcoded ssh user shows up as a failing assertion on the argv itself,
-  not just on the `scp_target/3` helper that could silently go unused at the call site.
-  """
+  # Argv for the `scp` binary. Pure and pinned directly by tests — mirrors `Exec.ssh_args/4` —
+  # so a regression to a hardcoded ssh user shows up as a failing assertion on the argv itself,
+  # not just on the `scp_target/3` helper that could silently go unused at the call site.
+  @doc false
   def scp_args(pem_file, script_path, ip, remote_path, opts \\ []) do
     [
       "-i", Path.expand(pem_file),

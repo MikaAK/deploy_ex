@@ -97,7 +97,7 @@ defmodule DeployEx.K6Runner do
   def find_or_create_runner(params, opts \\ []) do
     case fetch_all_runners(opts) do
       {:ok, [runner | _]} ->
-        case verify_instance_exists(runner) do
+        case verify_instance_exists(runner, opts) do
           {:ok, verified} when not is_nil(verified) -> {:ok, verified}
           _ -> do_create_runner(params, opts)
         end
@@ -224,7 +224,7 @@ defmodule DeployEx.K6Runner do
 
   defp resolve_default_runner(opts, k6_runner_impl) do
     case k6_runner_impl.fetch_all_runners(opts) do
-      {:ok, [runner | _]} -> verify_resolved_runner(runner, k6_runner_impl)
+      {:ok, [runner | _]} -> verify_resolved_runner(runner, opts, k6_runner_impl)
       {:ok, empty} when empty in [nil, []] -> {:error, no_runner_error()}
       error -> error
     end
@@ -233,13 +233,13 @@ defmodule DeployEx.K6Runner do
   defp resolve_runner_by_instance_id(instance_id, opts, k6_runner_impl) do
     case k6_runner_impl.fetch_state(instance_id, opts) do
       {:ok, nil} -> {:error, no_runner_error()}
-      {:ok, runner} -> verify_resolved_runner(runner, k6_runner_impl)
+      {:ok, runner} -> verify_resolved_runner(runner, opts, k6_runner_impl)
       error -> error
     end
   end
 
-  defp verify_resolved_runner(runner, k6_runner_impl) do
-    case k6_runner_impl.verify_instance_exists(runner) do
+  defp verify_resolved_runner(runner, opts, k6_runner_impl) do
+    case k6_runner_impl.verify_instance_exists(runner, opts) do
       {:ok, nil} -> {:error, no_runner_error()}
       {:ok, verified} -> {:ok, verified}
       error -> error
