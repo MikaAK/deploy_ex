@@ -46,8 +46,8 @@ defmodule DeployEx.Mimir do
       """
 
           mimir_db = {
-            name                        = "Mimir Metrics Database"
-            instance_type               = "t3.small"
+            name                       = "Mimir Metrics Database"
+            instance_type              = "t3.small"
             instance_availability_zone = "#{availability_zone}"
 
             ebs = {

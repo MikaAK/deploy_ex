@@ -266,7 +266,7 @@ defmodule DeployEx.PrivRenderer do
 
       """
           #{app_name}_redis = {
-            name        = "#{title} Redis"
+            name                       = "#{title} Redis"
             instance_availability_zone = "#{opts[:availability_zone]}"
 
             # This is a suggestion for instance
@@ -294,7 +294,7 @@ defmodule DeployEx.PrivRenderer do
     else
       """
           sentry = {
-            name = "Sentry Monitoring"
+            name                       = "Sentry Monitoring"
             instance_availability_zone = "#{opts[:availability_zone]}"
 
             tags = {
@@ -312,8 +312,8 @@ defmodule DeployEx.PrivRenderer do
     else
       """
           loki_aggregator = {
-            name          = "Grafana Loki Logs"
-            instance_type = "t3.micro"
+            name                       = "Grafana Loki Logs"
+            instance_type              = "t3.micro"
             instance_availability_zone = "#{opts[:availability_zone]}"
 
             ebs = {
@@ -337,8 +337,8 @@ defmodule DeployEx.PrivRenderer do
     else
       """
           grafana_ui = {
-            name                        = "Grafana UI"
-            enable_eip                  = true
+            name                       = "Grafana UI"
+            enable_eip                 = true
             instance_availability_zone = "#{opts[:availability_zone]}"
 
             ebs = {
@@ -362,8 +362,8 @@ defmodule DeployEx.PrivRenderer do
     else
       """
           prometheus_db = {
-            name                        = "Prometheus Metrics Database"
-            instance_type               = "t3.micro"
+            name                       = "Prometheus Metrics Database"
+            instance_type              = "t3.micro"
             instance_availability_zone = "#{opts[:availability_zone]}"
 
             ebs = {

@@ -111,11 +111,11 @@ variable "<%= @app_name %>_project" {
     instance_type  = optional(string)
     instance_ami   = optional(string)
 
-    private_ip        = optional(string)
+    private_ip                 = optional(string)
     instance_availability_zone = optional(string)
-    enable_eip        = optional(bool)
-    disable_ipv6      = optional(bool)
-    disable_public_ip = optional(bool)
+    enable_eip                 = optional(bool)
+    disable_ipv6               = optional(bool)
+    disable_public_ip          = optional(bool)
 
     preserve_eip_for_single_instance_asg = optional(bool)
 

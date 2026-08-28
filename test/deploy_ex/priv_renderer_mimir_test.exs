@@ -15,8 +15,8 @@ defmodule DeployEx.PrivRendererMimirTest do
 
   @prometheus_block """
       prometheus_db = {
-        name                        = "Prometheus Metrics Database"
-        instance_type               = "t3.micro"
+        name                       = "Prometheus Metrics Database"
+        instance_type              = "t3.micro"
         instance_availability_zone = "#{DeployEx.Config.aws_availability_zone()}"
 
         ebs = {
@@ -35,8 +35,8 @@ defmodule DeployEx.PrivRendererMimirTest do
   @mimir_block """
 
       mimir_db = {
-        name                        = "Mimir Metrics Database"
-        instance_type               = "t3.small"
+        name                       = "Mimir Metrics Database"
+        instance_type              = "t3.small"
         instance_availability_zone = "#{DeployEx.Config.aws_availability_zone()}"
 
         ebs = {
@@ -75,8 +75,8 @@ defmodule DeployEx.PrivRendererMimirTest do
       content = render_variables_tf([])
 
       assert content =~ "mimir_db = {"
-      assert content =~ ~s(name                        = "Mimir Metrics Database")
-      assert content =~ ~s(instance_type               = "t3.small")
+      assert content =~ ~s(name                       = "Mimir Metrics Database")
+      assert content =~ ~s(instance_type              = "t3.small")
       assert content =~ ~r/ebs\s*=\s*\{/
       assert content =~ ~r/enable_secondary\s*=\s*true/
       assert content =~ ~r/secondary_size\s*=\s*16/

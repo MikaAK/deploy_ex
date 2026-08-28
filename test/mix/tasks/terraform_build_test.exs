@@ -96,12 +96,22 @@ defmodule Mix.Tasks.Terraform.BuildTest do
     end
   end
 
-  describe "availability_zone option" do
-    test "run/1 parses --availability-zone into opts[:availability_zone] with a region-derived default" do
-      source = File.read!(@source_path)
+  describe "build_opts/1 — availability_zone (behavioral, not source-regex)" do
+    # build_opts/1 is the same opts pipeline run/1 feeds into every
+    # terraform_*_variables/1 call — testing it directly (rather than only
+    # grepping source) proves the actual value threaded through opts, not
+    # just that some matching text exists somewhere in the file.
 
-      assert source =~ "availability_zone: :string"
-      assert source =~ "DeployEx.Config.aws_availability_zone(opts[:aws_region])"
+    test "defaults opts[:availability_zone] from opts[:aws_region] when no CLI flag is given" do
+      opts = Mix.Tasks.Terraform.Build.build_opts(["--aws-region", "us-east-1"])
+
+      assert opts[:availability_zone] === "us-east-1a"
+    end
+
+    test "--availability-zone overrides the region-derived default" do
+      opts = Mix.Tasks.Terraform.Build.build_opts(["--aws-region", "us-east-1", "--availability-zone", "us-east-1c"])
+
+      assert opts[:availability_zone] === "us-east-1c"
     end
   end
 

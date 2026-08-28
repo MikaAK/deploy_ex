@@ -27,8 +27,8 @@ defmodule DeployEx.MimirTest do
       content = Mimir.terraform_variables([])
 
       assert content =~ "mimir_db = {"
-      assert content =~ ~s(name                        = "Mimir Metrics Database")
-      assert content =~ ~s(instance_type               = "t3.small")
+      assert content =~ ~s(name                       = "Mimir Metrics Database")
+      assert content =~ ~s(instance_type              = "t3.small")
       assert content =~ ~r/ebs\s*=\s*\{/
       assert content =~ ~r/enable_secondary\s*=\s*true/
       assert content =~ ~r/secondary_size\s*=\s*16/

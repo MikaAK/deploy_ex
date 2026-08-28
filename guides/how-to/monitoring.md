@@ -17,8 +17,8 @@ Out of the box, deploy_ex provisions Prometheus, Mimir, Grafana UI, Grafana Loki
 
 ## DHCP + shared AZ pin — no more fixed private IPs
 
-The monitoring/DB stock var blocks (`redis`, `sentry`, `loki_log_aggregator`, `grafana_ui`,
-`prometheus`, `mimir_db`) no longer ship a fixed `private_ip`. `ec2.tf.eex` wires every instance
+The monitoring/DB stock var blocks (`<app>_redis`, `sentry`, `loki_aggregator`, `grafana_ui`,
+`prometheus_db`, `mimir_db`) no longer ship a fixed `private_ip`. `ec2.tf.eex` wires every instance
 to `module.vpc.public_subnets`, while the old fixed IPs (`10.0.1.40`/`.50`/`.60`/`.70`) sat in the
 *private* subnet range — a stock render was deterministically un-applyable
 (`InvalidParameterValue: Address ... does not fall within the subnet's address range`).
@@ -48,8 +48,8 @@ applying — the fixed IP will fail to apply once the node is on a public subnet
 
 ## Upgrading — secondary EBS volumes attach correctly (all monitoring/DB nodes, including mimir_db)
 
-Prior to this fix, the `redis`, `loki_log_aggregator`, `grafana_ui`, `prometheus`, and `mimir_db`
-variable blocks used a flat `enable_ebs` / `instance_ebs_secondary_size` pair that the `ebs`
+Prior to this fix, the `<app>_redis`, `loki_aggregator`, `grafana_ui`, `prometheus_db`, and
+`mimir_db` variable blocks used a flat `enable_ebs` / `instance_ebs_secondary_size` pair that the `ebs`
 schema in `variables.tf` silently ignores (`tofu validate` warns "Object attribute is ignored").
 No secondary EBS volume was ever created for these nodes from a stock render.
 

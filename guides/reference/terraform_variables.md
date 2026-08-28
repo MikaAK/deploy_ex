@@ -79,7 +79,7 @@ my_app_project = {
 | `instance_type` | `t3.nano` | Any valid EC2 instance type |
 | `instance_ami` | latest base AMI | Override the base Debian AMI |
 | `private_ip` | DHCP | Static private IP — single instance only. Must fall within the subnet range actually used (`module.vpc.public_subnets` by default) — a private-subnet-range IP fails to apply |
-| `instance_availability_zone` | resolved subnet's AZ | Pin the instance (and its subnet selection) to a specific AZ — deploy_ex's own monitoring/DB blocks (`redis`, `sentry`, `loki_log_aggregator`, `grafana_ui`, `prometheus`, `mimir_db`) all pin this to the same shared value by default |
+| `instance_availability_zone` | resolved subnet's AZ | Pin the instance (and its subnet selection) to a specific AZ — deploy_ex's own monitoring/DB blocks (`<app>_redis`, `sentry`, `loki_aggregator`, `grafana_ui`, `prometheus_db`, `mimir_db`) all pin this to the same shared value by default |
 | `enable_eip` | `false` | Allocate an Elastic IP — incompatible with autoscaling unless `preserve_eip_for_single_instance_asg = true` |
 | `disable_ipv6` | `false` | IPv6 is enabled by default |
 | `disable_public_ip` | `false` | Skip public IP — internal-only services |

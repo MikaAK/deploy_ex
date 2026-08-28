@@ -25,20 +25,7 @@ defmodule Mix.Tasks.Terraform.Build do
   """
 
   def run(args) do
-    opts = args
-      |> parse_args
-      |> Keyword.put_new(:directory, @terraform_default_path)
-      |> Keyword.put_new(:aws_region, @default_aws_region)
-      |> Keyword.put_new(:aws_release_bucket, @default_aws_release_bucket)
-      |> Keyword.put_new(:aws_log_bucket, DeployEx.Config.aws_log_bucket())
-      |> Keyword.put_new(:aws_release_state_bucket, DeployEx.Config.aws_release_state_bucket())
-      |> Keyword.put_new(:aws_release_state_lock_table, DeployEx.Config.aws_release_state_lock_table())
-      |> Keyword.put_new(:env, Mix.env())
-
-    no_logging = opts[:no_logging] || opts[:no_loki] || false
-    opts = Keyword.put(opts, :no_logging, no_logging)
-
-    opts = Keyword.put_new(opts, :availability_zone, DeployEx.Config.aws_availability_zone(opts[:aws_region]))
+    opts = build_opts(args)
 
     with :ok <- DeployExHelpers.check_valid_project(),
          :ok <- DeployEx.ToolInstaller.ensure_installed(:terraform),
@@ -98,6 +85,24 @@ defmodule Mix.Tasks.Terraform.Build do
     else
       {:error, e} -> Mix.raise(to_string(e))
     end
+  end
+
+  @doc false
+  def build_opts(args) do
+    opts = args
+      |> parse_args
+      |> Keyword.put_new(:directory, @terraform_default_path)
+      |> Keyword.put_new(:aws_region, @default_aws_region)
+      |> Keyword.put_new(:aws_release_bucket, @default_aws_release_bucket)
+      |> Keyword.put_new(:aws_log_bucket, DeployEx.Config.aws_log_bucket())
+      |> Keyword.put_new(:aws_release_state_bucket, DeployEx.Config.aws_release_state_bucket())
+      |> Keyword.put_new(:aws_release_state_lock_table, DeployEx.Config.aws_release_state_lock_table())
+      |> Keyword.put_new(:env, Mix.env())
+
+    no_logging = opts[:no_logging] || opts[:no_loki] || false
+    opts = Keyword.put(opts, :no_logging, no_logging)
+
+    Keyword.put_new(opts, :availability_zone, DeployEx.Config.aws_availability_zone(opts[:aws_region]))
   end
 
   defp parse_args(args) do
@@ -174,7 +179,7 @@ defmodule Mix.Tasks.Terraform.Build do
     else
       """
           #{DeployExHelpers.underscored_project_name()}_redis = {
-            name        = "#{DeployExHelpers.title_case_project_name()} Redis"
+            name                       = "#{DeployExHelpers.title_case_project_name()} Redis"
             instance_availability_zone = "#{opts[:availability_zone]}"
 
             # This is a suggestion for instance
@@ -202,7 +207,7 @@ defmodule Mix.Tasks.Terraform.Build do
     else
       """
           sentry = {
-            name = "Sentry Monitoring"
+            name                       = "Sentry Monitoring"
             instance_availability_zone = "#{opts[:availability_zone]}"
 
             tags = {
@@ -220,8 +225,8 @@ defmodule Mix.Tasks.Terraform.Build do
     else
       """
           loki_aggregator = {
-            name          = "Grafana Loki Logs"
-            instance_type = "t3.micro"
+            name                       = "Grafana Loki Logs"
+            instance_type              = "t3.micro"
             instance_availability_zone = "#{opts[:availability_zone]}"
 
             ebs = {
@@ -245,8 +250,8 @@ defmodule Mix.Tasks.Terraform.Build do
     else
       """
           grafana_ui = {
-            name                        = "Grafana UI"
-            enable_eip                  = true
+            name                       = "Grafana UI"
+            enable_eip                 = true
             instance_availability_zone = "#{opts[:availability_zone]}"
 
             ebs = {
@@ -270,8 +275,8 @@ defmodule Mix.Tasks.Terraform.Build do
     else
       """
           prometheus_db = {
-            name                        = "Prometheus Metrics Database"
-            instance_type               = "t3.micro"
+            name                       = "Prometheus Metrics Database"
+            instance_type              = "t3.micro"
             instance_availability_zone = "#{opts[:availability_zone]}"
 
             ebs = {

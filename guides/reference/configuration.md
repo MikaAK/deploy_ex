@@ -16,6 +16,7 @@ config :deploy_ex,
 | Key | Default | Purpose |
 |-----|---------|---------|
 | `aws_region` | `"us-west-2"` | Primary AWS region |
+| `aws_availability_zone` | `"<aws_region>a"` | Shared AZ for monitoring/DB peer instances (`<app>_redis`, `sentry`, `loki_aggregator`, `grafana_ui`, `prometheus_db`, `mimir_db`) — pins them all to one zone |
 | `aws_log_region` | `"us-west-2"` | Region for log bucket |
 | `aws_log_bucket` | `"<project>-backend-logs-<env>"` | Loki/log archive S3 bucket |
 | `aws_release_bucket` | `"<project>-elixir-deploys-<env>"` | Release artifact S3 bucket |

@@ -11,7 +11,7 @@ loki_logger_retention: 30d
 
 env: test
 
-# Fill in after the first `mix terraform.apply` — loki_log_aggregator's IP is
+# Fill in after the first `mix terraform.apply` — the Loki node's IP is
 # DHCP-assigned, not known at render time. Discover it with:
 #   mix deploy_ex.find_nodes --tag MonitoringKey=loki_logger
 grafana_loki_url: "http://FILL_IN_AFTER_FIRST_APPLY:3100"

@@ -111,11 +111,11 @@ variable "deploy_ex_project" {
     instance_type  = optional(string)
     instance_ami   = optional(string)
 
-    private_ip        = optional(string)
+    private_ip                 = optional(string)
     instance_availability_zone = optional(string)
-    enable_eip        = optional(bool)
-    disable_ipv6      = optional(bool)
-    disable_public_ip = optional(bool)
+    enable_eip                 = optional(bool)
+    disable_ipv6               = optional(bool)
+    disable_public_ip          = optional(bool)
 
     preserve_eip_for_single_instance_asg = optional(bool)
 
@@ -187,7 +187,7 @@ variable "deploy_ex_project" {
 
   default = {
     sentry = {
-      name = "Sentry Monitoring"
+      name                       = "Sentry Monitoring"
       instance_availability_zone = "us-west-2a"
 
       tags = {
@@ -197,7 +197,7 @@ variable "deploy_ex_project" {
     },
 
     deploy_ex_redis = {
-      name        = "Deploy Ex Redis"
+      name                       = "Deploy Ex Redis"
       instance_availability_zone = "us-west-2a"
 
       # This is a suggestion for instance
@@ -217,8 +217,8 @@ variable "deploy_ex_project" {
     },
 
     grafana_ui = {
-      name                        = "Grafana UI"
-      enable_eip                  = true
+      name                       = "Grafana UI"
+      enable_eip                 = true
       instance_availability_zone = "us-west-2a"
 
       ebs = {
@@ -234,8 +234,8 @@ variable "deploy_ex_project" {
     },
 
     prometheus_db = {
-      name                        = "Prometheus Metrics Database"
-      instance_type               = "t3.micro"
+      name                       = "Prometheus Metrics Database"
+      instance_type              = "t3.micro"
       instance_availability_zone = "us-west-2a"
 
       ebs = {
@@ -251,8 +251,8 @@ variable "deploy_ex_project" {
     },
 
     loki_aggregator = {
-      name          = "Grafana Loki Logs"
-      instance_type = "t3.micro"
+      name                       = "Grafana Loki Logs"
+      instance_type              = "t3.micro"
       instance_availability_zone = "us-west-2a"
 
       ebs = {
