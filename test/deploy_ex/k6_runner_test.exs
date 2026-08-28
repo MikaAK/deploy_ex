@@ -3,6 +3,30 @@ defmodule DeployEx.K6RunnerTest do
 
   alias DeployEx.K6Runner
 
+  defmodule ResolveFakeTerminated do
+    def fetch_all_runners(_opts), do: {:ok, [%K6Runner{instance_id: "i-dead"}]}
+    def fetch_state(_instance_id, _opts), do: {:ok, %K6Runner{instance_id: "i-dead"}}
+    def verify_instance_exists(_runner), do: {:ok, nil}
+  end
+
+  defmodule ResolveFakeAbsent do
+    def fetch_all_runners(_opts), do: {:ok, []}
+    def fetch_state(_instance_id, _opts), do: {:ok, nil}
+    def verify_instance_exists(_runner), do: {:ok, nil}
+  end
+
+  defmodule ResolveFakeFetchYieldsNil do
+    def fetch_all_runners(_opts), do: {:ok, nil}
+    def fetch_state(_instance_id, _opts), do: {:ok, nil}
+    def verify_instance_exists(_runner), do: {:ok, nil}
+  end
+
+  defmodule ResolveFakeActive do
+    def fetch_all_runners(_opts), do: {:ok, [%K6Runner{instance_id: "i-live"}]}
+    def fetch_state(_instance_id, _opts), do: {:ok, %K6Runner{instance_id: "i-live"}}
+    def verify_instance_exists(runner), do: {:ok, %{runner | state: "running"}}
+  end
+
   defp line_index(script, regex) do
     script
     |> String.split("\n")
@@ -218,6 +242,53 @@ defmodule DeployEx.K6RunnerTest do
       Enum.each(apt_get_lines, fn line ->
         assert line =~ "DPkg::Lock::Timeout", "expected #{inspect(line)} to be lock-tolerant"
       end)
+    end
+  end
+
+  describe "resolve_runner/2 (shared runner resolution, extracted for LT-FIX-A)" do
+    test "default path: returns a not_found error naming create_instance for a terminated-only runner" do
+      assert {:error, %ErrorMessage{code: :not_found, message: message}} =
+               K6Runner.resolve_runner([], ResolveFakeTerminated)
+
+      assert message =~ "mix deploy_ex.load_test.create_instance"
+    end
+
+    test "default path: returns a not_found error naming create_instance when no runners exist" do
+      assert {:error, %ErrorMessage{code: :not_found, message: message}} =
+               K6Runner.resolve_runner([], ResolveFakeAbsent)
+
+      assert message =~ "mix deploy_ex.load_test.create_instance"
+    end
+
+    test "default path: returns a not_found error naming create_instance when fetch_all_runners yields nil" do
+      assert {:error, %ErrorMessage{code: :not_found, message: message}} =
+               K6Runner.resolve_runner([], ResolveFakeFetchYieldsNil)
+
+      assert message =~ "mix deploy_ex.load_test.create_instance"
+    end
+
+    test "default path: returns the verified runner when active" do
+      assert {:ok, %K6Runner{instance_id: "i-live", state: "running"}} =
+               K6Runner.resolve_runner([], ResolveFakeActive)
+    end
+
+    test "--instance-id path: returns a not_found error naming create_instance for a terminated runner" do
+      assert {:error, %ErrorMessage{code: :not_found, message: message}} =
+               K6Runner.resolve_runner([instance_id: "i-dead"], ResolveFakeTerminated)
+
+      assert message =~ "mix deploy_ex.load_test.create_instance"
+    end
+
+    test "--instance-id path: returns a not_found error naming create_instance when no saved state exists" do
+      assert {:error, %ErrorMessage{code: :not_found, message: message}} =
+               K6Runner.resolve_runner([instance_id: "i-missing"], ResolveFakeAbsent)
+
+      assert message =~ "mix deploy_ex.load_test.create_instance"
+    end
+
+    test "--instance-id path: returns the verified runner for a live instance id" do
+      assert {:ok, %K6Runner{instance_id: "i-live", state: "running"}} =
+               K6Runner.resolve_runner([instance_id: "i-live"], ResolveFakeActive)
     end
   end
 end

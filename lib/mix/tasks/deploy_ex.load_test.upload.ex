@@ -79,42 +79,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Upload do
     )
   end
 
-  def resolve_runner(opts, k6_runner_impl \\ DeployEx.K6Runner) do
-    case opts[:instance_id] do
-      nil -> resolve_default_runner(opts, k6_runner_impl)
-      instance_id -> resolve_runner_by_instance_id(instance_id, opts, k6_runner_impl)
-    end
-  end
-
-  defp resolve_default_runner(opts, k6_runner_impl) do
-    case k6_runner_impl.fetch_all_runners(opts) do
-      {:ok, [runner | _]} -> verify_runner(runner, k6_runner_impl)
-      {:ok, empty} when empty in [nil, []] -> {:error, no_runner_error()}
-      error -> error
-    end
-  end
-
-  defp resolve_runner_by_instance_id(instance_id, opts, k6_runner_impl) do
-    case k6_runner_impl.fetch_state(instance_id, opts) do
-      {:ok, nil} -> {:error, no_runner_error()}
-      {:ok, runner} -> verify_runner(runner, k6_runner_impl)
-      error -> error
-    end
-  end
-
-  defp verify_runner(runner, k6_runner_impl) do
-    case k6_runner_impl.verify_instance_exists(runner) do
-      {:ok, nil} -> {:error, no_runner_error()}
-      {:ok, verified} -> {:ok, verified}
-      error -> error
-    end
-  end
-
-  defp no_runner_error do
-    ErrorMessage.not_found(
-      "no active k6 runner found (missing or terminated) — create one with: mix deploy_ex.load_test.create_instance"
-    )
-  end
+  defdelegate resolve_runner(opts, k6_runner_impl \\ DeployEx.K6Runner), to: DeployEx.K6Runner
 
   defp collect_scripts(app_name, opts) do
     case opts[:script] do
