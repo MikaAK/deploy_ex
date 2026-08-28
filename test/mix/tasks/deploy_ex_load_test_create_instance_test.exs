@@ -40,6 +40,21 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstanceTest do
     end
   end
 
+  describe "gather_infrastructure/1 — routes through Cloud.capability(:infrastructure), keeps :run_fn/:pem (LT-OCI S2)" do
+    test "under :oci, a run_fn/oci config override reaches OciInfrastructure end-to-end" do
+      opts = [
+        provider: :oci,
+        oci_subnet_id: "ocid1.subnet..a",
+        oci_base_image: "ocid1.image..a",
+        pem: "/tmp/explicit-key.pem",
+        quiet: true
+      ]
+
+      assert {:ok, %{subnet_id: "ocid1.subnet..a", image_id: "ocid1.image..a", key_name: "/tmp/explicit-key.pem"}} =
+               CreateInstance.gather_infrastructure(opts)
+    end
+  end
+
   describe "terminate_all_runners/3 (D5: --force = replace)" do
     test "terminates every runner it is given" do
       runners = [
