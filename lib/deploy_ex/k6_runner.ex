@@ -23,8 +23,7 @@ defmodule DeployEx.K6Runner do
   @default_instance_type "t3.small"
 
   def create_instance(params, opts \\ []) do
-    region = opts[:region] || DeployEx.Config.aws_region()
-    resource_group = opts[:resource_group] || DeployEx.Config.aws_resource_group()
+    resource_group = opts[:resource_group] || DeployEx.Cloud.resource_group(opts)
     environment = opts[:environment] || DeployEx.Config.env()
 
     instance_name = build_instance_name(environment)
@@ -39,46 +38,35 @@ defmodule DeployEx.K6Runner do
       {:Type, "Load Testing"}
     ]
 
-    user_data = build_user_data()
+    spec = %{
+      name: instance_name,
+      instance_type: instance_type,
+      user_data: build_user_data(opts),
+      tags: tags,
+      network: %{
+        key_name: params[:key_name],
+        subnet_id: params[:subnet_id],
+        security_group_id: params[:security_group_id],
+        ami_id: params[:ami_id],
+        iam_instance_profile: params[:iam_instance_profile]
+      }
+    }
 
-    run_opts = [
-      {"InstanceType", instance_type},
-      {"KeyName", params[:key_name]},
-      {"NetworkInterface.1.DeviceIndex", "0"},
-      {"NetworkInterface.1.SubnetId", params[:subnet_id]},
-      {"NetworkInterface.1.SecurityGroupId.1", params[:security_group_id]},
-      {"NetworkInterface.1.AssociatePublicIpAddress", "true"},
-      {"UserData", Base.encode64(user_data)},
-      iam_instance_profile: [name: params[:iam_instance_profile]],
-      tag_specifications: [{:instance, tags}]
-    ]
-
-    params[:ami_id]
-    |> ExAws.EC2.run_instances(1, 1, run_opts)
-    |> ExAws.request(region: region)
-    |> handle_run_instances_response()
-    |> case do
-      {:ok, instance_id} ->
-        runner = %__MODULE__{
-          instance_id: instance_id,
-          instance_name: instance_name,
-          created_at: DateTime.utc_now() |> DateTime.to_iso8601()
-        }
-
-        {:ok, runner}
-
-      error ->
-        error
+    with {:ok, machine} <- DeployEx.Cloud.capability(:machine, opts),
+         {:ok, instance} <- machine.run_instance(spec, opts) do
+      {:ok,
+       %__MODULE__{
+         instance_id: instance.id,
+         instance_name: instance_name,
+         created_at: DateTime.utc_now() |> DateTime.to_iso8601()
+       }}
     end
   end
 
   def terminate_instance(instance_id, opts \\ []) do
-    region = opts[:region] || DeployEx.Config.aws_region()
-
-    [instance_id]
-    |> ExAws.EC2.terminate_instances()
-    |> ExAws.request(region: region)
-    |> handle_terminate_response()
+    with {:ok, machine} <- DeployEx.Cloud.capability(:machine, opts) do
+      machine.terminate_instance(instance_id, opts)
+    end
   end
 
   def terminate_runner(%__MODULE__{} = runner, opts \\ []) do
@@ -232,27 +220,23 @@ defmodule DeployEx.K6Runner do
   end
 
   def save_state(%__MODULE__{instance_id: instance_id} = runner, opts \\ []) do
-    region = opts[:region] || DeployEx.Config.aws_region()
-    bucket = opts[:bucket] || DeployEx.Config.aws_release_bucket()
+    bucket = opts[:bucket] || DeployEx.Cloud.release_bucket(opts)
 
-    bucket
-    |> ExAws.S3.put_object(state_key(instance_id), to_json(runner))
-    |> ExAws.request(region: region)
-    |> handle_put_response()
+    with {:ok, object_store} <- DeployEx.Cloud.capability(:object_store, opts),
+         :ok <- object_store.put_object(bucket, state_key(instance_id), to_json(runner), opts) do
+      {:ok, :saved}
+    end
   end
 
   def fetch_state(instance_id, opts \\ []) do
-    region = opts[:region] || DeployEx.Config.aws_region()
-    bucket = opts[:bucket] || DeployEx.Config.aws_release_bucket()
+    bucket = opts[:bucket] || DeployEx.Cloud.release_bucket(opts)
 
-    bucket
-    |> ExAws.S3.get_object(state_key(instance_id))
-    |> ExAws.request(region: region)
-    |> handle_get_response()
-    |> case do
-      {:ok, json} -> {:ok, from_json(json)}
-      {:error, %ErrorMessage{code: :not_found}} -> {:ok, nil}
-      error -> error
+    with {:ok, object_store} <- DeployEx.Cloud.capability(:object_store, opts) do
+      case object_store.get_object(bucket, state_key(instance_id), opts) do
+        {:ok, json} -> {:ok, from_json(json)}
+        {:error, %ErrorMessage{code: :not_found}} -> {:ok, nil}
+        error -> error
+      end
     end
   end
 
@@ -265,60 +249,24 @@ defmodule DeployEx.K6Runner do
   list.
   """
   def fetch_all_runners(opts \\ []) do
-    region = opts[:region] || DeployEx.Config.aws_region()
-    bucket = opts[:bucket] || DeployEx.Config.aws_release_bucket()
-    request_fn = opts[:request_fn] || (&ExAws.request/2)
+    bucket = opts[:bucket] || DeployEx.Cloud.release_bucket(opts)
+    list_opts = Keyword.put(opts, :prefix, "#{@state_prefix}/")
 
-    with {:ok, contents} <- list_runner_state_objects(bucket, region, opts) do
-      runners = Enum.map(contents, fn content ->
-        case ExAws.S3.get_object(bucket, content.key) |> request_fn.(region: region) do
-          {:ok, %{body: body}} -> from_json(body)
-          _ -> nil
-        end
-      end)
-      |> Enum.reject(&is_nil/1)
+    with {:ok, object_store} <- DeployEx.Cloud.capability(:object_store, opts),
+         {:ok, keys} <- object_store.list_objects(bucket, list_opts) do
+      runners =
+        keys
+        |> Enum.map(&fetch_runner_state(object_store, bucket, &1, opts))
+        |> Enum.reject(&is_nil/1)
 
       {:ok, runners}
     end
   end
 
-  defp list_runner_state_objects(bucket, region, opts) do
-    list_runner_state_objects_page(bucket, region, opts, nil, [])
-  end
-
-  defp list_runner_state_objects_page(bucket, region, opts, marker, acc) do
-    request_fn = opts[:request_fn] || (&ExAws.request/2)
-    list_opts = if marker, do: [prefix: "#{@state_prefix}/", marker: marker], else: [prefix: "#{@state_prefix}/"]
-
-    response =
-      bucket
-      |> ExAws.S3.list_objects(list_opts)
-      |> request_fn.(region: region)
-
-    case response do
-      {:ok, %{body: %{contents: contents} = body}} when is_list(contents) ->
-        accumulated = acc ++ contents
-
-        if truncated_listing?(body) and not Enum.empty?(contents) do
-          list_runner_state_objects_page(bucket, region, opts, next_listing_marker(body, contents), accumulated)
-        else
-          {:ok, accumulated}
-        end
-
-      {:ok, _} ->
-        {:ok, acc}
-
-      {:error, error} ->
-        {:error, ErrorMessage.failed_dependency("failed to list k6 runner states", %{error: error})}
-    end
-  end
-
-  defp truncated_listing?(body), do: Map.get(body, :is_truncated) in [true, "true"]
-
-  defp next_listing_marker(body, contents) do
-    case Map.get(body, :next_marker) do
-      marker when is_binary(marker) and marker !== "" -> marker
-      _absent -> contents |> List.last() |> Map.fetch!(:key)
+  defp fetch_runner_state(object_store, bucket, key, opts) do
+    case object_store.get_object(bucket, key, opts) do
+      {:ok, body} -> from_json(body)
+      _error -> nil
     end
   end
 
@@ -327,13 +275,15 @@ defmodule DeployEx.K6Runner do
   end
 
   def delete_state(instance_id, opts) when is_binary(instance_id) do
-    region = opts[:region] || DeployEx.Config.aws_region()
-    bucket = opts[:bucket] || DeployEx.Config.aws_release_bucket()
+    bucket = opts[:bucket] || DeployEx.Cloud.release_bucket(opts)
 
-    bucket
-    |> ExAws.S3.delete_object(state_key(instance_id))
-    |> ExAws.request(region: region)
-    |> handle_delete_response()
+    with {:ok, object_store} <- DeployEx.Cloud.capability(:object_store, opts) do
+      case object_store.delete_object(bucket, state_key(instance_id), opts) do
+        :ok -> :ok
+        {:error, %ErrorMessage{code: :not_found}} -> :ok
+        error -> error
+      end
+    end
   end
 
   # Serialization
@@ -373,7 +323,9 @@ defmodule DeployEx.K6Runner do
   # User Data
 
   @doc false
-  def build_user_data do
+  def build_user_data(opts \\ []) do
+    ssh_user = DeployEx.Cloud.ssh_user(opts)
+
     """
     #!/bin/bash
     set -euo pipefail
@@ -393,7 +345,7 @@ defmodule DeployEx.K6Runner do
     apt-get install -y -o DPkg::Lock::Timeout=300 k6
 
     mkdir -p /srv/k6/scripts
-    chown -R admin:admin /srv/k6
+    chown -R #{ssh_user}:#{ssh_user} /srv/k6
 
     echo "k6 Runner setup complete!"
     k6 version
@@ -405,39 +357,8 @@ defmodule DeployEx.K6Runner do
     "K6-Runner-#{environment}-#{timestamp}"
   end
 
-  # AWS Response Handlers
-
-  defp handle_run_instances_response({:ok, %{body: body}}) do
-    case XmlToMap.naive_map(body) do
-      %{"RunInstancesResponse" => %{"instancesSet" => %{"item" => %{"instanceId" => instance_id}}}} ->
-        {:ok, instance_id}
-
-      %{"RunInstancesResponse" => %{"instancesSet" => %{"item" => [%{"instanceId" => instance_id} | _]}}} ->
-        {:ok, instance_id}
-
-      structure ->
-        {:error, ErrorMessage.bad_request(
-          "couldn't parse run instances response from aws",
-          %{structure: structure}
-        )}
-    end
-  end
-
-  defp handle_run_instances_response({:error, {:http_error, status_code, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error creating k6 runner instance",
-      %{error_body: body}
-    ])}
-  end
-
-  defp handle_terminate_response({:ok, _}), do: :ok
-
-  defp handle_terminate_response({:error, {:http_error, status_code, %{body: body}}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
-      "error terminating k6 runner instance",
-      %{error_body: body}
-    ])}
-  end
+  # AWS Response Handlers (find_runners_from_ec2 stays a direct AWS EC2 pagination path —
+  # LT-OCI S1 keeps this pagination intact rather than routing it through Cloud.capability)
 
   defp handle_describe_instances({:ok, %{body: body}}) do
     case XmlToMap.naive_map(body) do
@@ -498,43 +419,4 @@ defmodule DeployEx.K6Runner do
   end
 
   defp parse_instance_tags(_), do: %{}
-
-  defp handle_get_response({:ok, %{body: body}}), do: {:ok, body}
-
-  defp handle_get_response({:error, {:http_error, 404, _}}) do
-    {:error, ErrorMessage.not_found("k6 runner state not found")}
-  end
-
-  defp handle_get_response({:error, {:http_error, status, reason}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["aws failure", %{reason: reason}])}
-  end
-
-  defp handle_get_response({:error, error}) when is_binary(error) do
-    {:error, ErrorMessage.failed_dependency("aws failure: #{error}")}
-  end
-
-  defp handle_put_response({:ok, _}), do: {:ok, :saved}
-
-  defp handle_put_response({:error, {:http_error, status, reason}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["aws failure", %{reason: reason}])}
-  end
-
-  defp handle_put_response({:error, error}) when is_binary(error) do
-    {:error, ErrorMessage.failed_dependency("aws failure: #{error}")}
-  end
-
-  defp handle_put_response({:error, error}) do
-    {:error, ErrorMessage.failed_dependency("aws failure", %{error: error})}
-  end
-
-  defp handle_delete_response({:ok, _}), do: :ok
-  defp handle_delete_response({:error, {:http_error, 404, _}}), do: :ok
-
-  defp handle_delete_response({:error, {:http_error, status, reason}}) do
-    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status), ["aws failure", %{reason: reason}])}
-  end
-
-  defp handle_delete_response({:error, error}) when is_binary(error) do
-    {:error, ErrorMessage.failed_dependency("aws failure: #{error}")}
-  end
 end
