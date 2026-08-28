@@ -81,8 +81,12 @@ mix deploy_ex.load_test.init my_app
 mix deploy_ex.load_test.create_instance [--instance-type t3.small]
 mix deploy_ex.load_test.upload --script load_test.js
 mix deploy_ex.load_test.exec --target-url http://... [--prometheus-url http://...]
-mix deploy_ex.load_test.destroy_instance
+mix deploy_ex.load_test.destroy_instance                       # single runner
+mix deploy_ex.load_test.destroy_instance --instance-id i-...   # multiple runners: pick one
+mix deploy_ex.load_test.destroy_instance --all                 # multiple runners: destroy all
 ```
+
+`create_instance` isn't "ready" until SSH + `k6 version` are confirmed on the runner (reused or freshly created); `destroy_instance` refuses to guess when more than one runner exists — pass `--instance-id`/`-i` or `--all`. Discover a target node's current IP with `mix deploy_ex.find_nodes` rather than hardcoding one — private IPs drift across replacements.
 
 ### Connecting to Instances
 

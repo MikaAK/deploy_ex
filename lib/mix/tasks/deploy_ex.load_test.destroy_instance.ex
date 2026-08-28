@@ -5,6 +5,10 @@ defmodule Mix.Tasks.DeployEx.LoadTest.DestroyInstance do
   @moduledoc """
   Terminates a k6 runner EC2 instance and cleans up S3 state.
 
+  If more than one runner is found, either `--instance-id` or `--all` is
+  required — an ambiguous multi-runner destroy is refused rather than
+  silently destroying everything.
+
   ## Example
   ```bash
   mix deploy_ex.load_test.destroy_instance
@@ -15,7 +19,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.DestroyInstance do
 
   ## Options
   - `--instance-id, -i` - Specific instance ID to destroy
-  - `--all` - Destroy all k6 runners
+  - `--all` - Destroy every k6 runner found (required when more than one exists)
   - `--force, -f` - Skip confirmation prompt
   - `--quiet, -q` - Suppress output messages
   """
@@ -35,23 +39,47 @@ defmodule Mix.Tasks.DeployEx.LoadTest.DestroyInstance do
           Mix.shell().info([:yellow, "No k6 runners found to destroy"])
 
         nodes ->
-          unless opts[:force] do
-            prompt_confirmation(nodes)
-          end
-
-          terminate_fn = opts[:terminate_fn] || (&DeployEx.K6Runner.terminate_runner/2)
-          results = destroy_runners(nodes, terminate_fn, opts)
-
-          case failed_runners(results) do
-            [] ->
-              Mix.shell().info([:green, "\n✓ Destroyed #{length(nodes)} k6 runner(s)"])
-
-            failed ->
-              Mix.raise(destroy_failure_message(nodes, failed))
+          case ambiguous_scope_error(nodes, opts) do
+            :ok -> destroy_nodes(nodes, opts)
+            {:error, error} -> Mix.raise(ErrorMessage.to_string(error))
           end
       end
     end
   end
+
+  defp destroy_nodes(nodes, opts) do
+    unless opts[:force] do
+      prompt_confirmation(nodes)
+    end
+
+    terminate_fn = opts[:terminate_fn] || (&DeployEx.K6Runner.terminate_runner/2)
+    results = destroy_runners(nodes, terminate_fn, opts)
+
+    case failed_runners(results) do
+      [] ->
+        Mix.shell().info([:green, "\n✓ Destroyed #{length(nodes)} k6 runner(s)"])
+
+      failed ->
+        Mix.raise(destroy_failure_message(nodes, failed))
+    end
+  end
+
+  @doc false
+  def ambiguous_scope_error(runners, opts) when length(runners) > 1 do
+    if is_nil(opts[:instance_id]) and !opts[:all] do
+      ids = Enum.map_join(runners, ", ", & &1.instance_id)
+
+      {:error, ErrorMessage.bad_request(
+        "found #{length(runners)} k6 runners (#{ids}) — pass --all to destroy all of them, " <>
+          "or --instance-id/-i to target one",
+        %{instance_ids: Enum.map(runners, & &1.instance_id)}
+      )}
+    else
+      :ok
+    end
+  end
+
+  def ambiguous_scope_error(_runners, _opts), do: :ok
 
   defp parse_args(args) do
     OptionParser.parse!(args,

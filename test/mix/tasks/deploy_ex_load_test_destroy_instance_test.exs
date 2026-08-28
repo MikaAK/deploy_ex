@@ -95,4 +95,44 @@ defmodule Mix.Tasks.DeployEx.LoadTest.DestroyInstanceTest do
       refute message =~ "i-3"
     end
   end
+
+  describe "ambiguous_scope_error/2 (--all semantics)" do
+    test "allows a single runner with neither --instance-id nor --all" do
+      runners = [%K6Runner{instance_id: "i-1"}]
+
+      assert DestroyInstance.ambiguous_scope_error(runners, []) === :ok
+    end
+
+    test "allows multiple runners when --all is passed" do
+      runners = [%K6Runner{instance_id: "i-1"}, %K6Runner{instance_id: "i-2"}]
+
+      assert DestroyInstance.ambiguous_scope_error(runners, all: true) === :ok
+    end
+
+    test "allows multiple runners when --instance-id is passed" do
+      runners = [%K6Runner{instance_id: "i-1"}, %K6Runner{instance_id: "i-2"}]
+
+      assert DestroyInstance.ambiguous_scope_error(runners, instance_id: "i-1") === :ok
+    end
+
+    test "allows an empty runner list" do
+      assert DestroyInstance.ambiguous_scope_error([], []) === :ok
+    end
+
+    test "refuses multiple runners with neither flag, naming every runner id" do
+      runners = [
+        %K6Runner{instance_id: "i-1"},
+        %K6Runner{instance_id: "i-2"},
+        %K6Runner{instance_id: "i-3"}
+      ]
+
+      assert {:error, %ErrorMessage{code: :bad_request, message: message}} =
+               DestroyInstance.ambiguous_scope_error(runners, [])
+
+      assert message =~ "i-1"
+      assert message =~ "i-2"
+      assert message =~ "i-3"
+      assert message =~ "--all"
+    end
+  end
 end

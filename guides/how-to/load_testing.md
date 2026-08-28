@@ -28,17 +28,22 @@ mix deploy_ex.load_test.destroy_instance
 
 Scripts live in `deploys/k6/scripts/<app>/`. `load_test.init` creates a template `load_test.js` with configurable stages and a `TARGET_URL` env var. The default template ramps up VUs gradually — edit the `options.stages` block to fit your test profile.
 
+The template also sets `thresholds.http_req_failed` with `abortOnFail: true`, so a run where almost every request fails exits non-zero instead of k6 printing a false "✓ completed". If you're targeting a self-signed cert or a raw IP with no matching TLS hostname, uncomment the `insecureSkipTLSVerify: true` line in `options`.
+
 ## Runner Management
 
-Runners are standalone EC2 instances with k6 pre-installed via cloud-init. State is stored in S3 at `k6-runners/{instance_id}.json`. The create command checks for existing runners before launching new ones, so calling it repeatedly is safe.
+Runners are standalone EC2 instances with k6 pre-installed via cloud-init. State is stored in S3 at `k6-runners/{instance_id}.json`. The create command checks for existing runners before launching new ones, so calling it repeatedly is safe — whether reusing or freshly creating a runner, it isn't reported ready until SSH is reachable and `k6 version` succeeds on the instance. If a found runner fails that check, recreate it with `--force`.
 
 ```bash
 mix deploy_ex.load_test.create_instance --instance-type t3.medium    # default is t3.large
 mix deploy_ex.load_test.list                                         # active runners
 mix deploy_ex.load_test.list --json                                  # script-friendly output
-mix deploy_ex.load_test.destroy_instance                             # interactive picker
-mix deploy_ex.load_test.destroy_instance --all --force               # nuke them all
+mix deploy_ex.load_test.destroy_instance                             # single runner: no flag needed
+mix deploy_ex.load_test.destroy_instance --instance-id i-0abc123     # multiple runners: target one
+mix deploy_ex.load_test.destroy_instance --all --force                # multiple runners: destroy all
 ```
+
+If more than one runner exists, `destroy_instance` refuses to guess — pass `--instance-id`/`-i` or `--all`.
 
 ## Prometheus Remote Write
 
@@ -59,6 +64,7 @@ mix deploy_ex.grafana.install_dashboard --id 19665
 ## Tips
 
 - Use `--target-url` with the **internal** load balancer URL or a private IP — runners share the VPC with your app, so external DNS is a wasted hop
+- Node private IPs drift across replacements — don't hardcode one in a script or doc. Discover the current IP with `mix deploy_ex.find_nodes`, then point `--target-url` at it
 - For sustained tests, scale the runner up with `--instance-type` — `t3.large` is fine for short bursts but a `c5.xlarge` is more honest about server-side bottlenecks
 - Don't forget `mix deploy_ex.load_test.destroy_instance` when you're done — runners cost money
 
