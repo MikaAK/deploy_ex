@@ -10,8 +10,11 @@ Top-level Ansible playbooks that provision monitoring and infrastructure service
 - Most files here are static and copied byte-for-byte (first bootstrap, or via
   `mix deploy_ex.upgrade_priv`). `grafana_ui.yaml.eex`, `loki_log_aggregator.yaml.eex`,
   and `prometheus_db.yaml.eex` are the exception — they gate their `grafana_alloy`
-  role line on `use_mimir` and re-render on every `mix ansible.build` run (see
-  `Ansible.Build.create_monitoring_setup_playbooks/1` and the mirrored logic in
-  `DeployEx.PrivRenderer`). If you add another conditional role line to a static
-  playbook here, convert it to `.eex` the same way rather than hand-editing the
-  copied output.
+  role line on `use_mimir` (see `Ansible.Build.create_monitoring_setup_playbooks/1`
+  and the mirrored logic in `DeployEx.PrivRenderer`). These are still consumer-owned
+  generated output, not deploy_ex-managed config: `mix ansible.build` only writes
+  them when the destination is absent or byte-identical to the render —
+  `DeployEx.Mimir.should_write_setup_playbook?/3` skips (and logs) an existing
+  customized copy rather than clobbering it. If you add another conditional role
+  line to a static playbook here, convert it to `.eex` the same way and route
+  through that same guard rather than hand-editing the copied output.

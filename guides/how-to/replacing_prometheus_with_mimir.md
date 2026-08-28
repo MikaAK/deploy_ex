@@ -35,12 +35,16 @@ secondary EBS volume to your Terraform plan (roughly $17/mo at on-demand rates) 
 review the plan before applying, or pass `--no-mimir` to opt out until you're ready.
 
 **Delivery to existing `./deploys/` trees:** role files (`priv/ansible/roles/**`,
-including `mimir_db` and the Alloy/datasource template changes) and the
-`grafana_ui`/`loki_log_aggregator`/`prometheus_db` setup playbooks re-render on every
-`mix ansible.build` run, so `--no-mimir` toggles take effect on existing trees too.
-`mimir_db.yaml` itself and other static setup files (e.g. `redis.yaml`) are only
-delivered on first bootstrap or via `mix deploy_ex.upgrade_priv` — run that if you
-don't see `deploys/ansible/setup/mimir_db.yaml` after upgrading deploy_ex.
+including `mimir_db` and the Alloy/datasource template changes) sync on every `mix
+ansible.build` run. The `grafana_ui`/`loki_log_aggregator`/`prometheus_db` setup
+playbooks are consumer-owned generated output — `mix ansible.build` only writes them
+when the destination is absent or byte-identical to what it would render; an existing
+customized copy is left untouched (a log line names it). That means `--no-mimir`
+toggles do **not** retroactively flip an existing setup playbook's `grafana_alloy`
+line either — run `mix deploy_ex.upgrade_priv` to pull the current template state
+deliberately. `mimir_db.yaml` itself and other static setup files (e.g. `redis.yaml`)
+are only delivered on first bootstrap or via `mix deploy_ex.upgrade_priv` too — run
+that if you don't see `deploys/ansible/setup/mimir_db.yaml` after upgrading deploy_ex.
 
 ## The Swap (future cycle — not executed this sprint)
 
@@ -61,7 +65,7 @@ independently and to pause between. **Apply Terraform before running Ansible** �
    monitoring node — not just app nodes — starts pushing its own `node_exporter`
    metrics to Mimir:
    ```bash
-   mix ansible.setup --only grafana_ui,loki_log_aggregator,prometheus_db,mimir_db
+   mix ansible.setup --only grafana_ui --only loki_log_aggregator --only prometheus_db --only mimir_db
    mix ansible.setup   # app nodes, if not already rolled
    ```
 
@@ -84,10 +88,11 @@ independently and to pause between. **Apply Terraform before running Ansible** �
    version upgrades. Point dashboards at Mimir; confirm panels render identically.
 
 5. **Point k6 load-test pushes at Mimir.** This requires an actual code change, not
-   just a flag or config edit: `DeployEx.K6Runner`/`exec.ex` hardcodes the Prometheus
-   remote-write URL (`/api/v1/write` concatenation). `exec.ex` is owned by the LT-FIX
-   cross-team effort — coordinate the edit with them rather than changing it here as
-   part of this runbook.
+   just a flag or config edit: `lib/mix/tasks/deploy_ex.load_test.exec.ex` (around
+   `build_k6_command/3`) hardcodes the Prometheus remote-write URL
+   (`K6_PROMETHEUS_RW_SERVER_URL=#{prometheus_url}/api/v1/write`). That file is owned
+   by the LT-FIX cross-team effort — coordinate the edit with them rather than
+   changing it here as part of this runbook.
 
 6. **Tear down Prometheus**, only once every consumer of it (dashboards, k6, alerts)
    has been confirmed against Mimir:

@@ -65,6 +65,11 @@ If the Mimir node isn't running:
 mix ansible.setup --only mimir_db
 ```
 
+`deploys/ansible/setup/mimir_db.yaml` is a static file — if you upgraded deploy_ex and
+don't see it in an existing tree, run `mix deploy_ex.upgrade_priv` first (see
+[Replacing Prometheus with Mimir](replacing_prometheus_with_mimir.md) for the full
+delivery-mechanism breakdown across the monitoring setup playbooks).
+
 Disable it entirely with `mix terraform.build --no-mimir`.
 
 To actually cut over from Prometheus to Mimir (verify parity, flip the Grafana
