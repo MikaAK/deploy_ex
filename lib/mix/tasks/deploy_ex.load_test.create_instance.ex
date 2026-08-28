@@ -239,14 +239,28 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
     DeployEx.Terraform.find_pem_file(@terraform_default_path, opts[:pem])
   end
 
-  defp gather_infrastructure(opts) do
+  # Whitelisted to the keys a provider's gather_infrastructure/1 legitimately needs, not
+  # forwarded whole — mirrors the same reasoning as AwsMachine's request_fn whitelist
+  # (LT-OCI review-fix G1): :resource_group is AWS's own key, :pem lets OCI's find_key_pair
+  # honor a user's --pem override instead of always falling back to a directory glob, and
+  # :run_fn is the test injection seam (unused live; OCI's discovery is config-driven and
+  # never shells out, but the seam still needs to reach a provider that later does).
+  @doc false
+  def gather_infrastructure(opts) do
     if !opts[:quiet] do
       Mix.shell().info([:faint, "Gathering infrastructure..."])
     end
 
     with {:ok, infrastructure} <- DeployEx.Cloud.capability(:infrastructure, opts) do
-      infrastructure.gather_infrastructure(Keyword.take(opts, [:resource_group]))
+      infrastructure.gather_infrastructure(Keyword.take(opts, [:resource_group, :pem, :run_fn] ++ oci_setting_keys(opts)))
     end
+  end
+
+  # oci_* keys carry the OCI CLI's opts-first config overrides (DeployEx.Cloud.OciCli.setting/2)
+  # — Keyword.take/2 only needs their NAMES, so this just filters opts down to that shape
+  # without hardcoding the specific oci_subnet_id/oci_base_image/... list here twice.
+  defp oci_setting_keys(opts) do
+    opts |> Keyword.keys() |> Enum.filter(&String.starts_with?(Atom.to_string(&1), "oci_"))
   end
 
   # SSH reachability wait (D7: honest failure — never claims ready after exhausting retries)
