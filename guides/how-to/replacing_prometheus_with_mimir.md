@@ -19,11 +19,17 @@ until you deliberately execute the swap below.
 
 ## Stack Overview
 
-| Component | Default IP | Purpose |
-|-----------|-----------|---------|
-| `mimir_db` | `10.0.1.70` | Push-based metrics TSDB + ruler (monolithic mode) |
-| `prometheus_db` | `10.0.1.40` | Pull-based metrics TSDB (unchanged, still scraping) |
+| Component | AZ / IP | Purpose |
+|-----------|---------|---------|
+| `mimir_db` | AZ-pinned (DHCP) | Push-based metrics TSDB + ruler (monolithic mode) |
+| `prometheus_db` | AZ-pinned (DHCP) | Pull-based metrics TSDB (unchanged, still scraping) |
 | `alloy` (every node) | n/a | Tails the journal (Loki) **and** scrapes+pushes local metrics (Mimir) |
+
+Both nodes' private IPs are DHCP-assigned — they share `instance_availability_zone` with the
+rest of the monitoring stack (see [Monitoring → DHCP + shared AZ pin](monitoring.md#dhcp--shared-az-pin--no-more-fixed-private-ips)).
+`grafana_mimir_url` in `deploys/ansible/group_vars/all.yaml` renders as a
+`FILL_IN_AFTER_FIRST_APPLY` placeholder until you discover the real address with
+`mix deploy_ex.find_nodes --tag MonitoringKey=mimir_db`.
 
 Disable Mimir at build time with `--no-mimir` if you don't want the node provisioned
 yet.

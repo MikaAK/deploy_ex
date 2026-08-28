@@ -9,6 +9,19 @@ defmodule DeployEx.Config do
 
   def aws_log_region, do: Application.get_env(@app, :aws_log_region) || "us-west-2"
 
+  @doc """
+  Shared availability zone for monitoring/DB peer instances (Redis, Loki,
+  Prometheus, Mimir, Sentry, Grafana) — pinned to one zone so every peer
+  lands in the same AZ by construction, avoiding cross-AZ traffic and the
+  DHCP/private_ip subnet mismatch these nodes used to ship with.
+
+  Defaults to the given region's "a" zone; override with the
+  `:aws_availability_zone` application env key.
+  """
+  def aws_availability_zone(region \\ aws_region()) do
+    Application.get_env(@app, :aws_availability_zone) || "#{region}a"
+  end
+
   def aws_log_bucket do
     Application.get_env(@app, :aws_log_bucket) ||
       "#{DeployExHelpers.kebab_project_name()}-backend-logs-#{env()}"

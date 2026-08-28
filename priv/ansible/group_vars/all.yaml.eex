@@ -11,9 +11,15 @@ loki_logger_retention: 30d
 
 env: <%= DeployEx.Config.env() %>
 
-grafana_loki_url: "http://10.0.1.50:3100"<% end %>
+# Fill in after the first `mix terraform.apply` — loki_log_aggregator's IP is
+# DHCP-assigned, not known at render time. Discover it with:
+#   mix deploy_ex.find_nodes --tag MonitoringKey=loki_logger
+grafana_loki_url: "http://FILL_IN_AFTER_FIRST_APPLY:3100"<% end %>
 <%= if @is_prometheus_enabled do %>
-grafana_prometheus_url: "http://10.0.1.40:9090"
+# Fill in after the first `mix terraform.apply` — prometheus_db's IP is
+# DHCP-assigned, not known at render time. Discover it with:
+#   mix deploy_ex.find_nodes --tag MonitoringKey=prometheus_db
+grafana_prometheus_url: "http://FILL_IN_AFTER_FIRST_APPLY:9090"
 
 prometheus_scrape_region: <%= DeployEx.Config.aws_region() %>
 prometheus_retention_size: 4GB
@@ -24,5 +30,8 @@ system_env:
   - PATH=/root/.asdf/shims:/root/.asdf/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 <%= if @is_mimir_enabled do %>
 
-grafana_mimir_url: "http://10.0.1.70:8080"
+# Fill in after the first `mix terraform.apply` — mimir_db's IP is
+# DHCP-assigned, not known at render time. Discover it with:
+#   mix deploy_ex.find_nodes --tag MonitoringKey=mimir_db
+grafana_mimir_url: "http://FILL_IN_AFTER_FIRST_APPLY:8080"
 <% end %>

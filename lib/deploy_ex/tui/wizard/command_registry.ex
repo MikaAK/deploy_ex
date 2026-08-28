@@ -697,6 +697,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
         input(:quiet, "Quiet", :boolean),
         input(:verbose, "Verbose", :boolean),
         input(:aws_region, "AWS region", :string),
+        input(:availability_zone, "Shared AZ for monitoring/DB peers", :string),
         input(:env, "Environment", :string),
         input(:no_database, "Disable database", :boolean),
         input(:no_logging, "Disable logging", :boolean),

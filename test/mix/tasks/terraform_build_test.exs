@@ -21,6 +21,22 @@ defmodule Mix.Tasks.Terraform.BuildTest do
       refute block =~ "enable_ebs"
       refute block =~ "instance_ebs_secondary_size"
     end
+
+    test "pins instance_availability_zone from opts and drops the fixed private_ip" do
+      block = fetch_block("terraform_redis_variables", "terraform_sentry_variables")
+
+      assert block =~ ~S(instance_availability_zone = "#{opts[:availability_zone]}")
+      refute block =~ "private_ip"
+    end
+  end
+
+  describe "terraform_sentry_variables/1 heredoc" do
+    test "pins instance_availability_zone from opts" do
+      block = fetch_block("terraform_sentry_variables", "terraform_loki_variables")
+
+      assert block =~ ~S(instance_availability_zone = "#{opts[:availability_zone]}")
+      refute block =~ "private_ip"
+    end
   end
 
   describe "terraform_loki_variables/1 heredoc" do
@@ -32,6 +48,13 @@ defmodule Mix.Tasks.Terraform.BuildTest do
       assert block =~ ~r/secondary_size\s*=\s*8/
       refute block =~ "enable_ebs"
       refute block =~ "instance_ebs_secondary_size"
+    end
+
+    test "pins instance_availability_zone from opts and drops the fixed private_ip" do
+      block = fetch_block("terraform_loki_variables", "terraform_grafana_variables")
+
+      assert block =~ ~S(instance_availability_zone = "#{opts[:availability_zone]}")
+      refute block =~ "private_ip"
     end
   end
 
@@ -46,6 +69,12 @@ defmodule Mix.Tasks.Terraform.BuildTest do
       refute block =~ "enable_ebs"
       refute block =~ "instance_ebs_secondary_size"
     end
+
+    test "pins instance_availability_zone from opts" do
+      block = fetch_block("terraform_grafana_variables", "terraform_prometheus_variables")
+
+      assert block =~ ~S(instance_availability_zone = "#{opts[:availability_zone]}")
+    end
   end
 
   describe "terraform_prometheus_variables/1 heredoc" do
@@ -57,6 +86,22 @@ defmodule Mix.Tasks.Terraform.BuildTest do
       assert block =~ ~r/secondary_size\s*=\s*16/
       refute block =~ "enable_ebs"
       refute block =~ "instance_ebs_secondary_size"
+    end
+
+    test "pins instance_availability_zone from opts and drops the fixed private_ip" do
+      block = fetch_block("terraform_prometheus_variables", "generate_db_password")
+
+      assert block =~ ~S(instance_availability_zone = "#{opts[:availability_zone]}")
+      refute block =~ "private_ip"
+    end
+  end
+
+  describe "availability_zone option" do
+    test "run/1 parses --availability-zone into opts[:availability_zone] with a region-derived default" do
+      source = File.read!(@source_path)
+
+      assert source =~ "availability_zone: :string"
+      assert source =~ "DeployEx.Config.aws_availability_zone(opts[:aws_region])"
     end
   end
 

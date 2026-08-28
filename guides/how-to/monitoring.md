@@ -4,21 +4,54 @@ Out of the box, deploy_ex provisions Prometheus, Mimir, Grafana UI, Grafana Loki
 
 ## Stack Overview
 
-| Component | Default IP | Purpose |
-|-----------|-----------|---------|
-| `grafana_ui` | (Elastic IP) | UI / dashboards (port 80, default user/pass `admin`/`admin`) |
-| `loki_log_aggregator` | `10.0.1.50` | Log aggregator (Loki) |
-| `prometheus` | `10.0.1.40` | Metrics TSDB (pull, via `ec2_sd`) |
-| `mimir_db` | `10.0.1.70` | Metrics TSDB + ruler (push, via Alloy `remote_write`) |
+| Component | AZ / IP | Purpose |
+|-----------|---------|---------|
+| `grafana_ui` | AZ-pinned (Elastic IP) | UI / dashboards (port 80, default user/pass `admin`/`admin`) |
+| `loki_log_aggregator` | AZ-pinned (DHCP) | Log aggregator (Loki) |
+| `prometheus` | AZ-pinned (DHCP) | Metrics TSDB (pull, via `ec2_sd`) |
+| `mimir_db` | AZ-pinned (DHCP) | Metrics TSDB + ruler (push, via Alloy `remote_write`) |
+| `redis` | AZ-pinned (DHCP) | Session/cache store |
+| `sentry` | AZ-pinned (DHCP) | Error tracking (WIP) |
 | `alloy` (every node) | n/a | Tails systemd journal (ships to Loki); scrapes `node_exporter`/app locally and pushes to Mimir |
 | `prometheus_exporter` (per app node) | n/a | Exposes node + app metrics |
 
-## Upgrading — secondary EBS volumes now attach correctly (mimir_db not yet — see below)
+## DHCP + shared AZ pin — no more fixed private IPs
 
-Prior to this fix, the `redis`, `loki_log_aggregator`, `grafana_ui`, and `prometheus` variable
-blocks used a flat `enable_ebs` / `instance_ebs_secondary_size` pair that the `ebs` schema in
-`variables.tf` silently ignores (`tofu validate` warns "Object attribute is ignored"). No
-secondary EBS volume was ever created for these nodes from a stock render.
+The monitoring/DB stock var blocks (`redis`, `sentry`, `loki_log_aggregator`, `grafana_ui`,
+`prometheus`, `mimir_db`) no longer ship a fixed `private_ip`. `ec2.tf.eex` wires every instance
+to `module.vpc.public_subnets`, while the old fixed IPs (`10.0.1.40`/`.50`/`.60`/`.70`) sat in the
+*private* subnet range — a stock render was deterministically un-applyable
+(`InvalidParameterValue: Address ... does not fall within the subnet's address range`).
+
+Instead, every one of these blocks sets `instance_availability_zone` to the **same** shared
+value, so all six peers land in one AZ by construction (their private IPs are DHCP-assigned).
+The shared default is the `mix terraform.build --aws-region`'s "a" zone (e.g. `us-west-2` →
+`us-west-2a`); override it explicitly with `mix terraform.build --availability-zone us-east-1c`
+or the `:aws_availability_zone` application env key.
+
+Because these IPs are no longer known at render time, `deploys/ansible/group_vars/all.yaml`'s
+`grafana_loki_url`, `grafana_prometheus_url`, and `grafana_mimir_url` render as
+`http://FILL_IN_AFTER_FIRST_APPLY:<port>` placeholders. After your first `mix terraform.apply`,
+discover the real address and fill it in:
+
+```bash
+mix deploy_ex.find_nodes --tag MonitoringKey=loki_logger
+mix deploy_ex.find_nodes --tag MonitoringKey=prometheus_db
+mix deploy_ex.find_nodes --tag MonitoringKey=mimir_db
+```
+
+**Upgrade note:** if your `deploys/terraform/variables.tf` still carries an old fixed `private_ip`
+for one of these nodes, remove it (or replace it with `instance_availability_zone`) before
+applying — the fixed IP will fail to apply once the node is on a public subnet. Re-rendering with
+`mix terraform.build --force` regenerates the stock blocks with the new convention, but
+`--force` OVERWRITES your file — diff before accepting (see the EBS hazard note below).
+
+## Upgrading — secondary EBS volumes attach correctly (all monitoring/DB nodes, including mimir_db)
+
+Prior to this fix, the `redis`, `loki_log_aggregator`, `grafana_ui`, `prometheus`, and `mimir_db`
+variable blocks used a flat `enable_ebs` / `instance_ebs_secondary_size` pair that the `ebs`
+schema in `variables.tf` silently ignores (`tofu validate` warns "Object attribute is ignored").
+No secondary EBS volume was ever created for these nodes from a stock render.
 
 After re-rendering with `mix terraform.build` (or `mix deploy_ex.upgrade_priv`), these blocks
 use the correct nested form:
@@ -29,10 +62,6 @@ ebs = {
   secondary_size   = 16
 }
 ```
-
-The `mimir_db` block still carries the flat form and gets NO secondary volume from a stock
-render — its fix is tracked separately; don't rely on a mimir node having `/data` capacity from
-templates alone yet.
 
 Your next `mix terraform.plan` will show a NEW secondary EBS volume being created for each of
 these nodes — this is expected, not a regression. The real upgrade hazard is the rendered

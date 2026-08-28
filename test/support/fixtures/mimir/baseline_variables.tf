@@ -112,6 +112,7 @@ variable "deploy_ex_project" {
     instance_ami   = optional(string)
 
     private_ip        = optional(string)
+    instance_availability_zone = optional(string)
     enable_eip        = optional(bool)
     disable_ipv6      = optional(bool)
     disable_public_ip = optional(bool)
@@ -187,6 +188,8 @@ variable "deploy_ex_project" {
   default = {
     sentry = {
       name = "Sentry Monitoring"
+      instance_availability_zone = "us-west-2a"
+
       tags = {
         Vendor = "Sentry"
         Type   = "Monitoring"
@@ -195,7 +198,7 @@ variable "deploy_ex_project" {
 
     deploy_ex_redis = {
       name        = "Deploy Ex Redis"
-      private_ip  = "10.0.1.60"
+      instance_availability_zone = "us-west-2a"
 
       # This is a suggestion for instance
 
@@ -216,6 +219,7 @@ variable "deploy_ex_project" {
     grafana_ui = {
       name                        = "Grafana UI"
       enable_eip                  = true
+      instance_availability_zone = "us-west-2a"
 
       ebs = {
         enable_secondary = true
@@ -232,7 +236,7 @@ variable "deploy_ex_project" {
     prometheus_db = {
       name                        = "Prometheus Metrics Database"
       instance_type               = "t3.micro"
-      private_ip                  = "10.0.1.40"
+      instance_availability_zone = "us-west-2a"
 
       ebs = {
         enable_secondary = true
@@ -249,7 +253,7 @@ variable "deploy_ex_project" {
     loki_aggregator = {
       name          = "Grafana Loki Logs"
       instance_type = "t3.micro"
-      private_ip    = "10.0.1.50"
+      instance_availability_zone = "us-west-2a"
 
       ebs = {
         enable_secondary = true

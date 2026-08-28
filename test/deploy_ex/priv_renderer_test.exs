@@ -173,6 +173,61 @@ defmodule DeployEx.PrivRendererTest do
     end
   end
 
+  describe "render_to_temp/1 - DHCP + shared AZ pin" do
+    setup do
+      assert {:ok, temp_dir} = PrivRenderer.render_to_temp()
+      on_exit(fn -> File.rm_rf!(temp_dir) end)
+
+      variables_content = temp_dir |> Path.join("terraform/variables.tf") |> File.read!()
+
+      {:ok, variables_content: variables_content}
+    end
+
+    @monitoring_block_regexes %{
+      redis: ~r/\w*_redis\s*=\s*\{.*?\n\s*\},/s,
+      sentry: ~r/\bsentry\s*=\s*\{.*?\n\s*\},/s,
+      loki: ~r/loki_aggregator\s*=\s*\{.*?\n\s*\},/s,
+      grafana: ~r/grafana_ui\s*=\s*\{.*?\n\s*\},/s,
+      prometheus: ~r/prometheus_db\s*=\s*\{.*?\n\s*\},/s,
+      mimir: ~r/mimir_db\s*=\s*\{.*?\n\s*\},/s
+    }
+
+    for {name, _regex} <- @monitoring_block_regexes do
+      test "#{name} block has no fixed private_ip", %{variables_content: variables_content} do
+        block = fetch_block(variables_content, @monitoring_block_regexes[unquote(name)])
+
+        refute block =~ "private_ip"
+      end
+    end
+
+    test "every monitoring/DB block pins the exact same instance_availability_zone",
+         %{variables_content: variables_content} do
+      zones =
+        Enum.map(@monitoring_block_regexes, fn {name, regex} ->
+          block = fetch_block(variables_content, regex)
+          [zone] = Regex.run(~r/instance_availability_zone\s*=\s*"([^"]+)"/, block, capture: :all_but_first)
+          {name, zone}
+        end)
+
+      distinct_zones = zones |> Enum.map(fn {_name, zone} -> zone end) |> Enum.uniq()
+
+      assert length(distinct_zones) === 1, "expected one shared AZ across all blocks, got: #{inspect(zones)}"
+      assert distinct_zones === [DeployEx.Config.aws_availability_zone()]
+    end
+
+    test "a consumer-supplied :availability_zone opt propagates to every block" do
+      assert {:ok, temp_dir} = PrivRenderer.render_to_temp(availability_zone: "us-east-1c")
+      on_exit(fn -> File.rm_rf!(temp_dir) end)
+
+      variables_content = temp_dir |> Path.join("terraform/variables.tf") |> File.read!()
+
+      Enum.each(@monitoring_block_regexes, fn {_name, regex} ->
+        block = fetch_block(variables_content, regex)
+        assert block =~ ~s(instance_availability_zone = "us-east-1c")
+      end)
+    end
+  end
+
   defp fetch_block(content, regex) do
     case Regex.run(regex, content) do
       [block] -> block

@@ -3,11 +3,11 @@ defmodule DeployEx.PrivRendererMimirTest do
 
   alias DeployEx.PrivRenderer
 
-  # baseline_variables.tf: re-captured 2026-08-27 from build/ebs-fix (main @ 7c66231 +
-  # the nested-ebs fix, mimir disabled) — reflects the nested `ebs = {}` form now used by
-  # redis/loki/grafana/prometheus. NOT main @ e06649a; those bytes are stale post-ebs-fix.
-  # baseline_group_vars_all.yaml: untouched by the nested-ebs fix (no ebs keys in
-  # group_vars), still the original pre-mimir capture from main @ e06649a.
+  # baseline_variables.tf: re-captured 2026-08-28 from build/ip-fix (main @ a930d71 +
+  # the DHCP/AZ-pin fix, mimir disabled) — reflects the dropped `private_ip` / added
+  # `instance_availability_zone` now shared by redis/loki/grafana/prometheus/sentry.
+  # baseline_group_vars_all.yaml: re-captured the same run — the loki/prometheus URL
+  # defaults switched from fixed private IPs to FILL_IN_AFTER_FIRST_APPLY placeholders.
   # Both are the byte-identical baseline that `--no-mimir` must reproduce exactly.
   @fixtures_dir Path.expand("../support/fixtures/mimir", __DIR__)
   @baseline_variables_tf File.read!(Path.join(@fixtures_dir, "baseline_variables.tf"))
@@ -17,7 +17,7 @@ defmodule DeployEx.PrivRendererMimirTest do
       prometheus_db = {
         name                        = "Prometheus Metrics Database"
         instance_type               = "t3.micro"
-        private_ip                  = "10.0.1.40"
+        instance_availability_zone = "#{DeployEx.Config.aws_availability_zone()}"
 
         ebs = {
           enable_secondary = true
@@ -37,9 +37,12 @@ defmodule DeployEx.PrivRendererMimirTest do
       mimir_db = {
         name                        = "Mimir Metrics Database"
         instance_type               = "t3.small"
-        enable_ebs                  = true
-        instance_ebs_secondary_size = 16
-        private_ip                  = "10.0.1.70"
+        instance_availability_zone = "#{DeployEx.Config.aws_availability_zone()}"
+
+        ebs = {
+          enable_secondary = true
+          secondary_size   = 16
+        }
 
         tags = {
           Vendor = "Grafana"
@@ -49,9 +52,10 @@ defmodule DeployEx.PrivRendererMimirTest do
       },
   """
 
-  # `environment: "dev"` pins the render to match the fixtures captured below —
-  # otherwise the ambient `Mix.env()` (":test" here vs ":dev" when the fixtures
-  # were captured) leaks into bucket names/tags and breaks the byte-identical assertions.
+  # `environment: "dev"` pins the "environment" variable's default (line 1 of the
+  # rendered variables.tf) to match the fixture below. It does NOT affect bucket
+  # names — those are suffixed by the real `Mix.env()` ("test" under `mix test`,
+  # same as when the fixture below was captured), independent of this opt.
   defp render_variables_tf(opts) do
     {:ok, temp_dir} = PrivRenderer.render_to_temp(Keyword.put_new(opts, :environment, "dev"))
     on_exit(fn -> File.rm_rf!(temp_dir) end)
@@ -73,10 +77,15 @@ defmodule DeployEx.PrivRendererMimirTest do
       assert content =~ "mimir_db = {"
       assert content =~ ~s(name                        = "Mimir Metrics Database")
       assert content =~ ~s(instance_type               = "t3.small")
-      assert content =~ "enable_ebs                  = true"
-      assert content =~ "instance_ebs_secondary_size = 16"
-      assert content =~ ~s(private_ip                  = "10.0.1.70")
+      assert content =~ ~r/ebs\s*=\s*\{/
+      assert content =~ ~r/enable_secondary\s*=\s*true/
+      assert content =~ ~r/secondary_size\s*=\s*16/
+      refute content =~ "enable_ebs"
+      refute content =~ "instance_ebs_secondary_size"
       assert content =~ ~s(MonitoringKey = "mimir_db")
+
+      [mimir_block] = Regex.run(~r/mimir_db\s*=\s*\{.*?\n\s*\},/s, content)
+      refute mimir_block =~ "private_ip"
     end
 
     test "adds only the mimir_db block — everything else matches the pre-mimir baseline" do
@@ -105,17 +114,17 @@ defmodule DeployEx.PrivRendererMimirTest do
   # SECTION: Ansible group_vars grafana_mimir_url
 
   describe "group_vars grafana_mimir_url — default (mimir ON)" do
-    test "contains grafana_mimir_url consistent with the mimir_db private_ip + port" do
+    test "contains grafana_mimir_url as a fill-after-apply placeholder (mimir_db has no private_ip)" do
       content = render_group_vars([])
 
-      assert content =~ ~s(grafana_mimir_url: "http://10.0.1.70:8080")
+      assert content =~ ~s(grafana_mimir_url: "http://FILL_IN_AFTER_FIRST_APPLY:8080")
     end
 
     test "adds only grafana_mimir_url — everything else matches the pre-mimir baseline" do
       content = render_group_vars([])
 
       assert String.starts_with?(content, @baseline_group_vars)
-      assert content =~ ~s(grafana_mimir_url: "http://10.0.1.70:8080")
+      assert content =~ ~s(grafana_mimir_url: "http://FILL_IN_AFTER_FIRST_APPLY:8080")
     end
 
     test "ends with a trailing newline (POSIX text file convention)" do

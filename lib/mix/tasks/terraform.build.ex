@@ -16,6 +16,7 @@ defmodule Mix.Tasks.Terraform.Build do
   - `aws-region` - Region for aws (default: `#{@default_aws_region}`)
   - `aws-bucket` - Region for aws (default: `#{@default_aws_release_bucket}`)
   - `aws-log-bucket` - Region for aws (default: `#{@default_aws_log_bucket}`)
+  - `availability-zone` - Shared AZ for monitoring/DB peer instances (default: aws-region's "a" zone)
   - `env` - Environment for terraform (default: `Mix.env()`)
   - `quiet` - Supress output
   - `force` - Force create files without asking
@@ -36,6 +37,8 @@ defmodule Mix.Tasks.Terraform.Build do
 
     no_logging = opts[:no_logging] || opts[:no_loki] || false
     opts = Keyword.put(opts, :no_logging, no_logging)
+
+    opts = Keyword.put_new(opts, :availability_zone, DeployEx.Config.aws_availability_zone(opts[:aws_region]))
 
     with :ok <- DeployExHelpers.check_valid_project(),
          :ok <- DeployEx.ToolInstaller.ensure_installed(:terraform),
@@ -106,6 +109,7 @@ defmodule Mix.Tasks.Terraform.Build do
         quiet: :boolean,
         verbose: :boolean,
         aws_region: :string,
+        availability_zone: :string,
         env: :string,
         no_database: :boolean,
         no_logging: :boolean,
@@ -171,7 +175,7 @@ defmodule Mix.Tasks.Terraform.Build do
       """
           #{DeployExHelpers.underscored_project_name()}_redis = {
             name        = "#{DeployExHelpers.title_case_project_name()} Redis"
-            private_ip  = "10.0.1.60"
+            instance_availability_zone = "#{opts[:availability_zone]}"
 
             # This is a suggestion for instance
 
@@ -199,6 +203,8 @@ defmodule Mix.Tasks.Terraform.Build do
       """
           sentry = {
             name = "Sentry Monitoring"
+            instance_availability_zone = "#{opts[:availability_zone]}"
+
             tags = {
               Vendor = "Sentry"
               Type   = "Monitoring"
@@ -216,7 +222,7 @@ defmodule Mix.Tasks.Terraform.Build do
           loki_aggregator = {
             name          = "Grafana Loki Logs"
             instance_type = "t3.micro"
-            private_ip    = "10.0.1.50"
+            instance_availability_zone = "#{opts[:availability_zone]}"
 
             ebs = {
               enable_secondary = true
@@ -241,6 +247,7 @@ defmodule Mix.Tasks.Terraform.Build do
           grafana_ui = {
             name                        = "Grafana UI"
             enable_eip                  = true
+            instance_availability_zone = "#{opts[:availability_zone]}"
 
             ebs = {
               enable_secondary = true
@@ -265,7 +272,7 @@ defmodule Mix.Tasks.Terraform.Build do
           prometheus_db = {
             name                        = "Prometheus Metrics Database"
             instance_type               = "t3.micro"
-            private_ip                  = "10.0.1.40"
+            instance_availability_zone = "#{opts[:availability_zone]}"
 
             ebs = {
               enable_secondary = true

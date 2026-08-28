@@ -41,14 +41,19 @@ defmodule DeployEx.Mimir do
   @doc "Terraform variables.tf mimir_db block — empty string when mimir is disabled."
   def terraform_variables(opts) do
     if enabled?(opts) do
+      availability_zone = opts[:availability_zone] || DeployEx.Config.aws_availability_zone()
+
       """
 
           mimir_db = {
             name                        = "Mimir Metrics Database"
             instance_type               = "t3.small"
-            enable_ebs                  = true
-            instance_ebs_secondary_size = 16
-            private_ip                  = "10.0.1.70"
+            instance_availability_zone = "#{availability_zone}"
+
+            ebs = {
+              enable_secondary = true
+              secondary_size   = 16
+            }
 
             tags = {
               Vendor = "Grafana"

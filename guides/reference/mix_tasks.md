@@ -79,7 +79,7 @@ Both LLM modes require `:deploy_ex, :llm_provider` configured.
 | Task | Switches |
 |------|----------|
 | `mix terraform.init` | `-d directory`, `-u upgrade` |
-| `mix terraform.build` | `-d directory`, `-f force`, `-q quiet`, `-v verbose`, `--aws-region`, `--env`, `--no-database`, `--no-loki`, `--no-grafana`, `--no-redis`, `--no-prometheus`, `--no-mimir`, `--no-sentry`, `--no-logging` |
+| `mix terraform.build` | `-d directory`, `-f force`, `-q quiet`, `-v verbose`, `--aws-region`, `--availability-zone`, `--env`, `--no-database`, `--no-loki`, `--no-grafana`, `--no-redis`, `--no-prometheus`, `--no-mimir`, `--no-sentry`, `--no-logging` |
 | `mix terraform.plan` | `-d directory`, `-f force`, `-q quiet` (forwards remaining args to `terraform plan`, e.g. `--var-file`, `--target`) |
 | `mix terraform.apply` | `-d directory`, `-y auto-approve`, `-f force`, `-q quiet` (forwards `--var-file`, `--target`) |
 | `mix terraform.refresh` | `-d directory`, `-f force`, `-q quiet` |

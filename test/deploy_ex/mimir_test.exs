@@ -29,10 +29,25 @@ defmodule DeployEx.MimirTest do
       assert content =~ "mimir_db = {"
       assert content =~ ~s(name                        = "Mimir Metrics Database")
       assert content =~ ~s(instance_type               = "t3.small")
-      assert content =~ "enable_ebs                  = true"
-      assert content =~ "instance_ebs_secondary_size = 16"
-      assert content =~ ~s(private_ip                  = "10.0.1.70")
+      assert content =~ ~r/ebs\s*=\s*\{/
+      assert content =~ ~r/enable_secondary\s*=\s*true/
+      assert content =~ ~r/secondary_size\s*=\s*16/
+      refute content =~ "enable_ebs"
+      refute content =~ "instance_ebs_secondary_size"
+      refute content =~ "private_ip"
       assert content =~ ~s(MonitoringKey = "mimir_db")
+    end
+
+    test "pins instance_availability_zone from opts when provided" do
+      content = Mimir.terraform_variables(availability_zone: "us-east-1c")
+
+      assert content =~ ~s(instance_availability_zone = "us-east-1c")
+    end
+
+    test "defaults instance_availability_zone when opts omits it" do
+      content = Mimir.terraform_variables([])
+
+      assert content =~ ~s(instance_availability_zone = "#{DeployEx.Config.aws_availability_zone()}")
     end
 
     test "returns an empty string when :no_mimir is true" do

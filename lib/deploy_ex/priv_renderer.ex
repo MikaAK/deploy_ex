@@ -80,6 +80,9 @@ defmodule DeployEx.PrivRenderer do
     aws_release_bucket = opts[:aws_release_bucket] || DeployEx.Config.aws_release_bucket()
     aws_log_bucket = opts[:aws_log_bucket] || DeployEx.Config.aws_log_bucket()
 
+    availability_zone = opts[:availability_zone] || DeployEx.Config.aws_availability_zone(aws_region)
+    opts = Keyword.put(opts, :availability_zone, availability_zone)
+
     terraform_app_releases_variables = release_names
       |> Enum.map_join(",\n\n", &generate_terraform_release_variables/1)
 
@@ -264,7 +267,7 @@ defmodule DeployEx.PrivRenderer do
       """
           #{app_name}_redis = {
             name        = "#{title} Redis"
-            private_ip  = "10.0.1.60"
+            instance_availability_zone = "#{opts[:availability_zone]}"
 
             # This is a suggestion for instance
 
@@ -292,6 +295,8 @@ defmodule DeployEx.PrivRenderer do
       """
           sentry = {
             name = "Sentry Monitoring"
+            instance_availability_zone = "#{opts[:availability_zone]}"
+
             tags = {
               Vendor = "Sentry"
               Type   = "Monitoring"
@@ -309,7 +314,7 @@ defmodule DeployEx.PrivRenderer do
           loki_aggregator = {
             name          = "Grafana Loki Logs"
             instance_type = "t3.micro"
-            private_ip    = "10.0.1.50"
+            instance_availability_zone = "#{opts[:availability_zone]}"
 
             ebs = {
               enable_secondary = true
@@ -334,6 +339,7 @@ defmodule DeployEx.PrivRenderer do
           grafana_ui = {
             name                        = "Grafana UI"
             enable_eip                  = true
+            instance_availability_zone = "#{opts[:availability_zone]}"
 
             ebs = {
               enable_secondary = true
@@ -358,7 +364,7 @@ defmodule DeployEx.PrivRenderer do
           prometheus_db = {
             name                        = "Prometheus Metrics Database"
             instance_type               = "t3.micro"
-            private_ip                  = "10.0.1.40"
+            instance_availability_zone = "#{opts[:availability_zone]}"
 
             ebs = {
               enable_secondary = true
