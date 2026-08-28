@@ -24,20 +24,12 @@ defmodule Mix.Tasks.DeployEx.LoadTest.List do
     with :ok <- DeployExHelpers.check_valid_project() do
       opts = parse_args(args)
 
-      case list_runners(opts) do
-        {:ok, []} ->
-          unless opts[:quiet] do
-            Mix.shell().info([:yellow, "No k6 runners found"])
-          end
-
-        {:ok, runners} ->
-          output_runners(runners, opts)
-
-        {:error, error} ->
-          Mix.raise(ErrorMessage.to_string(error))
-      end
+      render_result(list_runners(opts), opts)
     end
   end
+
+  def render_result({:ok, runners}, opts), do: output_runners(runners, opts)
+  def render_result({:error, error}, _opts), do: Mix.raise(ErrorMessage.to_string(error))
 
   defp parse_args(args) do
     {opts, _extra_args} = OptionParser.parse!(args,
@@ -83,6 +75,12 @@ defmodule Mix.Tasks.DeployEx.LoadTest.List do
     |> Jason.encode!(pretty: true)
 
     Mix.shell().info(json)
+  end
+
+  defp output_runners_table([], opts) do
+    unless opts[:quiet] do
+      Mix.shell().info([:yellow, "No k6 runners found"])
+    end
   end
 
   defp output_runners_table(runners, opts) do

@@ -37,4 +37,23 @@ defmodule Mix.Tasks.DeployEx.LoadTest.ListTest do
       assert output =~ "k6 Runners:"
     end
   end
+
+  describe "render_result/2 with zero runners" do
+    test "emits valid (empty array) JSON on stdout when --json is set" do
+      output = capture_io(fn ->
+        List.render_result({:ok, []}, json: true)
+      end)
+
+      assert {:ok, []} = Jason.decode(output)
+    end
+
+    test "prints the human 'no runners' message when --json is not set" do
+      output = capture_io(fn ->
+        List.render_result({:ok, []}, [])
+      end)
+
+      assert output =~ "No k6 runners found"
+      refute output =~ "["
+    end
+  end
 end
