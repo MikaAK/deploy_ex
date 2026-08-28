@@ -35,7 +35,7 @@ The template also sets `thresholds.http_req_failed` with `abortOnFail: true`, so
 Runners are standalone EC2 instances with k6 pre-installed via cloud-init. State is stored in S3 at `k6-runners/{instance_id}.json`. The create command checks for existing runners before launching new ones, so calling it repeatedly is safe — whether reusing or freshly creating a runner, it isn't reported ready until SSH is reachable and `k6 version` succeeds on the instance. If a found runner fails that check, recreate it with `--force`.
 
 ```bash
-mix deploy_ex.load_test.create_instance --instance-type t3.medium    # default is t3.large
+mix deploy_ex.load_test.create_instance --instance-type t3.medium    # default is t3.small
 mix deploy_ex.load_test.list                                         # active runners
 mix deploy_ex.load_test.list --json                                  # script-friendly output
 mix deploy_ex.load_test.destroy_instance                             # single runner: no flag needed
@@ -47,7 +47,7 @@ If more than one runner exists, `destroy_instance` refuses to guess — pass `--
 
 ## Prometheus Remote Write
 
-The Prometheus service template enables `--web.enable-remote-write-receiver`, so k6 pushes metrics straight in. By default `mix deploy_ex.load_test.exec` writes to `http://10.0.1.40:9090/api/v1/write` — override with `--prometheus-url` if your Prometheus runs elsewhere:
+The Prometheus service template enables `--web.enable-remote-write-receiver`, so k6 pushes metrics straight in. By default `mix deploy_ex.load_test.exec` discovers the running prometheus node's private IP by tag and writes to `http://<discovered-ip>:9090/api/v1/write`; if no prometheus node is found, the test runs without metrics export. Override with `--prometheus-url` if your Prometheus runs elsewhere:
 
 ```bash
 mix deploy_ex.load_test.exec --script load_test.js \

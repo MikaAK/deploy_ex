@@ -178,12 +178,15 @@ defmodule Mix.Tasks.DeployEx.LoadTest do
     #{IO.ANSI.yellow()}Options:#{IO.ANSI.reset()}
       --script           Script filename (default: load_test.js)
       --target-url       Application endpoint URL
-      --prometheus-url   Prometheus remote write URL (default: http://10.0.1.40:9090)
+      --prometheus-url   Prometheus remote write URL (default: discovered by tag)
       --instance-id, -i  Specific runner instance ID
+      --pem              Path to PEM file
       --quiet, -q        Suppress output messages
 
     Runs the k6 test via SSH, streaming output. Results are pushed to Prometheus
-    via remote write for visualization in Grafana.
+    via remote write for visualization in Grafana. When no --prometheus-url is
+    given, the running prometheus node's private IP is discovered by tag; if
+    none is found, the test runs without metrics export.
     """)
   end
 
