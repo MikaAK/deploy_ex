@@ -93,7 +93,8 @@ defmodule DeployEx.Cloud.OciMachine do
          {:ok, availability_domain} <- require_setting(opts, :availability_domain),
          {:ok, subnet_id} <- require_setting(opts, :subnet_id),
          {:ok, image_id} <- require_setting(opts, :base_image),
-         {:ok, ssh_public_key} <- require_setting(opts, :ssh_public_key) do
+         {:ok, ssh_public_key} <- require_setting(opts, :ssh_public_key),
+         :ok <- validate_ssh_public_key(ssh_public_key) do
       command =
         "compute instance launch " <>
           "--compartment-id #{quote_arg(compartment_id)} " <>
@@ -151,6 +152,9 @@ defmodule DeployEx.Cloud.OciMachine do
     end
   end
 
+  # Compares OCI's RAW "RUNNING" — this path reads lifecycle-state straight off the get
+  # payload and never goes through instance_from_summary/normalize_state. If this loop is
+  # ever routed through describe_instance/2, the comparison must switch to "running".
   defp fetch_lifecycle_states(instance_ids, opts) do
     Enum.reduce_while(instance_ids, {:ok, []}, fn instance_id, {:ok, acc} ->
       case OciCli.run_json("compute instance get --instance-id #{quote_arg(instance_id)}", opts) do
@@ -244,6 +248,20 @@ defmodule DeployEx.Cloud.OciMachine do
 
   defp not_implemented_error(callback) do
     {:error, ErrorMessage.not_implemented("DeployEx.Cloud.OciMachine.#{callback} is not implemented — not used by the loadtest path this sprint")}
+  end
+
+  # authorized_keys wants the KEY CONTENTS ("ssh-ed25519 AAAA..."); a filesystem path pasted
+  # here would become a garbage authorized_keys line and the instance boots unreachable —
+  # the exact silent failure the ssh_authorized_keys wiring exists to prevent.
+  defp validate_ssh_public_key(key) do
+    if String.starts_with?(key, ["ssh-", "ecdsa-"]) do
+      :ok
+    else
+      {:error, ErrorMessage.bad_request(
+        "oci ssh_public_key must be the public key contents (\"ssh-ed25519 AAAA...\"), not a path",
+        %{value: key}
+      )}
+    end
   end
 
   defp normalize_state(nil), do: nil

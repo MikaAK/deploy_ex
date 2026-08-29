@@ -57,6 +57,9 @@ defmodule DeployEx.Cloud.OciInfrastructure do
   @impl DeployEx.Cloud.Infrastructure
   def gather_infrastructure(opts \\ []) do
     with {:ok, subnet_id} <- find_subnet(opts),
+         # NOTE: run_instance does NOT read this bundle's subnet_id/image_id — it re-resolves
+         # both via require_setting from config (ticket OCI-BUNDLE-VS-CONFIG tracks unifying).
+         # The bundle exists so create_instance's preflight fails fast before any launch.
          {:ok, image_id} <- find_image(opts),
          {:ok, key_name} <- find_key_pair(nil, opts) do
       {:ok, %{subnet_id: subnet_id, image_id: image_id, key_name: key_name}}
