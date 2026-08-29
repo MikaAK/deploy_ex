@@ -16,7 +16,7 @@ OCI is the second provider behind the `DeployEx.Cloud` seam. Everything OCI goes
 | `inventory` | Static — `ansible.build` queries the oci CLI, renders `oci.yaml` snapshot |
 | `machine` | `DeployEx.Cloud.OciMachine` — run/terminate/describe/list instances, `await_running`, via the `oci` CLI (compartment-scoped) |
 | `infrastructure` | `DeployEx.Cloud.OciInfrastructure` — config-driven subnet/image/key material for the loadtest path |
-| `cli_adapter` | `DeployEx.Cloud.OciCli` — shared shell runner (session-token auth aware, shell-quoted args) |
+| `cli_adapter` | `nil` — the OCI modules call `DeployEx.Cloud.OciCli` directly; the descriptor slot is unfilled |
 
 Verified live: `terraform.build/init/plan --provider oci`, `ansible.build`, `ansible.ping`, `ansible.setup`, `deploy_ex.upload`. Roughly 26 mix tasks remain AWS-only (`ssh`, `instance.*`, `restart_app`, `find_nodes`, `qa.*`, `autoscale.*`, load balancer, EBS snapshots, DB dump/restore) — check `capabilities/0` in `lib/deploy_ex/cloud/providers/oci.ex` before promising a task works on OCI.
 
@@ -24,8 +24,8 @@ Verified live: `terraform.build/init/plan --provider oci`, `ansible.build`, `ans
 
 | Task | Under `--provider oci` |
 |------|------|
-| `create_instance` / `destroy_instance` | Wired through `OciMachine` (launch/terminate in the configured compartment; `await_running` lifecycle gate). Live-verified in S3. |
-| `exec` | Runner resolution via `OciMachine.describe_instance`; prometheus discovery is AWS-only (warns + runs without metrics export under `:oci`) |
+| `create_instance` / `destroy_instance` | Wired through `OciMachine` (launch/terminate in the configured compartment; `await_running` lifecycle gate). Live verification lands with LT-OCI S3. |
+| `exec` | Runner resolution via `OciMachine.describe_instance`; prometheus discovery IS provider-routed (issues an OCI instance-list) but no OCI prometheus node exists to find — it warns and runs without metrics export |
 | `upload` | Runner resolution via `OciMachine`; scp/ssh use the descriptor's `default_ssh_user` (`ubuntu`) |
 | `list` | State-op paths (`fetch_all_runners`) route through `object_store` and work once `:oci` `release_bucket` is configured; the EC2-fallback path (`find_runners_from_ec2`) errors `:not_implemented` under any non-AWS provider by design — it must never print AWS's leftover runners as OCI's |
 | `init` | Provider-agnostic (writes local files only) |
@@ -46,7 +46,7 @@ config :deploy_ex,
   ]
 ```
 
-The `:oci` namespace is validated strictly (NimbleOptions) — a typo'd key fails at task start. All keys optional, but `release_bucket` and `resource_group` are read eagerly (not lazily defaulted like their AWS flat-key equivalents) by anything going through `Cloud.release_bucket/1` / `Cloud.resource_group/1` — e.g. `deploy_ex.load_test.*`'s state ops — and left unset they error loudly (`{:error, %ErrorMessage{code: :bad_request}}`) rather than silently sending an empty container/tag name to the `oci` CLI. Read via `Config.oci_setting(key)` (a thin wrapper over the generic `Config.provider_setting(:oci, key)`); task opts carry an `oci_` prefix (`--oci-region`) so a bare AWS `:region` can never leak in as the OCI region. Full key list: `@config_schema` in `lib/deploy_ex/cloud/providers/oci.ex`. The loadtest machine path additionally REQUIRES: `compartment_id`, `availability_domain`, `subnet_id`, `base_image`, `shape`, `ssh_public_key` — each errors `bad_request` naming the key when unset.
+The `:oci` namespace is validated strictly (NimbleOptions) — a typo'd key fails at task start. All keys optional, but `release_bucket` and `resource_group` are read eagerly (not lazily defaulted like their AWS flat-key equivalents) by anything going through `Cloud.release_bucket/1` / `Cloud.resource_group/1` — e.g. `deploy_ex.load_test.*`'s state ops — and left unset they error loudly (`{:error, %ErrorMessage{code: :bad_request}}`) rather than silently sending an empty container/tag name to the `oci` CLI. Read via `Config.oci_setting(key)` (a thin wrapper over the generic `Config.provider_setting(:oci, key)`); task opts carry an `oci_` prefix (`--oci-region`) so a bare AWS `:region` can never leak in as the OCI region. Full key list: `@config_schema` in `lib/deploy_ex/cloud/providers/oci.ex`. The loadtest machine path additionally REQUIRES: `compartment_id`, `availability_domain`, `subnet_id`, `base_image`, `ssh_public_key` (key CONTENTS, not a path) — each errors `bad_request` naming the key when unset. `shape` is optional (defaults to `VM.Standard.E5.Flex`).
 
 ## Auth
 

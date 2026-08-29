@@ -36,7 +36,8 @@ defmodule DeployEx.Cloud.Providers.Oci do
     state_profile: [type: {:or, [:string, nil]}],
     log_bucket: [type: {:or, [:string, nil]}],
     log_region: [type: {:or, [:string, nil]}],
-    resource_group: [type: {:or, [:string, nil]}]
+    resource_group: [type: {:or, [:string, nil]}],
+    ssh_public_key: [type: {:or, [:string, nil]}]
   ]
 
   @impl DeployEx.Cloud.Provider
