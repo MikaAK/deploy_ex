@@ -257,9 +257,11 @@ defmodule DeployEx.Cloud.OciMachine do
     if String.starts_with?(key, ["ssh-", "ecdsa-"]) do
       :ok
     else
+      # Only a redacted prefix goes into details — a pasted PRIVATE key here would otherwise
+      # flow verbatim into logs/error trackers.
       {:error, ErrorMessage.bad_request(
         "oci ssh_public_key must be the public key contents (\"ssh-ed25519 AAAA...\"), not a path",
-        %{value: key}
+        %{value_prefix: String.slice(key, 0, 12) <> "…", length: byte_size(key)}
       )}
     end
   end
