@@ -99,6 +99,48 @@
         state: restarted
       when: sentry_docker_daemon_config.changed
 
+    # docker-ce on debian-13 stores image layers via containerd
+    # (/var/lib/containerd), which IGNORES docker's data-root — the small root volume fills
+    # while the EBS sits empty and install.sh dies "no space left on device". Move
+    # containerd's root onto the data mount too. Idempotent: keyed on the config already
+    # pointing at the data dir.
+    - name: Check whether containerd root already lives on the data mount
+      command: grep -l "{{ sentry_data_dir }}/containerd" /etc/containerd/config.toml
+      register: sentry_containerd_root_check
+      failed_when: false
+      changed_when: false
+
+    - name: Migrate containerd root onto the Sentry data mount
+      shell: |
+        set -e
+        systemctl stop docker docker.socket containerd
+        mkdir -p {{ sentry_data_dir }}/containerd
+        if [ -d /var/lib/containerd ]; then
+          cp -a /var/lib/containerd/. {{ sentry_data_dir }}/containerd/ 2>/dev/null || true
+          rm -rf /var/lib/containerd
+        fi
+        mkdir -p /etc/containerd
+        containerd config default > /etc/containerd/config.toml
+        sed -i 's|^root = .*|root = "{{ sentry_data_dir }}/containerd"|' /etc/containerd/config.toml
+        systemctl start containerd docker
+      when: sentry_containerd_root_check.rc != 0
+
+    # Self-hosted Sentry's install migrations spike memory; on a right-sized-for-steady-state
+    # instance that transient can OOM the box mid-install. A swapfile on the data EBS absorbs
+    # it without paying for a larger instance permanently.
+    - name: Create a swapfile on the Sentry data mount
+      shell: |
+        set -e
+        if ! swapon --show | grep -q "{{ sentry_data_dir }}/sentry-swap"; then
+          fallocate -l {{ sentry_swap_size }} {{ sentry_data_dir }}/sentry-swap
+          chmod 600 {{ sentry_data_dir }}/sentry-swap
+          mkswap {{ sentry_data_dir }}/sentry-swap
+          swapon {{ sentry_data_dir }}/sentry-swap
+          grep -q "{{ sentry_data_dir }}/sentry-swap" /etc/fstab || echo "{{ sentry_data_dir }}/sentry-swap none swap sw 0 0" >> /etc/fstab
+        fi
+      args:
+        creates: "{{ sentry_data_dir }}/sentry-swap"
+
     # getsentry/self-hosted git-tracks .env with real content, and env.j2
     # rewrites it below — force:true so a re-run's checkout doesn't abort
     # with "Local modifications exist" against our previous render.
@@ -131,10 +173,17 @@
     # config.yml, or the secret-key generator's `!!changeme!!` grep never
     # matches and no key gets written. Only re-run when the pinned version
     # hasn't been installed yet.
+    # --no-report-self-hosted-issues + REPORT_SELF_HOSTED_ISSUES=0 skip the interactive
+    # telemetry-opt-in prompt; APPLY_AUTOMATIC_CONFIG_UPDATES=1 accepts the S3-nodestore
+    # config migration prompt. Without both, install.sh blocks on stdin under ansible and
+    # exits non-zero.
     - name: Run the Sentry self-hosted install script
-      command: ./install.sh --skip-user-creation --skip-commit-check
+      command: ./install.sh --skip-user-creation --skip-commit-check --no-report-self-hosted-issues
       args:
         chdir: "{{ sentry_install_dir }}"
+      environment:
+        REPORT_SELF_HOSTED_ISSUES: "0"
+        APPLY_AUTOMATIC_CONFIG_UPDATES: "1"
       when: not sentry_installed_marker.stat.exists
 
     - name: Record the installed-version marker for {{ sentry_release_version }}

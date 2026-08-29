@@ -20,3 +20,4 @@ sentry_web_port: 9000
 # under feature-complete) but must survive the upgrade path — override via
 # group_vars/host_vars before flipping to feature-complete in production.
 sentry_launchpad_rpc_shared_secret: "CHANGE_ME_INSERT_SECRET"
+sentry_swap_size: 6G
