@@ -25,6 +25,11 @@ defmodule DeployEx.Cloud.OciInfrastructure do
     require_setting(opts, :subnet_id)
   end
 
+  # CONTRACT ASYMMETRY, deliberate: AWS's find_key_pair returns a key-pair NAME (an EC2
+  # registry handle passed to RunInstances); OCI has no key-pair registry — the public key
+  # travels in launch metadata (ssh_authorized_keys) and what callers need locally is the
+  # PEM PATH for SSH. Both satisfy "the key material the create path needs" under one
+  # callback; consumers must not assume the value's shape across providers.
   @impl DeployEx.Cloud.Infrastructure
   def find_key_pair(_project_name, opts \\ []) do
     DeployEx.Terraform.find_pem_file(DeployEx.Config.terraform_folder_path(), opts[:pem])

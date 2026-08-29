@@ -168,5 +168,5 @@ defmodule DeployEx.Cloud.OciObjectStore do
     Path.join(System.tmp_dir!(), "deploy_ex_oci_#{kind}_#{System.unique_integer([:positive])}")
   end
 
-  defp quote_arg(value), do: "'#{String.replace(to_string(value), "'", "'\\''")}'"
+  defp quote_arg(value), do: OciCli.quote_arg(value)
 end

@@ -115,13 +115,13 @@ defmodule DeployEx.Cloud.OciObjectStoreTest do
     test ":oci_region is the explicit override that does apply" do
       OciObjectStore.list_objects("bucket", stub(~s({"data": []})) ++ [oci_region: "ap-seoul-1"])
 
-      assert last_command() =~ "--region ap-seoul-1"
+      assert last_command() =~ "--region 'ap-seoul-1'"
     end
 
     test "instance_principal auth is selectable for on-instance use" do
       OciObjectStore.list_objects("bucket", stub(~s({"data": []})) ++ [oci_auth: "instance_principal"])
 
-      assert last_command() =~ "OCI_CLI_AUTH=instance_principal"
+      assert last_command() =~ "OCI_CLI_AUTH='instance_principal'"
     end
   end
 

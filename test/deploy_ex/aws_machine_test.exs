@@ -215,6 +215,10 @@ defmodule DeployEx.AwsMachineTest do
   end
 
   describe "await_running/2 — wraps wait_for_started (LT-OCI S1)" do
+    test "an empty instance-id list is an error, not a vacuous :ok" do
+      assert {:error, %ErrorMessage{code: :bad_request}} = AwsMachine.await_running([], [])
+    end
+
     test "delegates to the injected wait function with the resolved region and retries" do
       wait_fn = fn region, instance_ids, retries ->
         send(self(), {:waited, region, instance_ids, retries})

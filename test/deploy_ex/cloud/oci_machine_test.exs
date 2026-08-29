@@ -153,7 +153,7 @@ defmodule DeployEx.Cloud.OciMachineTest do
               %Instance{
                 id: "ocid1.instance..a",
                 name: "K6-Runner-prod-1",
-                state: "RUNNING",
+                state: "running",
                 public_ip: "1.2.3.4",
                 private_ip: "10.0.0.5",
                 tags: %{"Name" => "K6-Runner-prod-1", "K6Runner" => "true"}
@@ -241,10 +241,32 @@ defmodule DeployEx.Cloud.OciMachineTest do
           oci_compartment_id: "ocid1.compartment..a",
           oci_availability_domain: "abcd:AP-SEOUL-1-AD-1",
           oci_subnet_id: "ocid1.subnet..a",
-          oci_base_image: "ocid1.image..a"
+          oci_base_image: "ocid1.image..a",
+          oci_ssh_public_key: "ssh-ed25519 AAAAtest key-comment"
         ],
         extra
       )
+    end
+
+    test "metadata carries ssh_authorized_keys from the :ssh_public_key config" do
+      run_fn = capture_command(launch_response("ocid1.instance..new"))
+
+      OciMachine.run_instance(neutral_spec(), Keyword.put(launch_opts(), :run_fn, run_fn))
+
+      assert_received {:oci_command, command}
+      metadata = command |> flag_value("--metadata") |> Jason.decode!()
+      assert metadata["ssh_authorized_keys"] === "ssh-ed25519 AAAAtest key-comment"
+      assert metadata["user_data"] === Base.encode64("#!/bin/bash\necho hi\n")
+    end
+
+    test "a missing :ssh_public_key config is a loud bad_request, not a keyless launch" do
+      opts = launch_opts() |> Keyword.delete(:oci_ssh_public_key) |> Keyword.put(:run_fn, capture_command(launch_response("x")))
+
+      assert {:error, %ErrorMessage{code: :bad_request, message: message}} =
+               OciMachine.run_instance(neutral_spec(), opts)
+
+      assert message =~ "ssh_public_key"
+      refute_received {:oci_command, _}
     end
 
     test "launches with compartment/AD/subnet/image from config, display-name and metadata.user_data from the spec" do
@@ -263,7 +285,10 @@ defmodule DeployEx.Cloud.OciMachineTest do
       assert flag_value(command, "--assign-public-ip") === "true"
 
       metadata = command |> flag_value("--metadata") |> Jason.decode!()
-      assert metadata === %{"user_data" => Base.encode64(neutral_spec().user_data)}
+      assert metadata === %{
+               "user_data" => Base.encode64(neutral_spec().user_data),
+               "ssh_authorized_keys" => "ssh-ed25519 AAAAtest key-comment"
+             }
 
       tags = command |> flag_value("--freeform-tags") |> Jason.decode!()
       assert tags === %{"Name" => "K6-Runner-test-1", "Group" => "My Backend", "K6Runner" => "true"}
@@ -356,6 +381,10 @@ defmodule DeployEx.Cloud.OciMachineTest do
   end
 
   describe "await_running/2" do
+    test "an empty instance-id list is an error, not a vacuous :ok" do
+      assert {:error, %ErrorMessage{code: :bad_request}} = OciMachine.await_running([], [])
+    end
+
     test "returns :ok once every instance reports RUNNING" do
       run_fn = fn _command, _cwd ->
         {:ok, Jason.encode!(%{"data" => %{"lifecycle-state" => "RUNNING"}})}
