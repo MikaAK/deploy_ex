@@ -2,7 +2,7 @@
 
 deploy_ex provides built-in k6 load testing infrastructure using ephemeral runner instances. Test results push to Prometheus via remote-write and visualise in Grafana.
 
-Runner **state** (save/fetch/list/delete) is provider-routed through `DeployEx.Cloud`'s object-store capability, so it works against either provider's configured bucket. Runner **lifecycle** (create/terminate/list-from-cloud) is AWS-only today — the `--provider` flag is accepted by every `load_test.*` task and validated, but passing `--provider oci` currently surfaces `:not_implemented` for create/destroy/exec/upload (OCI's machine capability isn't wired yet).
+Runner **state** (save/fetch/list/delete) is provider-routed through `DeployEx.Cloud`'s object-store capability, so it works against either provider's configured bucket. Runner **lifecycle** (create/terminate/describe/list) is provider-routed too: under `--provider oci` instances launch via the `oci` CLI into the configured compartment (requires the `:oci` config keys `compartment_id`, `availability_domain`, `subnet_id`, `base_image`, `shape`, `ssh_public_key`). Prometheus discovery remains AWS-only — under `:oci` the exec warns and runs without metrics export.
 
 ## Quick Start
 
