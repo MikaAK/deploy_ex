@@ -374,14 +374,26 @@ defmodule DeployEx.K6Runner do
     echo "k6 Runner setup starting..."
 
     apt-get update -y -o DPkg::Lock::Timeout=300
-    apt-get install -y -o DPkg::Lock::Timeout=300 curl gnupg ca-certificates
+    apt-get install -y -o DPkg::Lock::Timeout=300 curl gnupg ca-certificates tar
 
+    # k6's apt repo (dl.k6.io/deb) ships amd64 only, so on arm64 hosts (e.g. OCI's
+    # Always-Free VM.Standard.A1.Flex) `apt-get install k6` fails with "Unable to locate
+    # package k6". k6 publishes an official linux-arm64 binary per GitHub release, so arm64
+    # hosts install that tarball; amd64 keeps the apt path unchanged (AWS invariance).
+    # Version pinned for a reproducible provision (bump deliberately, same as apt's stable).
+    if [ "$(dpkg --print-architecture)" = "arm64" ]; then
+    curl -fsSL https://github.com/grafana/k6/releases/download/v2.2.0/k6-v2.2.0-linux-arm64.tar.gz -o /tmp/k6.tar.gz
+    tar -xzf /tmp/k6.tar.gz -C /tmp
+    cp /tmp/k6-v2.2.0-linux-arm64/k6 /usr/local/bin/k6
+    chmod 0755 /usr/local/bin/k6
+    else
     mkdir -p /etc/apt/keyrings
     curl -fsSL https://dl.k6.io/key.gpg | gpg --dearmor -o /etc/apt/keyrings/k6.gpg
     echo "deb [signed-by=/etc/apt/keyrings/k6.gpg] https://dl.k6.io/deb stable main" | tee /etc/apt/sources.list.d/k6.list
 
     apt-get update -y -o DPkg::Lock::Timeout=300
     apt-get install -y -o DPkg::Lock::Timeout=300 k6
+    fi
 
     mkdir -p /srv/k6/scripts
     chown -R #{ssh_user}:#{ssh_user} /srv/k6
