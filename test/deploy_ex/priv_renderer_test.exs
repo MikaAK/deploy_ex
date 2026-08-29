@@ -127,9 +127,14 @@ defmodule DeployEx.PrivRendererTest do
       variables_content = Path.join(temp_dir, "terraform/variables.tf") |> File.read!()
 
       assert variables_content =~ "sentry = {"
-      assert variables_content =~ ~s(instance_type = "t3.large")
-      assert variables_content =~ ~s(private_ip    = "10.0.1.80")
+      assert variables_content =~ ~r/instance_type\s+= "t3.large"/
+      assert variables_content =~ "instance_availability_zone"
+      assert variables_content =~ ~r/secondary_size\s+= 64/
       assert variables_content =~ ~s(MonitoringKey = "sentry")
+
+      # DHCP + AZ pin (IP-FIX): the sentry block no longer ships a fixed private_ip.
+      [sentry_block] = Regex.run(~r/sentry\s*=\s*\{.*?\n\s*\},/s, variables_content)
+      refute sentry_block =~ "private_ip"
     end
 
     test "variables.tf omits the sentry node when no_sentry: true" do
@@ -141,13 +146,15 @@ defmodule DeployEx.PrivRendererTest do
       refute variables_content =~ "sentry = {"
     end
 
-    test "group_vars/all.yaml includes sentry_url at the sentry node's private_ip by default" do
+    test "group_vars/all.yaml includes sentry_url as a FILL_IN placeholder by default" do
       assert {:ok, temp_dir} = PrivRenderer.render_to_temp()
       on_exit(fn -> File.rm_rf!(temp_dir) end)
 
       group_vars_content = Path.join(temp_dir, "ansible/group_vars/all.yaml") |> File.read!()
 
-      assert group_vars_content =~ ~s(sentry_url: "http://10.0.1.80:9000")
+      # DHCP (IP-FIX): the sentry node's IP is not known at render time, so
+      # sentry_url renders as a FILL_IN placeholder like grafana_{loki,prometheus,mimir}_url.
+      assert group_vars_content =~ ~s(sentry_url: "http://FILL_IN_AFTER_FIRST_APPLY:9000")
     end
 
     test "group_vars/all.yaml omits sentry_url when no_sentry: true" do

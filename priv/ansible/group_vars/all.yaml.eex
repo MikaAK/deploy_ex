@@ -26,7 +26,13 @@ prometheus_retention_size: 4GB
 prometheus_retention_time: 7d
 <% end %>
 <%= if @is_sentry_enabled do %>
-sentry_url: "http://10.0.1.80:9000"
+
+# Fill in after the first `mix terraform.apply` — the Sentry node's IP is
+# DHCP-assigned, not known at render time. Discover it with:
+#   mix deploy_ex.find_nodes --tag MonitoringKey=sentry
+# Only sets system.url-prefix (UI link-building); the container binds to the
+# node's own address via SENTRY_BIND regardless, and ingest uses the DSN.
+sentry_url: "http://FILL_IN_AFTER_FIRST_APPLY:9000"
 <% end %>
 system_env:
   - PATH=/root/.asdf/shims:/root/.asdf/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

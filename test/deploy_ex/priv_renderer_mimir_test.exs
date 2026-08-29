@@ -3,11 +3,13 @@ defmodule DeployEx.PrivRendererMimirTest do
 
   alias DeployEx.PrivRenderer
 
-  # baseline_variables.tf: re-captured 2026-08-28 from build/ip-fix (main @ a930d71 +
-  # the DHCP/AZ-pin fix, mimir disabled) — reflects the dropped `private_ip` / added
-  # `instance_availability_zone` now shared by redis/loki/grafana/prometheus/sentry.
-  # baseline_group_vars_all.yaml: re-captured the same run — the loki/prometheus URL
-  # defaults switched from fixed private IPs to FILL_IN_AFTER_FIRST_APPLY placeholders.
+  # baseline_variables.tf: re-captured 2026-08-29 from build/sentry (main @ f08b207 +
+  # the completed sentry node), mimir disabled — reflects the DHCP/AZ-pin convention
+  # (dropped `private_ip` / added `instance_availability_zone`) shared by
+  # redis/loki/grafana/prometheus/sentry, plus the sentry block's instance_type,
+  # nested `ebs`, and MonitoringKey.
+  # baseline_group_vars_all.yaml: re-captured the same run — the loki/prometheus/sentry
+  # URL defaults are all FILL_IN_AFTER_FIRST_APPLY placeholders (DHCP).
   # Both are the byte-identical baseline that `--no-mimir` must reproduce exactly.
   @fixtures_dir Path.expand("../support/fixtures/mimir", __DIR__)
   @baseline_variables_tf File.read!(Path.join(@fixtures_dir, "baseline_variables.tf"))

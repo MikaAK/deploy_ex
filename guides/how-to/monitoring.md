@@ -185,7 +185,7 @@ The Sentry web service binds to the node's private VPC address (`SENTRY_BIND` in
 ```bash
 mix deploy_ex.ssh.authorize                              # allowlist your IP for SSH (port 22 is allowlist-only)
 mix deploy_ex.find_nodes --tag MonitoringKey=sentry       # find the node's IP
-ssh -i deploys/terraform/*.pem -L 9000:10.0.1.80:9000 admin@<sentry-node-ip>
+ssh -i deploys/terraform/*.pem -L 9000:<sentry-node-ip>:9000 admin@<sentry-node-ip>
 ```
 
 The `-L` remote address (the node's own bound VPC address, on port 9000) is resolved by the SSH server (the sentry node), not your machine. Then browse `http://localhost:9000` locally. `group_vars/all.yaml`'s `sentry_url` is the same address — it's what the Sentry container uses to build links back to the UI, and is also what the tunnel targets.
