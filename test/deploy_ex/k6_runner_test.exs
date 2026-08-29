@@ -447,6 +447,22 @@ defmodule DeployEx.K6RunnerTest do
         assert line =~ "DPkg::Lock::Timeout", "expected #{inspect(line)} to be lock-tolerant"
       end)
     end
+
+    test "branches on architecture (OCI Always-Free is arm64, k6 apt repo is amd64-only)", %{script: script} do
+      assert script =~ "dpkg --print-architecture"
+      assert script =~ ~S|= "arm64" ]; then|
+    end
+
+    test "arm64 installs the official k6 linux-arm64 binary, not apt", %{script: script} do
+      assert script =~ "k6-v2.2.0-linux-arm64.tar.gz"
+      assert script =~ "cp /tmp/k6-v2.2.0-linux-arm64/k6 /usr/local/bin/k6"
+      assert script =~ "chmod 0755 /usr/local/bin/k6"
+    end
+
+    test "amd64 keeps the apt install path (AWS invariance)", %{script: script} do
+      assert script =~ ~r/apt-get install.*\bk6\b/
+      assert script =~ "https://dl.k6.io/deb stable main"
+    end
   end
 
   describe "save_state/2 (routed through Cloud.capability(:object_store) — LT-OCI S1)" do
