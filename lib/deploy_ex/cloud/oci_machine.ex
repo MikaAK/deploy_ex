@@ -92,7 +92,8 @@ defmodule DeployEx.Cloud.OciMachine do
     with {:ok, compartment_id} <- require_compartment_id(opts),
          {:ok, availability_domain} <- require_setting(opts, :availability_domain),
          {:ok, subnet_id} <- require_setting(opts, :subnet_id),
-         {:ok, image_id} <- require_setting(opts, :base_image) do
+         {:ok, image_id} <- require_setting(opts, :base_image),
+         {:ok, ssh_public_key} <- require_setting(opts, :ssh_public_key) do
       command =
         "compute instance launch " <>
           "--compartment-id #{quote_arg(compartment_id)} " <>
@@ -102,7 +103,7 @@ defmodule DeployEx.Cloud.OciMachine do
           "--display-name #{quote_arg(spec.name)} " <>
           shape_flags(spec, opts) <>
           "--freeform-tags #{quote_arg(freeform_tags_json(spec.tags))} " <>
-          "--metadata #{quote_arg(metadata_json(spec.user_data))} " <>
+          "--metadata #{quote_arg(metadata_json(spec.user_data, ssh_public_key))} " <>
           "--assign-public-ip #{quote_arg("true")}"
 
       with {:ok, payload} <- OciCli.run_json(command, opts) do
@@ -129,6 +130,10 @@ defmodule DeployEx.Cloud.OciMachine do
     sleep_fn = opts[:sleep_fn] || (&Process.sleep/1)
 
     do_await_running(instance_ids, opts, retries, sleep_fn)
+  end
+
+  defp do_await_running([], _opts, _retries, _sleep_fn) do
+    {:error, ErrorMessage.bad_request("await_running requires at least one instance id")}
   end
 
   defp do_await_running(_instance_ids, _opts, 0, _sleep_fn) do
@@ -174,8 +179,14 @@ defmodule DeployEx.Cloud.OciMachine do
     tags |> Enum.into(%{}, fn {key, value} -> {to_string(key), value} end) |> Jason.encode!()
   end
 
-  defp metadata_json(user_data) do
-    Jason.encode!(%{"user_data" => Base.encode64(user_data)})
+  # ssh_authorized_keys is what OCI's cloud-init uses to seed the default user's
+  # ~/.ssh/authorized_keys — without it the instance boots keyless and every SSH step
+  # (readiness gate, upload, exec) times out against an unreachable box.
+  defp metadata_json(user_data, ssh_public_key) do
+    Jason.encode!(%{
+      "user_data" => Base.encode64(user_data),
+      "ssh_authorized_keys" => ssh_public_key
+    })
   end
 
   defp primary_vnic_addresses(instance_id, opts) do
@@ -192,7 +203,10 @@ defmodule DeployEx.Cloud.OciMachine do
     %Instance{
       id: summary["id"],
       type: nil,
-      state: summary["lifecycle-state"],
+      # Cloud.Instance :state contract is lowercase ("running"/"stopped"/"terminated" — what
+      # AwsMachine emits and exec/list compare against); OCI reports "RUNNING" etc., so
+      # normalize here in the adapter, never at call sites.
+      state: normalize_state(summary["lifecycle-state"]),
       private_ip: addresses.private_ip,
       public_ip: addresses.public_ip,
       ipv6: addresses.ipv6,
@@ -232,5 +246,8 @@ defmodule DeployEx.Cloud.OciMachine do
     {:error, ErrorMessage.not_implemented("DeployEx.Cloud.OciMachine.#{callback} is not implemented — not used by the loadtest path this sprint")}
   end
 
-  defp quote_arg(value), do: "'#{String.replace(to_string(value), "'", "'\\''")}'"
+  defp normalize_state(nil), do: nil
+  defp normalize_state(state), do: String.downcase(state)
+
+  defp quote_arg(value), do: OciCli.quote_arg(value)
 end

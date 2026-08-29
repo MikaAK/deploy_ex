@@ -170,7 +170,13 @@ defmodule DeployEx.AwsMachine do
   the wrapping relationship (not the poll loop itself) testable.
   """
   @impl DeployEx.Cloud.Machine
-  def await_running(instance_ids, opts \\ []) do
+  def await_running(instance_ids, opts \\ [])
+
+  def await_running([], _opts) do
+    {:error, ErrorMessage.bad_request("await_running requires at least one instance id")}
+  end
+
+  def await_running(instance_ids, opts) do
     region = opts[:region] || DeployEx.Config.aws_region()
     retries = opts[:retries] || 10
     wait_fn = opts[:wait_for_started_fn] || (&wait_for_started/3)

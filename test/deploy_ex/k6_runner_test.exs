@@ -217,7 +217,7 @@ defmodule DeployEx.K6RunnerTest do
 
       assert :ok = K6Runner.terminate_instance("i-contract-1", provider: :oci, run_fn: terminate_run_fn)
 
-      assert {:ok, %K6Runner{instance_id: "i-contract-1", state: "RUNNING"}} =
+      assert {:ok, %K6Runner{instance_id: "i-contract-1", state: "running"}} =
                K6Runner.verify_instance_exists(runner, provider: :oci, run_fn: describe_run_fn)
 
       # find_runners_from_ec2 is explicitly AWS-only regardless of S2 — this stays
@@ -275,7 +275,7 @@ defmodule DeployEx.K6RunnerTest do
 
       opts = [provider: :oci, bucket: "configured-bucket", run_fn: run_fn]
 
-      assert {:ok, %K6Runner{instance_id: "i-oci-stored", state: "RUNNING"}} =
+      assert {:ok, %K6Runner{instance_id: "i-oci-stored", state: "running"}} =
                K6Runner.resolve_runner(opts, K6Runner)
     end
   end

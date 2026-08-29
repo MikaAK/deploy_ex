@@ -61,18 +61,27 @@ defmodule DeployEx.Cloud.OciCli do
   # SUPPRESS_LABEL_WARNING silences a stderr nag about unlabeled API keys. That nag would
   # otherwise land in the merged stdout/stderr stream run_command_with_return/2 returns and
   # break JSON decoding.
+  #
+  # :auth/:profile/:region come from opts (an oci_* CLI override) or application config, both
+  # of which land here unvalidated for shell-safety — an unquoted value with a `;`, `&&`, or
+  # backtick is a shell injection, not just a malformed OCI flag. quote_arg/1 (below) wraps
+  # every one of them the same way OciMachine/OciObjectStore quote their own command args.
   defp build_command(subcommand, opts) do
     auth = setting(opts, :auth) || "api_key"
     flags = build_flags(opts)
 
-    String.trim("OCI_CLI_AUTH=#{auth} SUPPRESS_LABEL_WARNING=True oci #{subcommand} #{flags}")
+    String.trim("OCI_CLI_AUTH=#{quote_arg(auth)} SUPPRESS_LABEL_WARNING=True oci #{subcommand} #{flags}")
   end
 
   defp build_flags(opts) do
     [{"--profile", setting(opts, :profile)}, {"--region", setting(opts, :region)}]
     |> Enum.reject(fn {_flag, value} -> is_nil(value) end)
-    |> Enum.map_join(" ", fn {flag, value} -> "#{flag} #{value}" end)
+    |> Enum.map_join(" ", fn {flag, value} -> "#{flag} #{quote_arg(value)}" end)
   end
+
+  @doc "Single-quotes a shell argument, escaping embedded single quotes. Shared by every OCI CLI caller."
+  @spec quote_arg(term()) :: String.t()
+  def quote_arg(value), do: "'#{String.replace(to_string(value), "'", "'\\''")}'"
 
   defp decode_payload(output) do
     case String.trim(output) do
