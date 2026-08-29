@@ -48,7 +48,8 @@ defmodule DeployEx.Cloud.Providers.OciTest do
         shape_ocpus: 1,
         shape_memory_gbs: 8,
         subnet_id: "ocid1.subnet.oc1..aaaa",
-        availability_domain: "abcd:AP-SEOUL-1-AD-1"
+        availability_domain: "abcd:AP-SEOUL-1-AD-1",
+        ssh_public_key: "ssh-ed25519 AAAAtest key-comment"
       ]
 
       assert {:ok, _} = NimbleOptions.validate(config, Oci.config_schema())

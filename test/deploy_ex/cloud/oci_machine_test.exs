@@ -259,6 +259,19 @@ defmodule DeployEx.Cloud.OciMachineTest do
       assert metadata["user_data"] === Base.encode64("#!/bin/bash\necho hi\n")
     end
 
+    test "a :ssh_public_key that looks like a file PATH (not key contents) is a loud bad_request" do
+      opts =
+        launch_opts()
+        |> Keyword.put(:oci_ssh_public_key, "/home/me/.ssh/id_ed25519.pub")
+        |> Keyword.put(:run_fn, capture_command(launch_response("x")))
+
+      assert {:error, %ErrorMessage{code: :bad_request, message: message}} =
+               OciMachine.run_instance(neutral_spec(), opts)
+
+      assert message =~ "key contents"
+      refute_received {:oci_command, _}
+    end
+
     test "a missing :ssh_public_key config is a loud bad_request, not a keyless launch" do
       opts = launch_opts() |> Keyword.delete(:oci_ssh_public_key) |> Keyword.put(:run_fn, capture_command(launch_response("x")))
 
