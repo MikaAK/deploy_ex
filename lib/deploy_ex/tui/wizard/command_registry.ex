@@ -448,6 +448,9 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.DeployEx.Autoscale.RefreshStatus,
       category: "Autoscaling",
       inputs: [
+        input(:wait, "Wait for completion", :boolean),
+        input(:timeout, "Timeout in seconds", :integer),
+        input(:poll_interval, "Poll interval in seconds", :integer),
         input(:app_name, "App name", :select,
           required: true,
           positional: true,
@@ -519,6 +522,7 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.DeployEx.Qa.Deploy,
       category: "QA",
       inputs: [
+        input(:only_local_release, "Only deploy apps built locally", :boolean),
         input(:app_name, "App name", :select,
           required: true,
           positional: true,
@@ -665,6 +669,9 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       module: Mix.Tasks.Ansible.Setup,
       category: "Ansible",
       inputs: [
+        input(:aws_region, "AWS region", :string),
+        input(:instance_id, "Instance ID", :string),
+        input(:git_branch, "Git branch of the QA nodes to target", :string),
         input(:directory, "Ansible directory", :string),
         input(:only, "Only app(s)", :string),
         input(:except, "Except app(s)", :string),
