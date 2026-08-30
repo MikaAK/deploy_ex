@@ -188,6 +188,7 @@ variable "deploy_ex_project" {
   default = {
     sentry = {
       name                       = "Sentry Monitoring"
+      enable_eip                 = true
       instance_type              = "t3.large"
       instance_availability_zone = "us-west-2a"
 

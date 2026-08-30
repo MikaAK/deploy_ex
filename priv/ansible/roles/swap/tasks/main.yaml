@@ -1,0 +1,31 @@
+- name: disable_swap
+  block:
+    - name: Check if swap file exists
+      stat:
+        path: /swapfile
+      register: swap_file
+
+    - name: Disable swap
+      command: swapoff /swapfile
+      when: swap_file.stat.exists
+      ignore_errors: true
+
+    - name: Remove swap from fstab
+      lineinfile:
+        path: /etc/fstab
+        regexp: '^/swapfile\s+none\s+swap'
+        state: absent
+
+    - name: Remove swap file
+      file:
+        path: /swapfile
+        state: absent
+      when: swap_file.stat.exists
+
+    - name: Set swappiness to 0
+      sysctl:
+        name: vm.swappiness
+        value: "0"
+        state: present
+        sysctl_set: true
+  become: true
