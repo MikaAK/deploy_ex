@@ -122,6 +122,7 @@ variable "deploy_ex_project" {
     load_balancer = optional(object({
       enable       = optional(bool)
       enable_https = optional(bool)
+      colocate_az  = optional(bool)
 
       port          = optional(number)
       instance_port = optional(number)

@@ -47,6 +47,7 @@ module "ec2_instance" {
   enable_ebs                            = try(each.value.ebs.enable_secondary, null)
   enable_elb                            = try(each.value.load_balancer.enable, null)
   enable_elb_https                      = try(each.value.load_balancer.enable_https, null)
+  elb_colocate_az                       = try(each.value.load_balancer.colocate_az, null)
 
   disable_public_ip = coalesce(try(each.value.enable_eip, false), false) ? false : (var.enable_ipv4 ? !coalesce(try(each.value.disable_public_ip, null), false) : true)
   disable_ipv6      = try(var.disable_ipv6, each.value.disable_ipv6, null)

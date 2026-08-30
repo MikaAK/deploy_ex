@@ -154,6 +154,12 @@ variable "enable_elb" {
   nullable    = false
 }
 
+variable "elb_colocate_az" {
+  description = "Restrict the load balancer to the subnets in instance_availability_zone (avoids NLB cross-zone black-holing and inter-AZ transfer when all instances share one AZ). Changing this replaces the LB (new DNS name)."
+  type        = bool
+  default     = null
+}
+
 variable "elb_port" {
   description = "Changes the load balancer port used in the loadbalancer url"
   type        = number
