@@ -47,10 +47,9 @@ defmodule DeployEx.AwsInfrastructure do
     end
   end
 
-  # `:request_fn` is the same injection seam find_subnet_ids/1 and find_iam_instance_profile/1
-  # already use. Without it this path can only be exercised against a live AWS account, which is
-  # how its tests ended up calling the real API and failing based on what happened to exist
-  # there.
+  # `:request_fn` is the same injection seam find_iam_instance_profile/1 already uses. Without
+  # it this path can only be exercised against a live AWS account, which is how its tests ended
+  # up calling the real API and failing based on what happened to exist there.
   defp describe_key_pairs(region, request_fn) do
     ExAws.EC2.describe_key_pairs()
     |> request_fn.(region: region)
@@ -80,8 +79,8 @@ defmodule DeployEx.AwsInfrastructure do
     end
   end
 
-  # `:request_fn` is the same injection seam find_subnet_ids/1 and find_key_pair_name/1 use.
-  # Without it this path can only be exercised against a live AWS account.
+  # `:request_fn` is the same injection seam find_key_pair_name/1 uses. Without it this path
+  # can only be exercised against a live AWS account.
   defp list_instance_profiles(request_fn) do
     %ExAws.Operation.Query{
       path: "/",
