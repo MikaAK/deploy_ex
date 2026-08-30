@@ -1,44 +1,5 @@
 - name: grafana_alloy
   block:
-    - name: Check if old promtail service exists
-      stat:
-        path: /etc/systemd/system/promtail.service
-      register: old_promtail_service
-
-    - name: Stop old promtail service
-      systemd:
-        name: promtail
-        state: stopped
-        enabled: false
-      when: old_promtail_service.stat.exists
-      ignore_errors: true
-
-    - name: Remove old promtail service file
-      file:
-        path: /etc/systemd/system/promtail.service
-        state: absent
-      when: old_promtail_service.stat.exists
-
-    - name: Remove old promtail config
-      file:
-        path: /root/promtail_config.yaml
-        state: absent
-
-    - name: Remove old promtail positions file
-      file:
-        path: /root/promtail_positions.yaml
-        state: absent
-
-    - name: Remove old promtail binary
-      shell: rm -f /root/promtail-*
-      args:
-        warn: false
-
-    - name: Reload systemd after promtail cleanup
-      systemd:
-        daemon_reload: true
-      when: old_promtail_service.stat.exists
-
     - name: Check for Alloy {{ alloy_architecture }}/{{ alloy_version }}
       stat:
         path: ~/alloy-{{ alloy_architecture }}
@@ -58,6 +19,7 @@
         owner: root
         group: root
         mode: 0644
+      notify: restart alloy
 
     - name: Add alloy systemd service file to /etc/systemd/system/alloy.service
       template:
@@ -66,6 +28,7 @@
         owner: root
         group: root
         mode: 0644
+      notify: restart alloy
 
     - name: Enable alloy service
       systemd:
@@ -77,5 +40,63 @@
         daemon_reload: true
         name: alloy
         state: started
+
+    - name: Flush handlers so a config/unit change restarts alloy before the readiness check
+      meta: flush_handlers
+
+    - name: Wait for Alloy ready
+      uri:
+        url: http://127.0.0.1:12345/-/ready
+        status_code: 200
+      register: alloy_ready
+      until: alloy_ready.status == 200
+      retries: 12
+      delay: 5
+
+    - name: Check if old promtail service exists
+      stat:
+        path: /etc/systemd/system/promtail.service
+      register: old_promtail_service
+
+    - name: Stop old promtail service
+      systemd:
+        name: promtail
+        state: stopped
+        enabled: false
+      when: old_promtail_service.stat.exists
+      ignore_errors: true
+
+    - name: Remove old promtail service file
+      file:
+        path: /etc/systemd/system/promtail.service
+        state: absent
+      when: old_promtail_service.stat.exists
+
+    - name: Reload systemd after promtail unit removal
+      systemd:
+        daemon_reload: true
+      when: old_promtail_service.stat.exists
+
+    - name: Find old promtail binaries
+      find:
+        paths: /root
+        patterns: "promtail-*"
+      register: old_promtail_binaries
+
+    - name: Remove old promtail binaries
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ old_promtail_binaries.files }}"
+
+    - name: Remove old promtail config
+      file:
+        path: /root/promtail_config.yaml
+        state: absent
+
+    - name: Remove old promtail positions file
+      file:
+        path: /root/promtail_positions.yaml
+        state: absent
 
   become: true
