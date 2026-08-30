@@ -208,6 +208,7 @@ defmodule Mix.Tasks.Terraform.Build do
       """
           sentry = {
             name                       = "Sentry Monitoring"
+            enable_eip                 = true
             instance_type              = "t3.large"
             instance_availability_zone = "#{opts[:availability_zone]}"
 

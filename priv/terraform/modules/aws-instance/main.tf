@@ -54,6 +54,25 @@ locals {
 
   snake_instance_name = lower(replace(var.instance_name, " ", "_"))
   kebab_instance_name = lower(replace(var.instance_name, " ", "-"))
+
+  # ELBv2 hard-caps aws_lb / aws_lb_target_group `name` at 32 chars, and the
+  # name is ForceNew, so an existing entry's derived name must stay
+  # BYTE-IDENTICAL to what it resolves to today or the next apply
+  # destroys+recreates a live load balancer. short_instance_name only ever
+  # gets substituted in when the standard suffixed name overflows 32 chars; it
+  # truncates the kebab name to 10 chars and appends a 4-char hash of the FULL
+  # kebab name so two different apps that truncate to the same 10-char prefix
+  # can't collide.
+  short_instance_name = "${substr(local.kebab_instance_name, 0, 10)}-${substr(md5(local.kebab_instance_name), 0, 4)}"
+
+  lb_name_standard          = "${local.kebab_instance_name}-lb-${var.environment}"
+  lb_tg_name_standard       = "${local.kebab_instance_name}-lb-tg-${var.environment}"
+  lb_https_tg_name_standard = "${local.kebab_instance_name}-lb-https-tg-${var.environment}"
+
+  lb_name          = length(local.lb_name_standard) > 32 ? "${local.short_instance_name}-lb-${var.environment}" : local.lb_name_standard
+  lb_tg_name       = length(local.lb_tg_name_standard) > 32 ? "${local.short_instance_name}-lb-tg-${var.environment}" : local.lb_tg_name_standard
+  lb_https_tg_name = length(local.lb_https_tg_name_standard) > 32 ? "${local.short_instance_name}-lb-https-tg-${var.environment}" : local.lb_https_tg_name_standard
+
   selected_subnet_id = var.instance_availability_zone != null ? (
     length(data.aws_subnets.az_specific[0].ids) > 0 ?
     data.aws_subnets.az_specific[0].ids[0] :
@@ -274,10 +293,13 @@ resource "aws_eip" "asg_preserved_eip" {
 # Add Load Balancing if needed and enabled
 resource "aws_lb" "ec2_lb" {
   count              = local.enable_load_balancer ? 1 : 0
-  name               = "${local.kebab_instance_name}-lb-${var.environment}"
+  name               = local.lb_name
   load_balancer_type = "network"
 
-  subnets = var.subnet_ids
+  # Restrict the LB to the instance's AZ subnets when elb_colocate_az is set
+  # (avoids NLB cross-zone black-holing / inter-AZ transfer when all instances
+  # share one AZ). Changing this replaces the LB (new DNS name).
+  subnets = var.elb_colocate_az == true && var.instance_availability_zone != null ? data.aws_subnets.az_specific[0].ids : var.subnet_ids
 
   tags = merge({
     Name          = "${local.kebab_instance_name}-lb"
@@ -291,7 +313,7 @@ resource "aws_lb" "ec2_lb" {
 
 resource "aws_lb_target_group" "ec2_lb_target_group" {
   count = local.enable_load_balancer ? 1 : 0
-  name  = "${local.kebab_instance_name}-lb-tg-${var.environment}"
+  name  = local.lb_tg_name
 
   vpc_id   = data.aws_subnet.random_subnet.vpc_id
   protocol = "TCP"
@@ -344,7 +366,7 @@ resource "aws_lb_listener" "ec2_lb_listener" {
 
 resource "aws_lb_target_group" "ec2_lb_https_target_group" {
   count    = local.enable_load_balancer ? 1 : 0
-  name     = "${local.kebab_instance_name}-lb-https-tg-${var.environment}"
+  name     = local.lb_https_tg_name
   vpc_id   = data.aws_subnet.random_subnet.vpc_id
   protocol = "TCP"
   port     = 443
