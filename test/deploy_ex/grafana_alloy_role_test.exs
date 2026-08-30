@@ -41,7 +41,8 @@ defmodule DeployEx.GrafanaAlloyRoleTest do
 
   defp promtail_task?(task) do
     task
-    |> task_name()
+    |> inspect()
+    |> String.downcase()
     |> String.contains?("promtail")
   end
 
@@ -92,6 +93,8 @@ defmodule DeployEx.GrafanaAlloyRoleTest do
       assert ready_task["retries"] >= 12
       assert ready_task["delay"] >= 5
       assert Map.has_key?(ready_task, "until")
+      assert is_integer(uri_args["timeout"])
+      assert uri_args["timeout"] <= 10
 
       refute Map.has_key?(ready_task, "ignore_errors")
       refute ready_task["failed_when"] === false
