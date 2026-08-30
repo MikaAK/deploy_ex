@@ -32,6 +32,15 @@ defmodule DeployEx.AwsInfrastructureTest do
 
       assert error.details.available === ["something-else"]
     end
+
+    test "propagates a request error instead of crashing or silently falling through to live AWS" do
+      failing_request = fn _operation, _opts ->
+        {:error, {:http_error, 403, %{body: "boom"}}}
+      end
+
+      assert AwsInfrastructure.find_iam_instance_profile(request_fn: failing_request) ===
+               {:error, ErrorMessage.forbidden("error fetching IAM instance profiles", %{error_body: "boom"})}
+    end
   end
 
   describe "parse_subnets_response/2" do

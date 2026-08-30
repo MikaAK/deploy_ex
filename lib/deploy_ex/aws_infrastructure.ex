@@ -62,8 +62,9 @@ defmodule DeployEx.AwsInfrastructure do
       nil ->
         environment = DeployEx.Config.env()
         default_name = "deploy-ex-ec2-instance-profile-#{environment}"
+        request_fn = opts[:request_fn] || (&ExAws.request/2)
 
-        with {:ok, profiles} <- list_instance_profiles() do
+        with {:ok, profiles} <- list_instance_profiles(request_fn) do
           if default_name in profiles do
             {:ok, default_name}
           else
@@ -79,14 +80,16 @@ defmodule DeployEx.AwsInfrastructure do
     end
   end
 
-  defp list_instance_profiles do
+  # `:request_fn` is the same injection seam find_subnet_ids/1 and find_key_pair_name/1 use.
+  # Without it this path can only be exercised against a live AWS account.
+  defp list_instance_profiles(request_fn) do
     %ExAws.Operation.Query{
       path: "/",
       params: %{"Action" => "ListInstanceProfiles", "Version" => "2010-05-08"},
       service: :iam,
       action: :list_instance_profiles
     }
-    |> ExAws.request()
+    |> request_fn.([])
     |> handle_instance_profiles_response()
   end
 
