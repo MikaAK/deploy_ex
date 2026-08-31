@@ -23,7 +23,8 @@ defmodule DeployEx.GrafanaAlloyRoleTest do
 
   @priv_roles_dir Path.expand("../../priv/ansible/roles", __DIR__)
   @grafana_alloy_role_dir Path.join(@priv_roles_dir, "grafana_alloy")
-  @privileged_modules ~w(systemd file template unarchive find uri)
+  @privileged_modules ~w(systemd file template unarchive find uri apt package)
+  @package_modules ~w(apt package)
 
   defp tasks_main_yaml do
     YamlElixir.read_from_file!(Path.join(@grafana_alloy_role_dir, "tasks/main.yaml"))
@@ -41,6 +42,20 @@ defmodule DeployEx.GrafanaAlloyRoleTest do
   end
 
   defp readiness_task?(task), do: Map.has_key?(task, "uri")
+
+  defp zip_unarchive_task?(task) do
+    task |> get_in(["unarchive", "src"]) |> to_string() |> String.ends_with?(".zip")
+  end
+
+  defp package_args(task) do
+    Enum.find_value(@package_modules, %{}, &Map.get(task, &1))
+  end
+
+  defp installs_zip_extractor?(task) do
+    names = task |> package_args() |> Map.get("name", [])
+
+    "unzip" in List.wrap(names)
+  end
 
   defp alloy_task?(task) do
     task
@@ -207,6 +222,44 @@ defmodule DeployEx.GrafanaAlloyRoleTest do
         for {entry, become} <- entries, become !== true, do: task_name(entry)
 
       assert unprivileged_names === []
+    end
+  end
+
+  # SECTION: D2-e — host tooling the download step depends on
+  #
+  # W2 fan-out defect (MEASURED, cfx_auth_web + cfx_user_portal_web, both nodes each):
+  # `Failed to find handler for ".../alloy-linux-amd64....zip"`. Ansible's `unarchive`
+  # shells out to `unzip` for a .zip src and has no built-in fallback. Alloy v1.9.0
+  # publishes ONLY .zip assets for linux (20 release assets, 0 tar-family), so the
+  # artifact cannot be switched — the role has to supply the extractor itself.
+  #
+  # The role worked everywhere it had been run as part of a full setup playbook only
+  # because an earlier role in the same play installed unzip for its own download
+  # (roles/awscli/tasks/main.yaml:14-17). That is an undeclared cross-role dependency;
+  # running grafana_alloy on its own removes the provider and the role breaks.
+
+  describe "grafana_alloy role — archive extractor" do
+    test "a zip extractor is installed before the first .zip is unarchived" do
+      indexed = tasks_main_yaml() |> flatten_tasks() |> Enum.with_index()
+
+      zip_indices = for {task, index} <- indexed, zip_unarchive_task?(task), do: index
+      extractor_indices = for {task, index} <- indexed, installs_zip_extractor?(task), do: index
+
+      refute Enum.empty?(zip_indices)
+      refute Enum.empty?(extractor_indices)
+
+      assert Enum.min(extractor_indices) < Enum.min(zip_indices)
+    end
+
+    test "the zip extractor install is idempotent and resolves to become: true" do
+      extractors =
+        tasks_main_yaml()
+        |> privileged_entries(false)
+        |> Enum.filter(fn {entry, _become} -> installs_zip_extractor?(entry) end)
+
+      assert [{extractor, become}] = extractors
+      assert become === true
+      assert extractor |> package_args() |> Map.get("state", "present") === "present"
     end
   end
 end

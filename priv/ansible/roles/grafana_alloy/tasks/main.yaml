@@ -5,6 +5,14 @@
         path: ~/alloy-{{ alloy_architecture }}
       register: alloy
 
+    # Alloy publishes only .zip artifacts, and `unarchive` shells out to unzip for
+    # those. The role must install it itself rather than rely on another role in the
+    # play having done so, because it also runs standalone.
+    - name: Install unzip
+      apt:
+        name: unzip
+        update_cache: true
+
     - name: Download Alloy {{ alloy_architecture }}/{{ alloy_version }}
       unarchive:
         src: https://github.com/grafana/alloy/releases/download/{{ alloy_version }}/alloy-{{ alloy_architecture }}.zip
