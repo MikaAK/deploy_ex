@@ -83,6 +83,13 @@ defmodule DeployEx.GrafanaAlloyRoleTest do
     Regex.replace(~r/{{\s*(\w+)\s*}}/, template, fn _whole, key -> Map.fetch!(vars, key) end)
   end
 
+  defp evaluate_stat_condition(condition, stat_result) do
+    cond do
+      String.ends_with?(condition, ".stat.exists") -> Map.fetch!(stat_result, "exists")
+      String.ends_with?(condition, ".stat.isdir") -> Map.fetch!(stat_result, "isdir")
+    end
+  end
+
   # Ansible resolves `become` per entry, inheriting it from an enclosing block.
   # Handlers have no enclosing block, so they inherit nothing — that is the D2-a
   # defect class this audit encodes.
@@ -319,4 +326,74 @@ defmodule DeployEx.GrafanaAlloyRoleTest do
     end
   end
 
+  # SECTION: Deliverable 2 (alloy-journal-version) — loud journal-directory precondition
+  #
+  # alloy_config.alloy.j2 hardcodes `path = "/var/log/journal"` for loki.source.journal.
+  # On a host with volatile-only journald storage that directory does not exist, so
+  # Alloy starts, passes /-/ready, and ships zero log lines — the readiness gate only
+  # observes the process, not whether any log line was read. The fix asserts the
+  # precondition loudly; it must NOT create the directory (that is a journald storage
+  # policy decision outside this role's scope, already imposed as a manual AMI-bake
+  # precondition). This test proves the assertion actually fails on a host with no
+  # journal directory — not merely that a task mentioning "journal" exists.
+
+  describe "grafana_alloy role — journal directory precondition" do
+    test "asserts the persistent journal directory exists before Alloy is configured, and fails loudly when it does not" do
+      tasks = flatten_tasks(tasks_main_yaml())
+
+      stat_task = Enum.find(tasks, &(get_in(&1, ["stat", "path"]) === "/var/log/journal"))
+      refute is_nil(stat_task), "expected a stat task checking /var/log/journal"
+
+      registered_var = Map.fetch!(stat_task, "register")
+
+      assert_task =
+        Enum.find(tasks, fn task ->
+          case get_in(task, ["assert", "that"]) do
+            nil -> false
+            that -> Enum.any?(List.wrap(that), &String.starts_with?(&1, registered_var))
+          end
+        end)
+
+      refute is_nil(assert_task), "expected an assert task gating on the journal directory stat result"
+
+      that_conditions = get_in(assert_task, ["assert", "that"])
+      fail_msg = get_in(assert_task, ["assert", "fail_msg"]) || get_in(assert_task, ["assert", "msg"])
+
+      refute is_nil(fail_msg), "expected the assertion to name the problem via fail_msg/msg"
+      assert fail_msg =~ "journal"
+
+      refute assert_task["ignore_errors"] === true
+      refute assert_task["when"] === false
+
+      no_journal_dir_passes? =
+        Enum.all?(that_conditions, &evaluate_stat_condition(&1, %{"exists" => false, "isdir" => false}))
+
+      has_journal_dir_passes? =
+        Enum.all?(that_conditions, &evaluate_stat_condition(&1, %{"exists" => true, "isdir" => true}))
+
+      refute no_journal_dir_passes?,
+        "expected the journal precondition to fail loudly on a host with no /var/log/journal"
+
+      assert has_journal_dir_passes?,
+        "expected the journal precondition to pass on a host that already has /var/log/journal"
+
+      indexed = Enum.with_index(tasks)
+      {_stat, stat_index} = Enum.find(indexed, fn {task, _index} -> task === stat_task end)
+      {_assert, assert_index} = Enum.find(indexed, fn {task, _index} -> task === assert_task end)
+
+      {_config, config_index} =
+        Enum.find(indexed, fn {task, _index} ->
+          get_in(task, ["template", "src"]) === "alloy_config.alloy.j2"
+        end)
+
+      ready_index =
+        indexed
+        |> Enum.find(fn {task, _index} -> readiness_task?(task) end)
+        |> elem(1)
+
+      assert stat_index < assert_index
+      assert assert_index < config_index
+      assert assert_index < ready_index
+    end
+  end
 end
