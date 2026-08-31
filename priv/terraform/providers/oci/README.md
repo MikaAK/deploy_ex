@@ -143,6 +143,38 @@ Two more things worth knowing:
 - **Some regions have exactly one availability domain** (ap-seoul-1, ap-chuncheon-1), so there is
   no multi-AD spread to configure.
 
+## `assign_public_ip` coupling — root default vs per-app override
+
+`var.assign_public_ip` (`variables.tf.eex`, default `true`) does two jobs at once: it seeds the
+per-app `assign_public_ip` override every instance reads
+(`instance.tf.eex:39` — `try(each.value.assign_public_ip, var.assign_public_ip)`), and it drives
+`network.tf:101` — `prohibit_public_ip_on_vnic = !var.assign_public_ip` — which is a **subnet-wide**
+setting, not a per-instance one. There is no analogous coupling on AWS; this is OCI-specific.
+
+The default (`true`) works today because the subnet permits public IPs and each app's own
+`assign_public_ip` decides whether it actually takes one. But the name invites a "private by
+default" reading: an operator who sets the *root* `assign_public_ip = false` expecting to flip a
+global default gets `prohibit_public_ip_on_vnic = true` on the shared public subnet instead. That
+then conflicts with sentry's and grafana_ui's explicit per-app `assign_public_ip = true`
+(`lib/deploy_ex/terraform_variables.ex`, `terraform_sentry_variables/2` and
+`terraform_grafana_variables/2` on `:oci`), and `tofu apply` fails loud — a subnet that prohibits
+public IPs cannot host an instance that asks for one. The failure traces to this coupling, not to
+any recent change.
+
+**If you need to change public-IP exposure:** to change the *fleet-wide subnet policy*, edit
+`prohibit_public_ip_on_vnic` in `network.tf` directly. To change a *single app's* exposure, set
+that app's `assign_public_ip` key in its `<app>_project` entry (as sentry and grafana_ui already
+do) — leave the root `var.assign_public_ip` alone unless every app should follow the same subnet
+policy.
+
+**Rename considered, deliberately deferred.** The clean fix is giving the subnet-level knob its
+own variable name so `assign_public_ip` unambiguously means "this app's default." That is a
+breaking change to a public root variable — every existing caller of this module passes or relies
+on `assign_public_ip` today — and does not belong in a publish precondition, whose purpose is to
+narrow what a publish exposes, not to widen it with a breaking rename. The rename is the right fix
+if and when this seam gets reworked, with a deprecation path (accept both names for a release, warn
+on the old one). Until then, this paragraph is the guardrail.
+
 ## Release bucket + instance principals
 
 `bucket.tf` creates one `oci_objectstorage_bucket` for releases — there is no separate
