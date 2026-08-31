@@ -7,3 +7,4 @@
     - grafana_alloy
     - mimir_db
     - ipv6
+    - data_volume_grow

@@ -1,0 +1,25 @@
+- name: data_volume_grow
+  block:
+    - name: Detect /data's mounted filesystem type
+      command: findmnt -no FSTYPE /data
+      register: data_volume_fstype
+      changed_when: false
+      failed_when: false
+
+    - name: Grow the XFS filesystem on /data (no-op once it already fills the device)
+      command: xfs_growfs /data
+      when: data_volume_fstype.rc == 0 and data_volume_fstype.stdout == "xfs"
+      changed_when: false
+
+    - name: Find the block device backing /data (ext family)
+      command: findmnt -no SOURCE /data
+      register: data_volume_source
+      when: data_volume_fstype.rc == 0 and data_volume_fstype.stdout in ["ext4", "ext3", "ext2"]
+      changed_when: false
+
+    - name: Grow the ext-family filesystem on /data (no-op once it already fills the device)
+      command: "resize2fs {{ data_volume_source.stdout }}"
+      when: data_volume_fstype.rc == 0 and data_volume_fstype.stdout in ["ext4", "ext3", "ext2"]
+      changed_when: false
+
+  become: true

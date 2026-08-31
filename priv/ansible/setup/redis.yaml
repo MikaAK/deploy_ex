@@ -7,3 +7,4 @@
     - prometheus_exporter
     - redis_server
     - ipv6
+    - data_volume_grow

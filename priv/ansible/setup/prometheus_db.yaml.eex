@@ -7,3 +7,4 @@
     - prometheus_db
     <%= if @use_mimir do %>- grafana_alloy
     <% end %>- ipv6
+    - data_volume_grow
