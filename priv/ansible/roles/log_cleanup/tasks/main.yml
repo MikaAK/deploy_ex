@@ -32,4 +32,25 @@
         group: root
         mode: u=rw,g=r,o=r
 
+    - name: Create /etc/systemd/journald.conf.d directory
+      file:
+        path: /etc/systemd/journald.conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+
+    - name: Copy journald limits drop-in to /etc/systemd/journald.conf.d/10-limits.conf
+      copy:
+        src: journald-limits.conf
+        dest: /etc/systemd/journald.conf.d/10-limits.conf
+        owner: root
+        group: root
+        mode: u=rw,g=r,o=r
+
+    - name: Restart systemd-journald to apply the journal size cap
+      systemd:
+        name: systemd-journald
+        state: restarted
+
   become: true

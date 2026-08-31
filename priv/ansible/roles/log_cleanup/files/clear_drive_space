@@ -4,7 +4,14 @@ sudo rm /var/log/daemon.log.*
 sudo rm /var/log/syslog.*
 sudo rm /tmp/appsignal.log
 sudo rm /home/chrome/chromedriver.log
-sudo journalctl --vacuum-time=5m
+
+# A time-based vacuum alone can never bound disk (a chatty day fills the
+# volume inside any window) while /etc/systemd/journald.conf.d/10-limits.conf's
+# SystemMaxUse always can, so the cap does the bounding and this vacuum only
+# trims stale history. 7d because Loki retains 30d and is the system of
+# record; a week is the on-node window you need when the thing you suspect
+# is the log shipper itself.
+sudo journalctl --vacuum-time=7d
 sudo systemctl restart systemd-journald
 
 sudo apt-get clean

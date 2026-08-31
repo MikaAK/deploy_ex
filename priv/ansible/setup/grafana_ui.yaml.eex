@@ -2,6 +2,7 @@
   roles:
     - pip3
     - awscli
+    - log_cleanup
     - prometheus_exporter
     - grafana_ui
     <%= if @use_mimir do %>- grafana_alloy
