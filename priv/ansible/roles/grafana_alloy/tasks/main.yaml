@@ -1,8 +1,14 @@
 - name: grafana_alloy
   block:
+    # The extracted binary itself always lands at the fixed, architecture-only path
+    # below (systemd's ExecStart depends on that fixed name), so it cannot carry the
+    # version. A separate per-version marker file is what makes this check actually
+    # version-aware: stating the architecture-only binary path would report "exists"
+    # for ANY previously-installed version, silently skipping the download on a
+    # version bump.
     - name: Check for Alloy {{ alloy_architecture }}/{{ alloy_version }}
       stat:
-        path: ~/alloy-{{ alloy_architecture }}
+        path: ~/alloy-{{ alloy_architecture }}-{{ alloy_version }}.installed
       register: alloy
 
     # Alloy publishes only .zip artifacts, and `unarchive` shells out to unzip for
@@ -18,6 +24,15 @@
         src: https://github.com/grafana/alloy/releases/download/{{ alloy_version }}/alloy-{{ alloy_architecture }}.zip
         dest: /root
         remote_src: true
+      when: not alloy.stat.exists
+
+    - name: Record installed Alloy {{ alloy_architecture }}/{{ alloy_version }} marker
+      file:
+        path: ~/alloy-{{ alloy_architecture }}-{{ alloy_version }}.installed
+        state: touch
+        owner: root
+        group: root
+        mode: 0644
       when: not alloy.stat.exists
 
     - name: Add Alloy config to /root/alloy_config.alloy

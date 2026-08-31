@@ -79,6 +79,10 @@ defmodule DeployEx.GrafanaAlloyRoleTest do
     Enum.any?(@privileged_modules, &Map.has_key?(entry, &1))
   end
 
+  defp render_ansible_template(template, vars) do
+    Regex.replace(~r/{{\s*(\w+)\s*}}/, template, fn _whole, key -> Map.fetch!(vars, key) end)
+  end
+
   # Ansible resolves `become` per entry, inheriting it from an enclosing block.
   # Handlers have no enclosing block, so they inherit nothing — that is the D2-a
   # defect class this audit encodes.
@@ -262,4 +266,57 @@ defmodule DeployEx.GrafanaAlloyRoleTest do
       assert extractor |> package_args() |> Map.get("state", "present") === "present"
     end
   end
+
+  # SECTION: Deliverable 1 (alloy-journal-version) — a version bump must cause a
+  # real redownload
+  #
+  # tasks/main.yaml stats `~/alloy-{{ alloy_architecture }}` — architecture only, no
+  # version — then downloads `when: not alloy.stat.exists`. Every host that already
+  # carries a binary at that fixed, architecture-only path (i.e. every host this role
+  # has ever provisioned) skips the download on a version bump: the stat check cannot
+  # tell "already has an older version" from "already has the target version". The
+  # task NAME interpolates alloy_version, so it reads as version-aware in review while
+  # the behaviour is not. This test proves the DOWNLOAD decision, not the path string —
+  # a fix that merely embeds `{{ alloy_version }}` in the task name would leave this RED.
+
+  describe "grafana_alloy role — version-aware download" do
+    test "a version bump causes a redownload on a host that already carries an older, architecture-only-named binary" do
+      tasks = flatten_tasks(tasks_main_yaml())
+
+      stat_task = Enum.find(tasks, &(Map.get(&1, "register") === "alloy"))
+      download_task = Enum.find(tasks, &Map.has_key?(&1, "unarchive"))
+
+      refute is_nil(stat_task), "expected a stat task registering as `alloy`"
+      refute is_nil(download_task), "expected an unarchive task downloading Alloy"
+
+      stat_path_template = get_in(stat_task, ["stat", "path"])
+      download_when = Map.fetch!(download_task, "when")
+
+      assert download_when === "not alloy.stat.exists"
+
+      architecture = "linux-amd64"
+
+      # Every host this role has ever provisioned (pre-fix or not) has a raw binary
+      # sitting at this fixed, architecture-only path — the pre-fix `stat.path`
+      # verbatim. That is the realistic starting state for "already carries an older
+      # binary", independent of however the fix decides to track installed versions.
+      preexisting_host_paths = MapSet.new(["~/alloy-#{architecture}"])
+
+      new_version_stat_path =
+        render_ansible_template(stat_path_template, %{
+          "alloy_architecture" => architecture,
+          "alloy_version" => "v9.9.9"
+        })
+
+      new_version_already_present? = MapSet.member?(preexisting_host_paths, new_version_stat_path)
+      download_runs_for_bumped_version? = not new_version_already_present?
+
+      assert download_runs_for_bumped_version?,
+        "expected bumping alloy_version to cause a fresh download on a host that " <>
+          "already has an older, architecture-only-named Alloy binary, but the stat " <>
+          "path (#{stat_path_template}) does not depend on alloy_version so the " <>
+          "download was (incorrectly) skipped"
+    end
+  end
+
 end
