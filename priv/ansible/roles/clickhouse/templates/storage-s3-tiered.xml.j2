@@ -1,0 +1,64 @@
+<?xml version="1.0"?>
+<!--
+  ClickHouse SERVER-side half of the S3 cold-storage tier (opgg_umbrella
+  S3 §4.3 / R16). Deployed by the deploy_ex `clickhouse` role ONLY when
+  clickhouse_s3_cold_storage_enabled is true — see this role's README.md and
+  opgg_umbrella/docker/clickhouse/storage-s3-tiered.xml (the same
+  <storage_configuration>, documented in full there) for the app-side
+  contract this policy exists to satisfy: a MOVE-TTL to VOLUME 's3_cold' plus
+  SETTINGS storage_policy = 'tiered' on `matches`/`player_match`.
+
+  ── Ordering guarantee (this role's job) ────────────────────────────────────
+  This file must land in config.d and clickhouse-server must reload it BEFORE
+  the app is deployed with CLICKHOUSE_STORAGE_POLICY_OVERRIDE unset (its
+  runtime.exs default is 'tiered', not 'disabled'). Deploying the app against
+  a server that has never run this role with the cold tier enabled fails
+  table creation with NO_SUCH_POLICY — see the role README's operator
+  runbook, which is the actual enforcement mechanism (this role has no way to
+  reach into the app's deploy pipeline and flip its env var for it).
+
+  ── AWS vs OCI credentials (MEASURED, see role README — do not "fix") ───────
+  ClickHouse's `s3` disk type speaks the S3 API. On AWS this can authenticate
+  via the node's instance role. On OCI the equivalent endpoint is OCI Object
+  Storage's S3-compatibility API, and OCI instance principals do NOT work
+  against that API — it requires long-lived Customer Secret Keys (a static
+  SigV4 access key + secret). clickhouse_s3_cold_auth_mode selects which
+  block below renders; there is no OCI instance-role path to fall back to.
+-->
+<clickhouse>
+  <storage_configuration>
+    <disks>
+      <s3_cold>
+        <type>s3</type>
+        <endpoint>{{ clickhouse_s3_cold_bucket_endpoint }}</endpoint>
+{% if clickhouse_s3_cold_auth_mode == 'instance_role' %}
+        <use_environment_credentials>true</use_environment_credentials>
+{% else %}
+        <access_key_id>{{ clickhouse_s3_cold_access_key_id }}</access_key_id>
+        <secret_access_key>{{ clickhouse_s3_cold_secret_access_key }}</secret_access_key>
+{% endif %}
+        <!-- Do NOT probe S3 at boot: an endpoint that is unreachable when
+             clickhouse-server starts must not block it from starting. S3 is
+             only touched later, when a part actually moves. -->
+        <skip_access_check>true</skip_access_check>
+        <metadata_path>{{ clickhouse_data_dir }}/disks/s3_cold/</metadata_path>
+      </s3_cold>
+    </disks>
+    <policies>
+      <tiered>
+        <!-- Volume ORDER is the tiering order; `s3_cold` is the VOLUME name
+             the app's `TO VOLUME 's3_cold'` clause references — do not rename
+             without also changing the app-side DDL. -->
+        <volumes>
+          <hot>
+            <disk>default</disk>
+          </hot>
+          <s3_cold>
+            <disk>s3_cold</disk>
+          </s3_cold>
+        </volumes>
+        <move_factor>{{ clickhouse_s3_cold_move_factor }}</move_factor>
+      </tiered>
+    </policies>
+  </storage_configuration>
+</clickhouse>

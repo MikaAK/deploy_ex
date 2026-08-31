@@ -18,6 +18,9 @@ defmodule Mix.Tasks.Terraform.Build do
   - `aws-log-bucket` - Region for aws (default: `#{@default_aws_log_bucket}`)
   - `availability-zone` - Shared AZ for monitoring/DB peer instances (default: aws-region's "a" zone)
   - `env` - Environment for terraform (default: `Mix.env()`)
+  - `render-dir` - Render the terraform files into this directory instead of
+    `directory`, skipping the tool preflight and `terraform init`. Used by the
+    render diff harness to compare output across revisions.
   - `quiet` - Supress output
   - `force` - Force create files without asking
   - `verbose` - Log extra details about the process
@@ -27,15 +30,19 @@ defmodule Mix.Tasks.Terraform.Build do
   def run(args) do
     opts = build_opts(args)
 
+    # --provider overrides the configured cloud_provider. Resolved once so the seed and the
+    # render can never disagree about which file set they are working from.
+    provider = resolve_provider(opts)
+
     with :ok <- DeployExHelpers.check_valid_project(),
-         :ok <- DeployEx.ToolInstaller.ensure_installed(:terraform),
+         :ok <- ensure_terraform_installed(opts),
          {:ok, releases} <- DeployExHelpers.fetch_mix_releases(),
-         :ok <- ensure_terraform_directory_exists(opts[:directory]) do
+         :ok <- ensure_terraform_directory_exists(opts[:directory], provider, opts) do
       random_bytes = 6 |> :crypto.strong_rand_bytes |> Base.encode32(padding: false)
 
       terraform_app_releases_variables = releases
         |> Keyword.keys
-        |> Enum.map_join(",\n\n", &(&1 |> to_string |> generate_terraform_release_variables()))
+        |> Enum.map_join(",\n\n", &DeployEx.TerraformVariables.generate_terraform_release_variables(to_string(&1), provider))
 
       params = %{
         directory: opts[:directory],
@@ -45,7 +52,7 @@ defmodule Mix.Tasks.Terraform.Build do
         aws_release_bucket: opts[:aws_release_bucket],
 
         use_db: !opts[:no_database],
-        db_password: !opts[:no_database] && generate_db_password(),
+        db_password: !opts[:no_database] && (opts[:db_password] || generate_db_password()),
 
         release_bucket_name: opts[:aws_release_bucket],
         logging_bucket_name: opts[:aws_log_bucket],
@@ -55,7 +62,14 @@ defmodule Mix.Tasks.Terraform.Build do
 
         terraform_backend: DeployEx.Config.terraform_backend(),
 
-        pem_app_name: "#{DeployExHelpers.kebab_project_name()}-#{random_bytes}",
+        oci_region: DeployEx.Config.oci_setting(:region),
+        oci_namespace: DeployEx.Config.oci_setting(:namespace),
+        oci_state_bucket: DeployEx.Config.oci_setting(:release_state_bucket),
+        oci_state_key: DeployEx.Config.oci_release_state_key(),
+        oci_state_profile: DeployEx.Config.oci_setting(:state_profile),
+        oci_vcn_cidr: DeployEx.Config.oci_setting(:vcn_cidr) || "10.20.0.0/16",
+
+        pem_app_name: opts[:pem_app_name] || existing_pem_app_name(opts[:directory]) || "#{DeployExHelpers.kebab_project_name()}-#{random_bytes}",
         app_name: DeployExHelpers.underscored_project_name(),
         kebab_app_name: DeployExHelpers.kebab_project_name(),
 
@@ -68,20 +82,26 @@ defmodule Mix.Tasks.Terraform.Build do
 
         terraform_app_releases_variables: terraform_app_releases_variables,
         terraform_release_variables: terraform_app_releases_variables,
-        terraform_redis_variables: terraform_redis_variables(opts),
-        terraform_sentry_variables: terraform_sentry_variables(opts),
-        terraform_grafana_variables: terraform_grafana_variables(opts),
-        terraform_loki_variables: terraform_loki_variables(opts),
-        terraform_prometheus_variables: terraform_prometheus_variables(opts),
+        terraform_redis_variables: DeployEx.TerraformVariables.terraform_redis_variables(opts, provider),
+        terraform_clickhouse_variables: DeployEx.TerraformVariables.terraform_clickhouse_variables(opts, provider),
+        terraform_rabbitmq_variables: DeployEx.TerraformVariables.terraform_rabbitmq_variables(opts, provider),
+        terraform_sentry_variables: DeployEx.TerraformVariables.terraform_sentry_variables(opts, provider),
+        terraform_grafana_variables: DeployEx.TerraformVariables.terraform_grafana_variables(opts, provider),
+        terraform_loki_variables: DeployEx.TerraformVariables.terraform_loki_variables(opts, provider),
+        terraform_prometheus_variables: DeployEx.TerraformVariables.terraform_prometheus_variables(opts, provider),
         terraform_mimir_variables: DeployEx.Mimir.terraform_variables(opts),
       }
 
-      write_terraform_template_files(params, opts)
+      write_terraform_template_files(params, opts, provider)
 
-      DeployEx.Terraform.run_command_with_input(
-        "init",
-        params[:directory]
-      )
+      if opts[:render_dir] do
+        :ok
+      else
+        DeployEx.Terraform.run_command_with_input(
+          "init",
+          params[:directory]
+        )
+      end
     else
       {:error, e} -> Mix.raise(to_string(e))
     end
@@ -91,13 +111,18 @@ defmodule Mix.Tasks.Terraform.Build do
   def build_opts(args) do
     opts = args
       |> parse_args
-      |> Keyword.put_new(:directory, @terraform_default_path)
-      |> Keyword.put_new(:aws_region, @default_aws_region)
-      |> Keyword.put_new(:aws_release_bucket, @default_aws_release_bucket)
+      |> put_render_dir_paths()
+      # Runtime Config calls, not the module attributes: an attribute captures the value when
+      # the DEP compiles, so a consuming project's config change silently renders stale
+      # defaults until a forced deps.compile. Mix.env() has the same problem for :env — it is
+      # always :dev in a local shell regardless of `config :deploy_ex, :env`.
+      |> Keyword.put_new(:directory, DeployEx.Config.terraform_folder_path())
+      |> Keyword.put_new(:aws_region, DeployEx.Config.aws_region())
+      |> Keyword.put_new(:aws_release_bucket, DeployEx.Config.aws_release_bucket())
       |> Keyword.put_new(:aws_log_bucket, DeployEx.Config.aws_log_bucket())
       |> Keyword.put_new(:aws_release_state_bucket, DeployEx.Config.aws_release_state_bucket())
       |> Keyword.put_new(:aws_release_state_lock_table, DeployEx.Config.aws_release_state_lock_table())
-      |> Keyword.put_new(:env, Mix.env())
+      |> Keyword.put_new(:env, DeployEx.Config.env())
 
     no_logging = opts[:no_logging] || opts[:no_loki] || false
     opts = Keyword.put(opts, :no_logging, no_logging)
@@ -105,11 +130,49 @@ defmodule Mix.Tasks.Terraform.Build do
     Keyword.put_new(opts, :availability_zone, DeployEx.Config.aws_availability_zone(opts[:aws_region]))
   end
 
+  # Matches the flag against the registered providers rather than calling to_existing_atom/1.
+  # That function depends on whether something has already interned the atom, which is not
+  # guaranteed here — DeployEx.Cloud's registry is a compile-time attribute and the module may
+  # not be loaded yet when this task runs. Matching known keys also gives a usable error.
+  defp resolve_provider(opts) do
+    case opts[:provider] do
+      nil ->
+        DeployEx.Config.cloud_provider()
+
+      name ->
+        known = DeployEx.Cloud.providers()
+
+        case Enum.find(known, &(to_string(&1) === name)) do
+          nil -> Mix.raise("unknown provider #{inspect(name)}, expected one of #{inspect(known)}")
+          provider -> provider
+        end
+    end
+  end
+
+  defp put_render_dir_paths(opts) do
+    case opts[:render_dir] do
+      nil -> opts
+      render_dir -> Keyword.put(opts, :directory, render_dir)
+    end
+  end
+
+  defp ensure_terraform_installed(opts) do
+    if opts[:render_dir] do
+      :ok
+    else
+      DeployEx.ToolInstaller.ensure_installed(:terraform)
+    end
+  end
+
   defp parse_args(args) do
     {opts, _extra_args} = OptionParser.parse!(args,
       aliases: [f: :force, q: :quit, d: :directory, v: :verbose],
       switches: [
         directory: :string,
+        render_dir: :string,
+        provider: :string,
+        pem_app_name: :string,
+        db_password: :string,
         force: :boolean,
         quiet: :boolean,
         verbose: :boolean,
@@ -122,6 +185,8 @@ defmodule Mix.Tasks.Terraform.Build do
         no_sentry: :boolean,
         no_grafana: :boolean,
         no_redis: :boolean,
+        clickhouse: :boolean,
+        rabbitmq: :boolean,
         no_prometheus: :boolean,
         no_mimir: :boolean
       ]
@@ -130,207 +195,86 @@ defmodule Mix.Tasks.Terraform.Build do
     opts
   end
 
-  defp ensure_terraform_directory_exists(directory) do
-    if File.exists?(directory) do
-      :ok
-    else
-      Mix.shell().info([:green, "* copying terraform into ", :reset, directory])
+  # Seeds only the active provider's file set. A whole-tree copy would put every provider's
+  # templates into every user's ./deploys — an :aws user would find providers/oci/*.tf sitting
+  # in their terraform root, where tofu would try to load them.
+  #
+  # Syncs on EVERY build, not only when the directory is first created: a first-seed-only copy
+  # left existing trees permanently stale for static (non-.eex) files — new provider files
+  # never arrived and module updates never landed, while the .eex renders around them DID
+  # update, producing a tree that references module variables its stale modules lack.
+  defp ensure_terraform_directory_exists(directory, provider, opts) do
+    if !File.exists?(directory) do
+      Mix.shell().info([:green, "* copying ", to_string(provider), " terraform into ", :reset, directory])
+    end
 
+    priv_path = DeployExHelpers.priv_folder("terraform")
+
+    with {:ok, files} <- DeployEx.Cloud.PrivFileSet.files(provider, priv_path) do
       File.mkdir_p!(directory)
 
-      "terraform"
-        |> DeployExHelpers.priv_folder()
-        |> File.cp_r!(directory)
-
-      directory
-        |> Path.join("**/*.eex")
-        |> Path.wildcard
-        |> Enum.map(&File.rm!/1)
+      files
+      |> Enum.reject(fn {source, _dest} -> String.ends_with?(source, ".eex") end)
+      |> Enum.each(fn {source, dest} -> sync_priv_file(priv_path, directory, source, dest, opts) end)
 
       :ok
     end
   end
 
-  defp generate_terraform_release_variables(release_name) do
-    String.trim_trailing("""
-        #{release_name} = {
-          name = "#{DeployEx.Utils.upper_title_case(release_name)}"
-          tags = {
-            Vendor = "Self"
-            Type   = "Self Made"
-          }
+  # Identical contents short-circuit silently — write_file would route them into the
+  # "overwrite declined" warning, which is false for an unchanged file.
+  defp sync_priv_file(priv_path, directory, source, dest, opts) do
+    contents = File.read!(Path.join(priv_path, source))
+    target = Path.join(directory, dest)
 
-          # Autoscaling Configuration (optional)
-          # Uncomment and configure to enable AWS Auto Scaling Groups
-          # autoscaling = {
-          #   enable             = true
-          #   min_size           = 1
-          #   max_size           = 5
-          #   desired_capacity   = 2
-          #   cpu_target_percent = 60
-          # }
-        }
-    """, "\n")
-  end
-
-  defp terraform_redis_variables(opts) do
-    if opts[:no_redis] do
-      ""
+    if File.exists?(target) and File.read!(target) === contents do
+      :ok
     else
-      """
-          #{DeployExHelpers.underscored_project_name()}_redis = {
-            name                       = "#{DeployExHelpers.title_case_project_name()} Redis"
-            instance_availability_zone = "#{opts[:availability_zone]}"
-
-            # This is a suggestion for instance
-
-            instance_type = "r7g.medium"
-
-            ebs = {
-              enable_secondary = true
-              secondary_size   = 16
-            }
-
-            tags = {
-              Vendor      = "Redis"
-              Type        = "Database"
-              DatabaseKey = "#{DeployExHelpers.underscored_project_name()}_redis"
-            }
-          },
-      """
+      target |> Path.dirname() |> File.mkdir_p!()
+      DeployExHelpers.write_file(target, contents, Keyword.put(opts, :message, "* syncing #{target}"))
     end
   end
 
-  defp terraform_sentry_variables(opts) do
-    if opts[:no_sentry] do
-      ""
-    else
-      """
-          sentry = {
-            name                       = "Sentry Monitoring"
-            enable_eip                 = true
-            instance_type              = "t3.large"
-            instance_availability_zone = "#{opts[:availability_zone]}"
-
-            # Sized for getsentry/self-hosted's "errors-only" compose profile
-            # (COMPOSE_PROFILES=errors-only in
-            # priv/ansible/roles/sentry_server/templates/env.j2) — upstream's
-            # install.sh hard-exits below 2 vCPU / 7000MB for that profile;
-            # t3.large (2 vCPU / 8GB) clears it. The "feature-complete"
-            # profile needs >= 4 vCPU / 14000MB (t3.large does NOT clear
-            # this — a deterministic preflight exit, not an occasional
-            # failure). To upgrade: raise instance_type here to >= 4
-            # vCPU/14GB (e.g. t3.xlarge), set
-            # COMPOSE_PROFILES=feature-complete in env.j2, then
-            # `mix terraform.apply --target 'module.ec2_instance["sentry"]'`.
-            ebs = {
-              enable_secondary = true
-              secondary_size   = 64
-            }
-
-            tags = {
-              Vendor = "Sentry"
-              Type   = "Monitoring"
-              MonitoringKey = "sentry"
-            }
-          },
-      """
-    end
+  # A fresh random pem name every build makes each rebuild+apply REPLACE the key file under a
+  # new name while ansible.cfg still points at the previous one — every node goes UNREACHABLE
+  # with "no such identity" (measured). Reuse whatever name the existing render already
+  # carries; the random suffix is only for the first build.
+  defp existing_pem_app_name(directory) do
+    directory
+    |> Path.join("*.tf")
+    |> Path.wildcard()
+    |> Enum.find_value(fn file ->
+      case Regex.run(~r/"([A-Za-z0-9-]+)-key-pair\.pem"/, File.read!(file)) do
+        [_full, pem_app_name] -> pem_app_name
+        _no_match -> nil
+      end
+    end)
   end
 
-  defp terraform_loki_variables(opts) do
-    if opts[:no_logging] do
-      ""
-    else
-      """
-          loki_aggregator = {
-            name                       = "Grafana Loki Logs"
-            instance_type              = "t3.micro"
-            instance_availability_zone = "#{opts[:availability_zone]}"
-
-            ebs = {
-              enable_secondary = true
-              secondary_size   = 8
-            }
-
-            tags = {
-              Vendor = "Grafana"
-              Type   = "Monitoring"
-              MonitoringKey = "loki_logger"
-            }
-          },
-      """
-    end
-  end
-
-  defp terraform_grafana_variables(opts) do
-    if opts[:no_grafana] do
-      ""
-    else
-      """
-          grafana_ui = {
-            name                       = "Grafana UI"
-            enable_eip                 = true
-            instance_availability_zone = "#{opts[:availability_zone]}"
-
-            ebs = {
-              enable_secondary = true
-              secondary_size   = 8
-            }
-
-            tags = {
-              Vendor = "Grafana"
-              Type   = "Monitoring"
-              MonitoringKey = "grafana_ui"
-            }
-          },
-      """
-    end
-  end
-
-  defp terraform_prometheus_variables(opts) do
-    if opts[:no_prometheus] do
-      ""
-    else
-      """
-          prometheus_db = {
-            name                       = "Prometheus Metrics Database"
-            instance_type              = "t3.micro"
-            instance_availability_zone = "#{opts[:availability_zone]}"
-
-            ebs = {
-              enable_secondary = true
-              secondary_size   = 16
-            }
-
-            tags = {
-              Vendor = "Grafana"
-              Type   = "Monitoring"
-              MonitoringKey = "prometheus_db"
-            }
-          },
-      """
-    end
-  end
-
+  # The AWS block advertises autoscaling, which has no OCI implementation yet — leaving that
+  # comment in an OCI tree would document a knob that silently does nothing.
   defp generate_db_password do
     "SuperSecretPassword#{Enum.random(111_111..999_999)}"
   end
 
-  defp write_terraform_template_files(params, opts) do
+  # Renders the active provider's .eex files. Non-AWS templates flatten on the way out —
+  # providers/oci/variables.tf.eex becomes variables.tf at the terraform root — because tofu
+  # only loads root-level .tf and runs in the configured terraform folder.
+  defp write_terraform_template_files(params, opts, provider) do
     terraform_path = DeployExHelpers.priv_folder("terraform")
 
-    terraform_path
-      |> Path.join("*.eex")
-      |> Path.wildcard
-      |> Enum.map(fn template_file ->
-        template = EEx.eval_file(template_file, assigns: params)
+    with {:ok, files} <- DeployEx.Cloud.PrivFileSet.files(provider, terraform_path) do
+      files
+      |> Enum.filter(fn {source, _dest} -> String.ends_with?(source, ".eex") end)
+      |> Enum.each(fn {source, dest} ->
+        template = EEx.eval_file(Path.join(terraform_path, source), assigns: params)
+        target = Path.join(params[:directory], String.replace(dest, ".eex", ""))
 
-        template_file
-          |> String.replace(terraform_path, "")
-          |> String.replace(".eex", "")
-          |> then(&Path.join(params[:directory], &1))
-          |> DeployExHelpers.write_file(template, opts)
+        target |> Path.dirname() |> File.mkdir_p!()
+        DeployExHelpers.write_file(target, template, opts)
       end)
+
+      :ok
+    end
   end
 end

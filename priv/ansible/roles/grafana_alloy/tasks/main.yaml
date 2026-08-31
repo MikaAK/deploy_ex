@@ -5,13 +5,17 @@
         path: ~/alloy-{{ alloy_architecture }}
       register: alloy
 
-    # Alloy publishes only .zip artifacts, and `unarchive` shells out to unzip for
-    # those. The role must install it itself rather than rely on another role in the
-    # play having done so, because it also runs standalone.
-    - name: Install unzip
+    # Alloy ships as a .zip, and ansible's unarchive shells out to unzip for those. Ubuntu's
+    # base image has no unzip, so the task fails with "Unable to find required 'unzip' or
+    # 'zipinfo' binary in the path" after a confusing wall of tar errors — MEASURED on Ubuntu
+    # 24.04. The Debian AMI this role grew up on happened to include it. The role installs it
+    # itself rather than leaning on another role in the play (awscli installs unzip a few
+    # tasks earlier in a full setup run) because grafana_alloy also runs standalone.
+    - name: Install unzip, required to extract the Alloy release
       apt:
         name: unzip
         update_cache: true
+      when: not alloy.stat.exists
 
     - name: Download Alloy {{ alloy_architecture }}/{{ alloy_version }}
       unarchive:

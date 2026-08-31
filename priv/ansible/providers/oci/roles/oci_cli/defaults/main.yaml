@@ -1,0 +1,6 @@
+oci_cli_version: 3.90.1
+
+# Its own virtualenv, not the system interpreter — see tasks/main.yaml for why a plain pip
+# install cannot work on Ubuntu 24.04.
+oci_cli_venv: /opt/oci-cli
+oci_cli_bin: /usr/local/bin/oci

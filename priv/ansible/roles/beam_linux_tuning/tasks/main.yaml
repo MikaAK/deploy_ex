@@ -1,5 +1,19 @@
 - name: beam_linux_tuning
   block:
+    # Cloud images run unattended-upgrades on first boot, so a setup started right after
+    # terraform.apply races it for the dpkg lock and dies with "Could not get lock
+    # /var/lib/dpkg/lock-frontend. It is held by process N (apt)" — MEASURED on a freshly
+    # created node. `apt-get check` exits non-zero while the lock is held, so retrying it is
+    # a portable wait needing no extra packages. This role runs first in every setup
+    # playbook, so guarding here covers every apt task that follows it.
+    - name: Wait for apt to become available
+      ansible.builtin.command: apt-get check
+      register: apt_available
+      until: apt_available.rc == 0
+      retries: 30
+      delay: 10
+      changed_when: false
+
     - name: Gather active swap devices
       command: swapon --show=NAME --noheadings
       register: active_swap
@@ -58,4 +72,33 @@
     - name: Increase TCP Congestion Window
       shell: defrt=`ip route | grep "^default" | head -1` && ip route change $defrt initcwnd 10
       when: rc_local_file.changed
+
+    # OCI's platform images ship an iptables INPUT chain that REJECTs everything but SSH,
+    # persisted through netfilter-persistent — so even with the VCN wide open, an app node
+    # gets "No route to host" from redis, clickhouse and every BEAM peer (measured). Debian
+    # AMIs on AWS have no such default. Network policy is the cloud's job (security list /
+    # NSG); the host firewall is reset to accept-all and the persisted rules rewritten so a
+    # reboot does not bring the reject back.
+    - name: Check for the OCI image's default host firewall
+      stat:
+        path: /etc/iptables/rules.v4
+      register: oci_iptables_rules
+
+    - name: Detect a REJECT in the INPUT chain
+      shell: iptables -S INPUT | grep -c -- '-j REJECT' || true
+      register: oci_iptables_rejects
+      changed_when: false
+      when: oci_iptables_rules.stat.exists and ansible_facts['distribution'] == 'Ubuntu'
+
+    - name: Open the host firewall — the VCN security list is the policy layer
+      when:
+        - oci_iptables_rules.stat.exists
+        - ansible_facts['distribution'] == 'Ubuntu'
+        - (oci_iptables_rejects.stdout | default('0') | int) > 0
+      block:
+        - name: Flush the reject rules
+          shell: iptables -F INPUT && iptables -P INPUT ACCEPT && ip6tables -F INPUT && ip6tables -P INPUT ACCEPT
+
+        - name: Persist an accept-all ruleset so a reboot does not restore the reject
+          shell: iptables-save > /etc/iptables/rules.v4 && ip6tables-save > /etc/iptables/rules.v6
   become: true
