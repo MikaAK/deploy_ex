@@ -324,6 +324,55 @@ defmodule DeployEx.GrafanaAlloyRoleTest do
           "path (#{stat_path_template}) does not depend on alloy_version so the " <>
           "download was (incorrectly) skipped"
     end
+
+    # The download-skip fix depends on a per-version marker file: the extracted binary
+    # itself must stay at the fixed, architecture-only path forever (systemd's
+    # ExecStart depends on that exact name), so the marker is the ONLY thing making the
+    # stat check version-aware without redownloading on every converge. Nothing pinned
+    # that half of the contract — delete the marker task and the suite stayed green,
+    # because `not alloy.stat.exists` is then permanently true and Alloy silently
+    # redownloads from GitHub forever. This test identifies the marker task
+    # behaviourally (its rendered path must actually differ across versions), not by
+    # checking that its path merely mentions `alloy_version` — a presence check would
+    # pass for a cosmetic occurrence that never varies.
+    test "the installed-version marker is version-scoped, gated by the same when as the download, and written after it" do
+      tasks = flatten_tasks(tasks_main_yaml())
+
+      download_task = Enum.find(tasks, &Map.has_key?(&1, "unarchive"))
+      marker_task = Enum.find(tasks, &(get_in(&1, ["file", "state"]) === "touch"))
+
+      refute is_nil(download_task), "expected an unarchive task downloading Alloy"
+
+      refute is_nil(marker_task),
+        "expected a task recording the installed alloy_version as a marker after download"
+
+      marker_path_template = get_in(marker_task, ["file", "path"])
+      architecture = "linux-amd64"
+
+      old_version_marker_path =
+        render_ansible_template(marker_path_template, %{
+          "alloy_architecture" => architecture,
+          "alloy_version" => "v1.9.0"
+        })
+
+      new_version_marker_path =
+        render_ansible_template(marker_path_template, %{
+          "alloy_architecture" => architecture,
+          "alloy_version" => "v1.9.1"
+        })
+
+      refute old_version_marker_path === new_version_marker_path,
+        "expected the marker path to be genuinely version-scoped (differ across " <>
+          "versions), not merely mention alloy_version"
+
+      assert marker_task["when"] === download_task["when"]
+
+      indexed = Enum.with_index(tasks)
+      {_download, download_index} = Enum.find(indexed, fn {task, _index} -> task === download_task end)
+      {_marker, marker_index} = Enum.find(indexed, fn {task, _index} -> task === marker_task end)
+
+      assert download_index < marker_index
+    end
   end
 
   # SECTION: Deliverable 2 (alloy-journal-version) — loud journal-directory precondition
