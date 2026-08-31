@@ -2,6 +2,8 @@
   roles:
     - pip3
     - awscli
+    - log_cleanup
     - prometheus_exporter
     - prometheus_db
     - ipv6
+    - data_volume_grow

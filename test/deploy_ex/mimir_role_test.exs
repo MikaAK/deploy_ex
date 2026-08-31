@@ -8,11 +8,16 @@ defmodule DeployEx.MimirRoleTest do
   #
   # Baseline fixtures under test/support/fixtures/mimir/{prometheus_db_role,
   # baseline_alloy_config.alloy.j2} are byte-identical captures of the pre-mimir
-  # tree (main @ e06649a) — untouched since capture. `@expected_loki_pipeline`
-  # below is NOT a main-provenance capture: it's that same baseline with the
-  # one known post-sprint delta (the app_name default filter, item 2 of the
-  # 2026-08-27 fidelity review) applied on top, asserted explicitly so the
-  # delta itself stays pinned instead of silently drifting into the fixture.
+  # tree (main @ e06649a) — untouched since capture except
+  # prometheus_db_role/templates/prometheus.service.j2, which was bumped
+  # forward to match the RequiresMountsFor=/data + After=local-fs.target lines
+  # the D5 combined mount lane (item C, approved, unrelated to mimir) added —
+  # that file is now a pin on "last approved state", not on e06649a specifically.
+  # `@expected_loki_pipeline` below is NOT a main-provenance capture: it's that
+  # same baseline with the one known post-sprint delta (the app_name default
+  # filter, item 2 of the 2026-08-27 fidelity review) applied on top, asserted
+  # explicitly so the delta itself stays pinned instead of silently drifting
+  # into the fixture.
 
   @priv_roles_dir Path.expand("../../priv/ansible/roles", __DIR__)
   @mimir_role_dir Path.join(@priv_roles_dir, "mimir_db")

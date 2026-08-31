@@ -6,3 +6,4 @@
     - prometheus_exporter
     - grafana_loki
     - ipv6
+    - data_volume_grow

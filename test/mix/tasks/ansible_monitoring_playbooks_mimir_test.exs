@@ -8,8 +8,12 @@ defmodule Mix.Tasks.AnsibleMonitoringPlaybooksMimirTest do
   # coverage in priv_renderer_mimir_test.exs at the template-source level).
   #
   # The baseline_setup_{grafana_ui,loki_log_aggregator,prometheus_db}.yaml
-  # fixtures this file reads are byte-identical captures of the pre-mimir tree
-  # (main @ e06649a), untouched since capture — other fixtures under
+  # fixtures this file reads were originally byte-identical captures of the
+  # pre-mimir tree (main @ e06649a). They have since been bumped forward to
+  # include the log_cleanup and data_volume_grow role lines the D5 combined
+  # mount/hygiene lane (approved, unrelated to mimir) added unconditionally —
+  # those lines are present regardless of use_mimir, so they belong in the
+  # baseline rather than in the asserted delta. Other fixtures under
   # test/support/fixtures/mimir/ (e.g. baseline_alloy_config.alloy.j2, read by
   # mimir_role_test.exs) have since had known post-sprint deltas applied on
   # top and are NOT pure main-provenance; see that file's header comment.
