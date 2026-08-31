@@ -15,12 +15,22 @@ defmodule DeployEx.GrafanaAlloyRoleTest do
   # promtail retirement task runs, the readiness task fails the play (not silently)
   # on timeout, template changes restart Alloy via a handler, and promtail retirement
   # never shells out.
+  #
+  # A prod canary then hit a third defect (MEASURED, cfx_cms): the `restart alloy`
+  # handler ran unprivileged — `daemon-reload: Interactive authentication required` —
+  # because the tasks block's `become: true` does not extend to handlers. The
+  # privilege audit below pins that for every handler, not just this one.
 
   @priv_roles_dir Path.expand("../../priv/ansible/roles", __DIR__)
   @grafana_alloy_role_dir Path.join(@priv_roles_dir, "grafana_alloy")
+  @privileged_modules ~w(systemd file template unarchive find uri)
 
   defp tasks_main_yaml do
     YamlElixir.read_from_file!(Path.join(@grafana_alloy_role_dir, "tasks/main.yaml"))
+  end
+
+  defp handlers_main_yaml do
+    YamlElixir.read_from_file!(Path.join(@grafana_alloy_role_dir, "handlers/main.yaml"))
   end
 
   defp flatten_tasks(entries) do
@@ -48,6 +58,27 @@ defmodule DeployEx.GrafanaAlloyRoleTest do
 
   defp task_name(task) do
     task |> Map.get("name", "") |> String.downcase()
+  end
+
+  defp privileged_module?(entry) do
+    Enum.any?(@privileged_modules, &Map.has_key?(entry, &1))
+  end
+
+  # Ansible resolves `become` per entry, inheriting it from an enclosing block.
+  # Handlers have no enclosing block, so they inherit nothing — that is the D2-a
+  # defect class this audit encodes.
+  defp privileged_entries(entries, inherited_become) do
+    Enum.flat_map(entries, fn
+      %{"block" => block} = entry ->
+        privileged_entries(block, Map.get(entry, "become", inherited_become))
+
+      entry ->
+        if privileged_module?(entry) do
+          [{entry, Map.get(entry, "become", inherited_become)}]
+        else
+          []
+        end
+    end)
   end
 
   # SECTION: DC1 — no task passes the removed `warn` argument
@@ -107,16 +138,27 @@ defmodule DeployEx.GrafanaAlloyRoleTest do
   # SECTION: DC4 — handler wiring
 
   describe "grafana_alloy role — handlers" do
-    test "handlers/main.yaml defines a restart alloy handler" do
-      handlers = YamlElixir.read_from_file!(Path.join(@grafana_alloy_role_dir, "handlers/main.yaml"))
-
-      restart_handler = Enum.find(handlers, &(&1["name"] === "restart alloy"))
+    test "handlers/main.yaml defines a restart alloy handler that runs with become" do
+      restart_handler = Enum.find(handlers_main_yaml(), &(&1["name"] === "restart alloy"))
       refute is_nil(restart_handler)
 
       systemd_args = Map.fetch!(restart_handler, "systemd")
       assert systemd_args["name"] === "alloy"
       assert systemd_args["state"] === "restarted"
       assert systemd_args["daemon_reload"] === true
+
+      assert restart_handler["become"] === true
+    end
+
+    test "every handler carries its own become because block-level become does not reach handlers" do
+      handlers = handlers_main_yaml()
+
+      refute Enum.empty?(handlers)
+
+      unprivileged_handlers =
+        for handler <- handlers, handler["become"] !== true, do: handler["name"]
+
+      assert unprivileged_handlers === []
     end
 
     test "config and unit template changes notify the restart alloy handler" do
@@ -141,6 +183,30 @@ defmodule DeployEx.GrafanaAlloyRoleTest do
       refute Enum.empty?(promtail_tasks)
       refute Enum.any?(promtail_tasks, &Map.has_key?(&1, "shell"))
       refute Enum.any?(promtail_tasks, &Map.has_key?(&1, "command"))
+    end
+  end
+
+  # SECTION: D2-a — privilege audit across the whole role (tasks block + handlers)
+
+  describe "grafana_alloy role — privilege audit" do
+    test "the role's task block carries block-level become" do
+      block_entry = Enum.find(tasks_main_yaml(), &Map.has_key?(&1, "block"))
+
+      refute is_nil(block_entry)
+      assert block_entry["become"] === true
+    end
+
+    test "every task and handler using a privileged module resolves to become: true" do
+      entries =
+        privileged_entries(tasks_main_yaml(), false) ++
+          privileged_entries(handlers_main_yaml(), false)
+
+      refute Enum.empty?(entries)
+
+      unprivileged_names =
+        for {entry, become} <- entries, become !== true, do: task_name(entry)
+
+      assert unprivileged_names === []
     end
   end
 end

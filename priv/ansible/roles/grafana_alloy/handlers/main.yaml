@@ -1,4 +1,8 @@
+# `become` must live on the handler itself: the tasks block's block-level
+# `become: true` does not extend to handlers, so without this the systemd
+# daemon-reload fails with "Interactive authentication required".
 - name: restart alloy
+  become: true
   systemd:
     name: alloy
     state: restarted
