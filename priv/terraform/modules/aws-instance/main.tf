@@ -210,6 +210,16 @@ resource "aws_instance" "ec2_instance" {
   # apply. New AMIs are picked up when an instance is intentionally rebuilt.
   lifecycle {
     ignore_changes = [ami]
+
+    # When instance_availability_zone is pinned but no subnet in var.subnet_ids
+    # is in that AZ, local.selected_subnet_id silently falls back to a subnet
+    # in ANY AZ while availability_zone above still uses the pinned AZ. The
+    # plan renders clean; AWS rejects the mismatch at apply with an opaque
+    # error naming neither cause. Fail at plan time instead, legibly.
+    precondition {
+      condition = var.instance_availability_zone == null ? true : length(data.aws_subnets.az_specific[0].ids) > 0
+      error_message = "instance_availability_zone is pinned to ${var.instance_availability_zone} but none of the subnets in var.subnet_ids (${join(", ", var.subnet_ids)}) are in that AZ; pin a different AZ or add a subnet there."
+    }
   }
 }
 
