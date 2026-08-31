@@ -1,5 +1,7 @@
 [Unit]
 Description=Prometheus Metrics DB
+RequiresMountsFor=/data
+After=local-fs.target
 
 [Service]
 Type=simple
