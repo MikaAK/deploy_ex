@@ -81,4 +81,25 @@ defmodule DeployEx.TerraformVariablesTest do
       assert TerraformVariables.terraform_rabbitmq_variables([rabbitmq: true], :aws) === ""
     end
   end
+
+  describe "terraform_sentry_variables/2 on oci" do
+    test "renders nothing when --no-sentry is passed" do
+      assert TerraformVariables.terraform_sentry_variables([no_sentry: true], :oci) === ""
+    end
+
+    test "renders the oci-shaped sentry node by default" do
+      rendered = TerraformVariables.terraform_sentry_variables([], :oci)
+
+      assert rendered =~ ~s(shape       = "VM.Standard.E5.Flex")
+      assert rendered =~ "ocpus       = 1"
+      assert rendered =~ "memory_gbs  = 8"
+      assert rendered =~ "boot_volume_size_gbs = 100"
+      assert rendered =~ "assign_public_ip     = true"
+      assert rendered =~ ~s(MonitoringKey = "sentry")
+
+      refute rendered =~ "ebs"
+      refute rendered =~ "enable_eip"
+      refute rendered =~ "instance_availability_zone"
+    end
+  end
 end
