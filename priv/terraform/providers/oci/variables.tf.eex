@@ -161,7 +161,7 @@ variable "release_bucket_name" {
 
 # Deliberately `any` rather than a fully-typed object(...) like the AWS `<app>_project`
 # variable. Entries legitimately differ in shape — only the redis entry carries a DatabaseKey
-# tag, only grafana sets assign_public_ip, and a per-app entry may omit sizing entirely to
+# tag, grafana and sentry set assign_public_ip, and a per-app entry may omit sizing entirely to
 # inherit the top-level defaults. `map(any)` does not help: OpenTofu still unifies every value
 # to ONE element type and fails with "all map elements must have the same type" the moment two
 # entries diverge. `any` skips that unification.
