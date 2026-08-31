@@ -8,6 +8,14 @@
         group: root
         mode: '0644'
 
+    - name: Create /root/.aws directory
+      ansible.builtin.file:
+        path: /root/.aws
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
     - name: Add dualstack to boto config
       ansible.builtin.copy:
         content: |
