@@ -67,6 +67,12 @@
         mode: 0644
       when: not alloy.stat.exists
 
+    # alloy_config.alloy.j2's prometheus.scrape/remote_write block is gated on
+    # grafana_mimir_url_configured, supplied by deploy_ex's own
+    # group_vars/all.yaml.eex. It renders inactive in a consumer that has not
+    # enabled Mimir -- that is expected, not dead code. Deleting the block
+    # from the rendered config is undone by the next `mix ansible.build`;
+    # disable Mimir in group_vars instead of editing the rendered template.
     - name: Add Alloy config to /root/alloy_config.alloy
       template:
         src: alloy_config.alloy.j2

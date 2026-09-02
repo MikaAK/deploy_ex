@@ -51,6 +51,11 @@ loki.write "default" {
     url = "{{ grafana_loki_url }}/loki/api/v1/push"
   }
 }
+// Gated on grafana_mimir_url_configured, supplied by deploy_ex's own
+// group_vars/all.yaml.eex. Undefined here means this consumer has not
+// enabled Mimir -- not that the block is dead. Deleting it is silently
+// restored by the next `mix ansible.build` regeneration; disable Mimir in
+// group_vars instead.
 {% if grafana_mimir_url_configured %}
 
 prometheus.scrape "node_exporter" {
