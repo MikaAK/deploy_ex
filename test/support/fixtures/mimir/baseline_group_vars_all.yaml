@@ -21,6 +21,12 @@ grafana_loki_url: "http://FILL_IN_AFTER_FIRST_APPLY:3100"
 #   mix deploy_ex.find_nodes --tag MonitoringKey=prometheus_db
 grafana_prometheus_url: "http://FILL_IN_AFTER_FIRST_APPLY:9090"
 
+# True once grafana_prometheus_url has been filled in with a real address.
+# grafana_ui's Grafana datasource template gates its Prometheus wiring on
+# this (not on `grafana_prometheus_url is defined`, which is true even for
+# the placeholder above).
+grafana_prometheus_url_configured: "{{ grafana_prometheus_url is defined and 'FILL_IN_AFTER_FIRST_APPLY' not in grafana_prometheus_url }}"
+
 prometheus_scrape_region: us-west-2
 prometheus_retention_size: 4GB
 prometheus_retention_time: 7d

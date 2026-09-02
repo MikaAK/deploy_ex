@@ -227,10 +227,10 @@ defmodule DeployEx.MimirUrlValidityTest do
       assert [_entry] = loki_entries
     end
 
-    test "the adjacent grafana_prometheus_url gate is UNTOUCHED — still a bare presence test (HARD BOUNDARY)" do
+    test "the adjacent grafana_prometheus_url gate now uses the same validity predicate (fix/prometheus-url-gate, not this PR's scope)" do
       content = File.read!(@datasources_path)
 
-      assert content =~ "{% if grafana_prometheus_url is defined %}"
+      assert content =~ "{% if grafana_prometheus_url_configured %}"
     end
   end
 

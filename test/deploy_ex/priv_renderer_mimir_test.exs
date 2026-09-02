@@ -9,7 +9,12 @@ defmodule DeployEx.PrivRendererMimirTest do
   # redis/loki/grafana/prometheus/sentry, plus the sentry block's instance_type,
   # nested `ebs`, and MonitoringKey.
   # baseline_group_vars_all.yaml: re-captured the same run — the loki/prometheus/sentry
-  # URL defaults are all FILL_IN_AFTER_FIRST_APPLY placeholders (DHCP).
+  # URL defaults are all FILL_IN_AFTER_FIRST_APPLY placeholders (DHCP). Bumped
+  # forward again by fix/prometheus-url-gate to add the grafana_prometheus_url_configured
+  # predicate line — a legitimate, separate change to group_vars/all.yaml.eex that
+  # predates mimir's own placement in the file. This fixture tracks "last approved
+  # state," not a single frozen capture, so the next change that legitimately
+  # touches group_vars/all.yaml.eex should bump it forward too.
   # Both are the byte-identical baseline that `--no-mimir` must reproduce exactly.
   @fixtures_dir Path.expand("../support/fixtures/mimir", __DIR__)
   @baseline_variables_tf File.read!(Path.join(@fixtures_dir, "baseline_variables.tf"))

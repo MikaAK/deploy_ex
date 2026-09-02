@@ -275,16 +275,16 @@ defmodule DeployEx.MimirRoleTest do
       assert String.starts_with?(content, String.trim_trailing(loki_entry))
     end
 
-    test "wraps the Prometheus entry in {% if grafana_prometheus_url is defined %} so --no-prometheus + mimir renders instead of crashing" do
+    test "wraps the Prometheus entry in {% if grafana_prometheus_url_configured %} so --no-prometheus + mimir renders instead of crashing" do
       content = File.read!(@datasource_path)
 
-      assert content =~ "{% if grafana_prometheus_url is defined %}"
+      assert content =~ "{% if grafana_prometheus_url_configured %}"
       assert content =~ "name: Prometheus Metrics"
 
       # The Prometheus block must be closed before the Mimir block opens —
       # not one giant span covering both (which would make Mimir's datasource
       # disappear whenever --no-prometheus is set, defeating the replacement bar).
-      prometheus_if = :binary.match(content, "{% if grafana_prometheus_url is defined %}") |> elem(0)
+      prometheus_if = :binary.match(content, "{% if grafana_prometheus_url_configured %}") |> elem(0)
       mimir_if = :binary.match(content, "{% if grafana_mimir_url_configured %}") |> elem(0)
       endif_positions = for [{pos, _}] <- Regex.scan(~r/\{% endif %\}/, content, return: :index), do: pos
 
