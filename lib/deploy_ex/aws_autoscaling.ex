@@ -42,6 +42,7 @@ defmodule DeployEx.AwsAutoscaling do
 
   def set_desired_capacity(asg_name, desired_capacity, opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
+    request_fn = opts[:request_fn] || (&ExAws.request/2)
 
     %ExAws.Operation.Query{
       path: "/",
@@ -53,7 +54,7 @@ defmodule DeployEx.AwsAutoscaling do
       },
       service: :autoscaling
     }
-    |> ExAws.request(region: region)
+    |> request_fn.(region: region)
     |> handle_set_capacity_response()
   end
 
@@ -68,6 +69,7 @@ defmodule DeployEx.AwsAutoscaling do
       )}
     else
       region = opts[:region] || DeployEx.Config.aws_region()
+      request_fn = opts[:request_fn] || (&ExAws.request/2)
 
       params = %{
         "Action" => "StartInstanceRefresh",
@@ -82,7 +84,7 @@ defmodule DeployEx.AwsAutoscaling do
         params: params,
         service: :autoscaling
       }
-      |> ExAws.request(region: region)
+      |> request_fn.(region: region)
       |> handle_start_refresh_response()
     end
   end
@@ -244,7 +246,7 @@ defmodule DeployEx.AwsAutoscaling do
       String.contains?(body, "ValidationError") and String.contains?(body, "outside") ->
         {:error, ErrorMessage.bad_request("desired capacity outside min/max range")}
 
-      String.contains?(body, "does not exist") ->
+      asg_missing?(body) ->
         {:error, ErrorMessage.not_found("autoscaling group not found")}
 
       true ->
@@ -275,7 +277,7 @@ defmodule DeployEx.AwsAutoscaling do
       String.contains?(body, "InstanceRefreshInProgress") ->
         {:error, ErrorMessage.conflict("instance refresh already in progress")}
 
-      String.contains?(body, "does not exist") ->
+      asg_missing?(body) ->
         {:error, ErrorMessage.not_found("autoscaling group not found")}
 
       true ->
@@ -289,6 +291,11 @@ defmodule DeployEx.AwsAutoscaling do
 
   defp handle_start_refresh_response({:error, error}) do
     {:error, ErrorMessage.failed_dependency("AWS request failed", %{error: inspect(error)})}
+  end
+
+  # AWS says "AutoScalingGroup name not found - null" for a missing group
+  defp asg_missing?(body) do
+    String.contains?(body, "name not found") or String.contains?(body, "does not exist")
   end
 
   defp handle_describe_refreshes_response({:ok, %{body: body}}) do
