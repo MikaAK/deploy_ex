@@ -39,6 +39,9 @@ module "oci_instance" {
   assign_public_ip     = try(each.value.assign_public_ip, var.assign_public_ip)
   ssh_public_key        = local.ssh_public_key
 
+  enable_block_volume   = try(each.value.block_volume.enable, false)
+  block_volume_size_gbs = try(each.value.block_volume.size_gbs, null)
+
   enable_load_balancer                         = try(each.value.load_balancer.enable, false)
   enable_load_balancer_https                   = try(each.value.load_balancer.enable_https, true)
   load_balancer_health_check_path              = try(each.value.load_balancer.health_check.path, "")

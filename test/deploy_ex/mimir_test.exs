@@ -22,9 +22,9 @@ defmodule DeployEx.MimirTest do
     end
   end
 
-  describe "terraform_variables/1" do
+  describe "terraform_variables/2 on aws" do
     test "returns the mimir_db block with all required fields when enabled" do
-      content = Mimir.terraform_variables([])
+      content = Mimir.terraform_variables([], :aws)
 
       assert content =~ "mimir_db = {"
       assert content =~ ~s(name                       = "Mimir Metrics Database")
@@ -39,19 +39,47 @@ defmodule DeployEx.MimirTest do
     end
 
     test "pins instance_availability_zone from opts when provided" do
-      content = Mimir.terraform_variables(availability_zone: "us-east-1c")
+      content = Mimir.terraform_variables([availability_zone: "us-east-1c"], :aws)
 
       assert content =~ ~s(instance_availability_zone = "us-east-1c")
     end
 
     test "defaults instance_availability_zone when opts omits it" do
-      content = Mimir.terraform_variables([])
+      content = Mimir.terraform_variables([], :aws)
 
       assert content =~ ~s(instance_availability_zone = "#{DeployEx.Config.aws_availability_zone()}")
     end
 
     test "returns an empty string when :no_mimir is true" do
-      assert Mimir.terraform_variables(no_mimir: true) === ""
+      assert Mimir.terraform_variables([no_mimir: true], :aws) === ""
+    end
+  end
+
+  # SECTION: terraform_variables/2 on oci — D2, closing the gap where an OCI consumer
+  # could not render a Mimir node at all (arity-1 dropped the provider on the floor).
+  describe "terraform_variables/2 on oci" do
+    test "returns the mimir_db block with oci-shaped fields when enabled" do
+      content = Mimir.terraform_variables([], :oci)
+
+      assert content =~ "mimir_db = {"
+      assert content =~ ~s(shape       = "VM.Standard.E5.Flex")
+      assert content =~ ~r/ocpus\s*=\s*1/
+      assert content =~ ~r/memory_gbs\s*=\s*4/
+      assert content =~ ~r/block_volume\s*=\s*\{/
+      assert content =~ ~r/enable\s*=\s*true/
+      assert content =~ ~r/size_gbs\s*=\s*50/
+      refute content =~ "instance_type"
+      refute content =~ "ebs ="
+      refute content =~ "instance_availability_zone"
+      refute content =~ "enable_secondary"
+      # MonitoringKey is the ansible-inventory interface (MonitoringKey=mimir_db ->
+      # group monitoring_mimir_db). Mutation-checked manually: flipping this literal
+      # to "mimir" must turn this assertion red (see report — verified 2026-09-01).
+      assert content =~ ~s(MonitoringKey = "mimir_db")
+    end
+
+    test "returns an empty string when :no_mimir is true" do
+      assert Mimir.terraform_variables([no_mimir: true], :oci) === ""
     end
   end
 

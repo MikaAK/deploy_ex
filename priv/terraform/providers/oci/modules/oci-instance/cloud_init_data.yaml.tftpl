@@ -1,0 +1,67 @@
+#cloud-config
+package_update: true
+packages:
+  - xfsprogs
+
+write_files:
+  - path: /usr/local/sbin/prepare-block-volume.sh
+    permissions: '0755'
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      exec > >(tee /var/log/prepare-block-volume.log|logger -t prepare-block-volume -s 2>/dev/console) 2>&1
+
+      DEVICE="${device_path}"
+      MP="/data"
+
+      echo "[data-disk] Waiting for $${DEVICE} to appear..."
+      for i in $(seq 1 120); do
+        [ -e "$${DEVICE}" ] && break
+        sleep 1
+      done
+
+      if [ ! -e "$${DEVICE}" ]; then
+        echo "[data-disk] $${DEVICE} not found after waiting; exiting (nofail)."
+        exit 0
+      fi
+
+      mkdir -p "$${MP}"
+
+      # ponytail: assumes a whole-disk paravirtualized volume with no partition
+      # table, unlike AWS's script (which also handles a pre-partitioned NVMe
+      # device from a restored snapshot). This module has no snapshot-restore
+      # input, so every volume it creates is fresh from OCI — upgrade to
+      # partition-aware detection (see prepare-ebs-volume.sh's lsblk/PARTS
+      # handling) if a snapshot-restore path is ever added here.
+      FSTYPE="$(blkid -s TYPE -o value "$${DEVICE}" || true)"
+
+      if [ -n "$${FSTYPE}" ]; then
+        echo "[data-disk] Found existing filesystem $${FSTYPE} on $${DEVICE}; preserving."
+      else
+        echo "[data-disk] No filesystem detected; formatting $${DEVICE} as XFS..."
+        mkfs.xfs -f "$${DEVICE}"
+        FSTYPE="xfs"
+      fi
+
+      UUID="$(blkid -s UUID -o value "$${DEVICE}")"
+      if [ -z "$${UUID}" ]; then
+        echo "[data-disk] Could not read UUID for $${DEVICE}."
+        exit 1
+      fi
+
+      sed -i "\\|$${DEVICE}|d" /etc/fstab
+      sed -i '\|[[:space:]]/data[[:space:]]|d' /etc/fstab
+      echo "UUID=$${UUID} $${MP} $${FSTYPE} defaults,nofail,x-systemd.device-timeout=30s 0 2" >> /etc/fstab
+
+      if ! mountpoint -q "$${MP}"; then
+        mount "$${MP}"
+      fi
+
+      xfs_growfs "$${MP}" || true
+
+      echo "[data-disk] Done. Mounted $${DEVICE} ($${FSTYPE}) on $${MP}."
+
+runcmd:
+  - /usr/local/sbin/prepare-block-volume.sh

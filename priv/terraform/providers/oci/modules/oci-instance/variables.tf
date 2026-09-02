@@ -95,6 +95,23 @@ variable "boot_volume_size_gbs" {
   nullable    = false
 }
 
+### Block Volume ###
+#####################
+
+variable "enable_block_volume" {
+  description = "Enables a secondary Block Volume, attached and mounted at /data via cloud-init. Mirrors the AWS module's enable_ebs so a consumer's mental model transfers. Default off — an existing OCI consumer's render must not gain a volume by upgrading."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "block_volume_size_gbs" {
+  description = "Block Volume size in GB, default 50 (OCI's block-volume minimum)"
+  type        = number
+  default     = 50
+  nullable    = false
+}
+
 variable "assign_public_ip" {
   description = "Whether instances get a public IP"
   type        = bool

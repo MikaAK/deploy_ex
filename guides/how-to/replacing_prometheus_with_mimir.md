@@ -40,6 +40,16 @@ deploy_ex-managed project (not starting fresh), re-running `mix terraform.build`
 secondary EBS volume to your Terraform plan (roughly $17/mo at on-demand rates) —
 review the plan before applying, or pass `--no-mimir` to opt out until you're ready.
 
+**On OCI** (`mix terraform.build --provider oci`): Mimir renders as a
+`VM.Standard.E5.Flex` instance (1 OCPU / 4GB) with an opt-in **Block Volume**
+(paravirtualized attachment, 50GB, mounted at `/data` via cloud-init) instead of AWS's
+secondary EBS volume — OCI has no equivalent of AWS's cloud-init-driven app deploy, so
+the OCI-side cloud-init payload does only the block-volume format-and-mount, nothing
+else. Same `MonitoringKey = "mimir_db"` tag, same `--no-mimir` opt-out. The block
+volume is generic opt-in infrastructure on the `oci-instance` module (`enable_block_volume`
+/ `block_volume_size_gbs`, or `block_volume = { enable, size_gbs }` on a per-app
+project entry) — Mimir is simply its first consumer.
+
 **Delivery to existing `./deploys/` trees:** role files (`priv/ansible/roles/**`,
 including `mimir_db` and the Alloy/datasource template changes) sync on every `mix
 ansible.build` run. The `grafana_ui`/`loki_log_aggregator`/`prometheus_db` setup
