@@ -39,7 +39,35 @@ defmodule DeployEx.Mimir do
   def enabled?(opts), do: not Keyword.get(opts, :no_mimir, false)
 
   @doc "Terraform variables.tf mimir_db block — empty string when mimir is disabled."
-  def terraform_variables(opts) do
+  def terraform_variables(opts, :oci) do
+    if enabled?(opts) do
+      """
+
+          mimir_db = {
+            name = "Mimir Metrics Database"
+
+            shape       = "VM.Standard.E5.Flex"
+            ocpus       = 1
+            memory_gbs  = 4
+
+            block_volume = {
+              enable   = true
+              size_gbs = 50
+            }
+
+            tags = {
+              Vendor = "Grafana"
+              Type   = "Monitoring"
+              MonitoringKey = "mimir_db"
+            }
+          },
+      """
+    else
+      ""
+    end
+  end
+
+  def terraform_variables(opts, _provider) do
     if enabled?(opts) do
       availability_zone = opts[:availability_zone] || DeployEx.Config.aws_availability_zone()
 

@@ -170,7 +170,7 @@ variable "release_bucket_name" {
 # misspelled or unsupported key. The oci-instance module reads what it understands via try()
 # and ignores the rest, so `shappe = "..."` is accepted and quietly does nothing.
 variable "<%= @app_name %>_project" {
-  description = "Map of project names to configuration. Recognized keys: name, instance_count, shape, ocpus, memory_gbs, image_ocid, boot_volume_size_gbs, assign_public_ip, load_balancer, tags. Unrecognized keys are ignored without error."
+  description = "Map of project names to configuration. Recognized keys: name, instance_count, shape, ocpus, memory_gbs, image_ocid, boot_volume_size_gbs, block_volume, assign_public_ip, load_balancer, tags. Unrecognized keys are ignored without error."
   type        = any
 
   default = {
@@ -179,7 +179,7 @@ variable "<%= @app_name %>_project" {
 <%= @terraform_clickhouse_variables %>
 <%= @terraform_rabbitmq_variables %>
 <%= @terraform_grafana_variables %>
-<%= @terraform_prometheus_variables %>
+<%= @terraform_prometheus_variables %><%= @terraform_mimir_variables %>
 <%= @terraform_loki_variables %>
 <%= @terraform_release_variables %>
   }

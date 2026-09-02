@@ -89,7 +89,7 @@ defmodule Mix.Tasks.Terraform.Build do
         terraform_grafana_variables: DeployEx.TerraformVariables.terraform_grafana_variables(opts, provider),
         terraform_loki_variables: DeployEx.TerraformVariables.terraform_loki_variables(opts, provider),
         terraform_prometheus_variables: DeployEx.TerraformVariables.terraform_prometheus_variables(opts, provider),
-        terraform_mimir_variables: DeployEx.Mimir.terraform_variables(opts),
+        terraform_mimir_variables: DeployEx.Mimir.terraform_variables(opts, provider),
       }
 
       write_terraform_template_files(params, opts, provider)
