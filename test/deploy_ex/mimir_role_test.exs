@@ -221,11 +221,24 @@ defmodule DeployEx.MimirRoleTest do
         |> String.trim_leading(@expected_loki_pipeline)
         |> String.trim_trailing()
 
-      assert String.starts_with?(remainder, "{% if grafana_mimir_url_configured %}")
+      # A `//` legibility comment is allowed directly before the gate — it is
+      # inert Alloy syntax, not executable config, so it cannot leak outside
+      # the {% if %}. Strip only comment lines before checking the gate itself
+      # starts the remainder; anything else ahead of it would be a real leak.
+      {comment_lines, remainder_lines} =
+        remainder
+        |> String.split("\n")
+        |> Enum.split_while(&(String.trim(&1) |> String.starts_with?("//")))
+
+      assert Enum.all?(comment_lines, &(String.trim(&1) |> String.starts_with?("//")))
+
+      remainder_after_comment = Enum.join(remainder_lines, "\n")
+
+      assert String.starts_with?(remainder_after_comment, "{% if grafana_mimir_url_configured %}")
       assert String.ends_with?(remainder, "{% endif %}")
 
-      open_tags = remainder |> String.split(~r/\{%\s*if\s+.+?\s*%\}/) |> length() |> Kernel.-(1)
-      close_tags = remainder |> String.split(~r/\{%\s*endif\s*%\}/) |> length() |> Kernel.-(1)
+      open_tags = remainder_after_comment |> String.split(~r/\{%\s*if\s+.+?\s*%\}/) |> length() |> Kernel.-(1)
+      close_tags = remainder_after_comment |> String.split(~r/\{%\s*endif\s*%\}/) |> length() |> Kernel.-(1)
 
       assert open_tags > 0
       assert open_tags === close_tags
