@@ -144,6 +144,7 @@ defmodule DeployEx.MimirRoleTest do
 
   describe "alloy_config.alloy.j2 — metrics pipeline" do
     @alloy_path Path.join(@priv_roles_dir, "grafana_alloy/templates/alloy_config.alloy.j2")
+    @alloy_defaults_path Path.join(@priv_roles_dir, "grafana_alloy/defaults/main.yaml")
 
     test "scrapes node_exporter and app metrics locally, remote_writes to Mimir, no ec2_sd" do
       content = File.read!(@alloy_path)
@@ -151,10 +152,32 @@ defmodule DeployEx.MimirRoleTest do
       assert content =~ "{% if grafana_mimir_url is defined %}"
       assert content =~ "localhost:9100"
       assert content =~ "{% if app_name is defined %}"
-      assert content =~ "localhost:4050"
+      assert content =~ "localhost:{{ alloy_app_metrics_port }}"
       assert content =~ ~s(prometheus.remote_write "mimir")
       assert content =~ "{{ grafana_mimir_url }}"
       refute content =~ "ec2_sd"
+    end
+
+    # The app scrape port used to be the literal `4050` — every consumer whose apps
+    # expose metrics on a different port got a Mimir that looked healthy (node_exporter
+    # metrics flow fine) while receiving zero application metrics. `alloy_app_metrics_port`
+    # is now a role default (grafana_alloy/defaults/main.yaml), and the template reads it
+    # bare — no `| default(4050)` filter — because a role default is always in scope when
+    # the role renders its own template; a filter would just be a second, driftable copy
+    # of the same number.
+    test "the app scrape port is the alloy_app_metrics_port variable, read bare with no default() filter" do
+      content = File.read!(@alloy_path)
+
+      assert content =~ ~s("__address__" = "localhost:{{ alloy_app_metrics_port }}",)
+      refute content =~ "alloy_app_metrics_port | default"
+      refute content =~ "alloy_app_metrics_port|default"
+      refute content =~ "localhost:4050"
+    end
+
+    test "defaults/main.yaml declares alloy_app_metrics_port: 4050 (the single source of truth)" do
+      content = File.read!(@alloy_defaults_path)
+
+      assert content =~ "alloy_app_metrics_port: 4050"
     end
 
     test "the journal relabel rule's app_name reference defaults instead of crashing monitoring-node plays" do

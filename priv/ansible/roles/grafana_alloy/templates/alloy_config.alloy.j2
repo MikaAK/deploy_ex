@@ -67,7 +67,7 @@ prometheus.scrape "node_exporter" {
 prometheus.scrape "app" {
   job_name = "apps"
   targets = [{
-    "__address__" = "localhost:4050",
+    "__address__" = "localhost:{{ alloy_app_metrics_port }}",
     "instance"    = "{{ inventory_hostname }}",
     "instance_id" = "{{ instance_id | default('unknown') }}",
   }]
