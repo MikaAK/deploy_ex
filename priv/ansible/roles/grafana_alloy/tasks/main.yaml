@@ -1,8 +1,46 @@
 - name: grafana_alloy
   block:
+    # alloy_config.alloy.j2 hardcodes `path = "/var/log/journal"` for
+    # loki.source.journal. On a host where systemd-journald keeps logs in volatile
+    # storage only, that directory does not exist -- Alloy still starts and passes
+    # its /-/ready check, but reads and ships zero log lines. The readiness gate
+    # below only observes the PROCESS, never whether it is actually reading anything,
+    # so this failure mode is otherwise silent. Assert loudly here instead of letting
+    # a useless install complete. Deliberately does NOT create the directory:
+    # provisioning /var/log/journal switches journald to persistent storage, changing
+    # disk behaviour on every node and requiring a journald restart that discards
+    # existing volatile logs -- a policy decision outside this role's scope, already
+    # imposed as a manual AMI-bake precondition.
+    - name: Check for persistent journal directory
+      stat:
+        path: /var/log/journal
+      register: journal_directory
+
+    - name: Assert persistent journal directory exists so Alloy can ship logs
+      assert:
+        that:
+          - journal_directory.stat.exists
+          - journal_directory.stat.isdir
+        fail_msg: >-
+          /var/log/journal does not exist on this host. Alloy's loki.source.journal
+          reads persistent journald storage from /var/log/journal; hosts where
+          systemd-journald keeps logs in volatile storage only (/run/log/journal)
+          do not have this directory, so Alloy would start, pass its readiness
+          check, and ship zero log lines. This role intentionally does not create
+          the directory -- switching journald to persistent storage is a disk and
+          retention policy decision outside its scope. Provision /var/log/journal
+          (and restart systemd-journald) as part of the AMI bake before running
+          this role.
+
+    # The extracted binary itself always lands at the fixed, architecture-only path
+    # below (systemd's ExecStart depends on that fixed name), so it cannot carry the
+    # version. A separate per-version marker file is what makes this check actually
+    # version-aware: stating the architecture-only binary path would report "exists"
+    # for ANY previously-installed version, silently skipping the download on a
+    # version bump.
     - name: Check for Alloy {{ alloy_architecture }}/{{ alloy_version }}
       stat:
-        path: ~/alloy-{{ alloy_architecture }}
+        path: ~/alloy-{{ alloy_architecture }}-{{ alloy_version }}.installed
       register: alloy
 
     # Alloy publishes only .zip artifacts, and `unarchive` shells out to unzip for
@@ -18,6 +56,15 @@
         src: https://github.com/grafana/alloy/releases/download/{{ alloy_version }}/alloy-{{ alloy_architecture }}.zip
         dest: /root
         remote_src: true
+      when: not alloy.stat.exists
+
+    - name: Record installed Alloy {{ alloy_architecture }}/{{ alloy_version }} marker
+      file:
+        path: ~/alloy-{{ alloy_architecture }}-{{ alloy_version }}.installed
+        state: touch
+        owner: root
+        group: root
+        mode: 0644
       when: not alloy.stat.exists
 
     - name: Add Alloy config to /root/alloy_config.alloy

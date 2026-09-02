@@ -79,6 +79,17 @@ defmodule DeployEx.GrafanaAlloyRoleTest do
     Enum.any?(@privileged_modules, &Map.has_key?(entry, &1))
   end
 
+  defp render_ansible_template(template, vars) do
+    Regex.replace(~r/{{\s*(\w+)\s*}}/, template, fn _whole, key -> Map.fetch!(vars, key) end)
+  end
+
+  defp evaluate_stat_condition(condition, stat_result) do
+    cond do
+      String.ends_with?(condition, ".stat.exists") -> Map.fetch!(stat_result, "exists")
+      String.ends_with?(condition, ".stat.isdir") -> Map.fetch!(stat_result, "isdir")
+    end
+  end
+
   # Ansible resolves `become` per entry, inheriting it from an enclosing block.
   # Handlers have no enclosing block, so they inherit nothing — that is the D2-a
   # defect class this audit encodes.
@@ -260,6 +271,178 @@ defmodule DeployEx.GrafanaAlloyRoleTest do
       assert [{extractor, become}] = extractors
       assert become === true
       assert extractor |> package_args() |> Map.get("state", "present") === "present"
+    end
+  end
+
+  # SECTION: Deliverable 1 (alloy-journal-version) — a version bump must cause a
+  # real redownload
+  #
+  # tasks/main.yaml stats `~/alloy-{{ alloy_architecture }}` — architecture only, no
+  # version — then downloads `when: not alloy.stat.exists`. Every host that already
+  # carries a binary at that fixed, architecture-only path (i.e. every host this role
+  # has ever provisioned) skips the download on a version bump: the stat check cannot
+  # tell "already has an older version" from "already has the target version". The
+  # task NAME interpolates alloy_version, so it reads as version-aware in review while
+  # the behaviour is not. This test proves the DOWNLOAD decision, not the path string —
+  # a fix that merely embeds `{{ alloy_version }}` in the task name would leave this RED.
+
+  describe "grafana_alloy role — version-aware download" do
+    test "a version bump causes a redownload on a host that already carries an older, architecture-only-named binary" do
+      tasks = flatten_tasks(tasks_main_yaml())
+
+      stat_task = Enum.find(tasks, &(Map.get(&1, "register") === "alloy"))
+      download_task = Enum.find(tasks, &Map.has_key?(&1, "unarchive"))
+
+      refute is_nil(stat_task), "expected a stat task registering as `alloy`"
+      refute is_nil(download_task), "expected an unarchive task downloading Alloy"
+
+      stat_path_template = get_in(stat_task, ["stat", "path"])
+      download_when = Map.fetch!(download_task, "when")
+
+      assert download_when === "not alloy.stat.exists"
+
+      architecture = "linux-amd64"
+
+      # Every host this role has ever provisioned (pre-fix or not) has a raw binary
+      # sitting at this fixed, architecture-only path — the pre-fix `stat.path`
+      # verbatim. That is the realistic starting state for "already carries an older
+      # binary", independent of however the fix decides to track installed versions.
+      preexisting_host_paths = MapSet.new(["~/alloy-#{architecture}"])
+
+      new_version_stat_path =
+        render_ansible_template(stat_path_template, %{
+          "alloy_architecture" => architecture,
+          "alloy_version" => "v9.9.9"
+        })
+
+      new_version_already_present? = MapSet.member?(preexisting_host_paths, new_version_stat_path)
+      download_runs_for_bumped_version? = not new_version_already_present?
+
+      assert download_runs_for_bumped_version?,
+        "expected bumping alloy_version to cause a fresh download on a host that " <>
+          "already has an older, architecture-only-named Alloy binary, but the stat " <>
+          "path (#{stat_path_template}) does not depend on alloy_version so the " <>
+          "download was (incorrectly) skipped"
+    end
+
+    # The download-skip fix depends on a per-version marker file: the extracted binary
+    # itself must stay at the fixed, architecture-only path forever (systemd's
+    # ExecStart depends on that exact name), so the marker is the ONLY thing making the
+    # stat check version-aware without redownloading on every converge. Nothing pinned
+    # that half of the contract — delete the marker task and the suite stayed green,
+    # because `not alloy.stat.exists` is then permanently true and Alloy silently
+    # redownloads from GitHub forever. This test identifies the marker task
+    # behaviourally (its rendered path must actually differ across versions), not by
+    # checking that its path merely mentions `alloy_version` — a presence check would
+    # pass for a cosmetic occurrence that never varies.
+    test "the installed-version marker is version-scoped, gated by the same when as the download, and written after it" do
+      tasks = flatten_tasks(tasks_main_yaml())
+
+      download_task = Enum.find(tasks, &Map.has_key?(&1, "unarchive"))
+      marker_task = Enum.find(tasks, &(get_in(&1, ["file", "state"]) === "touch"))
+
+      refute is_nil(download_task), "expected an unarchive task downloading Alloy"
+
+      refute is_nil(marker_task),
+        "expected a task recording the installed alloy_version as a marker after download"
+
+      marker_path_template = get_in(marker_task, ["file", "path"])
+      architecture = "linux-amd64"
+
+      old_version_marker_path =
+        render_ansible_template(marker_path_template, %{
+          "alloy_architecture" => architecture,
+          "alloy_version" => "v1.9.0"
+        })
+
+      new_version_marker_path =
+        render_ansible_template(marker_path_template, %{
+          "alloy_architecture" => architecture,
+          "alloy_version" => "v1.9.1"
+        })
+
+      refute old_version_marker_path === new_version_marker_path,
+        "expected the marker path to be genuinely version-scoped (differ across " <>
+          "versions), not merely mention alloy_version"
+
+      assert marker_task["when"] === download_task["when"]
+
+      indexed = Enum.with_index(tasks)
+      {_download, download_index} = Enum.find(indexed, fn {task, _index} -> task === download_task end)
+      {_marker, marker_index} = Enum.find(indexed, fn {task, _index} -> task === marker_task end)
+
+      assert download_index < marker_index
+    end
+  end
+
+  # SECTION: Deliverable 2 (alloy-journal-version) — loud journal-directory precondition
+  #
+  # alloy_config.alloy.j2 hardcodes `path = "/var/log/journal"` for loki.source.journal.
+  # On a host with volatile-only journald storage that directory does not exist, so
+  # Alloy starts, passes /-/ready, and ships zero log lines — the readiness gate only
+  # observes the process, not whether any log line was read. The fix asserts the
+  # precondition loudly; it must NOT create the directory (that is a journald storage
+  # policy decision outside this role's scope, already imposed as a manual AMI-bake
+  # precondition). This test proves the assertion actually fails on a host with no
+  # journal directory — not merely that a task mentioning "journal" exists.
+
+  describe "grafana_alloy role — journal directory precondition" do
+    test "asserts the persistent journal directory exists before Alloy is configured, and fails loudly when it does not" do
+      tasks = flatten_tasks(tasks_main_yaml())
+
+      stat_task = Enum.find(tasks, &(get_in(&1, ["stat", "path"]) === "/var/log/journal"))
+      refute is_nil(stat_task), "expected a stat task checking /var/log/journal"
+
+      registered_var = Map.fetch!(stat_task, "register")
+
+      assert_task =
+        Enum.find(tasks, fn task ->
+          case get_in(task, ["assert", "that"]) do
+            nil -> false
+            that -> Enum.any?(List.wrap(that), &String.starts_with?(&1, registered_var))
+          end
+        end)
+
+      refute is_nil(assert_task), "expected an assert task gating on the journal directory stat result"
+
+      that_conditions = get_in(assert_task, ["assert", "that"])
+      fail_msg = get_in(assert_task, ["assert", "fail_msg"]) || get_in(assert_task, ["assert", "msg"])
+
+      refute is_nil(fail_msg), "expected the assertion to name the problem via fail_msg/msg"
+      assert fail_msg =~ "journal"
+
+      refute assert_task["ignore_errors"] === true
+      refute assert_task["when"] === false
+
+      no_journal_dir_passes? =
+        Enum.all?(that_conditions, &evaluate_stat_condition(&1, %{"exists" => false, "isdir" => false}))
+
+      has_journal_dir_passes? =
+        Enum.all?(that_conditions, &evaluate_stat_condition(&1, %{"exists" => true, "isdir" => true}))
+
+      refute no_journal_dir_passes?,
+        "expected the journal precondition to fail loudly on a host with no /var/log/journal"
+
+      assert has_journal_dir_passes?,
+        "expected the journal precondition to pass on a host that already has /var/log/journal"
+
+      indexed = Enum.with_index(tasks)
+      {_stat, stat_index} = Enum.find(indexed, fn {task, _index} -> task === stat_task end)
+      {_assert, assert_index} = Enum.find(indexed, fn {task, _index} -> task === assert_task end)
+
+      {_config, config_index} =
+        Enum.find(indexed, fn {task, _index} ->
+          get_in(task, ["template", "src"]) === "alloy_config.alloy.j2"
+        end)
+
+      ready_index =
+        indexed
+        |> Enum.find(fn {task, _index} -> readiness_task?(task) end)
+        |> elem(1)
+
+      assert stat_index < assert_index
+      assert assert_index < config_index
+      assert assert_index < ready_index
     end
   end
 end
