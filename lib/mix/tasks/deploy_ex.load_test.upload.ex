@@ -68,15 +68,18 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Upload do
   end
 
   defp parse_args(args) do
-    OptionParser.parse!(args,
+    {opts, extra_args} = OptionParser.parse!(args,
       aliases: [i: :instance_id, q: :quiet],
       switches: [
         script: :string,
         instance_id: :string,
         pem: :string,
-        quiet: :boolean
+        quiet: :boolean,
+        provider: :string
       ]
     )
+
+    {DeployExHelpers.parse_provider_opt!(opts), extra_args}
   end
 
   defdelegate resolve_runner(opts, k6_runner_impl \\ DeployEx.K6Runner), to: DeployEx.K6Runner
@@ -113,6 +116,25 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Upload do
     end
   end
 
+  # `user@host:path` scp target for a runner, resolved through `DeployEx.Cloud.ssh_user/1` so a
+  # non-AWS provider's default user (e.g. OCI's `ubuntu`) reaches this SSH transport.
+  @doc false
+  def scp_target(ip, remote_path, opts \\ []), do: "#{DeployEx.Cloud.ssh_user(opts)}@#{ip}:#{remote_path}"
+
+  # Argv for the `scp` binary. Pure and pinned directly by tests — mirrors `Exec.ssh_args/4` —
+  # so a regression to a hardcoded ssh user shows up as a failing assertion on the argv itself,
+  # not just on the `scp_target/3` helper that could silently go unused at the call site.
+  @doc false
+  def scp_args(pem_file, script_path, ip, remote_path, opts \\ []) do
+    [
+      "-i", Path.expand(pem_file),
+      "-o", "StrictHostKeyChecking=no",
+      "-o", "UserKnownHostsFile=/dev/null",
+      script_path,
+      scp_target(ip, remote_path, opts)
+    ]
+  end
+
   defp upload_script(script_path, ip, pem_file, opts) do
     filename = Path.basename(script_path)
     remote_path = "/srv/k6/scripts/#{filename}"
@@ -121,15 +143,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Upload do
       Mix.shell().info([:faint, "Uploading ", :reset, filename, :faint, " → ", :reset, remote_path])
     end
 
-    abs_pem = Path.expand(pem_file)
-
-    case System.cmd("scp", [
-      "-i", abs_pem,
-      "-o", "StrictHostKeyChecking=no",
-      "-o", "UserKnownHostsFile=/dev/null",
-      script_path,
-      "admin@#{ip}:#{remote_path}"
-    ], stderr_to_stdout: true) do
+    case System.cmd("scp", scp_args(pem_file, script_path, ip, remote_path, opts), stderr_to_stdout: true) do
       {_, 0} ->
         unless opts[:quiet] do
           Mix.shell().info([:green, "  ✓ ", :reset, filename])

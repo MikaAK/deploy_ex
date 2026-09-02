@@ -184,5 +184,5 @@ defmodule DeployEx.Cloud.OciSecurityGroup do
     )
   end
 
-  defp quote_arg(value), do: "'#{String.replace(to_string(value), "'", "'\\''")}'"
+  defp quote_arg(value), do: OciCli.quote_arg(value)
 end

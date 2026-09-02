@@ -6,25 +6,41 @@ defmodule DeployEx.K6RunnerTest do
   defmodule ResolveFakeTerminated do
     def fetch_all_runners(_opts), do: {:ok, [%K6Runner{instance_id: "i-dead"}]}
     def fetch_state(_instance_id, _opts), do: {:ok, %K6Runner{instance_id: "i-dead"}}
-    def verify_instance_exists(_runner), do: {:ok, nil}
+    def verify_instance_exists(_runner, _opts \\ []), do: {:ok, nil}
   end
 
   defmodule ResolveFakeAbsent do
     def fetch_all_runners(_opts), do: {:ok, []}
     def fetch_state(_instance_id, _opts), do: {:ok, nil}
-    def verify_instance_exists(_runner), do: {:ok, nil}
+    def verify_instance_exists(_runner, _opts \\ []), do: {:ok, nil}
   end
 
   defmodule ResolveFakeFetchYieldsNil do
     def fetch_all_runners(_opts), do: {:ok, nil}
     def fetch_state(_instance_id, _opts), do: {:ok, nil}
-    def verify_instance_exists(_runner), do: {:ok, nil}
+    def verify_instance_exists(_runner, _opts \\ []), do: {:ok, nil}
   end
 
   defmodule ResolveFakeActive do
     def fetch_all_runners(_opts), do: {:ok, [%K6Runner{instance_id: "i-live"}]}
     def fetch_state(_instance_id, _opts), do: {:ok, %K6Runner{instance_id: "i-live"}}
-    def verify_instance_exists(runner), do: {:ok, %{runner | state: "running"}}
+    def verify_instance_exists(runner, _opts \\ []), do: {:ok, %{runner | state: "running"}}
+  end
+
+  defmodule ResolveOptsCapture do
+    @moduledoc """
+    Captures the opts resolve_runner/2 passes into verify_instance_exists — closes the class
+    of bug where a dropped-opts call site can't be caught by a contract test that passes
+    `provider: :oci` directly to verify_instance_exists itself (LT-OCI review-fix cycle 2).
+    """
+
+    def fetch_all_runners(_opts), do: {:ok, [%K6Runner{instance_id: "i-opts-capture"}]}
+    def fetch_state(_instance_id, _opts), do: {:ok, %K6Runner{instance_id: "i-opts-capture"}}
+
+    def verify_instance_exists(runner, opts) do
+      send(self(), {:verify_instance_exists_called, runner, opts})
+      {:ok, %{runner | state: "running"}}
+    end
   end
 
   defp line_index(script, regex) do
@@ -175,6 +191,194 @@ defmodule DeployEx.K6RunnerTest do
     end
   end
 
+  describe "K6Runner :oci contract — not_implemented vs OCI-routed (LT-OCI S2 update)" do
+    test "machine ops now route to OciMachine (LT-OCI S2) — no longer not_implemented" do
+      runner = %K6Runner{instance_id: "i-contract-1"}
+      terminate_run_fn = fn _command, _cwd -> {:ok, ""} end
+
+      describe_run_fn = fn command, _cwd ->
+        cond do
+          command =~ "instance get" ->
+            {:ok, Jason.encode!(%{"data" => %{"id" => "i-contract-1", "lifecycle-state" => "RUNNING", "freeform-tags" => %{}}})}
+
+          command =~ "list-vnics" ->
+            {:ok, Jason.encode!(%{"data" => []})}
+        end
+      end
+
+      # create_instance still needs subnet_id/base_image/availability_domain even when a
+      # run_fn is given — those are checked before the CLI is ever called (no run_fn needed
+      # to exercise this specific error), proving the request reached OciMachine, not a
+      # not_implemented short-circuit at the capability lookup.
+      assert {:error, %ErrorMessage{code: :bad_request, message: create_message}} =
+               K6Runner.create_instance(%{}, provider: :oci)
+
+      assert create_message =~ "compartment_id"
+
+      assert :ok = K6Runner.terminate_instance("i-contract-1", provider: :oci, run_fn: terminate_run_fn)
+
+      assert {:ok, %K6Runner{instance_id: "i-contract-1", state: "running"}} =
+               K6Runner.verify_instance_exists(runner, provider: :oci, run_fn: describe_run_fn)
+
+      # find_runners_from_ec2 is explicitly AWS-only regardless of S2 — this stays
+      # not_implemented forever, it is not part of the machine-capability wiring.
+      assert {:error, %ErrorMessage{code: :not_implemented}} =
+               K6Runner.find_runners_from_ec2(provider: :oci)
+    end
+
+    test "state ops route to OciObjectStore — blocked only by unset release_bucket, never :not_implemented" do
+      results = [
+        save_state: K6Runner.save_state(%K6Runner{instance_id: "i-contract-2"}, provider: :oci),
+        fetch_state: K6Runner.fetch_state("i-contract-2", provider: :oci),
+        fetch_all_runners: K6Runner.fetch_all_runners(provider: :oci),
+        delete_state: K6Runner.delete_state("i-contract-2", provider: :oci)
+      ]
+
+      Enum.each(results, fn {label, result} ->
+        assert {:error, %ErrorMessage{code: :bad_request}} = result,
+               "#{label} under :oci expected :bad_request (unset release_bucket), got #{inspect(result)}"
+      end)
+    end
+
+    test "with oci bucket + machine config + a stored runner, resolve_runner verifies via OciMachine, never AWS" do
+      # Simulates the exact reviewer-measured scenario: bucket configured (via the explicit
+      # :bucket opt, bypassing the unset-namespace error) and a runner actually on disk. As of
+      # S2, OciMachine is wired, so resolution now goes all the way through to a verified
+      # runner via OCI's own CLI calls — the point being it is OciMachine doing the verifying,
+      # never AwsMachine/EC2, so a miss there would delete the real OCI state object correctly
+      # scoped to OCI, not based on an AWS lookup against the wrong provider's instances.
+      stored_runner = %K6Runner{instance_id: "i-oci-stored", state: "running"}
+
+      run_fn = fn command, _cwd ->
+        cond do
+          command =~ "os object list" ->
+            {:ok, Jason.encode!(%{"data" => [%{"name" => "k6-runners/i-oci-stored.json"}]})}
+
+          command =~ "os object get" ->
+            [_match, path] = Regex.run(~r/--file '([^']+)'/, command)
+            File.write!(path, K6Runner.to_json(stored_runner))
+            {:ok, ""}
+
+          command =~ "instance get" ->
+            {:ok,
+             Jason.encode!(%{
+               "data" => %{"id" => "i-oci-stored", "lifecycle-state" => "RUNNING", "freeform-tags" => %{}}
+             })}
+
+          command =~ "list-vnics" ->
+            {:ok, Jason.encode!(%{"data" => []})}
+
+          true ->
+            flunk("unexpected oci command: #{command}")
+        end
+      end
+
+      opts = [provider: :oci, bucket: "configured-bucket", run_fn: run_fn]
+
+      assert {:ok, %K6Runner{instance_id: "i-oci-stored", state: "running"}} =
+               K6Runner.resolve_runner(opts, K6Runner)
+    end
+  end
+
+  describe "verify_instance_exists/2 (routed through Cloud.capability(:machine) — LT-OCI review-fix)" do
+    defp describe_instance_response(instance_id, state, private_ip) do
+      "<DescribeInstancesResponse><reservationSet><item><instancesSet><item>" <>
+        "<instanceId>#{instance_id}</instanceId>" <>
+        "<instanceState><name>#{state}</name></instanceState>" <>
+        "<privateIpAddress>#{private_ip}</privateIpAddress>" <>
+        "</item></instancesSet></item></reservationSet></DescribeInstancesResponse>"
+    end
+
+    defp describe_instance_not_found_response do
+      "<DescribeInstancesResponse><reservationSet/></DescribeInstancesResponse>"
+    end
+
+    test "returns {:ok, nil} for nil input, opts ignored" do
+      assert K6Runner.verify_instance_exists(nil, provider: :oci) === {:ok, nil}
+    end
+
+    test "found instance: maps the normalized Instance struct fields onto the runner" do
+      request_fn = fn _request, _config ->
+        {:ok, %{body: describe_instance_response("i-found-1", "running", "10.0.0.5")}}
+      end
+
+      runner = %K6Runner{instance_id: "i-found-1"}
+
+      assert {:ok, %K6Runner{instance_id: "i-found-1", state: "running", private_ip: "10.0.0.5"}} =
+               K6Runner.verify_instance_exists(runner, request_fn: request_fn)
+    end
+
+    test "does NOT leak the caller's opts (e.g. a --pem path) into the downstream EC2 request params (G1 leak class, end-to-end)" do
+      request_fn = fn request, _config ->
+        send(self(), {:ec2_request, request})
+        {:ok, %{body: describe_instance_response("i-found-2", "running", "10.0.0.6")}}
+      end
+
+      runner = %K6Runner{instance_id: "i-found-2"}
+
+      K6Runner.verify_instance_exists(runner,
+        request_fn: request_fn,
+        pem: "/secret/path/key.pem",
+        quiet: true
+      )
+
+      assert_received {:ec2_request, %ExAws.Operation.Query{params: params}}
+      refute Map.has_key?(params, "Pem")
+      refute Map.has_key?(params, "Quiet")
+    end
+
+    test "not found: deletes the stale state and returns {:ok, nil}" do
+      request_fn = fn
+        %ExAws.Operation.Query{}, _config ->
+          {:ok, %{body: describe_instance_not_found_response()}}
+
+        %ExAws.Operation.S3{} = request, _config ->
+          send(self(), {:s3_delete_request, request})
+          {:ok, %{body: ""}}
+      end
+
+      runner = %K6Runner{instance_id: "i-stale-1"}
+
+      assert {:ok, nil} = K6Runner.verify_instance_exists(runner, request_fn: request_fn)
+      assert_received {:s3_delete_request, %ExAws.Operation.S3{http_method: :delete}}
+    end
+
+    test "not found, but the state delete itself fails: propagates the error rather than crashing" do
+      request_fn = fn
+        %ExAws.Operation.Query{}, _config ->
+          {:ok, %{body: describe_instance_not_found_response()}}
+
+        %ExAws.Operation.S3{}, _config ->
+          {:error, {:http_error, 500, %{body: "boom"}}}
+      end
+
+      runner = %K6Runner{instance_id: "i-stale-delete-fails"}
+
+      assert {:error, %ErrorMessage{}} = K6Runner.verify_instance_exists(runner, request_fn: request_fn)
+    end
+
+    test "capability not implemented (e.g. an unregistered provider): propagates the error WITHOUT deleting state (cross-provider leak guard)" do
+      # :oci's machine capability is wired as of LT-OCI S2, so this now needs a provider that
+      # is genuinely never implemented to exercise the capability-lookup-failure branch of
+      # verify_instance_exists/2 (as opposed to :oci's own describe_instance failure modes,
+      # covered separately below).
+      runner = %K6Runner{instance_id: "i-gcp-1"}
+
+      assert {:error, %ErrorMessage{code: :not_implemented}} =
+               K6Runner.verify_instance_exists(runner, provider: :gcp)
+    end
+
+    test "a real OCI describe_instance failure (e.g. under :oci) also propagates WITHOUT deleting state" do
+      runner = %K6Runner{instance_id: "i-oci-1"}
+
+      run_fn = fn command, _cwd ->
+        {:error, ErrorMessage.internal_server_error("#{command} exited 1: boom", %{output: "boom", code: 1, command: command})}
+      end
+
+      assert {:error, %ErrorMessage{}} = K6Runner.verify_instance_exists(runner, provider: :oci, run_fn: run_fn)
+    end
+  end
+
   describe "build_user_data/0 (D1: debian-13 compatibility)" do
     setup do
       %{script: K6Runner.build_user_data()}
@@ -243,6 +447,214 @@ defmodule DeployEx.K6RunnerTest do
         assert line =~ "DPkg::Lock::Timeout", "expected #{inspect(line)} to be lock-tolerant"
       end)
     end
+
+    test "branches on architecture (OCI Always-Free is arm64, k6 apt repo is amd64-only)", %{script: script} do
+      assert script =~ "dpkg --print-architecture"
+      assert script =~ ~S|= "arm64" ]; then|
+    end
+
+    test "arm64 installs the official k6 linux-arm64 binary, not apt", %{script: script} do
+      assert script =~ "k6-v2.2.0-linux-arm64.tar.gz"
+      assert script =~ "cp /tmp/k6-v2.2.0-linux-arm64/k6 /usr/local/bin/k6"
+      assert script =~ "chmod 0755 /usr/local/bin/k6"
+    end
+
+    test "amd64 keeps the apt install path (AWS invariance)", %{script: script} do
+      assert script =~ ~r/apt-get install.*\bk6\b/
+      assert script =~ "https://dl.k6.io/deb stable main"
+    end
+  end
+
+  describe "save_state/2 (routed through Cloud.capability(:object_store) — LT-OCI S1)" do
+    test "puts to the resolved release bucket at the state key" do
+      runner = %K6Runner{instance_id: "i-save-1"}
+
+      request_fn = fn request, _config ->
+        send(self(), {:s3_request, request})
+        {:ok, %{body: ""}}
+      end
+
+      assert {:ok, :saved} = K6Runner.save_state(runner, request_fn: request_fn)
+
+      assert_received {:s3_request, %ExAws.Operation.S3{bucket: bucket, path: path, http_method: :put}}
+      assert bucket === DeployEx.Config.aws_release_bucket()
+      assert path === "k6-runners/i-save-1.json"
+    end
+
+    test "an explicit :bucket opt overrides the resolved default" do
+      runner = %K6Runner{instance_id: "i-save-2"}
+
+      request_fn = fn request, _config ->
+        send(self(), {:s3_request, request})
+        {:ok, %{body: ""}}
+      end
+
+      K6Runner.save_state(runner, request_fn: request_fn, bucket: "custom-bucket")
+
+      assert_received {:s3_request, %ExAws.Operation.S3{bucket: "custom-bucket"}}
+    end
+  end
+
+  describe "fetch_state/2 (routed through Cloud.capability(:object_store) — LT-OCI S1)" do
+    test "decodes a found state object into a K6Runner struct" do
+      request_fn = fn _request, _config ->
+        {:ok, %{body: K6Runner.to_json(%K6Runner{instance_id: "i-fetch-1", state: "running"})}}
+      end
+
+      assert {:ok, %K6Runner{instance_id: "i-fetch-1", state: "running"}} =
+               K6Runner.fetch_state("i-fetch-1", request_fn: request_fn)
+    end
+
+    test "resolves a missing state object to {:ok, nil} rather than an error" do
+      request_fn = fn _request, _config ->
+        {:error, {:http_error, 404, %{body: ""}}}
+      end
+
+      assert {:ok, nil} = K6Runner.fetch_state("i-fetch-missing", request_fn: request_fn)
+    end
+  end
+
+  describe "delete_state/2 (routed through Cloud.capability(:object_store) — LT-OCI S1)" do
+    test "deletes the state object at the resolved bucket and key" do
+      request_fn = fn request, _config ->
+        send(self(), {:s3_request, request})
+        {:ok, %{body: ""}}
+      end
+
+      assert :ok = K6Runner.delete_state("i-delete-1", request_fn: request_fn)
+
+      assert_received {:s3_request, %ExAws.Operation.S3{path: "k6-runners/i-delete-1.json", http_method: :delete}}
+    end
+
+    test "treats a 404 from the object store as a successful idempotent delete (D-regression)" do
+      request_fn = fn _request, _config ->
+        {:error, {:http_error, 404, %{body: ""}}}
+      end
+
+      assert :ok = K6Runner.delete_state("i-already-gone", request_fn: request_fn)
+    end
+  end
+
+  describe "bucket resolution errors loudly instead of proceeding with nil (LT-OCI review-fix)" do
+    test "save_state propagates a bad_request instead of writing to an empty container name" do
+      runner = %K6Runner{instance_id: "i-unset-bucket"}
+
+      assert {:error, %ErrorMessage{code: :bad_request, message: message}} =
+               K6Runner.save_state(runner, provider: :oci)
+
+      assert message =~ "release_bucket"
+    end
+
+    test "an explicit :bucket opt still bypasses the Cloud lookup entirely, even under a provider with no configured bucket" do
+      runner = %K6Runner{instance_id: "i-explicit-bucket"}
+
+      # provider: :oci routes save_state through OciObjectStore (its DI seam is :run_fn, not
+      # ExAws's :request_fn) — :oci has no configured release_bucket in test config at all, so
+      # a successful save here can only mean the explicit :bucket opt was used directly, never
+      # routed through Cloud.release_bucket(provider: :oci) (which errors for this exact config).
+      run_fn = fn command, _cwd ->
+        send(self(), {:oci_command, command})
+        {:ok, ""}
+      end
+
+      assert {:ok, :saved} =
+               K6Runner.save_state(runner, provider: :oci, bucket: "explicit-bucket", run_fn: run_fn)
+
+      assert_received {:oci_command, command}
+      assert command =~ "--bucket-name 'explicit-bucket'"
+    end
+
+    test "fetch_state propagates a bad_request instead of reading from an empty container name" do
+      assert {:error, %ErrorMessage{code: :bad_request}} =
+               K6Runner.fetch_state("i-unset-bucket", provider: :oci)
+    end
+
+    test "fetch_all_runners propagates a bad_request instead of listing an empty container name" do
+      assert {:error, %ErrorMessage{code: :bad_request}} = K6Runner.fetch_all_runners(provider: :oci)
+    end
+
+    test "delete_state propagates a bad_request instead of deleting from an empty container name" do
+      assert {:error, %ErrorMessage{code: :bad_request}} =
+               K6Runner.delete_state("i-unset-bucket", provider: :oci)
+    end
+  end
+
+  describe "create_instance/2 (routed through Cloud.capability(:machine) — LT-OCI S1)" do
+    defp run_instances_response(instance_id) do
+      "<RunInstancesResponse><instancesSet><item>" <>
+        "<instanceId>#{instance_id}</instanceId>" <>
+        "</item></instancesSet></RunInstancesResponse>"
+    end
+
+    test "no --instance-type override: the spec carries no default, AWS still ends up with t3.small (LT-OCI S2)" do
+      # instance_type defaults used to live in K6Runner (AWS-flavored "t3.small") and leaked
+      # into every provider's neutral spec. Moving the default into each provider's own
+      # run_instance/2 (AwsMachine falls back to "t3.small", OciMachine to its own shape
+      # default) means the spec itself carries nil when the caller gave no override, and each
+      # adapter picks its own honest default instead of inheriting AWS's.
+      request_fn = fn request, _config ->
+        send(self(), {:ec2_request, request})
+        {:ok, %{body: run_instances_response("i-default-type")}}
+      end
+
+      assert {:ok, %K6Runner{instance_id: "i-default-type"}} =
+               K6Runner.create_instance(%{}, request_fn: request_fn)
+
+      assert_received {:ec2_request, %ExAws.Operation.Query{params: ec2_params}}
+      assert ec2_params["InstanceType"] === "t3.small"
+    end
+
+    test "creates the instance via the machine capability and returns a K6Runner" do
+      request_fn = fn request, _config ->
+        send(self(), {:ec2_request, request})
+        {:ok, %{body: run_instances_response("i-created-1")}}
+      end
+
+      params = %{
+        key_name: "my-key",
+        subnet_id: "subnet-123",
+        security_group_id: "sg-123",
+        ami_id: "ami-123",
+        iam_instance_profile: "profile-name",
+        instance_type: "t3.medium"
+      }
+
+      assert {:ok, %K6Runner{instance_id: "i-created-1", instance_name: instance_name}} =
+               K6Runner.create_instance(params, request_fn: request_fn)
+
+      refute is_nil(instance_name)
+
+      assert_received {:ec2_request, %ExAws.Operation.Query{params: ec2_params}}
+      assert ec2_params["InstanceType"] === "t3.medium"
+      assert ec2_params["ImageId"] === "ami-123"
+      assert ec2_params["TagSpecification.1.Tag.1.Key"] === "Name"
+      assert ec2_params["TagSpecification.1.Tag.2.Key"] === "Group"
+      assert {:ok, expected_resource_group} = DeployEx.Cloud.resource_group([])
+      assert ec2_params["TagSpecification.1.Tag.2.Value"] === expected_resource_group
+    end
+  end
+
+  describe "terminate_instance/2 (routed through Cloud.capability(:machine) — LT-OCI S1)" do
+    test "terminates via the machine capability" do
+      request_fn = fn request, _config ->
+        send(self(), {:ec2_request, request})
+        {:ok, %{body: "<TerminateInstancesResponse></TerminateInstancesResponse>"}}
+      end
+
+      assert :ok = K6Runner.terminate_instance("i-terminate-1", request_fn: request_fn)
+
+      assert_received {:ec2_request, %ExAws.Operation.Query{action: :terminate_instances}}
+    end
+  end
+
+  describe "build_user_data/1 ssh user (LT-OCI S1)" do
+    test "defaults to admin under the AWS provider (unchanged AWS behavior)" do
+      assert K6Runner.build_user_data() =~ ~r/chown -R admin:admin \/srv\/k6/
+    end
+
+    test "resolves through Cloud.ssh_user/1 for an overridden provider" do
+      assert K6Runner.build_user_data(provider: :oci) =~ ~r/chown -R ubuntu:ubuntu \/srv\/k6/
+    end
   end
 
   describe "resolve_runner/2 (shared runner resolution, extracted for LT-FIX-A)" do
@@ -292,9 +704,49 @@ defmodule DeployEx.K6RunnerTest do
     end
   end
 
+  describe "resolve_runner/2 threads opts into verify_instance_exists (LT-OCI review-fix cycle 2)" do
+    test "default path: a :provider override reaches verify_instance_exists, not just fetch_all_runners" do
+      K6Runner.resolve_runner([provider: :oci], ResolveOptsCapture)
+
+      assert_received {:verify_instance_exists_called, _runner, opts}
+      assert opts[:provider] === :oci
+    end
+
+    test "--instance-id path: a :provider override reaches verify_instance_exists, not just fetch_state" do
+      K6Runner.resolve_runner([provider: :oci, instance_id: "i-opts-capture"], ResolveOptsCapture)
+
+      assert_received {:verify_instance_exists_called, _runner, opts}
+      assert opts[:provider] === :oci
+    end
+  end
+
   # Behavioural pagination tests. Responses are queued in the process dictionary — per-PID
   # isolated, no setup/teardown. Mirrors test/deploy_ex/cloud/pagination_test.exs: replacing the
   # recursion with a single request makes these red.
+  describe "find_runners_from_ec2/1 provider guard (LT-OCI review-fix)" do
+    test "errors instead of paginating EC2 under a non-AWS provider (must not print AWS runners as OCI)" do
+      assert {:error, %ErrorMessage{code: :not_implemented}} =
+               K6Runner.find_runners_from_ec2(provider: :oci)
+    end
+
+    test "does not touch ExAws at all under a non-AWS provider" do
+      request_fn = fn _request, _config ->
+        flunk("find_runners_from_ec2 must not call ExAws under a non-AWS provider")
+      end
+
+      K6Runner.find_runners_from_ec2(provider: :oci, request_fn: request_fn)
+    end
+
+    test "the descriptor MODULE override for AWS still paginates (F1 recurrence guard, review-fix cycle 3)" do
+      request_fn = fn _request, _config ->
+        {:ok, %{body: "<DescribeInstancesResponse><reservationSet/></DescribeInstancesResponse>"}}
+      end
+
+      assert {:ok, []} =
+               K6Runner.find_runners_from_ec2(provider: DeployEx.Cloud.Providers.Aws, request_fn: request_fn)
+    end
+  end
+
   describe "find_runners_from_ec2/1 pagination" do
     defp queue_responses(responses), do: Process.put(:responses, responses)
 

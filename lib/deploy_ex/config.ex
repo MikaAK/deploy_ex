@@ -6,14 +6,18 @@ defmodule DeployEx.Config do
   def cloud_provider, do: Application.get_env(@app, :cloud_provider, :aws)
 
   @doc """
-  Reads one key from the `:oci` config namespace.
+  Reads one key from a non-AWS provider's config namespace (`config :deploy_ex, provider, ...`).
 
-  Namespaced rather than flat because `DeployEx.Cloud.Providers.Oci`'s `config_schema/0`
-  validates that namespace strictly — a typo'd key fails at task start instead of mid-apply.
-  The AWS keys stay flat and permissively validated so existing configs keep working.
+  Namespaced rather than flat because a non-AWS descriptor's `config_schema/0` validates that
+  namespace strictly — a typo'd key fails at task start instead of mid-apply. The AWS keys stay
+  flat and permissively validated so existing configs keep working.
   """
+  @spec provider_setting(atom(), atom()) :: term()
+  def provider_setting(provider, key), do: @app |> Application.get_env(provider, []) |> Keyword.get(key)
+
+  @doc "Reads one key from the `:oci` config namespace. See `provider_setting/2`."
   @spec oci_setting(atom()) :: term()
-  def oci_setting(key), do: @app |> Application.get_env(:oci, []) |> Keyword.get(key)
+  def oci_setting(key), do: provider_setting(:oci, key)
 
   # Follows the key layout already in use in the state bucket (oracle/<region>/<stack>/…),
   # so deploy_ex state sits alongside states written by other tooling without colliding.

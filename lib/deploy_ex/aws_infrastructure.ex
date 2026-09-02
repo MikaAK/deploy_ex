@@ -320,6 +320,7 @@ defmodule DeployEx.AwsInfrastructure do
     {:ok, latest["imageId"]}
   end
 
+  @impl DeployEx.Cloud.Infrastructure
   def gather_infrastructure(opts \\ []) do
     with {:ok, security_group} <- DeployEx.AwsSecurityGroup.find_security_group(opts),
          {:ok, subnet_ids} <- find_subnet_ids(Keyword.put(opts, :vpc_id, security_group.vpc_id)),

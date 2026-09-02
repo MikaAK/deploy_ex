@@ -76,10 +76,10 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
           ])
         end
 
-        with :ok <- preflight_k6(ip, pem_file) do
+        with :ok <- preflight_k6(ip, pem_file, opts) do
           command = build_k6_command(script, prometheus_url, target_url)
 
-          case run_k6_via_ssh(ip, pem_file, command) do
+          case run_k6_via_ssh(ip, pem_file, command, opts) do
             :ok -> :ok
             {:error, reason} -> Mix.raise(reason)
           end
@@ -93,7 +93,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
   end
 
   defp parse_args(args) do
-    OptionParser.parse!(args,
+    {opts, extra_args} = OptionParser.parse!(args,
       aliases: [i: :instance_id, q: :quiet],
       switches: [
         script: :string,
@@ -101,14 +101,19 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
         prometheus_url: :string,
         instance_id: :string,
         pem: :string,
-        quiet: :boolean
+        quiet: :boolean,
+        provider: :string
       ]
     )
+
+    {DeployExHelpers.parse_provider_opt!(opts), extra_args}
   end
 
   defdelegate resolve_runner(opts, k6_runner_impl \\ DeployEx.K6Runner), to: DeployEx.K6Runner
 
-  def resolve_prometheus_url(opts, discover_fn \\ &discover_prometheus_ip/0) do
+  def resolve_prometheus_url(opts, discover_fn \\ nil) do
+    discover_fn = discover_fn || fn -> discover_prometheus_ip(opts) end
+
     case opts[:prometheus_url] do
       url when is_binary(url) -> {:ok, url}
       _ -> resolve_discovered_prometheus_url(discover_fn)
@@ -122,24 +127,47 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
     end
   end
 
-  defp discover_prometheus_ip do
-    case DeployEx.AwsMachine.find_instances_by_tags([@prometheus_monitoring_tag]) do
-      {:ok, instances} -> find_running_prometheus_ip(instances)
-      error -> error
+  @doc false
+  def discover_prometheus_ip(opts \\ []) do
+    with {:ok, machine} <- DeployEx.Cloud.capability(:machine, opts) do
+      case machine.list_instances([@prometheus_monitoring_tag], opts) do
+        {:ok, instances} -> find_running_prometheus_ip(instances)
+        error -> error
+      end
     end
   end
 
   defp find_running_prometheus_ip(instances) do
     case Enum.find(instances, &running_instance?/1) do
       nil -> {:error, ErrorMessage.not_found("no running prometheus node found")}
-      instance -> {:ok, instance["privateIpAddress"]}
+      instance -> {:ok, instance.private_ip}
     end
   end
 
-  defp running_instance?(instance), do: get_in(instance, ["instanceState", "name"]) === "running"
+  defp running_instance?(instance), do: instance.state === "running"
 
-  defp preflight_k6(ip, pem_file) do
-    case run_ssh_command(ip, pem_file, "k6 version") do
+  # SSH `user@host` target for a runner, resolved through `DeployEx.Cloud.ssh_user/1` so a
+  # non-AWS provider's default user (e.g. OCI's `ubuntu`) reaches these SSH transports.
+  @doc false
+  def ssh_target(ip, opts \\ []), do: "#{DeployEx.Cloud.ssh_user(opts)}@#{ip}"
+
+  # Argv for the `ssh` binary, shared by both SSH transports below (`System.cmd` preflight and
+  # the `Port.open` k6 run). Pure and pinned directly by tests — mirrors `build_k6_command/3` —
+  # so a regression to a hardcoded ssh user shows up as a failing assertion on the argv itself,
+  # not just on the `ssh_target/2` helper that could silently go unused at a call site.
+  @doc false
+  def ssh_args(ip, pem_file, command, opts \\ []) do
+    [
+      "-i", Path.expand(pem_file),
+      "-o", "StrictHostKeyChecking=no",
+      "-o", "UserKnownHostsFile=/dev/null",
+      ssh_target(ip, opts),
+      command
+    ]
+  end
+
+  defp preflight_k6(ip, pem_file, opts) do
+    case run_ssh_command(ip, pem_file, "k6 version", opts) do
       {:ok, _output} ->
         :ok
 
@@ -153,16 +181,8 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
 
   # SSH transport shell-out — dev-tooling exemption (spawns the ssh binary, no pure
   # logic to unit test; behavior is pinned by run_k6_via_ssh's Port-based sibling below).
-  defp run_ssh_command(ip, pem_file, command) do
-    abs_pem = Path.expand(pem_file)
-
-    case System.cmd("ssh", [
-      "-i", abs_pem,
-      "-o", "StrictHostKeyChecking=no",
-      "-o", "UserKnownHostsFile=/dev/null",
-      "admin@#{ip}",
-      command
-    ], stderr_to_stdout: true) do
+  defp run_ssh_command(ip, pem_file, command, opts) do
+    case System.cmd("ssh", ssh_args(ip, pem_file, command, opts), stderr_to_stdout: true) do
       {output, 0} -> {:ok, output}
       {output, _code} -> {:error, output}
     end
@@ -188,20 +208,12 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
   defp env_var_prefix([]), do: ""
   defp env_var_prefix(env_vars), do: "#{Enum.join(env_vars, " ")} "
 
-  defp run_k6_via_ssh(ip, pem_file, command) do
-    abs_pem = Path.expand(pem_file)
-
+  defp run_k6_via_ssh(ip, pem_file, command, opts) do
     port = Port.open({:spawn_executable, System.find_executable("ssh")}, [
       :binary,
       :exit_status,
       :stderr_to_stdout,
-      args: [
-        "-i", abs_pem,
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=/dev/null",
-        "admin@#{ip}",
-        "sudo #{command}"
-      ]
+      args: ssh_args(ip, pem_file, "sudo #{command}", opts)
     ])
 
     stream_output(port)

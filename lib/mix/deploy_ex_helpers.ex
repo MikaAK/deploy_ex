@@ -35,6 +35,24 @@ defmodule DeployExHelpers do
     end
   end
 
+  @doc """
+  Validates and converts a parsed `--provider` CLI flag from string to atom in place.
+
+  `OptionParser.parse!/2` silently accepts any string for a `:string`-typed switch — an
+  unrecognized `--provider oci` would otherwise reach `DeployEx.Cloud.active_provider/1` as the
+  binary `"oci"` (not the atom `:oci`), which resolves through the "provider must be an atom"
+  fallback and runs against whatever the default provider is instead of erroring. Raises
+  `Mix.Error` (the standard task-failure signal `Mix.raise/1` produces) naming the bad value.
+  """
+  @spec parse_provider_opt!(keyword()) :: keyword()
+  def parse_provider_opt!(opts) do
+    case DeployEx.Cloud.parse_provider(opts[:provider]) do
+      {:ok, nil} -> opts
+      {:ok, provider} -> Keyword.put(opts, :provider, provider)
+      {:error, error} -> Mix.raise(ErrorMessage.to_string(error))
+    end
+  end
+
   def priv_folder(priv_subdirectory) do
     priv_path = :deploy_ex |> :code.priv_dir() |> Path.join(priv_subdirectory)
 
@@ -195,7 +213,7 @@ defmodule DeployExHelpers do
         |> prompt_for_instance_choice(true)
         |> Enum.map(fn ip_address ->
           Mix.shell().info([:yellow, "Running '#{command}' on #{ip_address}"])
-          DeployEx.SSH.run_command(ip_address, opts[:port] || 22, pem_rsa_path, command)
+          DeployEx.SSH.run_command(ip_address, pem_rsa_path, command, port: opts[:port] || 22)
         end)
         |> DeployEx.Utils.reduce_status_tuples
 
@@ -223,7 +241,7 @@ defmodule DeployExHelpers do
         |> Enum.reduce_while(:ok, fn instance_ip, :ok ->
           Mix.shell().info([:yellow, "Running #{command} on #{instance_ip}"])
 
-          case DeployEx.SSH.run_command(instance_ip, opts[:port] || 22, pem_rsa_path, command) do
+          case DeployEx.SSH.run_command(instance_ip, pem_rsa_path, command, port: opts[:port] || 22) do
             {:ok, _} -> {:cont, :ok}
             {:error, _} = error -> {:halt, error}
           end

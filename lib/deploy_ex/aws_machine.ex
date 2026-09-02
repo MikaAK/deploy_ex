@@ -38,7 +38,14 @@ defmodule DeployEx.AwsMachine do
   def describe_instance(instance_id, opts \\ []) do
     region = opts[:region] || DeployEx.Config.aws_region()
 
-    with {:ok, [instance | _rest]} <- find_instances_by_id(region, [instance_id]) do
+    # Whitelisted, not forwarded whole: opts reaching this callback often carries a caller's
+    # full task opts (--pem path, :provider, :quiet, ...), and find_instances_by_id/3 passes
+    # anything beyond :request_fn straight into ExAws.EC2.describe_instances/1 as real API
+    # query params — an unfiltered forward would leak a pem file PATH to AWS and CloudTrail as
+    # "Pem" => "/secret/path/key.pem", and camelize every other stray key into a bogus filter.
+    ec2_opts = Keyword.take(opts, [:request_fn])
+
+    with {:ok, [instance | _rest]} <- find_instances_by_id(region, [instance_id], ec2_opts) do
       {:ok, to_instance(instance)}
     end
   end
@@ -76,6 +83,105 @@ defmodule DeployEx.AwsMachine do
       nil -> {:error, ErrorMessage.not_found("instance has no reachable address", %{id: instance.id})}
       address -> {:ok, address}
     end
+  end
+
+  @doc """
+  Translates a provider-neutral run-instance spec into EC2 `RunInstances` params.
+
+  Implements the optional `DeployEx.Cloud.Machine.run_instance/2` callback so
+  `DeployEx.K6Runner.create_instance/2` can build one spec and let each provider's adapter
+  translate it, instead of assembling EC2-shaped params itself.
+  """
+  @impl DeployEx.Cloud.Machine
+  def run_instance(spec, opts \\ []) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+    request_fn = opts[:request_fn] || (&ExAws.request/2)
+
+    spec.network[:ami_id]
+    |> ExAws.EC2.run_instances(1, 1, run_instance_params(spec))
+    |> request_fn.(region: region)
+    |> handle_run_instance_response()
+  end
+
+  @default_instance_type "t3.small"
+
+  defp run_instance_params(spec) do
+    [
+      {"InstanceType", spec.instance_type || @default_instance_type},
+      {"KeyName", spec.network[:key_name]},
+      {"NetworkInterface.1.DeviceIndex", "0"},
+      {"NetworkInterface.1.SubnetId", spec.network[:subnet_id]},
+      {"NetworkInterface.1.SecurityGroupId.1", spec.network[:security_group_id]},
+      {"NetworkInterface.1.AssociatePublicIpAddress", "true"},
+      {"UserData", Base.encode64(spec.user_data)},
+      iam_instance_profile: [name: spec.network[:iam_instance_profile]],
+      tag_specifications: [{:instance, spec.tags}]
+    ]
+  end
+
+  defp handle_run_instance_response({:ok, %{body: body}}) do
+    case XmlToMap.naive_map(body) do
+      %{"RunInstancesResponse" => %{"instancesSet" => %{"item" => %{"instanceId" => instance_id}}}} ->
+        {:ok, %DeployEx.Cloud.Instance{id: instance_id}}
+
+      %{"RunInstancesResponse" => %{"instancesSet" => %{"item" => [%{"instanceId" => instance_id} | _]}}} ->
+        {:ok, %DeployEx.Cloud.Instance{id: instance_id}}
+
+      structure ->
+        {:error, ErrorMessage.bad_request(
+          "couldn't parse run instances response from aws",
+          %{structure: structure}
+        )}
+    end
+  end
+
+  defp handle_run_instance_response({:error, {:http_error, status_code, %{body: body}}}) do
+    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+      "error creating instance",
+      %{error_body: body}
+    ])}
+  end
+
+  @doc "Implements the optional `DeployEx.Cloud.Machine.terminate_instance/2` callback."
+  @impl DeployEx.Cloud.Machine
+  def terminate_instance(instance_id, opts \\ []) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+    request_fn = opts[:request_fn] || (&ExAws.request/2)
+
+    [instance_id]
+    |> ExAws.EC2.terminate_instances()
+    |> request_fn.(region: region)
+    |> handle_terminate_instance_response()
+  end
+
+  defp handle_terminate_instance_response({:ok, _}), do: :ok
+
+  defp handle_terminate_instance_response({:error, {:http_error, status_code, %{body: body}}}) do
+    {:error, apply(ErrorMessage, ErrorMessage.http_code_reason_atom(status_code), [
+      "error terminating instance",
+      %{error_body: body}
+    ])}
+  end
+
+  @doc """
+  Blocks until every instance id reports running. Implements the optional
+  `DeployEx.Cloud.Machine.await_running/2` callback by wrapping `wait_for_started/3` rather
+  than reimplementing its poll loop — `:wait_for_started_fn` is the injection seam that makes
+  the wrapping relationship (not the poll loop itself) testable.
+  """
+  @impl DeployEx.Cloud.Machine
+  def await_running(instance_ids, opts \\ [])
+
+  def await_running([], _opts) do
+    {:error, ErrorMessage.bad_request("await_running requires at least one instance id")}
+  end
+
+  def await_running(instance_ids, opts) do
+    region = opts[:region] || DeployEx.Config.aws_region()
+    retries = opts[:retries] || 10
+    wait_fn = opts[:wait_for_started_fn] || (&wait_for_started/3)
+
+    wait_fn.(region, instance_ids, retries)
   end
 
   defp scoped_running_instances(opts) do
@@ -189,8 +295,8 @@ defmodule DeployEx.AwsMachine do
     instance["instanceState"]["name"] in ["pending", "running", "starting"]
   end
 
-  def find_instances_by_id(region \\ DeployEx.Config.aws_region(), instance_ids) do
-    with {:ok, instances} <- fetch_instances(region) do
+  def find_instances_by_id(region \\ DeployEx.Config.aws_region(), instance_ids, opts \\ []) do
+    with {:ok, instances} <- fetch_instances(region, opts) do
       case filter_by_instance_id(instances, instance_ids) do
         [] -> {:error, ErrorMessage.not_found("no aws instances found with those instance ids")}
         instances -> {:ok, instances}
@@ -468,7 +574,12 @@ defmodule DeployEx.AwsMachine do
     region = opts[:region] || DeployEx.Config.aws_region()
     all_filters = tag_filters ++ resource_group_filter(opts)
 
-    with {:ok, instances} <- fetch_instances(region) do
+    # Same G1 leak class as describe_instance/2: opts reaching here is often a caller's whole
+    # task opts (--pem path, :provider, :quiet, ...), and fetch_instances/2 forwards anything
+    # beyond :request_fn straight into ExAws.EC2.describe_instances/1 as real API query params.
+    ec2_opts = Keyword.take(opts, [:request_fn])
+
+    with {:ok, instances} <- fetch_instances(region, ec2_opts) do
       {:ok, filter_instances_by_tags(instances, all_filters)}
     end
   end

@@ -935,7 +935,8 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
         input(:force, "Force", :boolean),
         input(:quiet, "Quiet", :boolean),
         input(:resource_group, "Resource group", :string),
-        input(:pem, "PEM file", :string)
+        input(:pem, "PEM file", :string),
+        input(:provider, "Cloud provider", :string)
       ]
     },
     %{
@@ -946,7 +947,8 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
         input(:instance_id, "Instance ID", :string),
         input(:all, "All runners", :boolean),
         input(:force, "Force", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:quiet, "Quiet", :boolean),
+        input(:provider, "Cloud provider", :string)
       ]
     },
     %{
@@ -972,7 +974,8 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
         input(:prometheus_url, "Prometheus URL", :string),
         input(:instance_id, "Instance ID", :string),
         input(:pem, "PEM file", :string),
-        input(:quiet, "Quiet", :boolean)
+        input(:quiet, "Quiet", :boolean),
+        input(:provider, "Cloud provider", :string)
       ]
     },
     %{
@@ -993,7 +996,8 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
       category: "Load Test",
       inputs: [
         input(:json, "JSON output", :boolean),
-        input(:quiet, "Quiet", :boolean)
+        input(:quiet, "Quiet", :boolean),
+        input(:provider, "Cloud provider", :string)
       ]
     },
     %{
@@ -1009,7 +1013,8 @@ defmodule DeployEx.TUI.Wizard.CommandRegistry do
         input(:script, "Script path", :string, description: "Path to a specific script (default: all scripts for the app)"),
         input(:instance_id, "Instance ID", :string),
         input(:pem, "PEM file", :string),
-        input(:quiet, "Quiet", :boolean)
+        input(:quiet, "Quiet", :boolean),
+        input(:provider, "Cloud provider", :string)
       ]
     }
   ]

@@ -6,19 +6,19 @@ defmodule Mix.Tasks.DeployEx.LoadTest.UploadTest do
   defmodule FakeK6RunnerTerminated do
     def fetch_all_runners(_opts), do: {:ok, [%DeployEx.K6Runner{instance_id: "i-dead"}]}
     def fetch_state(_instance_id, _opts), do: {:ok, %DeployEx.K6Runner{instance_id: "i-dead"}}
-    def verify_instance_exists(_runner), do: {:ok, nil}
+    def verify_instance_exists(_runner, _opts \\ []), do: {:ok, nil}
   end
 
   defmodule FakeK6RunnerAbsent do
     def fetch_all_runners(_opts), do: {:ok, []}
     def fetch_state(_instance_id, _opts), do: {:ok, nil}
-    def verify_instance_exists(_runner), do: {:ok, nil}
+    def verify_instance_exists(_runner, _opts \\ []), do: {:ok, nil}
   end
 
   defmodule FakeK6RunnerFetchYieldsNil do
     def fetch_all_runners(_opts), do: {:ok, nil}
     def fetch_state(_instance_id, _opts), do: {:ok, nil}
-    def verify_instance_exists(_runner), do: {:ok, nil}
+    def verify_instance_exists(_runner, _opts \\ []), do: {:ok, nil}
   end
 
   defmodule FakeK6RunnerActive do
@@ -30,7 +30,54 @@ defmodule Mix.Tasks.DeployEx.LoadTest.UploadTest do
       {:ok, %DeployEx.K6Runner{instance_id: "i-live", public_ip: "1.2.3.4"}}
     end
 
-    def verify_instance_exists(runner), do: {:ok, %{runner | state: "running"}}
+    def verify_instance_exists(runner, _opts \\ []), do: {:ok, %{runner | state: "running"}}
+  end
+
+  describe "scp_target/3 — SSH user via Cloud.ssh_user/1 (LT-OCI S1)" do
+    test "defaults to admin@ip:path under the AWS provider (unchanged AWS behavior)" do
+      assert Upload.scp_target("1.2.3.4", "/srv/k6/scripts/load_test.js", []) ===
+               "admin@1.2.3.4:/srv/k6/scripts/load_test.js"
+    end
+
+    test "resolves ubuntu@ip:path for an overridden provider" do
+      assert Upload.scp_target("1.2.3.4", "/srv/k6/scripts/load_test.js", provider: :oci) ===
+               "ubuntu@1.2.3.4:/srv/k6/scripts/load_test.js"
+    end
+  end
+
+  describe "scp_args/5 — pure scp argv builder, pins the actual upload_script call site (LT-OCI review-fix)" do
+    test "builds the exact scp argv under the default AWS provider" do
+      assert Upload.scp_args("/tmp/key.pem", "/local/load_test.js", "1.2.3.4", "/srv/k6/scripts/load_test.js", []) ===
+               [
+                 "-i",
+                 "/tmp/key.pem",
+                 "-o",
+                 "StrictHostKeyChecking=no",
+                 "-o",
+                 "UserKnownHostsFile=/dev/null",
+                 "/local/load_test.js",
+                 "admin@1.2.3.4:/srv/k6/scripts/load_test.js"
+               ]
+    end
+
+    test "resolves the ssh user through Cloud.ssh_user/1 for an overridden provider" do
+      argv =
+        Upload.scp_args(
+          "/tmp/key.pem",
+          "/local/load_test.js",
+          "1.2.3.4",
+          "/srv/k6/scripts/load_test.js",
+          provider: :oci
+        )
+
+      assert Enum.at(argv, 7) === "ubuntu@1.2.3.4:/srv/k6/scripts/load_test.js"
+    end
+
+    test "expands a relative pem path" do
+      argv = Upload.scp_args("key.pem", "/local/load_test.js", "1.2.3.4", "/srv/k6/scripts/load_test.js", [])
+
+      assert Enum.at(argv, 1) === Path.expand("key.pem")
+    end
   end
 
   describe "resolve_runner/2 default path (no --instance-id)" do

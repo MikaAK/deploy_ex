@@ -6,19 +6,19 @@ defmodule Mix.Tasks.DeployEx.LoadTest.ExecTest do
   defmodule FakeK6RunnerTerminated do
     def fetch_all_runners(_opts), do: {:ok, [%DeployEx.K6Runner{instance_id: "i-dead"}]}
     def fetch_state(_instance_id, _opts), do: {:ok, %DeployEx.K6Runner{instance_id: "i-dead"}}
-    def verify_instance_exists(_runner), do: {:ok, nil}
+    def verify_instance_exists(_runner, _opts \\ []), do: {:ok, nil}
   end
 
   defmodule FakeK6RunnerAbsent do
     def fetch_all_runners(_opts), do: {:ok, []}
     def fetch_state(_instance_id, _opts), do: {:ok, nil}
-    def verify_instance_exists(_runner), do: {:ok, nil}
+    def verify_instance_exists(_runner, _opts \\ []), do: {:ok, nil}
   end
 
   defmodule FakeK6RunnerFetchYieldsNil do
     def fetch_all_runners(_opts), do: {:ok, nil}
     def fetch_state(_instance_id, _opts), do: {:ok, nil}
-    def verify_instance_exists(_runner), do: {:ok, nil}
+    def verify_instance_exists(_runner, _opts \\ []), do: {:ok, nil}
   end
 
   defmodule FakeK6RunnerActive do
@@ -30,7 +30,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.ExecTest do
       {:ok, %DeployEx.K6Runner{instance_id: "i-live", public_ip: "1.2.3.4"}}
     end
 
-    def verify_instance_exists(runner), do: {:ok, %{runner | state: "running"}}
+    def verify_instance_exists(runner, _opts \\ []), do: {:ok, %{runner | state: "running"}}
   end
 
   describe "resolve_runner/2 default path (no --instance-id)" do
@@ -100,6 +100,56 @@ defmodule Mix.Tasks.DeployEx.LoadTest.ExecTest do
       discover = fn -> {:error, :not_found} end
 
       assert {:ok, nil} = Exec.resolve_prometheus_url([], discover)
+    end
+  end
+
+  describe "discover_prometheus_ip/1 — threads opts through Cloud.capability (LT-OCI review-fix)" do
+    test "an unregistered provider override propagates instead of being dropped" do
+      assert {:error, %ErrorMessage{code: :not_implemented}} = Exec.discover_prometheus_ip(provider: :gcp)
+    end
+
+    test "under :oci (machine wired as of LT-OCI S2), a config error propagates instead of falling through to AWS" do
+      assert {:error, %ErrorMessage{code: :bad_request, message: message}} =
+               Exec.discover_prometheus_ip(provider: :oci)
+
+      assert message =~ "compartment_id"
+    end
+  end
+
+  describe "ssh_target/2 — SSH user via Cloud.ssh_user/1 (LT-OCI S1)" do
+    test "defaults to admin@ip under the AWS provider (unchanged AWS behavior)" do
+      assert Exec.ssh_target("1.2.3.4", []) === "admin@1.2.3.4"
+    end
+
+    test "resolves ubuntu@ip for an overridden provider" do
+      assert Exec.ssh_target("1.2.3.4", provider: :oci) === "ubuntu@1.2.3.4"
+    end
+  end
+
+  describe "ssh_args/4 — pure ssh argv builder, pins the actual transport call sites (LT-OCI review-fix)" do
+    test "builds the exact ssh argv under the default AWS provider" do
+      assert Exec.ssh_args("1.2.3.4", "/tmp/key.pem", "k6 version", []) === [
+               "-i",
+               "/tmp/key.pem",
+               "-o",
+               "StrictHostKeyChecking=no",
+               "-o",
+               "UserKnownHostsFile=/dev/null",
+               "admin@1.2.3.4",
+               "k6 version"
+             ]
+    end
+
+    test "resolves the ssh user through Cloud.ssh_user/1 for an overridden provider" do
+      argv = Exec.ssh_args("1.2.3.4", "/tmp/key.pem", "k6 version", provider: :oci)
+
+      assert Enum.at(argv, 6) === "ubuntu@1.2.3.4"
+    end
+
+    test "expands a relative pem path" do
+      argv = Exec.ssh_args("1.2.3.4", "key.pem", "k6 version", [])
+
+      assert Enum.at(argv, 1) === Path.expand("key.pem")
     end
   end
 

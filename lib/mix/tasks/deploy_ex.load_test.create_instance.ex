@@ -51,17 +51,21 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
     end
   end
 
-  defp parse_args(args) do
-    OptionParser.parse!(args,
+  @doc false
+  def parse_args(args) do
+    {opts, extra_args} = OptionParser.parse!(args,
       aliases: [f: :force, q: :quiet],
       switches: [
         instance_type: :string,
         force: :boolean,
         quiet: :boolean,
         resource_group: :string,
-        pem: :string
+        pem: :string,
+        provider: :string
       ]
     )
+
+    {DeployExHelpers.parse_provider_opt!(opts), extra_args}
   end
 
   defp maybe_reuse_or_create(opts) do
@@ -74,7 +78,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
         if opts[:force] do
           replace_runners(runners, opts)
         else
-          case DeployEx.K6Runner.verify_instance_exists(runner) do
+          case DeployEx.K6Runner.verify_instance_exists(runner, opts) do
             {:ok, verified} when not is_nil(verified) ->
               reuse_existing_runner(verified, opts)
 
@@ -168,7 +172,8 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
          ),
          {:ok, :saved} <- DeployEx.K6Runner.save_state(runner, opts),
          :ok <- announce_instance_created(runner, opts),
-         :ok <- DeployEx.AwsMachine.wait_for_started([runner.instance_id]),
+         {:ok, machine} <- DeployEx.Cloud.capability(:machine, opts),
+         :ok <- machine.await_running([runner.instance_id], opts),
          {:ok, verified} <- verify_created_runner(runner, opts) do
       if !opts[:quiet] do
         Mix.shell().info([:green, "  ✓ ", :reset, "Instance running"])
@@ -207,13 +212,14 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
 
   defp orphaned_runner_error(runner, opts, k6_runner_impl) do
     k6_runner_impl.save_state(runner, opts)
+    provider = DeployEx.Cloud.active_provider(opts)
 
     {:error, ErrorMessage.failed_dependency(
-      "k6 runner #{runner.instance_id} was created but AWS does not yet report it as running " <>
+      "k6 runner #{runner.instance_id} was created but #{inspect(provider)} does not yet report it as running " <>
         "(eventual consistency) — the instance and its billing still exist; check again with " <>
         "mix deploy_ex.load_test.list, or destroy it with: " <>
         "mix deploy_ex.load_test.destroy_instance --instance-id #{runner.instance_id}",
-      %{instance_id: runner.instance_id}
+      %{instance_id: runner.instance_id, provider: provider}
     )}
   end
 
@@ -233,14 +239,28 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
     DeployEx.Terraform.find_pem_file(@terraform_default_path, opts[:pem])
   end
 
-  defp gather_infrastructure(opts) do
+  # Whitelisted to the keys a provider's gather_infrastructure/1 legitimately needs, not
+  # forwarded whole — mirrors the same reasoning as AwsMachine's request_fn whitelist
+  # (LT-OCI review-fix G1): :resource_group is AWS's own key, :pem lets OCI's find_key_pair
+  # honor a user's --pem override instead of always falling back to a directory glob, and
+  # :run_fn is the test injection seam (unused live; OCI's discovery is config-driven and
+  # never shells out, but the seam still needs to reach a provider that later does).
+  @doc false
+  def gather_infrastructure(opts) do
     if !opts[:quiet] do
       Mix.shell().info([:faint, "Gathering infrastructure..."])
     end
 
-    DeployEx.AwsInfrastructure.gather_infrastructure(
-      Keyword.take(opts, [:resource_group])
-    )
+    with {:ok, infrastructure} <- DeployEx.Cloud.capability(:infrastructure, opts) do
+      infrastructure.gather_infrastructure(Keyword.take(opts, [:resource_group, :pem, :run_fn] ++ oci_setting_keys(opts)))
+    end
+  end
+
+  # oci_* keys carry the OCI CLI's opts-first config overrides (DeployEx.Cloud.OciCli.setting/2)
+  # — Keyword.take/2 only needs their NAMES, so this just filters opts down to that shape
+  # without hardcoding the specific oci_subnet_id/oci_base_image/... list here twice.
+  defp oci_setting_keys(opts) do
+    opts |> Keyword.keys() |> Enum.filter(&String.starts_with?(Atom.to_string(&1), "oci_"))
   end
 
   # SSH reachability wait (D7: honest failure — never claims ready after exhausting retries)
@@ -309,7 +329,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
       Mix.shell().info([:faint, "Waiting for k6 setup to complete on ", :reset, :cyan, ip, :reset, :faint, "..."])
     end
 
-    check_fn = opts[:check_fn] || (&default_k6_ready?/2)
+    check_fn = opts[:check_fn] || (&default_k6_ready?(&1, &2, opts))
     sleep_fn = opts[:sleep_fn] || (&Process.sleep/1)
     retries = opts[:setup_wait_retries] || @setup_wait_retries
 
@@ -343,8 +363,8 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstance do
     end
   end
 
-  defp default_k6_ready?(ip, pem_file) do
-    case DeployEx.SSH.run_command(ip, 22, pem_file, "k6 version") do
+  defp default_k6_ready?(ip, pem_file, opts) do
+    case DeployEx.SSH.run_command(ip, pem_file, "k6 version", user: DeployEx.Cloud.ssh_user(opts)) do
       {:ok, _output} -> true
       _ -> false
     end

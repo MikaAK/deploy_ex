@@ -101,6 +101,112 @@ defmodule DeployEx.Cloud do
   @spec providers() :: [atom()]
   def providers, do: Map.keys(@providers)
 
+  @doc """
+  Parses a CLI `--provider` flag value into a registered provider atom.
+
+  Never `String.to_atom/1`s the input — an unrecognized value errors instead of interning a
+  fresh atom for every typo a caller makes. `nil` (the flag was not given) resolves to `nil`,
+  not an error, so callers can `opts[:provider] || Config.cloud_provider()` unchanged.
+  """
+  @spec parse_provider(String.t() | nil) :: {:ok, atom() | nil} | {:error, ErrorMessage.t()}
+  def parse_provider(nil), do: {:ok, nil}
+
+  def parse_provider(value) when is_binary(value) do
+    case Enum.find(providers(), &(Atom.to_string(&1) === value)) do
+      nil ->
+        {:error,
+         ErrorMessage.bad_request("unknown provider #{inspect(value)} — known providers: #{inspect(providers())}", %{
+           provider: value,
+           known_providers: providers()
+         })}
+
+      provider ->
+        {:ok, provider}
+    end
+  end
+
+  @doc """
+  SSH user for the active (or overridden) provider, resolved through its descriptor.
+
+  Falls back to `"admin"` when the descriptor cannot be resolved (unregistered provider) or
+  declares no default — the historical AWS default, so a lookup failure never blocks a task
+  that otherwise ran fine before this accessor existed.
+  """
+  @spec ssh_user(keyword()) :: String.t()
+  def ssh_user(opts \\ []) do
+    case opts |> active_provider() |> fetch_descriptor() do
+      {:ok, descriptor} -> descriptor.default_ssh_user() || "admin"
+      {:error, _reason} -> "admin"
+    end
+  end
+
+  @doc """
+  Resource group / project tag namespace for the active (or overridden) provider.
+
+  AWS reads its historical flat key; every other provider reads `:resource_group` from its
+  own config namespace (`config :deploy_ex, <provider>, resource_group: ...`), which
+  `validate_config/2` already validates against the descriptor's schema. Returns an error
+  rather than `nil` when a real provider has not configured the key — see `provider_config_value/3`.
+  """
+  @spec resource_group(keyword()) :: {:ok, String.t()} | {:error, ErrorMessage.t()}
+  def resource_group(opts \\ []), do: provider_config_value(opts, :resource_group, &Config.aws_resource_group/0)
+
+  @doc "Release bucket for the active (or overridden) provider, same resolution rule as `resource_group/1`."
+  @spec release_bucket(keyword()) :: {:ok, String.t()} | {:error, ErrorMessage.t()}
+  def release_bucket(opts \\ []), do: provider_config_value(opts, :release_bucket, &Config.aws_release_bucket/0)
+
+  @doc """
+  Whether the active (or overridden) provider is AWS — the single shared answer to "is this
+  AWS", for any caller that needs to special-case the AWS path.
+
+  Routes through `fetch_descriptor/1` and compares the resolved DESCRIPTOR to
+  `DeployEx.Cloud.Providers.Aws`, rather than comparing the raw `active_provider(opts)` value
+  to the atom `:aws` — a caller passing the descriptor MODULE (the put_env-free test injection
+  seam `capability/2` and `validate_config/2` already accept) is AWS too, and a bare
+  `case active_provider(opts) do :aws -> ...` silently answers "no" for it. This exact gap has
+  recurred more than once (this module's own config accessors, then `K6Runner.find_runners_from_ec2/1`)
+  as separate ad-hoc `:aws` comparisons — one shared predicate instead of another one.
+  """
+  @spec aws?(keyword()) :: boolean()
+  def aws?(opts \\ []) do
+    case opts |> active_provider() |> fetch_descriptor() do
+      {:ok, DeployEx.Cloud.Providers.Aws} -> true
+      _not_aws_or_error -> false
+    end
+  end
+
+  defp provider_config_value(opts, key, aws_reader) do
+    if aws?(opts) do
+      {:ok, aws_reader.()}
+    else
+      case opts |> active_provider() |> fetch_descriptor() do
+        {:ok, descriptor} -> provider_setting_or_error(registry_key_for(descriptor), key)
+        {:error, _reason} = error -> error
+      end
+    end
+  end
+
+  defp registry_key_for(descriptor) do
+    Enum.find_value(@providers, descriptor, fn {registry_key, mod} -> if mod === descriptor, do: registry_key end)
+  end
+
+  # A silent nil here would reach an object-store/CLI call as an empty container name (e.g.
+  # OCI's `--bucket-name ''`) — fail loudly instead, matching OciObjectStore.require_compartment_id/1's
+  # precedent of erroring on a missing config value rather than sending a malformed request.
+  defp provider_setting_or_error(provider, key) do
+    case Config.provider_setting(provider, key) do
+      nil ->
+        {:error,
+         ErrorMessage.bad_request(
+           "#{key} is required for #{inspect(provider)} (config :deploy_ex, #{inspect(provider)}, #{key}: \"...\")",
+           %{provider: provider, key: key}
+         )}
+
+      value ->
+        {:ok, value}
+    end
+  end
+
   defp invalid_config_error(provider, env) do
     {:error,
      ErrorMessage.bad_request("#{inspect(provider)} config must be a keyword list", %{

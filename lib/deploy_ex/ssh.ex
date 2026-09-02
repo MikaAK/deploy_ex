@@ -9,13 +9,7 @@ defmodule DeployEx.SSH do
     case prepare_identity_dir(pem_file_path) do
       {:ok, key_dir} ->
         try do
-          :ssh.connect(to_charlist(ip), port, maybe_add_ipv6(ip, [
-            {:user, to_charlist(user)},
-            {:user_dir, to_charlist(key_dir)},
-            {:auth_methods, ~c"publickey"},
-            {:user_interaction, false},
-            {:silently_accept_hosts, true}
-          ]))
+          :ssh.connect(to_charlist(ip), port, connect_options(ip, user, key_dir))
         after
           File.rm_rf(key_dir)
         end
@@ -23,6 +17,21 @@ defmodule DeployEx.SSH do
       {:error, _} = error ->
         error
     end
+  end
+
+  @doc """
+  `:ssh.connect/3` options for the given ip/user/key_dir. Pure and pinned directly by tests,
+  separated from the identity-file staging IO above so a regression to a hardcoded ssh user
+  shows up as a failing assertion on the options themselves.
+  """
+  def connect_options(ip, user, key_dir) do
+    maybe_add_ipv6(ip, [
+      {:user, to_charlist(user)},
+      {:user_dir, to_charlist(key_dir)},
+      {:auth_methods, ~c"publickey"},
+      {:user_interaction, false},
+      {:silently_accept_hosts, true}
+    ])
   end
 
   @doc false
@@ -72,8 +81,16 @@ defmodule DeployEx.SSH do
     end
   end
 
-  def run_command(ip, port \\ 22, pem_file_path, command) do
-    case connect_to_ssh(ip, port, pem_file_path) do
+  # opts-keyword rather than a second \\-defaulted positional (port \\ 22, ..., user \\ "admin")
+  # straddling the required pem_file_path/command args — two defaults on either side of
+  # required positions meant a 4-arg call like run_command(ip, pem, command, user) silently
+  # mis-bound user into the port slot instead of raising, since Elixir fills a short call's
+  # positions left-to-right rather than by which params happen to have defaults.
+  def run_command(ip, pem_file_path, command, opts \\ []) do
+    port = opts[:port] || 22
+    user = opts[:user] || "admin"
+
+    case connect_to_ssh(ip, port, pem_file_path, user) do
       {:error, reason} -> {:error, ErrorMessage.bad_gateway("couldn't connect over ssh: #{reason}")}
 
       {:ok, conn} ->

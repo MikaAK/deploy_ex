@@ -6,7 +6,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstanceTest do
 
   defmodule FakeK6RunnerOrphaned do
     def fetch_state(_instance_id, _opts), do: {:ok, %K6Runner{instance_id: "i-orphan"}}
-    def verify_instance_exists(_runner), do: {:ok, nil}
+    def verify_instance_exists(_runner, _opts \\ []), do: {:ok, nil}
 
     def save_state(runner, _opts) do
       send(self(), {:save_state_called, runner.instance_id})
@@ -16,8 +16,43 @@ defmodule Mix.Tasks.DeployEx.LoadTest.CreateInstanceTest do
 
   defmodule FakeK6RunnerHealthy do
     def fetch_state(_instance_id, _opts), do: {:ok, %K6Runner{instance_id: "i-healthy"}}
-    def verify_instance_exists(runner), do: {:ok, %{runner | state: "running"}}
+    def verify_instance_exists(runner, _opts \\ []), do: {:ok, %{runner | state: "running"}}
     def save_state(_runner, _opts), do: {:ok, :saved}
+  end
+
+  describe "parse_args/1 — --provider CLI flag (LT-OCI review-fix item 7)" do
+    test "a valid --provider flag is converted to an atom in the returned opts" do
+      {opts, _extra_args} = CreateInstance.parse_args(["--provider", "oci"])
+
+      assert opts[:provider] === :oci
+    end
+
+    test "no --provider flag leaves :provider absent (defaults resolve through Cloud.active_provider/1 later)" do
+      {opts, _extra_args} = CreateInstance.parse_args(["--instance-type", "t3.medium"])
+
+      refute Keyword.has_key?(opts, :provider)
+    end
+
+    test "an unrecognized --provider value raises Mix.Error instead of silently running against AWS" do
+      assert_raise Mix.Error, ~r/gcp/, fn ->
+        CreateInstance.parse_args(["--provider", "gcp"])
+      end
+    end
+  end
+
+  describe "gather_infrastructure/1 — routes through Cloud.capability(:infrastructure), keeps :run_fn/:pem (LT-OCI S2)" do
+    test "under :oci, a run_fn/oci config override reaches OciInfrastructure end-to-end" do
+      opts = [
+        provider: :oci,
+        oci_subnet_id: "ocid1.subnet..a",
+        oci_base_image: "ocid1.image..a",
+        pem: "/tmp/explicit-key.pem",
+        quiet: true
+      ]
+
+      assert {:ok, %{subnet_id: "ocid1.subnet..a", image_id: "ocid1.image..a", key_name: "/tmp/explicit-key.pem"}} =
+               CreateInstance.gather_infrastructure(opts)
+    end
   end
 
   describe "terminate_all_runners/3 (D5: --force = replace)" do

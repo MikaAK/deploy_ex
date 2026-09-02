@@ -7,10 +7,12 @@ defmodule DeployEx.Cloud.Providers.OciTest do
     assert DeployEx.Cloud.Provider in (Oci.module_info(:attributes)[:behaviour] || [])
   end
 
-  test "capabilities/0 exposes the object store and security group and nothing else" do
+  test "capabilities/0 exposes object store, security, machine and infrastructure (LT-OCI S2)" do
     assert Oci.capabilities() === %{
              object_store: DeployEx.Cloud.OciObjectStore,
-             security: DeployEx.Cloud.OciSecurityGroup
+             security: DeployEx.Cloud.OciSecurityGroup,
+             machine: DeployEx.Cloud.OciMachine,
+             infrastructure: DeployEx.Cloud.OciInfrastructure
            }
   end
 
@@ -44,7 +46,10 @@ defmodule DeployEx.Cloud.Providers.OciTest do
         namespace: "mynamespace",
         shape: "VM.Standard.E5.Flex",
         shape_ocpus: 1,
-        shape_memory_gbs: 8
+        shape_memory_gbs: 8,
+        subnet_id: "ocid1.subnet.oc1..aaaa",
+        availability_domain: "abcd:AP-SEOUL-1-AD-1",
+        ssh_public_key: "ssh-ed25519 AAAAtest key-comment"
       ]
 
       assert {:ok, _} = NimbleOptions.validate(config, Oci.config_schema())

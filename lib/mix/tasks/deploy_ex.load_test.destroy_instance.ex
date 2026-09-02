@@ -82,15 +82,18 @@ defmodule Mix.Tasks.DeployEx.LoadTest.DestroyInstance do
   def ambiguous_scope_error(_runners, _opts), do: :ok
 
   defp parse_args(args) do
-    OptionParser.parse!(args,
+    {opts, extra_args} = OptionParser.parse!(args,
       aliases: [i: :instance_id, f: :force, q: :quiet],
       switches: [
         instance_id: :string,
         all: :boolean,
         force: :boolean,
-        quiet: :boolean
+        quiet: :boolean,
+        provider: :string
       ]
     )
+
+    {DeployExHelpers.parse_provider_opt!(opts), extra_args}
   end
 
   defp find_runners_to_destroy(opts) do
@@ -99,7 +102,7 @@ defmodule Mix.Tasks.DeployEx.LoadTest.DestroyInstance do
         runners
         |> maybe_filter_by_instance_id(opts[:instance_id])
         |> Enum.map(fn runner ->
-          case DeployEx.K6Runner.verify_instance_exists(runner) do
+          case DeployEx.K6Runner.verify_instance_exists(runner, opts) do
             {:ok, verified} when not is_nil(verified) -> verified
             _ -> runner
           end

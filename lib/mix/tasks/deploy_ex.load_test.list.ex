@@ -36,18 +36,19 @@ defmodule Mix.Tasks.DeployEx.LoadTest.List do
       aliases: [q: :quiet],
       switches: [
         json: :boolean,
-        quiet: :boolean
+        quiet: :boolean,
+        provider: :string
       ]
     )
 
-    opts
+    DeployExHelpers.parse_provider_opt!(opts)
   end
 
   defp list_runners(opts) do
     case DeployEx.K6Runner.fetch_all_runners(opts) do
       {:ok, runners} ->
         verified = Enum.map(runners, fn runner ->
-          case DeployEx.K6Runner.verify_instance_exists(runner) do
+          case DeployEx.K6Runner.verify_instance_exists(runner, opts) do
             {:ok, verified} when not is_nil(verified) -> verified
             _ -> nil
           end

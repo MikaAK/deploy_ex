@@ -5,7 +5,9 @@ defmodule DeployEx.Cloud.Providers.Oci do
   Slots fill per phase. One invented ahead of its phase would be untested guesswork that reads
   as working code, so an unfilled slot stays `nil` and surfaces as
   `{:error, %ErrorMessage{code: :not_implemented}}` rather than a plausible default.
-  `object_store`, `inventory` and `security` are filled; compute and networking are not.
+  `object_store`, `inventory`, `security`, `machine` and `infrastructure` are filled;
+  `completion_marker` and `cli_adapter` are not (the latter has no consumer yet — every
+  filled capability already talks to `DeployEx.Cloud.OciCli` directly).
 
   The config schema is the exception: it is strict from the start so a typo'd key fails at
   task start rather than mid-apply. Every key is optional — the schema catches mistakes, it
@@ -22,6 +24,7 @@ defmodule DeployEx.Cloud.Providers.Oci do
     compartment_id: [type: {:or, [:string, nil]}],
     namespace: [type: {:or, [:string, nil]}],
     availability_domain: [type: {:or, [:string, nil]}],
+    subnet_id: [type: {:or, [:string, nil]}],
     base_image: [type: {:or, [:keyword_list, :string, nil]}],
     shape: [type: {:or, [:string, nil]}],
     shape_ocpus: [type: {:or, [:pos_integer, nil]}],
@@ -33,14 +36,17 @@ defmodule DeployEx.Cloud.Providers.Oci do
     state_profile: [type: {:or, [:string, nil]}],
     log_bucket: [type: {:or, [:string, nil]}],
     log_region: [type: {:or, [:string, nil]}],
-    resource_group: [type: {:or, [:string, nil]}]
+    resource_group: [type: {:or, [:string, nil]}],
+    ssh_public_key: [type: {:or, [:string, nil]}]
   ]
 
   @impl DeployEx.Cloud.Provider
   def capabilities do
     %{
       object_store: DeployEx.Cloud.OciObjectStore,
-      security: DeployEx.Cloud.OciSecurityGroup
+      security: DeployEx.Cloud.OciSecurityGroup,
+      machine: DeployEx.Cloud.OciMachine,
+      infrastructure: DeployEx.Cloud.OciInfrastructure
     }
   end
 
@@ -72,7 +78,10 @@ defmodule DeployEx.Cloud.Providers.Oci do
   @impl DeployEx.Cloud.Provider
   def default_ssh_user, do: "ubuntu"
 
-  # Filled by Phase 3 (oci CLI adapter).
+  # `DeployEx.Cloud.OciCli` already exists and is the CLI runner every OCI capability
+  # (object_store, security, machine, infrastructure) calls directly — but nothing reads this
+  # descriptor slot to dispatch to it, so setting it here would be a dangling reference with
+  # no consumer. Fill it once something actually looks a provider's cli_adapter up generically.
   @impl DeployEx.Cloud.Provider
   def cli_adapter, do: nil
 end

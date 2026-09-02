@@ -20,9 +20,14 @@ defmodule DeployEx.CloudTest do
   end
 
   describe "capability/2 — explicit provider" do
-    test "an OCI capability is honestly not implemented" do
+    test "OCI now resolves machine/infrastructure too (LT-OCI S2)" do
+      assert Cloud.capability(:machine, provider: :oci) === {:ok, DeployEx.Cloud.OciMachine}
+      assert Cloud.capability(:infrastructure, provider: :oci) === {:ok, DeployEx.Cloud.OciInfrastructure}
+    end
+
+    test "a capability OCI does not implement is honestly not implemented" do
       assert {:error, %ErrorMessage{code: :not_implemented}} =
-               Cloud.capability(:machine, provider: :oci)
+               Cloud.capability(:autoscaling, provider: :oci)
     end
 
     test "an unknown provider errors instead of raising KeyError" do
@@ -35,11 +40,14 @@ defmodule DeployEx.CloudTest do
     test "accepts a descriptor MODULE and resolves through it" do
       assert Cloud.capability(:machine, provider: DeployEx.Cloud.Providers.Aws) ===
                {:ok, DeployEx.AwsMachine}
+
+      assert Cloud.capability(:machine, provider: DeployEx.Cloud.Providers.Oci) ===
+               {:ok, DeployEx.Cloud.OciMachine}
     end
 
     test "a module descriptor lacking the capability reports :not_implemented" do
       assert {:error, %ErrorMessage{code: :not_implemented}} =
-               Cloud.capability(:machine, provider: DeployEx.Cloud.Providers.Oci)
+               Cloud.capability(:autoscaling, provider: DeployEx.Cloud.Providers.Oci)
     end
 
     test "a module that is not a descriptor errors instead of raising" do
@@ -172,6 +180,114 @@ defmodule DeployEx.CloudTest do
     end
   end
 
+  describe "ssh_user/1 — LT-OCI S1 accessor" do
+    test "resolves the AWS descriptor's admin user under the default provider" do
+      assert Cloud.ssh_user([]) === "admin"
+    end
+
+    test "resolves the OCI descriptor's ubuntu user under an explicit override" do
+      assert Cloud.ssh_user(provider: :oci) === "ubuntu"
+    end
+
+    test "falls back to admin for an unregistered provider instead of raising" do
+      assert Cloud.ssh_user(provider: :gcp) === "admin"
+    end
+  end
+
+  describe "resource_group/1 — LT-OCI S1/review-fix accessor" do
+    test "resolves through DeployEx.Config.aws_resource_group/0 under the default provider" do
+      assert Cloud.resource_group([]) === {:ok, DeployEx.Config.aws_resource_group()}
+    end
+
+    test "resolves AWS's flat config when given the descriptor MODULE instead of the atom :aws" do
+      assert Cloud.resource_group(provider: DeployEx.Cloud.Providers.Aws) ===
+               {:ok, DeployEx.Config.aws_resource_group()}
+    end
+
+    test "reads the real, seeded :oci config namespace under an explicit atom override" do
+      assert Cloud.resource_group(provider: :oci) === {:ok, "OCI Test Backend"}
+    end
+
+    test "reads the :oci namespace when given the descriptor MODULE instead of the atom :oci" do
+      assert Cloud.resource_group(provider: DeployEx.Cloud.Providers.Oci) === {:ok, "OCI Test Backend"}
+    end
+
+    test "an unregistered provider errors instead of raising" do
+      assert {:error, %ErrorMessage{code: :not_implemented}} = Cloud.resource_group(provider: :gcp)
+    end
+  end
+
+  describe "release_bucket/1 — LT-OCI S1/review-fix accessor" do
+    test "resolves through DeployEx.Config.aws_release_bucket/0 under the default provider" do
+      assert Cloud.release_bucket([]) === {:ok, DeployEx.Config.aws_release_bucket()}
+    end
+
+    test "resolves AWS's flat config when given the descriptor MODULE instead of the atom :aws" do
+      assert Cloud.release_bucket(provider: DeployEx.Cloud.Providers.Aws) ===
+               {:ok, DeployEx.Config.aws_release_bucket()}
+    end
+
+    test "a real, registered provider with the key genuinely unset errors loudly rather than nil" do
+      assert {:error, %ErrorMessage{code: :bad_request, message: message}} =
+               Cloud.release_bucket(provider: :oci)
+
+      assert message =~ "release_bucket"
+      assert message =~ "oci"
+    end
+
+    test "an unregistered provider errors instead of raising" do
+      assert {:error, %ErrorMessage{code: :not_implemented}} = Cloud.release_bucket(provider: :gcp)
+    end
+  end
+
+  describe "parse_provider/1 — safe CLI --provider flag parsing (LT-OCI review-fix)" do
+    test "parses a known provider string into its atom" do
+      assert Cloud.parse_provider("aws") === {:ok, :aws}
+      assert Cloud.parse_provider("oci") === {:ok, :oci}
+    end
+
+    test "nil (flag absent) resolves to nil, not an error" do
+      assert Cloud.parse_provider(nil) === {:ok, nil}
+    end
+
+    test "an unknown provider string errors instead of silently being swallowed" do
+      assert {:error, %ErrorMessage{code: :bad_request, message: message}} = Cloud.parse_provider("gcp")
+
+      assert message =~ "gcp"
+      assert message =~ "aws"
+      assert message =~ "oci"
+    end
+
+    test "a fresh, never-before-seen string still errors cleanly rather than raising" do
+      random = "totally-unrecognized-#{System.unique_integer([:positive])}"
+
+      assert {:error, %ErrorMessage{code: :bad_request}} = Cloud.parse_provider(random)
+    end
+  end
+
+  describe "aws?/1 — single shared answer for \"is this AWS\" (LT-OCI review-fix cycle 3, F1 recurrence)" do
+    test "true under the default provider" do
+      assert Cloud.aws?([]) === true
+    end
+
+    test "true for the atom override :aws" do
+      assert Cloud.aws?(provider: :aws) === true
+    end
+
+    test "true for the descriptor MODULE override — the exact case that recurred (F1)" do
+      assert Cloud.aws?(provider: DeployEx.Cloud.Providers.Aws) === true
+    end
+
+    test "false for a registered non-AWS provider" do
+      assert Cloud.aws?(provider: :oci) === false
+      assert Cloud.aws?(provider: DeployEx.Cloud.Providers.Oci) === false
+    end
+
+    test "false for an unregistered provider instead of raising" do
+      assert Cloud.aws?(provider: :gcp) === false
+    end
+  end
+
   describe "%Cloud.Instance{}" do
     test "has the exact provider-neutral field set" do
       keys =
@@ -204,6 +320,7 @@ defmodule DeployEx.CloudTest do
   describe "behaviours" do
     test "Machine declares its exact callback set" do
       assert callback_set(DeployEx.Cloud.Machine) === [
+               await_running: 2,
                delete_tags: 3,
                describe_instance: 2,
                fetch_tags: 2,
@@ -220,6 +337,7 @@ defmodule DeployEx.CloudTest do
 
     test "the Phase-5 callbacks are optional so AwsMachine conforms without them" do
       assert DeployEx.Cloud.Machine.behaviour_info(:optional_callbacks) |> Enum.sort() === [
+               await_running: 2,
                delete_tags: 3,
                put_tags: 3,
                run_instance: 2,
@@ -247,8 +365,13 @@ defmodule DeployEx.CloudTest do
                find_instance_identity: 1,
                find_key_pair: 2,
                find_network: 1,
-               find_subnet: 1
+               find_subnet: 1,
+               gather_infrastructure: 1
              ]
+    end
+
+    test "gather_infrastructure/1 is optional so a provider conforms without it (LT-OCI review-fix)" do
+      assert DeployEx.Cloud.Infrastructure.behaviour_info(:optional_callbacks) === [gather_infrastructure: 1]
     end
 
     test "Security declares its exact callback set" do
