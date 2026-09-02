@@ -32,7 +32,7 @@ prometheus_retention_time: 7d
 #   mix deploy_ex.find_nodes --tag MonitoringKey=sentry
 # Only sets system.url-prefix (UI link-building); the container binds to the
 # node's own address via SENTRY_BIND regardless, and ingest uses the DSN.
-sentry_url: "http://FILL_IN_AFTER_FIRST_APPLY:9000"
+sentry_url: "http://FILL_IN_AFTER_FIRST_APPLY:80"
 <% end %>
 system_env:
   - PATH=/root/.asdf/shims:/root/.asdf/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
