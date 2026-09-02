@@ -149,7 +149,7 @@ defmodule DeployEx.MimirRoleTest do
     test "scrapes node_exporter and app metrics locally, remote_writes to Mimir, no ec2_sd" do
       content = File.read!(@alloy_path)
 
-      assert content =~ "{% if grafana_mimir_url is defined %}"
+      assert content =~ "{% if grafana_mimir_url_configured %}"
       assert content =~ "localhost:9100"
       assert content =~ "{% if app_name is defined %}"
       assert content =~ "localhost:{{ alloy_app_metrics_port }}"
@@ -211,7 +211,7 @@ defmodule DeployEx.MimirRoleTest do
       assert content =~ ~s["instance_id" = "{{ instance_id | default('unknown') }}"]
     end
 
-    test "everything added after the loki pipeline is gated behind one balanced {% if grafana_mimir_url is defined %} block — nothing leaks outside it" do
+    test "everything added after the loki pipeline is gated behind one balanced {% if grafana_mimir_url_configured %} block — nothing leaks outside it" do
       content = File.read!(@alloy_path)
 
       assert String.starts_with?(content, @expected_loki_pipeline)
@@ -221,10 +221,10 @@ defmodule DeployEx.MimirRoleTest do
         |> String.trim_leading(@expected_loki_pipeline)
         |> String.trim_trailing()
 
-      assert String.starts_with?(remainder, "{% if grafana_mimir_url is defined %}")
+      assert String.starts_with?(remainder, "{% if grafana_mimir_url_configured %}")
       assert String.ends_with?(remainder, "{% endif %}")
 
-      open_tags = remainder |> String.split(~r/\{%\s*if\s+\S+\s+is\s+defined\s*%\}/) |> length() |> Kernel.-(1)
+      open_tags = remainder |> String.split(~r/\{%\s*if\s+.+?\s*%\}/) |> length() |> Kernel.-(1)
       close_tags = remainder |> String.split(~r/\{%\s*endif\s*%\}/) |> length() |> Kernel.-(1)
 
       assert open_tags > 0
@@ -237,10 +237,10 @@ defmodule DeployEx.MimirRoleTest do
   describe "grafana-datasources.yaml.j2 — Mimir datasource" do
     @datasource_path Path.join(@priv_roles_dir, "grafana_ui/templates/grafana-datasources.yaml.j2")
 
-    test "adds a Mimir prometheus-type datasource under the grafana_mimir_url conditional" do
+    test "adds a Mimir prometheus-type datasource under the grafana_mimir_url_configured conditional" do
       content = File.read!(@datasource_path)
 
-      assert content =~ "{% if grafana_mimir_url is defined %}"
+      assert content =~ "{% if grafana_mimir_url_configured %}"
       assert content =~ "name: Mimir Metrics"
       assert content =~ "type: prometheus"
       assert content =~ "url: {{ grafana_mimir_url }}/prometheus"
@@ -272,7 +272,7 @@ defmodule DeployEx.MimirRoleTest do
       # not one giant span covering both (which would make Mimir's datasource
       # disappear whenever --no-prometheus is set, defeating the replacement bar).
       prometheus_if = :binary.match(content, "{% if grafana_prometheus_url is defined %}") |> elem(0)
-      mimir_if = :binary.match(content, "{% if grafana_mimir_url is defined %}") |> elem(0)
+      mimir_if = :binary.match(content, "{% if grafana_mimir_url_configured %}") |> elem(0)
       endif_positions = for [{pos, _}] <- Regex.scan(~r/\{% endif %\}/, content, return: :index), do: pos
 
       prometheus_endif = Enum.find(endif_positions, &(&1 > prometheus_if))

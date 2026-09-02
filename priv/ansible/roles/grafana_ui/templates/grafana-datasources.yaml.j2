@@ -12,7 +12,7 @@ datasources:
     user: $USER
     url: {{ grafana_prometheus_url }}
 {% endif %}
-{% if grafana_mimir_url is defined %}
+{% if grafana_mimir_url_configured %}
 
   - name: Mimir Metrics
     type: prometheus
