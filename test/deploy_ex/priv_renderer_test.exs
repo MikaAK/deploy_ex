@@ -154,7 +154,7 @@ defmodule DeployEx.PrivRendererTest do
 
       # DHCP (IP-FIX): the sentry node's IP is not known at render time, so
       # sentry_url renders as a FILL_IN placeholder like grafana_{loki,prometheus,mimir}_url.
-      assert group_vars_content =~ ~s(sentry_url: "http://FILL_IN_AFTER_FIRST_APPLY:9000")
+      assert group_vars_content =~ ~s(sentry_url: "http://FILL_IN_AFTER_FIRST_APPLY:80")
     end
 
     test "group_vars/all.yaml omits sentry_url when no_sentry: true" do

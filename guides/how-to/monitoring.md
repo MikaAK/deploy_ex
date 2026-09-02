@@ -180,17 +180,17 @@ Disk usage under `errors-only` is meaningfully lower than `feature-complete` (fe
 
 ### Access — private VPC only
 
-The Sentry web service binds to the node's private VPC address (`SENTRY_BIND` in `.env`, not `127.0.0.1`) — see the security group note below for what that does and doesn't protect. There is no public exposure and no Let's Encrypt cert this cycle.
+The Sentry web service binds to the node's private VPC address (`SENTRY_BIND` in `.env`, not `127.0.0.1`) — see the security group note below for what that does and doesn't protect, **which changed when the default port moved to 80.** There is no Let's Encrypt cert this cycle.
 
 ```bash
 mix deploy_ex.ssh.authorize                              # allowlist your IP for SSH (port 22 is allowlist-only)
 mix deploy_ex.find_nodes --tag MonitoringKey=sentry       # find the node's IP
-ssh -i deploys/terraform/*.pem -L 9000:<sentry-node-ip>:9000 admin@<sentry-node-ip>
+ssh -i deploys/terraform/*.pem -L 9000:<sentry-node-ip>:80 admin@<sentry-node-ip>
 ```
 
-The `-L` remote address (the node's own bound VPC address, on port 9000) is resolved by the SSH server (the sentry node), not your machine. Then browse `http://localhost:9000` locally. `group_vars/all.yaml`'s `sentry_url` is the same address — it's what the Sentry container uses to build links back to the UI, and is also what the tunnel targets.
+The `-L` remote address (the node's own bound VPC address, on port 80 — the shipped default) is resolved by the SSH server (the sentry node), not your machine; the local port (`9000` above) is arbitrary and only needs to avoid clashing with something else on your machine (ports below 1024 need root to bind locally, so picking an unprivileged local port like `9000` while forwarding to the node's real port 80 avoids that). Then browse `http://localhost:9000` locally. `group_vars/all.yaml`'s `sentry_url` is the same address — it's what the Sentry container uses to build links back to the UI, and is also what the tunnel targets.
 
-**Security group note:** a freshly-generated deploy_ex security group has no rule allowing traffic between members of the group itself, and no rule for port 9000 — only `http-80-tcp`/`https-443-tcp` from `0.0.0.0/0` plus the dynamic SSH allowlist. cfx's live security group currently has an all-protocol self-referencing rule (infrastructure drift, not shipped by these templates) which is why the tunnel already works there. New consumers need an equivalent intra-SG (or port-9000-scoped) ingress rule added by hand — **this sprint does not template any security group change.**
+**Security group note — changed by the `sentry_web_port` 9000→80 default:** deploy_ex's shared `app_security_group` (`priv/terraform/network.tf`) opens `http-80-tcp`/`https-443-tcp` to `0.0.0.0/0` and `::/0` for *every* instance in the group — monitoring nodes included — and `sentry`'s own terraform block ships `enable_eip = true` in a public subnet. While `sentry_web_port` defaulted to 9000, that open 80/443 rule never reached Sentry (no ingress rule matched 9000), so the "private VPC only, SSH tunnel" model above held in practice despite the wide-open rule existing. **Now that the default is 80, `SENTRY_BIND` lands on the same port the shared security group already opens to the entire internet** — a consumer applying this default to a live node gets the Sentry UI reachable over the public internet on port 80, not gated by the SSH-tunnel model described above. This lane's port change is template-defaults-only and does **not** template a security-group carve-out for it. Before applying this default to any live node, add an explicit restriction (move `sentry` off the shared web security group, or add a deny/scope rule ahead of the `0.0.0.0/0` allow) — **do not rely on the "private VPC only" framing above once the port is 80.**
 
 If the node isn't running:
 

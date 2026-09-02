@@ -13,7 +13,7 @@ sentry_install_dir: /opt/sentry-self-hosted
 sentry_data_device: /dev/nvme1n1
 sentry_data_dir: /mnt/sentry-data
 
-sentry_web_port: 9000
+sentry_web_port: 80
 
 # getsentry/self-hosted ships this as a plaintext default in its committed
 # .env (x-sentry-defaults). Inert under errors-only (launchpad only runs
