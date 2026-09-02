@@ -118,7 +118,16 @@ defmodule Mix.Tasks.DeployEx.LoadTest.Exec do
   defp resolve_discovered_prometheus_url(discover_fn) do
     case discover_fn.() do
       {:ok, ip} when is_binary(ip) -> {:ok, "http://#{ip}:9090"}
-      _ -> {:ok, nil}
+      {:ok, nil} -> {:ok, nil}
+
+      # `not_found` today conflates "no prometheus configured for this fleet" with
+      # "prometheus is configured but nothing is running" — both mean "no URL to hand
+      # the load test" to every caller that exists right now. If anyone ever needs to
+      # alarm on down-ness specifically, that distinction has to be pushed into the
+      # provider and this clause split in two.
+      {:error, %ErrorMessage{code: :not_found}} -> {:ok, nil}
+
+      {:error, error} -> {:error, error}
     end
   end
 
