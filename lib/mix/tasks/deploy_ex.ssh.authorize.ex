@@ -47,7 +47,8 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
          :ok <- add_or_remove_whitelist(opts, security_group_id) do
       :ok
     else
-      {:error, e} -> Mix.raise(to_string(e))
+      {:error, %ErrorMessage{} = error} -> Mix.raise(ErrorMessage.to_string(error))
+      {:error, e} -> Mix.raise(inspect(e))
     end
   end
 
@@ -79,7 +80,10 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
     with {:ok, current_ip} <- get_arg_id_or_current_ip(opts) do
       Mix.shell().info(IO.ANSI.format([:yellow, "Deauthorizing current device #{current_ip} from security group #{security_group_id}", :reset]))
 
-      DeployEx.AwsIpWhitelister.deauthorize(security_group_id, current_ip)
+      with :ok <- DeployEx.AwsIpWhitelister.deauthorize(security_group_id, current_ip),
+           :ok <- DeployEx.AwsIpWhitelister.verify_revoked(security_group_id, current_ip) do
+        Mix.shell().info(IO.ANSI.format([:green, "Confirmed: #{current_ip} no longer has SSH access to security group #{security_group_id}", :reset]))
+      end
     end
   end
 
@@ -87,7 +91,10 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
     with {:ok, current_ip} <- get_arg_id_or_current_ip(opts) do
       Mix.shell().info(IO.ANSI.format([:yellow, "Authorizing current device #{current_ip} in security group #{security_group_id}", :reset]))
 
-      DeployEx.AwsIpWhitelister.authorize(security_group_id, current_ip)
+      with :ok <- DeployEx.AwsIpWhitelister.authorize(security_group_id, current_ip),
+           :ok <- DeployEx.AwsIpWhitelister.verify_authorized(security_group_id, current_ip) do
+        Mix.shell().info(IO.ANSI.format([:green, "Confirmed: #{current_ip} now has SSH access to security group #{security_group_id}", :reset]))
+      end
     end
   end
 
