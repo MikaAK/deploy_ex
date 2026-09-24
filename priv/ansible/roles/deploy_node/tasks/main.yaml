@@ -40,12 +40,6 @@
         dest: /srv/unpack-directory
         remote_src: true
 
-    - name: Update release state for {{ app_name }}
-      ansible.builtin.script:
-        cmd: update_release_state.sh {{ bucket_name }} {{ release_state_prefix }} {{ app_name }} {{ s3_object_key }}
-      register: release_state_result
-      changed_when: "'changed' in release_state_result.stdout"
-
     - name: Add erlang_systemd.service file to /etc/systemd/system/{{ app_name }}.service
       template:
         src: erlang_systemd.service.j2
@@ -72,6 +66,16 @@
         systemctl start {{ app_name }}.service
       args:
         executable: /bin/bash
+
+    # Must stay AFTER the swap. Recorded before it, a play that died between the two
+    # (a transport failure on the download, a stop that never came back) left S3 naming
+    # a release the node was not running — and `--target-sha current` plus every
+    # rollback target reads exactly that file.
+    - name: Update release state for {{ app_name }}
+      ansible.builtin.script:
+        cmd: update_release_state.sh {{ bucket_name }} {{ release_state_prefix }} {{ app_name }} {{ s3_object_key }}
+      register: release_state_result
+      changed_when: "'changed' in release_state_result.stdout"
 
     - name: Cleanup previous release (post-swap, no downtime impact)
       file:
