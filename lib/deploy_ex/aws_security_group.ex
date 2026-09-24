@@ -10,9 +10,7 @@ defmodule DeployEx.AwsSecurityGroup do
   end
 
   defp find_security_group_by_id(security_group_id, opts) do
-    region = opts[:region] || DeployEx.Config.aws_region()
-
-    with {:ok, security_groups} <- describe_security_groups(region) do
+    with {:ok, security_groups} <- describe_security_groups(opts) do
       matching = Enum.find(security_groups, fn sg ->
         sg["groupId"] === security_group_id or
           sg["groupName"] === security_group_id or
@@ -33,7 +31,6 @@ defmodule DeployEx.AwsSecurityGroup do
   end
 
   defp find_security_group_by_prefix(opts) do
-    region = opts[:region] || DeployEx.Config.aws_region()
     project_name = opts[:project_name] || DeployEx.Config.aws_project_name()
     environment = opts[:environment] || DeployEx.Config.env()
 
@@ -47,7 +44,7 @@ defmodule DeployEx.AwsSecurityGroup do
       "#{project_name}-sg"
     end
 
-    with {:ok, security_groups} <- describe_security_groups(region) do
+    with {:ok, security_groups} <- describe_security_groups(opts) do
       matching = security_groups
         |> Enum.filter(fn sg ->
           name = sg["groupName"] || ""
@@ -75,18 +72,13 @@ defmodule DeployEx.AwsSecurityGroup do
     end
   end
 
-  defp describe_security_groups(region) do
+  defp describe_security_groups(opts) do
+    request_fn = opts[:request_fn] || (&ExAws.request/2)
+    region = opts[:region] || DeployEx.Config.aws_region()
+
     ExAws.EC2.describe_security_groups()
-    |> ex_aws_request(region)
+    |> request_fn.(region: region)
     |> handle_response()
-  end
-
-  defp ex_aws_request(request_struct, nil) do
-    ExAws.request(request_struct)
-  end
-
-  defp ex_aws_request(request_struct, region) do
-    ExAws.request(request_struct, region: region)
   end
 
   defp handle_response({:error, {:http_error, status_code, %{body: body}}}) do
@@ -115,4 +107,15 @@ defmodule DeployEx.AwsSecurityGroup do
     end
   end
 
+  # Covers everything ExAws can hand back that is not an AWS HTTP error response — a transport
+  # failure like `:eaddrnotavail` (bare atom, Hackney) or `%Req.TransportError{}` (Req). Mirrors
+  # DeployEx.AwsIpWhitelister.handle_response/2; without it this call raises FunctionClauseError
+  # before the whitelister's own handling is ever reached. inspect/1 is deliberate: the term is
+  # arbitrary and may not implement String.Chars.
+  defp handle_response(response) do
+    {:error, ErrorMessage.failed_dependency(
+      "error fetching security groups from aws",
+      %{error: inspect(response)}
+    )}
+  end
 end

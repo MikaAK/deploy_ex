@@ -111,13 +111,26 @@ defmodule DeployEx.AwsIpWhitelister do
   defp transient_error?(_reason), do: false
 
   defp handle_mutation_response({:ok, %{body: _, status_code: 200}}), do: :ok
-  defp handle_mutation_response(response), do: response
+  defp handle_mutation_response({:error, %ErrorMessage{}} = error), do: error
+  defp handle_mutation_response(response), do: {:error, unexpected_response_error(response)}
 
   defp handle_describe_response({:ok, %{body: body, status_code: 200}}, ip_address) do
     {:ok, cidr_rule_present?(body, ip_address)}
   end
 
-  defp handle_describe_response(response, _ip_address), do: response
+  defp handle_describe_response({:error, %ErrorMessage{}} = error, _ip_address), do: error
+
+  defp handle_describe_response(response, _ip_address) do
+    {:error, unexpected_response_error(response)}
+  end
+
+  # Anything that is neither a 200 nor an already-shaped error — an AWS 2xx-that-is-not-200, or
+  # any response shape a future ExAws hands back. Passing these through untouched leaked a
+  # non-contract value into the caller's `with :ok <- ...`, which raised WithClauseError rather
+  # than reporting the failure.
+  defp unexpected_response_error(response) do
+    ErrorMessage.failed_dependency("unexpected AWS response", %{response: inspect(response)})
+  end
 
   defp handle_response({:http_error, code, %{body: body}}, context) do
     message = body |> SweetXml.xpath(SweetXml.sigil_x"//Message/text()") |> to_string

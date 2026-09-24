@@ -49,6 +49,7 @@ defmodule Mix.Tasks.DeployEx.Ssh.Authorize do
     else
       {:error, %ErrorMessage{} = error} -> Mix.raise(ErrorMessage.to_string(error))
       {:error, e} -> Mix.raise(inspect(e))
+      other -> Mix.raise("ssh authorization did not complete: #{inspect(other)}")
     end
   end
 
