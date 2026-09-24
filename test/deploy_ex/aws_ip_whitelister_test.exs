@@ -206,4 +206,28 @@ defmodule DeployEx.AwsIpWhitelisterTest do
                AwsIpWhitelister.verify_authorized("sg-test", "1.2.3.4", request_fn: request_fn)
     end
   end
+
+  # Response contract ----------------------------------------------------------------------
+  #
+  # Every public function returns `:ok`, `{:ok, boolean}` or `{:error, %ErrorMessage{}}`. A
+  # response shape outside that contract used to be passed through untouched, which put an
+  # `{:ok, map}` into the caller's `with :ok <- ...` and raised WithClauseError.
+
+  describe "response contract" do
+    test "a 2xx that is not 200 is reported as an error, not passed through" do
+      odd = fn _operation, _opts -> {:ok, %{body: "", status_code: 204}} end
+
+      assert {:error, %ErrorMessage{code: :failed_dependency} = error} =
+               AwsIpWhitelister.authorize("sg-test", "1.2.3.4", request_fn: odd)
+
+      assert error.details.response =~ "204"
+    end
+
+    test "a describe response that is not 200 is reported as an error, not passed through" do
+      odd = fn _operation, _opts -> {:ok, %{body: "", status_code: 204}} end
+
+      assert {:error, %ErrorMessage{code: :failed_dependency}} =
+               AwsIpWhitelister.verify_authorized("sg-test", "1.2.3.4", request_fn: odd)
+    end
+  end
 end
