@@ -697,7 +697,7 @@ defmodule DeployEx.QaNode do
           # keeping it structurally excluded from prod node filters. Belt-and-braces
           # with the ansible deploy_node template for AMI/cloud-init-only boots.
           mkdir -p /etc/systemd/system/$APP_NAME.service.d
-          printf '[Service]\\nEnvironment=RELEASE_NODE_SUFFIX=_qa\\n' > /etc/systemd/system/$APP_NAME.service.d/qa-node-suffix.conf
+          printf '[Service]\\nEnvironment=RELEASE_NODE_SUFFIX=_qa\\nEnvironment=QA_SEARCH_PATH=qa\\n' > /etc/systemd/system/$APP_NAME.service.d/qa-node-suffix.conf
 
           echo "Starting $APP_NAME service..."
           systemctl daemon-reload

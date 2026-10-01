@@ -651,6 +651,12 @@ defmodule DeployEx.QaNodeTest do
       assert user_data =~ "/etc/systemd/system/$APP_NAME.service.d/qa-node-suffix.conf"
     end
 
+    test "the same drop-in pins QA_SEARCH_PATH=qa so a _qa sname never boots on the public schema" do
+      user_data = QaNode.build_qa_user_data("options_feed", "abc1234", "prod")
+
+      assert user_data =~ "Environment=RELEASE_NODE_SUFFIX=_qa\\nEnvironment=QA_SEARCH_PATH=qa\\n"
+    end
+
     test "writes the drop-in before the service is (re)started" do
       user_data = QaNode.build_qa_user_data("options_feed", "abc1234", "prod")
 

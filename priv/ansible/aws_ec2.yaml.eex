@@ -30,6 +30,7 @@ compose:
   release_prefix: "'qa' if (tags['QaNode'] | default('false')) == 'true' else ''"
   release_state_prefix: "'release-state/qa' if (tags['QaNode'] | default('false')) == 'true' else 'release-state'"
   qa_node_suffix: "'_qa' if (tags['QaNode'] | default('false')) == 'true' else ''"
+  qa_search_path: "'qa' if (tags['QaNode'] | default('false')) == 'true' else 'public'"
   git_branch: tags['GitBranch'] | default('')
   instance_tag: tags['InstanceTag'] | default('')
 

@@ -4,6 +4,7 @@ target_release_sha: ""
 release_prefix: ""
 release_state_prefix: "release-state"
 qa_node_suffix: ""
+qa_search_path: "public"
 app_port: 80
 extra_env: []
 system_env: []
