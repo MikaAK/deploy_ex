@@ -51,7 +51,7 @@ loki.write "default" {
     url = "{{ grafana_loki_url }}/loki/api/v1/push"
   }
 }
-{% if grafana_mimir_url is defined %}
+{% if grafana_mimir_url_configured %}
 
 prometheus.scrape "node_exporter" {
   job_name = "nodes"

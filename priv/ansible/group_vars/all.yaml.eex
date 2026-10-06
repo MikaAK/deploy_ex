@@ -42,4 +42,10 @@ system_env:
 # DHCP-assigned, not known at render time. Discover it with:
 #   mix deploy_ex.find_nodes --tag MonitoringKey=mimir_db
 grafana_mimir_url: "http://FILL_IN_AFTER_FIRST_APPLY:8080"
+
+# True once grafana_mimir_url has been filled in with a real address. Both the
+# grafana_alloy and grafana_ui roles gate their Mimir wiring on this (not on
+# `grafana_mimir_url is defined`, which is true even for the placeholder
+# above) so the two roles can't disagree about whether Mimir exists.
+grafana_mimir_url_configured: "{{ grafana_mimir_url is defined and 'FILL_IN_AFTER_FIRST_APPLY' not in grafana_mimir_url }}"
 <% end %>
