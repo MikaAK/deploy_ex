@@ -96,10 +96,17 @@ defmodule Mix.Tasks.DeployEx.LoadTest.ExecTest do
       assert {:ok, "http://10.0.101.171:9090"} = Exec.resolve_prometheus_url([], discover)
     end
 
-    test "returns nil when discovery finds no prometheus node" do
-      discover = fn -> {:error, :not_found} end
+    test "treats a not_found discovery error as an absent prometheus node, not a failure — absence is a supported fleet configuration" do
+      discover = fn -> {:error, ErrorMessage.not_found("no running prometheus node found")} end
 
       assert {:ok, nil} = Exec.resolve_prometheus_url([], discover)
+    end
+
+    test "propagates a non-not_found discovery error instead of silently downgrading it to {:ok, nil}" do
+      error = ErrorMessage.internal_server_error("aws api unavailable")
+      discover = fn -> {:error, error} end
+
+      assert {:error, ^error} = Exec.resolve_prometheus_url([], discover)
     end
   end
 
